@@ -70,7 +70,7 @@ export const buildCopilotDashboardLink = (
  */
 const SETUP_STEP_ROUTES = {
   documents: "/knowledge",
-  conversation: "/agents",
+  conversation: "/agents?tab=chat",
   directives_or_routines: "/agents?tab=behavior&anchor=assistant-directives",
   notify_destination: "/settings?anchor=webhook-destinations",
   credential: "/settings?tab=api-access",

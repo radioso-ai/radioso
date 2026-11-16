@@ -23,6 +23,12 @@ const testChatComposer = (page: Page) => page.getByPlaceholder(testChatComposerP
 const testChatMenuItem = (page: Page, label: string) =>
   page.locator('[role="menuitem"], [role="menuitemcheckbox"]').filter({ hasText: label })
 
+const openBuildFromSidebar = (page: Page) =>
+  page.locator('[data-sidebar="sidebar"]').getByRole('link', { name: /^Build/ }).click()
+
+const openTestFromSidebar = (page: Page) =>
+  page.locator('[data-sidebar="sidebar"]').getByRole('link', { name: 'Test', exact: true }).click()
+
 const clickTestChatAction = async (page: Page, label: string) => {
   await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
   await testChatMenuItem(page, label).click()
@@ -394,10 +400,9 @@ test('accepts a revision eval retry after returning to cached evidence', async (
   await expect(page.getByRole('button', { name: 'Retry case' })).toBeVisible()
   await page.keyboard.press('Escape')
 
-  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await openBuildFromSidebar(page)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
-  await cockpit.getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await openTestFromSidebar(page)
   await clickTestChatAction(page, 'Evals')
   await page.getByRole('button', { name: 'Retry case' }).click()
 
@@ -1334,7 +1339,7 @@ test('saves the mounted dirty editor before lazily starting a private test', asy
   })
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
   await page.locator('#assistantAnswerInstruction').fill('Save this private instruction before testing.')
-  await page.getByRole('tab', { name: 'Test Chat' }).click()
+  await openTestFromSidebar(page)
   await testChatComposer(page).fill('Does the saved draft answer?')
   await expect(page.getByRole('button', { name: 'Save draft & send' })).toBeEnabled()
   await page.getByRole('button', { name: 'Save draft & send' }).click()
@@ -1363,7 +1368,7 @@ test('saves a dirty greeting wording before lazily starting a private test, and 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
   await page.getByRole('group', { name: 'Greeting wording' }).getByText('Exact words').click()
   await page.getByLabel(/^Greeting text/).fill('Save this greeting before testing.')
-  await page.getByRole('tab', { name: 'Test Chat' }).click()
+  await openTestFromSidebar(page)
   await testChatComposer(page).fill('Does the saved greeting apply?')
 
   await page.getByRole('button', { name: 'Save draft & send' }).click()
@@ -1395,7 +1400,7 @@ test('does not start a private execution when the mounted draft save fails', asy
   })
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
   await page.locator('#assistantAnswerInstruction').fill('This save fails.')
-  await page.getByRole('tab', { name: 'Test Chat' }).click()
+  await openTestFromSidebar(page)
   await testChatComposer(page).fill('Keep this message')
   await page.getByRole('button', { name: 'Save draft & send' }).click()
 
@@ -1419,7 +1424,7 @@ test('fences a delayed draft save after New chat before it can create an executi
   })
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
   await page.locator('#assistantAnswerInstruction').fill('Save slowly.')
-  await page.getByRole('tab', { name: 'Test Chat' }).click()
+  await openTestFromSidebar(page)
   await testChatComposer(page).fill('Do not send this')
   await page.getByRole('button', { name: 'Save draft & send' }).click()
   await draftSaveRequest
@@ -1569,22 +1574,24 @@ test('retries a timed-out publication with the same frozen command', async ({ pa
   expect(publishBodies[1]).toEqual(publishBodies[0])
 })
 
-test('keeps channels outside the cockpit tab roster while preserving deep links', async ({ page }) => {
+test('keeps Test and Channels outside the Build tab bar while preserving deep links', async ({ page }) => {
   await installCockpitMocks(page)
   await page.goto(testUrl)
+  // Test chat has no tab bar: it is its own row in the agent menu.
+  await expect(page.getByRole('navigation', { name: 'Agent cockpit' })).toHaveCount(0)
+  const sidebar = page.locator('[data-sidebar="sidebar"]')
+  await sidebar.getByRole('link', { name: /^Build/ }).click()
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await expect(cockpit.getByRole('tab')).toHaveText(['Test Chat', 'Profile', 'Directives', 'Routines', 'Skills', 'Context'])
-  await page.getByRole('tab', { name: 'Profile' }).click()
-  await expect(page).toHaveURL(/tab=behavior&anchor=assistant-profile/)
+  await expect(cockpit.getByRole('tab')).toHaveText(['Profile', 'Directives', 'Routines', 'Skills', 'Context'])
+  await expect(page).toHaveURL(/anchor=assistant-profile/)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
   await expect(page.getByText('Draft changes')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Review & publish' })).toBeVisible()
-  const sidebar = page.locator('[data-sidebar="sidebar"]')
-  await sidebar.getByRole('button', { name: 'Channels', exact: true }).click()
-  await sidebar.getByText('Manage channels', { exact: true }).click()
+  await sidebar.getByRole('link', { name: /^Channels/ }).click()
   await expect(page).toHaveURL(/tab=channels(?:&|$)/)
   await expect(page.getByRole('navigation', { name: 'Agent cockpit' })).toHaveCount(0)
-  await sidebar.getByRole('button', { name: 'New agent', exact: true }).click()
+  await sidebar.getByRole('button', { name: 'Marta' }).click()
+  await page.getByRole('menuitem', { name: 'New agent' }).click()
   await expect(page.getByRole('heading', { name: 'Create agent', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Create manually', exact: true })).toBeVisible()
   await expect(page.getByTestId('create-agent-import-option')).toBeVisible()
@@ -1627,18 +1634,17 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
   await expectRoutineDetail()
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
   await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-profile$`))
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?anchor=assistant-profile$`))
 
   await page.goto(routineUrl)
   await expectRoutineDetail()
-  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await openTestFromSidebar(page)
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=chat$`))
 
   await page.goto(routineUrl)
   await expectRoutineDetail()
   const sidebar = page.locator('[data-sidebar="sidebar"]')
-  await sidebar.getByRole('button', { name: 'Channels', exact: true }).click()
-  await sidebar.getByText('Manage channels', { exact: true }).click()
+  await sidebar.getByRole('link', { name: /^Channels/ }).click()
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`))
   await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
 })
@@ -1651,7 +1657,7 @@ test('tests a routine draft in the agent Test Chat', async ({ page }) => {
   const testDraft = page.getByRole('button', { name: 'Test', exact: true })
   await expect(testDraft).toBeEnabled()
   await testDraft.click()
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=chat$`))
   await expect(testChatComposer(page)).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Revision 1' })).toHaveText('Draft')
 })
@@ -1673,7 +1679,7 @@ test('flushes a pending autosave before Test draft navigates away', async ({ pag
   await expect(testDraft).toBeEnabled()
   await testDraft.click()
 
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=chat$`))
   await expect(testChatComposer(page)).toBeVisible()
 
   await expect.poll(() => routineUpdates.filter((update) => update.method === 'PATCH').at(-1))
@@ -1693,24 +1699,27 @@ test('withholds the routine draft test while the routine is disabled', async ({ 
   await expect(testDraft).toHaveAttribute('title', 'Enable this routine to test it.')
 })
 
-test('opens published agent versions from the Test Chat overflow menu', async ({ page }) => {
+test('opens published agent versions from the Versions link beside Publish on Test and on Build', async ({ page }) => {
   await installCockpitMocks(page)
   await page.goto(testUrl)
-  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
-  await testChatMenuItem(page, 'Agent versions').click()
+  await page.getByRole('link', { name: 'Versions', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Agent versions', level: 1, exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'v4', exact: true })).toBeVisible()
-  await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true })).toHaveAttribute('tabindex', '0')
+  await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab').first()).toHaveAttribute('tabindex', '0')
   await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('v4 changes')
   await expect(page.getByRole('dialog')).toContainText('greeting')
   await expect(page.getByRole('dialog')).toContainText('en: Welcome aboard!')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 
-  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await openTestFromSidebar(page)
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=chat$`))
   await expect(page.getByRole('heading', { name: 'Agent versions', level: 1, exact: true })).toHaveCount(0)
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`)
+  await page.getByRole('link', { name: 'Versions', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Agent versions', level: 1, exact: true })).toBeVisible()
 })
 
 test('keeps a deep-linked mobile tab visible and supports roving keyboard focus', async ({ page }) => {
@@ -1843,8 +1852,7 @@ test('captures the populated comparison cockpit at desktop and mobile widths', a
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Toggle Sidebar' }).click()
   const sidebar = page.locator('[data-sidebar="sidebar"]')
-  await sidebar.getByRole('button', { name: 'Channels', exact: true }).click()
-  await expect(sidebar.getByText('Manage channels', { exact: true })).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: /^Channels/ })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Agent cockpit' })).toHaveCount(0)
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'cockpit-followup-mobile-menu.png'), fullPage: true })
 })
@@ -1879,13 +1887,12 @@ test('keeps the private test execution and draft inputs across cockpit navigatio
   })
   await expect(page).toHaveURL(/testExecution=/)
   const openTestId = new URL(page.url()).searchParams.get('testExecution')
-  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await openBuildFromSidebar(page)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
   // The tab switch's own route drops testExecution; the remounted chat adopts its cached test
   // back into the URL from the session cache alone, without asking the API for it again.
   await expect(page).not.toHaveURL(/testExecution=/)
-  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await openTestFromSidebar(page)
   await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
   await expect(page.getByText('Track this order', { exact: true })).toBeVisible()
   await expect(page.getByText('Welcome back to the draft test.', { exact: true })).toHaveCount(1)
@@ -1939,10 +1946,9 @@ test('keeps invalid context blocking after navigation until every field is corre
   await contextDialog.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
 
-  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await openBuildFromSidebar(page)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
-  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await openTestFromSidebar(page)
   await expect(testChatComposer(page)).toHaveValue('Validate these samples')
   await clickTestChatAction(page, 'Test context')
   await expect(page.getByRole('dialog').getByLabel('Payload A')).toHaveValue('{bad')
@@ -2008,10 +2014,9 @@ test('keeps a delayed test stream alive across cockpit navigation and completes 
   await mocks.messageRequest
   await expect(testChatComposer(page)).toBeDisabled()
 
-  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await openBuildFromSidebar(page)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
-  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await openTestFromSidebar(page)
   await expect(page.getByText('Keep this stream alive', { exact: true })).toBeVisible()
   await expect(testChatComposer(page)).toBeDisabled()
 

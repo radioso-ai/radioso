@@ -1,4 +1,4 @@
-export interface AgentLabelSource {
+interface AgentLabelSource {
   internalName?: string | null
   name?: string | null
 }

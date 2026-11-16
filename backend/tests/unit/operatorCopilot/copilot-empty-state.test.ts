@@ -87,7 +87,7 @@ describe("Ray empty state", () => {
       greeting: "Let's pick up your setup.",
       suggestions: [
         { kind: "setup_step", step: "documents", text: "Add your documents", href: "/w/acme/knowledge" },
-        { kind: "setup_step", step: "conversation", text: "Ask a first question", href: "/w/acme/agents" },
+        { kind: "setup_step", step: "conversation", text: "Ask a first question", href: "/w/acme/agents?tab=chat" },
         { kind: "setup_step", step: "directives_or_routines", text: "Give the agent a rule", href: "/w/acme/agents?tab=behavior&anchor=assistant-directives" },
       ],
     });

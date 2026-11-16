@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AGENT_DRAFT_SAVED_EVENT } from '@/lib/agent-draft-save-port'
 import { describeReleaseRefusal } from '@/lib/agent-revision-testable-revisions'
 import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, type PublishRevisionCommand } from '@/lib/api-agent-revisions'
+import { hasPublishableChanges, useAgentRevision } from '@/lib/agent-revision-context'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
 import { describeGreeting } from '@/lib/exact-greeting-editor'
@@ -19,9 +20,6 @@ const statusLabel = (state: AgentRevisionState): string | null => {
   if (state.status === 'published_changed_since_draft') return 'Published changed; review draft'
   return null
 }
-
-/** A clean saved draft holds the published scoped authoring, so publishing it would allocate a version nobody can tell apart from the live one. */
-const hasPublishableChanges = (state: AgentRevisionState) => state.status !== 'draft_clean'
 
 type PublicationCommand = PublishRevisionCommand & { revisionId: string }
 
@@ -67,50 +65,25 @@ export function AgentRevisionHeader({
   saveState,
   canSaveDraft,
   testChatHref,
+  versionsHref,
 }: {
   agentId: string
   saveState: 'idle' | 'saved' | 'saving' | 'error'
   canSaveDraft: boolean
   testChatHref: string
+  /** The Agent versions page, which the header links to from both Build and Test. */
+  versionsHref: string
 }) {
-  const [state, setState] = useState<AgentRevisionState | null>(null)
+  const { state, error, setState, setError, requestGenerationRef } = useAgentRevision()
   const [detail, setDetail] = useState<AgentRevisionDetail | null>(null)
   const [catalog, setCatalog] = useState<ContextVariable[]>([])
   const [publicationCommand, setPublicationCommand] = useState<PublicationCommand | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [reviewing, setReviewing] = useState(false)
-  /** Shared across loadState and review: any new request for this mounted agent supersedes an older one in flight. */
-  const agentRequestGeneration = useRef(0)
-  const loadState = useCallback(async () => {
-    // Bump before the request so an earlier call's response, arriving after a
-    // newer one already applied, is recognized as stale and discarded.
-    const requestGeneration = ++agentRequestGeneration.current
-    try {
-      const next = await agentRevisionsApi.getState(agentId)
-      if (agentRequestGeneration.current !== requestGeneration) return
-      setState(next); setError(null)
-    } catch (cause) {
-      if (agentRequestGeneration.current !== requestGeneration) return
-      setState(null)
-      setError(cause instanceof Error ? cause.message : 'Draft publication state is unavailable.')
-    }
-  }, [agentId])
-  useEffect(() => {
-    const timeout = window.setTimeout(() => { void loadState() }, 0)
-    return () => window.clearTimeout(timeout)
-  }, [loadState])
-  useEffect(() => {
-    const refresh = (event: Event) => {
-      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) void loadState()
-    }
-    window.addEventListener(AGENT_DRAFT_SAVED_EVENT, refresh)
-    return () => window.removeEventListener(AGENT_DRAFT_SAVED_EVENT, refresh)
-  }, [agentId, loadState])
 
   const review = async () => {
     if (!state || reviewing || canSaveDraft || !hasPublishableChanges(state)) return
-    const requestGeneration = ++agentRequestGeneration.current
+    const requestGeneration = ++requestGenerationRef.current
     setReviewing(true)
     try {
       const [candidateResult, variablesResult] = await Promise.all([
@@ -118,7 +91,7 @@ export function AgentRevisionHeader({
         contextVariablesApi.listCatalog(),
       ])
       const result = await agentRevisionsApi.getRevision(agentId, candidateResult.candidate.id)
-      if (agentRequestGeneration.current !== requestGeneration) return
+      if (requestGenerationRef.current !== requestGeneration) return
       setCatalog(variablesResult.contextVariables)
       setDetail(result.revision)
       // This command is deliberately frozen when review opens. A retry after a
@@ -130,8 +103,8 @@ export function AgentRevisionHeader({
         idempotencyKey: crypto.randomUUID(),
       })
     } catch (cause) {
-      if (agentRequestGeneration.current === requestGeneration) setError(describeReleaseRefusal(cause, 'Unable to load publication review.'))
-    } finally { if (agentRequestGeneration.current === requestGeneration) setReviewing(false) }
+      if (requestGenerationRef.current === requestGeneration) setError(describeReleaseRefusal(cause, 'Unable to load publication review.'))
+    } finally { if (requestGenerationRef.current === requestGeneration) setReviewing(false) }
   }
   const publish = async () => {
     if (!detail || !publicationCommand) return
@@ -156,6 +129,7 @@ export function AgentRevisionHeader({
       {saveState === 'error' ? <span className="text-destructive">Draft save needs attention</span> : null}
     </div>
     <div className="flex flex-wrap items-center gap-2">
+      <Button asChild size="sm" variant="ghost"><Link href={versionsHref}>Versions</Link></Button>
       {canSaveDraft ? <Button type="button" size="sm" variant="outline" disabled={saveState === 'saving'} onClick={() => window.dispatchEvent(new CustomEvent('radioso:save-agent-draft', { detail: { agentId } }))}>Save draft</Button> : null}
       {!canSaveDraft && state?.canPublish ? <Button type="button" size="sm" onClick={() => void review()} disabled={!hasPublishableChanges(state)} loading={reviewing} title={hasPublishableChanges(state) ? 'Review saved draft before publishing' : 'No draft changes to publish'}>Review &amp; publish</Button> : null}
     </div>

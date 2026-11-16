@@ -63,7 +63,7 @@ describe("Ray's empty panel by workspace state", () => {
     expect(state.firstConversationHappened).toBe(false);
     expect(state.suggestions).toEqual([
       { kind: "setup_step", step: "documents", text: "Label for documents", href: "/w/sunny-co/knowledge" },
-      { kind: "setup_step", step: "conversation", text: "Label for conversation", href: "/w/sunny-co/agents" },
+      { kind: "setup_step", step: "conversation", text: "Label for conversation", href: "/w/sunny-co/agents?tab=chat" },
       { kind: "setup_step", step: "directives_or_routines", text: "Label for directives_or_routines", href: "/w/sunny-co/agents?tab=behavior&anchor=assistant-directives" },
     ]);
     // The model was told the same facts the response states.

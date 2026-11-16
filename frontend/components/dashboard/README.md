@@ -20,8 +20,9 @@ services.
 ## Read First
 
 - `dashboard-shell.tsx`: top-level dashboard layout.
-- `app-sidebar.tsx` and `area-subnavs.tsx`: sidebar navigation, agent selection and creation, and configured agent channel links. `frontend/lib/agent-channel-catalog.ts` maps channel configuration into the compact list.
-- `agent-view.tsx`: agent shell and persistent settings owner across cockpit tabs. It retains unsaved private instructions while Test Chat uses the real async save port in `frontend/lib/agent-draft-save-port.ts`.
+- `app-sidebar.tsx` and `area-subnavs.tsx`: sidebar navigation. `AgentAreaSubNav` is the agent switcher (`agent-switcher.tsx`: agents, Rename, Export bundle, Delete, New agent, Import a bundle; creation dialogs in `agent-creation-dialogs.tsx`) over three rows, Build, Test and Channels. `frontend/lib/dashboard-areas.ts` (`agentRowForSection`) decides which row a page belongs to.
+- The agent area's shared ports, mounted once above the sidebar and the agent view by `agent-area-providers.tsx` (from `dashboard-shell.tsx`): `frontend/lib/agents-context.tsx` (`useAgents`: the agent list, the selected agent, refresh, create, rename, delete, the delete confirmation's request, and a rename subscription for Profile), `frontend/lib/agent-channels-context.tsx` (`useAgentChannels`: the selected agent's channel entries, read once for the Channels row and the Channels overview, with `refresh()` for the pages that change a channel) and `frontend/lib/agent-revision-context.tsx` (`useAgentRevision`: the draft-versus-published state the Publish header and Build's amber dot both read). A failed refresh keeps the last list, and what was read for one agent is never shown for another. The channel entries come from the pure `frontend/lib/agent-channel-catalog.ts`; the workspace's WhatsApp number has no per-agent binding, so the default agent answers it and only that agent counts it.
+- `agent-view.tsx`: agent shell and persistent settings owner across Build's tab bar (`agent-cockpit-nav.tsx`: Profile, Directives, Routines, Skills, Context; Test has no tab bar). It mounts the delete confirmation (`agent-delete-dialog.tsx`), which the agent menu opens through `useAgents().requestDelete` and the `#agent-danger-zone` anchor opens from the URL; deleting moves the selection to the next agent, and the agent view's one canonicalizing replace follows it. First-run onboarding takes over Test chat only (`dashboard-shell.tsx`), so the bare agent URL is a Build page. It retains unsaved private instructions while Test Chat uses the real async save port in `frontend/lib/agent-draft-save-port.ts`.
 - `agent-revision-test-chat.tsx`: immutable single/comparison tests, proactive greeting startup when enabled, lazy first-send when disabled, history adoption, and revision eval evidence. Each test view renders in a card with a labelled revision header; the single header also offers the direct **Compare versions** action, and comparison cards expose a visible close control that retains the other version as a single private thread. Its title-row overflow menu uses the shell’s DOM portal target and does not switch comparison to single chat; the same menu's **Run skills for real** checkbox chooses the private test's per-execution skill-effects policy (`suppressed` keeps outward-effect skills — external tools, webhooks, email, Slack, notify — off; retrieval always runs), frozen at start like test values, with a `Skills run for real` chip on each test card while it is on. Conversation rendering reuses `chat-message-thread.tsx`, while context and eval controls open on demand. `test-execution-history-view.tsx` reads paginated private execution history through `frontend/lib/api-agent-revisions.ts`; the state helper preserves recorded turn/attempt identities, and `frontend/lib/agent-revision-test-chat-session.ts` keeps the agent-scoped session alive across dashboard route remounts, including the skill-effects choice.
 - `turn-inspector/turn-diagnostics-panel.tsx`: the shared turn-diagnostics panel
   reused by the Test Chat debug sheet and the activity `conversation-drawer.tsx`
@@ -47,7 +48,7 @@ services.
 - Dashboard route or workspace switching: `dashboard-shell.tsx`,
   `workspace-switcher.tsx`, `frontend/lib/dashboard-routes.ts`.
 - Chat UI: `agent-revision-test-chat.tsx` is the one operator test surface (the
-  agent's **Test Chat** tab, backed by `/agents/:id/test-executions`), rendering
+  agent's **Test** row, backed by `/agents/:id/test-executions`), rendering
   `chat-message-thread.tsx`; `conversation-drawer.tsx` and `chat-citations.tsx` are the
   activity-side readers. `chat-citations.tsx` renders an answer's citation markers
   (footnote order, with a run of markers as one pill that highlights its sources);
@@ -74,7 +75,7 @@ services.
   single-mode test execution on the live published revision with
   `seedConversationId` set and no test values (`agentRevisionsApi.startTest`) — the
   backend copies the source thread into the side's history and carries its routine
-  state, without a greeting — then navigates to the agent's Test Chat tab with
+  state, without a greeting — then navigates to the agent's Test page (`?tab=chat`) with
   `agentTestExecutionId` (`dashboard-routes` param, query key `testExecution`). The
   backend's `seededTurnCount` on the reopened detail (greater than zero for a seeded
   test) is what picks the "continuing a copy" notice; the route carries only the id.
@@ -133,7 +134,7 @@ services.
   and `buildAgentSectionHref` drops both Test Chat params so section links land on the
   section.
 - Test an unpublished routine: **Test draft** on a saved draft in
-  `settings/assistant-routines-section.tsx` navigates to the agent's Test Chat tab
+  `settings/assistant-routines-section.tsx` navigates to the agent's Test page (`?tab=chat`)
   (`agent-revision-test-chat.tsx`), whose Draft candidate is built from the agent draft
   snapshot and so already carries the routine draft; the button is disabled while the
   routine is disabled because the snapshot's activation set leaves it out.

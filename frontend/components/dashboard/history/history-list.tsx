@@ -495,6 +495,7 @@ export function HistoryList({
                   size="sm"
                   onClick={() => onNavigate(buildDashboardHref(accountId, {
                     section: 'agents',
+                    agentTab: 'chat',
                     workspaceId,
                   }))}
                 >

@@ -119,7 +119,7 @@ test("an operator imports a bundle and is told what did not come across", async 
   // The agent switcher's trigger is labelled with the agent, so read the name from
   // the same fixture the mocks serve rather than hard-coding it.
   await page.getByRole("button", { name: basePlatformSettings().assistant.assistantName }).first().click();
-  await page.getByRole("button", { name: "New agent" }).click();
+  await page.getByRole("menuitem", { name: "New agent" }).click();
   await page.getByTestId("create-agent-import-option").click();
 
   await expect(page.getByRole("heading", { name: "Import an agent bundle" })).toBeVisible();
@@ -203,7 +203,7 @@ test("a file that is not a bundle is refused before anything is created", async 
   // The agent switcher's trigger is labelled with the agent, so read the name from
   // the same fixture the mocks serve rather than hard-coding it.
   await page.getByRole("button", { name: basePlatformSettings().assistant.assistantName }).first().click();
-  await page.getByRole("button", { name: "New agent" }).click();
+  await page.getByRole("menuitem", { name: "New agent" }).click();
   await page.getByTestId("create-agent-import-option").click();
 
   await page.getByTestId("agent-bundle-file-input").setInputFiles({

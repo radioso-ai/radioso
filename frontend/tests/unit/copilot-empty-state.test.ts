@@ -14,7 +14,7 @@ const setupState: CopilotEmptyState = {
   greeting: "Let's pick up your setup.",
   suggestions: [
     { kind: 'setup_step', step: 'documents', text: 'Add your documents', href: '/w/acme/knowledge' },
-    { kind: 'setup_step', step: 'conversation', text: 'Ask a first question', href: '/w/acme/agents' },
+    { kind: 'setup_step', step: 'conversation', text: 'Ask a first question', href: '/w/acme/agents?tab=chat' },
   ],
 }
 
@@ -46,7 +46,7 @@ describe('resolveCopilotEmptyState', () => {
       showStaticSubtitle: false,
       chips: [
         { kind: 'link', text: 'Add your documents', href: '/w/acme/knowledge' },
-        { kind: 'link', text: 'Ask a first question', href: '/w/acme/agents' },
+        { kind: 'link', text: 'Ask a first question', href: '/w/acme/agents?tab=chat' },
       ],
     })
   })
@@ -67,7 +67,7 @@ describe('resolveCopilotEmptyState', () => {
       state: { phase: 'setup', firstConversationHappened: false, greeting: 'Hi', suggestions: [
         { kind: 'setup_step', step: 'documents', text: 'Elsewhere', href: 'https://elsewhere.example/knowledge' },
         { kind: 'setup_step', step: 'credential', text: 'Protocol relative', href: '//elsewhere.example/settings' },
-        { kind: 'setup_step', step: 'conversation', text: 'Ask a first question', href: '/w/acme/agents' },
+        { kind: 'setup_step', step: 'conversation', text: 'Ask a first question', href: '/w/acme/agents?tab=chat' },
       ] },
     }, 'other', [])
     expect(resolved.chips.map((chip) => chip.text)).toEqual(['Ask a first question'])

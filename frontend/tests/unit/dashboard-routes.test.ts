@@ -22,10 +22,26 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspaceId: 'workspace-1',
       workspacePublicRouteKey: 'support-abc123',
-      agentTab: 'behavior',
+      agentTab: 'channels',
     })
 
-    expect(href).toBe('/w/support-abc123/agents?tab=behavior')
+    expect(href).toBe('/w/support-abc123/agents?tab=channels')
+  })
+
+  it('leaves the behavior tab out of the URL, since an agent opens on it', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentTab: 'behavior',
+    })).toBe('/w/support-abc123/agents')
+  })
+
+  it('names the Test chat tab in the URL', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentTab: 'chat',
+    })).toBe('/w/support-abc123/agents?tab=chat')
   })
 
   it('round-trips Copilot page context selections without treating ids as URL text', () => {
@@ -388,15 +404,40 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
+      agentTab: 'chat',
       agentTestExecutionId: executionId,
-    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=${executionId}`)
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=chat&testExecution=${executionId}`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      tab: 'chat',
       testExecution: executionId,
     }))).toEqual({
       section: 'agents',
       agentId,
+      agentTab: 'chat',
       agentTestExecutionId: executionId,
+    })
+  })
+
+  it('opens Test chat for an old saved-test or history link that names no tab', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const executionId = '11111111-1111-4111-8111-111111111111'
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({ testExecution: executionId }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentTab: 'chat',
+      agentTestExecutionId: executionId,
+    })
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({ view: 'history' }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentTab: 'chat',
+      agentTestChatView: 'history',
+    })
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({ tab: 'behavior', testExecution: executionId }))).toEqual({
+      section: 'agents',
+      agentId,
     })
   })
 
@@ -404,10 +445,12 @@ describe('dashboard route state', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      tab: 'chat',
       testExecution: '../../../workspaces?x=',
     }))).toEqual({
       section: 'agents',
       agentId,
+      agentTab: 'chat',
       agentTestExecutionId: '../../../workspaces?x=',
     })
     expect(isValidTestExecutionId('../../../workspaces?x=')).toBe(false)
@@ -421,14 +464,17 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
+      agentTab: 'chat',
       agentTestChatView: 'history',
-    })).toBe(`/w/support-abc123/agents/${agentId}?view=history`)
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=chat&view=history`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      tab: 'chat',
       view: 'history',
     }))).toEqual({
       section: 'agents',
       agentId,
+      agentTab: 'chat',
       agentTestChatView: 'history',
     })
 
@@ -437,17 +483,18 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
+      agentTab: 'chat',
       agentTestChatView: 'history',
       agentTestExecutionId: '11111111-1111-4111-8111-111111111111',
-    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=11111111-1111-4111-8111-111111111111`)
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=chat&testExecution=11111111-1111-4111-8111-111111111111`)
 
     expect(buildDashboardHref('account-1', {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
-      agentTab: 'behavior',
+      agentTab: 'channels',
       agentTestChatView: 'history',
-    })).toBe(`/w/support-abc123/agents/${agentId}?tab=behavior`)
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=channels`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
       view: 'transcript',
@@ -463,19 +510,21 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
+      agentTab: 'chat',
       agentTestChatView: 'history',
     }
     const openingTest: DashboardRouteState = {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
+      agentTab: 'chat',
       agentTestExecutionId: '11111111-1111-4111-8111-111111111111',
     }
 
     expect(buildAgentSectionHref('account-1', onHistory, agentId, { agentTab: 'chat' }))
-      .toBe(`/w/support-abc123/agents/${agentId}`)
+      .toBe(`/w/support-abc123/agents/${agentId}?tab=chat`)
     expect(buildAgentSectionHref('account-1', openingTest, agentId, { agentTab: 'chat' }))
-      .toBe(`/w/support-abc123/agents/${agentId}`)
+      .toBe(`/w/support-abc123/agents/${agentId}?tab=chat`)
   })
 
   it('drops the test-execution parameter outside the agent chat tab', () => {
@@ -486,17 +535,17 @@ describe('dashboard route state', () => {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
-      agentTab: 'behavior',
+      agentTab: 'channels',
       agentTestExecutionId: executionId,
-    })).toBe(`/w/support-abc123/agents/${agentId}?tab=behavior`)
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=channels`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
-      tab: 'behavior',
+      tab: 'channels',
       testExecution: executionId,
     }))).toEqual({
       section: 'agents',
       agentId,
-      agentTab: 'behavior',
+      agentTab: 'channels',
     })
   })
 
@@ -573,6 +622,7 @@ describe('dashboard route state', () => {
   it('parses legacy routes into canonical route state', () => {
     expect(parseDashboardRoute(['chat'], new URLSearchParams({ workspace: 'workspace-1' }))).toEqual({
       section: 'agents',
+      agentTab: 'chat',
       workspaceId: 'workspace-1',
     })
 
@@ -642,13 +692,13 @@ describe('dashboard route state', () => {
       workspaceId: 'workspace-1',
       workspacePublicRouteKey: 'workspace-one-abc123',
       agentId: '67acb0c8-caad-4a1b-9fef-70cbca3f7d12',
-      agentTab: 'behavior',
+      agentTab: 'channels',
       anchor: 'anonymous-chat',
     }, 'workspace-2', 'workspace-two-abc123')).toEqual({
       section: 'agents',
       workspaceId: 'workspace-2',
       workspacePublicRouteKey: 'workspace-two-abc123',
-      agentTab: 'behavior',
+      agentTab: 'channels',
     })
 
     expect(retargetDashboardRouteToWorkspace({

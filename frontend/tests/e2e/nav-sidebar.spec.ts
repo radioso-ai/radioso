@@ -97,10 +97,13 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   // selected agent's compact navigation.
   await sidebar.getByRole("link", { name: "Agents" }).click();
   await expect(sidebar.getByRole("link", { name: "Ingestion" })).toHaveCount(0);
-  await expect(sidebar.getByRole("link", { name: "Test Chat" })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: "Channels", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: /^Build/ })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Test", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: /^Channels/ })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Profile" })).toHaveCount(0);
   await expect(sidebar.getByRole("link", { name: "Skills" })).toHaveCount(0);
+  // The Agents rail entry lands on the agent's Build page, so the Build row is the current one.
+  await expect(sidebar.getByRole("link", { name: /^Build/ })).toHaveAttribute("aria-current", "page");
 
   // The top-level Agents destination remains the rail entry; the selected
   // agent and its compact children are nested beneath it.

@@ -21,6 +21,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
+import { useAgentChannels } from '@/lib/agent-channels-context'
 import {
   slackApi,
   type SlackBinding,
@@ -44,6 +45,7 @@ const isConnected = (status: SlackInstallStatusResponse | null) => status?.statu
 const needsReauth = (status: SlackInstallStatusResponse | null) => status?.status === 'needs_reauth'
 
 export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChannelCardProps) {
+  const { refresh: refreshChannels } = useAgentChannels()
   const [status, setStatus] = useState<SlackInstallStatusResponse | null>(null)
   const [binding, setBinding] = useState<SlackBinding | null>(null)
   const [channelBindings, setChannelBindings] = useState<SlackBinding[]>([])
@@ -128,6 +130,13 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       void loadSlackState()
     })
   }, [loadSlackState])
+
+  // Whatever this card settles on (connected, bound, disconnected) is what the agent menu's Channels row shows.
+  const slackConnection = status?.status
+  const boundHere = binding?.answeringAgentId === agentId
+  useEffect(() => {
+    if (!isLoading && slackConnection) refreshChannels()
+  }, [boundHere, channelBindings.length, isLoading, refreshChannels, slackConnection])
 
   const startInstall = async () => {
     if (!workspaceId || !agentId) return

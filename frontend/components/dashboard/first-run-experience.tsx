@@ -400,6 +400,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                           if (persisted) {
                             router.push(buildDashboardHref(accountId, {
                               section: 'agents',
+                              agentTab: 'chat',
                               workspaceId: activeWorkspaceId ?? undefined,
                               workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                             }))

@@ -21,7 +21,7 @@ test("agent settings saves behavior and channel sections without retrieval drift
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior`);
 
   await expect(page.getByRole("heading", { name: "Profile", level: 1, exact: true })).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior$`));
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`));
   await page.getByLabel("Assistant name").fill("Marta Knowledge Desk");
 
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
@@ -46,7 +46,7 @@ test("agent settings saves behavior and channel sections without retrieval drift
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 });
 
-test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
+test("the channels overview offers the WhatsApp connector", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings: basePlatformSettings(),
@@ -108,9 +108,9 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=whatsapp-channel`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels`);
 
-  await expect(page.getByRole("link", { name: "WhatsApp" })).toBeVisible();
+  await page.getByRole("link", { name: "Set up WhatsApp" }).click();
   await expect(page.getByRole("heading", { name: "WhatsApp", level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "Configure WhatsApp" }).click();

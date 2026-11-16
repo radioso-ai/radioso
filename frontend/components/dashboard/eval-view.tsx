@@ -559,7 +559,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   }
 
   const goToChat = () => {
-    router.push(buildDashboardHref(accountId, { ...routeState, section: 'agents' }))
+    router.push(buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' }))
   }
 
   const goToActivity = () => {

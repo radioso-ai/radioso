@@ -56,7 +56,7 @@ const baseRoutine: Omit<RoutineFixture, "id" | "enabled" | "version"> = {
   updatedAt: nowIso,
 };
 
-const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`);
+const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?anchor=assistant-routines$`);
 
 // A routine row opens through one button named after the routine; its switch is labelled by
 // verb ("Enable …"), so anchoring on the leading name keeps this off the switch.

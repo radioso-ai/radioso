@@ -47,7 +47,7 @@ const completeSummary = (): Summary => freshSummary({
 describe("setup step links", () => {
   it("points each completable step at the dashboard surface that completes it", () => {
     expect(buildCopilotSetupStepLink("acme", "documents")).toBe("/w/acme/knowledge");
-    expect(buildCopilotSetupStepLink("acme", "conversation")).toBe("/w/acme/agents");
+    expect(buildCopilotSetupStepLink("acme", "conversation")).toBe("/w/acme/agents?tab=chat");
     expect(buildCopilotSetupStepLink("acme", "directives_or_routines")).toBe("/w/acme/agents?tab=behavior&anchor=assistant-directives");
     expect(buildCopilotSetupStepLink("acme", "notify_destination")).toBe("/w/acme/settings?anchor=webhook-destinations");
     expect(buildCopilotSetupStepLink("acme", "credential")).toBe("/w/acme/settings?tab=api-access");
@@ -155,7 +155,7 @@ describe("workspace setup context contributor", () => {
         steps: expect.arrayContaining([{ step: "documents", status: "todo" }]),
         nextSteps: [
           { step: "documents", dashboardUrl: "/w/acme/knowledge" },
-          { step: "conversation", dashboardUrl: "/w/acme/agents" },
+          { step: "conversation", dashboardUrl: "/w/acme/agents?tab=chat" },
           { step: "directives_or_routines", dashboardUrl: "/w/acme/agents?tab=behavior&anchor=assistant-directives" },
         ],
       },

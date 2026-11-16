@@ -9,6 +9,7 @@ import {
   type IssuedAgentChannelCredential,
 } from '@/lib/api-agent-channel-credentials'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { useAgentChannels } from '@/lib/agent-channels-context'
 
 export const agentChannelAudienceName = (audience: AgentChannelCredentialAudience): string =>
   audience === 'mcp' ? 'MCP' : 'Agent API'
@@ -38,6 +39,7 @@ export function useAgentChannelCredentials(
   agentId: string,
   audience: AgentChannelCredentialAudience,
 ): AgentChannelCredentialEngine {
+  const { refresh: refreshChannels } = useAgentChannels()
   const [credentials, setCredentials] = useState<AgentChannelCredential[]>([])
   const [issued, setIssued] = useState<IssuedAgentChannelCredential | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -117,6 +119,8 @@ export function useAgentChannelCredentials(
       if (scopeGeneration.current !== generation) return false
       setIssued(next)
       setCredentials((current) => [next.credential, ...current.filter((credential) => credential.id !== next.credential.id)])
+      // The first credential turns the channel on in the agent menu.
+      refreshChannels()
       return true
     } catch (createError: unknown) {
       if (scopeGeneration.current === generation) {
@@ -156,6 +160,7 @@ export function useAgentChannelCredentials(
       // Revoked access leaves the inventory: the list answers what can reach the agent now.
       setCredentials((current) => current.filter((credential) => credential.id !== credentialId))
       setIssued((current) => current?.credential.id === credentialId ? null : current)
+      refreshChannels()
       return true
     } catch (revokeError: unknown) {
       if (scopeGeneration.current === generation) setError(getApiErrorMessage(revokeError, 'Failed to revoke credential.'))

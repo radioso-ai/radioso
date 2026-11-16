@@ -38,7 +38,6 @@ export type AgentSectionId =
   | 'whatsapp-channel'
   | 'email-channel'
   | 'channels-overview'
-  | 'danger'
 
 type AgentSectionRoute = { agentTab: AgentTab; anchor?: string }
 
@@ -57,8 +56,37 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   'whatsapp-channel': { agentTab: 'channels', anchor: 'whatsapp-channel' },
   'email-channel': { agentTab: 'channels', anchor: 'email-channel' },
   'channels-overview': { agentTab: 'channels' },
-  danger: { agentTab: 'behavior', anchor: 'agent-danger-zone' },
 }
+
+/** The three rows the agent menu shows under the agent switcher. */
+export type AgentRowId = 'build' | 'test' | 'channels'
+
+// Build is everything the operator drafts, Test is the private chat, Channels is every page about
+// where visitors reach the agent. The Agent versions page keeps Build's tab bar, so it stays under Build.
+const AGENT_SECTION_ROWS: Record<AgentSectionId, AgentRowId> = {
+  chat: 'test',
+  changes: 'build',
+  profile: 'build',
+  directives: 'build',
+  routines: 'build',
+  skills: 'build',
+  'context-variables': 'build',
+  'web-chat': 'channels',
+  'api-channel': 'channels',
+  'mcp-channel': 'channels',
+  'slack-channel': 'channels',
+  'whatsapp-channel': 'channels',
+  'email-channel': 'channels',
+  'channels-overview': 'channels',
+}
+
+export const agentRowForSection = (section: AgentSectionId): AgentRowId => AGENT_SECTION_ROWS[section]
+
+/**
+ * Links that predate the agent menu name the delete confirmation by this anchor. It resolves to the
+ * Profile page, and the agent view opens the confirmation over it.
+ */
+export const AGENT_DELETE_ANCHOR = 'agent-danger-zone'
 
 const ASSISTANT_ANCHORS: Record<string, AgentSectionId> = {
   'assistant-changes': 'changes',
@@ -71,7 +99,7 @@ const ASSISTANT_ANCHORS: Record<string, AgentSectionId> = {
   'assistant-routines': 'routines',
   'assistant-skills': 'skills',
   'assistant-context-variables': 'context-variables',
-  'agent-danger-zone': 'danger',
+  [AGENT_DELETE_ANCHOR]: 'profile',
 }
 
 const CHANNEL_ANCHORS: Record<string, AgentSectionId> = {
@@ -95,7 +123,7 @@ export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'age
     return 'routines'
   }
 
-  const tab = routeState.agentTab ?? 'chat'
+  const tab = routeState.agentTab ?? 'behavior'
   const anchor = routeState.anchor
 
   if (tab === 'chat') {

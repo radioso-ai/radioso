@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, Mail, MessageCircle, ShieldAlert, Trash2, Users, Wrench } from 'lucide-react'
+import { Building2, FolderOpen, MessageCircle, ShieldAlert, Trash2, Users } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
@@ -19,9 +18,11 @@ import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
 import { VoiceChannelCard } from '@/components/dashboard/settings/voice-channel-card'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
-import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
-import { type AgentSectionId } from '@/lib/dashboard-areas'
-import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { AgentChannelsOverview } from '@/components/dashboard/agent-channels-overview'
+import { type AgentSectionId, agentSectionRoute } from '@/lib/dashboard-areas'
+import { buildAgentSectionHref, buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { useAgentChannels } from '@/lib/agent-channels-context'
+import { useAgentById, useAgents } from '@/lib/agents-context'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { mergeGeneralSettingsSnapshot } from '@/lib/general-settings-snapshot'
 import {
@@ -70,15 +71,6 @@ import { readCachedOrganizationName, writeCachedOrganizationName } from '@/lib/o
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
 type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel' | 'email-channel'
-
-const CHANNEL_TITLES: Record<ChannelId, string> = {
-  'web-chat': 'Web chat',
-  'api-channel': 'Agent API',
-  'mcp-channel': 'MCP channel',
-  'slack-channel': 'Slack',
-  'whatsapp-channel': 'WhatsApp',
-  'email-channel': 'Email',
-}
 
 const fallbackRetrievalDefaults: RetrievalDefaults = {
   queryRewriteEnabled: false,
@@ -132,7 +124,6 @@ export function WorkspaceAssistantChannelsTab({
   onSaveStateChange?: (input: SaveState) => void
   onDraftDirtyChange?: (dirty: boolean) => void
 }) {
-  const router = useRouter()
   const { logout } = useAuth()
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
@@ -151,13 +142,11 @@ export function WorkspaceAssistantChannelsTab({
   const [isDeletingOrg, setIsDeletingOrg] = useState(false)
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false)
   const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null)
-  const [agentName, setAgentName] = useState<string>('')
-  const [agentInternalName, setAgentInternalName] = useState<string>('')
-  const [agentCount, setAgentCount] = useState<number>(0)
-  const [deleteAgentConfirmName, setDeleteAgentConfirmName] = useState('')
-  const [isDeletingAgent, setIsDeletingAgent] = useState(false)
-  const [deleteAgentDialogOpen, setDeleteAgentDialogOpen] = useState(false)
-  const [deleteAgentError, setDeleteAgentError] = useState<string | null>(null)
+  const { onRenamed, refresh: refreshAgents } = useAgents()
+  const currentAgent = useAgentById(agentId)
+  const channels = useAgentChannels()
+  // The name the dashboard shows for this agent, as the agent area's list holds it (Profile only).
+  const labelledAgent = mode === 'assistant' ? currentAgent : undefined
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
@@ -179,7 +168,6 @@ export function WorkspaceAssistantChannelsTab({
   }, [dispatchDraftSaved, onSaveStateChange])
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
-  const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
   const [whatsappSetupOpen, setWhatsappSetupOpen] = useState(false)
   // When the second column drives selection, render exactly one section and
   // skip the in-page channel index/back affordance.
@@ -187,8 +175,7 @@ export function WorkspaceAssistantChannelsTab({
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
     id === 'web-chat' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
     || id === 'email-channel'
-  const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
-  const channelIndexEnabled = !agentSection || agentSection === 'channels-overview'
+  const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : null
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
@@ -271,11 +258,6 @@ export function WorkspaceAssistantChannelsTab({
       active = false
     }
   }, [accountId])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching agent/workspace returns the channels list to its index.
-    setSelectedChannel(null)
-  }, [agentId, activeWorkspaceId])
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
@@ -373,6 +355,8 @@ export function WorkspaceAssistantChannelsTab({
       const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
       setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
       setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+      // Turning the public chat on or off changes what the menu's Channels row counts.
+      channels.refresh()
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
     } finally {
@@ -410,61 +394,18 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  const canDeleteAgent = currentAccountRole === 'owner' || currentAccountRole === 'admin'
-  const isLastAgent = agentCount <= 1
-  const operatorAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, 'Agent')
+  const operatorAgentName = getAgentOperatorLabel(labelledAgent, 'Agent')
   // Slack must use an empty label fallback so the workspace assistant name can still be used.
-  const slackAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, '') || anonSettings?.assistantName || ''
-  const deleteAgentConfirmValid = deleteAgentConfirmName.trim() === operatorAgentName.trim()
+  const slackAgentName = getAgentOperatorLabel(labelledAgent, '') || anonSettings?.assistantName || ''
 
-  const handleDeleteAgent = async () => {
-    if (!agentId || !canDeleteAgent || !deleteAgentConfirmValid || isLastAgent) return
-    setIsDeletingAgent(true)
-    setDeleteAgentError(null)
-    try {
-      await agentsApi.deleteAgent(agentId)
-      setDeleteAgentDialogOpen(false)
-      setDeleteAgentConfirmName('')
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('radioso:agents-updated'))
-      }
-      router.push(`/account/${accountId}/agents`)
-    } catch (error) {
-      setDeleteAgentError(getApiErrorMessage(error, 'Failed to delete the agent.'))
-      setIsDeletingAgent(false)
-    }
-  }
-
-  useEffect(() => {
-    if (mode !== 'assistant') {
-      return
-    }
-
-    let active = true
-    void (async () => {
-      try {
-        const response = await agentsApi.listAgents()
-        if (!active) return
-        setAgentCount(response.agents.length)
-        if (agentId) {
-          const current = response.agents.find((agent) => agent.id === agentId)
-          setAgentName(current?.name ?? '')
-          setAgentInternalName(current?.internalName ?? '')
-        } else {
-          setAgentName('')
-          setAgentInternalName('')
-        }
-      } catch {
-        if (!active) return
-        setAgentCount(0)
-        setAgentName('')
-        setAgentInternalName('')
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [agentId, mode, activeWorkspaceId])
+  // A rename from the agent menu writes the server's names, so the fields held here take them too;
+  // otherwise the next autosave would write the old name back.
+  useEffect(() => onRenamed((renamed) => {
+    if (renamed.agentId !== agentId) return
+    const names: Partial<GeneralSettings> = { assistantName: renamed.name, internalName: renamed.internalName }
+    setAnonSettings((current) => current && { ...current, ...names })
+    setSavedAnonSettings((current) => current && { ...current, ...names })
+  }), [agentId, onRenamed])
 
   const effectiveRetrievalDefaults = retrievalDefaults ?? fallbackRetrievalDefaults
 
@@ -698,11 +639,7 @@ export function WorkspaceAssistantChannelsTab({
           setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
           setAssistantSettingsError(null)
           // Both feed the agent switcher's label; either change should refresh it.
-          if (nameChanged || internalNameChanged) {
-            window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
-              detail: { assistantName: updated.assistantName },
-            }))
-          }
+          if (nameChanged || internalNameChanged) void refreshAgents()
           if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
             setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
             setSaveState('saved')
@@ -721,7 +658,7 @@ export function WorkspaceAssistantChannelsTab({
       })()
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
+  }, [anonSettings, hasAssistantChanges, refreshAgents, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
 
   useEffect(() => {
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasLiveAssistantBehaviorChanges) {
@@ -940,69 +877,16 @@ export function WorkspaceAssistantChannelsTab({
           </section>
           ) : null}
 
-          {mode === 'channels' && isAnonLoading ? (
+          {mode === 'channels' && agentId && agentSection === 'channels-overview' ? (
+            <AgentChannelsOverview
+              hrefForChannel={(channelId) => buildAgentSectionHref(accountId, routeState ?? { section: 'agents' }, agentId, agentSectionRoute(channelId))}
+            />
+          ) : null}
+
+          {mode === 'channels' && isAnonLoading && agentSection !== 'channels-overview' ? (
           <section className="flex min-h-[320px] items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
           </section>
-          ) : null}
-
-          {mode === 'channels' && !isAnonLoading && channelIndexEnabled && selectedChannel === null ? (
-          <section className="space-y-4">
-            <SettingsRowList>
-              <SettingsRow
-                icon={<Globe className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['web-chat']}
-                description="A shareable link and a website widget, sharing one look and wording."
-                status={
-                  anonSettings?.anonymousChatEnabled || anonSettings?.websiteEmbedEnabled
-                    ? { label: 'On', tone: 'active' }
-                    : { label: 'Off', tone: 'muted' }
-                }
-                onClick={() => setSelectedChannel('web-chat')}
-              />
-              <SettingsRow
-                icon={<KeyRound className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['api-channel']}
-                description="Programmatic access for SDK clients and integrations."
-                onClick={() => setSelectedChannel('api-channel')}
-              />
-              <SettingsRow
-                icon={<Wrench className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['mcp-channel']}
-                description="Connect Model Context Protocol clients to this agent."
-                onClick={() => setSelectedChannel('mcp-channel')}
-              />
-              <SettingsRow
-                icon={<MessageCircle className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['slack-channel']}
-                description="Reply to Slack DMs with this agent."
-                onClick={() => setSelectedChannel('slack-channel')}
-              />
-              <SettingsRow
-                icon={<MessageCircle className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['whatsapp-channel']}
-                description="Manage the workspace WhatsApp connection."
-                onClick={() => setSelectedChannel('whatsapp-channel')}
-              />
-              <SettingsRow
-                icon={<Mail className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['email-channel']}
-                description="Answer mail sent to your own support address."
-                onClick={() => setSelectedChannel('email-channel')}
-              />
-            </SettingsRowList>
-          </section>
-          ) : null}
-
-          {mode === 'channels' && !isAnonLoading && channelIndexEnabled && selectedChannel !== null ? (
-          <button
-            type="button"
-            onClick={() => setSelectedChannel(null)}
-            className="inline-flex items-center gap-1 self-start text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            All channels
-          </button>
           ) : null}
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'web-chat' ? (
@@ -1068,7 +952,7 @@ export function WorkspaceAssistantChannelsTab({
             <SettingsCard
               icon={<MessageCircle className="h-5 w-5 text-primary" />}
               title="WhatsApp"
-              description="Connect a WhatsApp Business phone number so inbound messages can be answered by this agent."
+              description="One WhatsApp Business number serves the whole workspace, and the workspace's default agent answers it."
               headerEnd={
                 <Button type="button" onClick={() => setWhatsappSetupOpen(true)}>
                   Configure WhatsApp
@@ -1082,7 +966,11 @@ export function WorkspaceAssistantChannelsTab({
             <ConnectorSetupDialog
               open={whatsappSetupOpen}
               connectorId="whatsapp"
-              onOpenChange={setWhatsappSetupOpen}
+              onOpenChange={(open) => {
+                setWhatsappSetupOpen(open)
+                // Closing the setup is when a connection it saved starts to count in the agent menu.
+                if (!open) channels.refresh()
+              }}
             />
           </section>
           ) : null}
@@ -1255,102 +1143,6 @@ export function WorkspaceAssistantChannelsTab({
               </Dialog>
             </div>
             </div>
-            </SettingsCard>
-          </section>
-          ) : null}
-
-          {mode === 'assistant' && agentId && showSection('danger') ? (
-          <section id="agent-danger-zone" className="space-y-6 scroll-mt-24">
-            <SettingsCard
-              icon={<ShieldAlert className="h-5 w-5 text-destructive" />}
-              iconClassName="border-destructive/20 bg-destructive/10"
-              className="border-destructive/50"
-              title="Danger zone"
-              description="Permanent agent actions that cannot be undone."
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">Delete this agent</p>
-                  <p className="text-sm text-muted-foreground">
-                    Permanently delete this agent and its channel tokens, conversations, and settings. MCP connections stay in the workspace. This action cannot be undone.
-                  </p>
-                  {isLastAgent ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      You cannot delete your only agent in this workspace. Create another agent first.
-                    </p>
-                  ) : !canDeleteAgent ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Only owners and admins can delete agents.
-                    </p>
-                  ) : null}
-                </div>
-
-                <Dialog
-                  open={deleteAgentDialogOpen}
-                  onOpenChange={(open) => {
-                    setDeleteAgentDialogOpen(open)
-                    if (!open) {
-                      setDeleteAgentConfirmName('')
-                      setIsDeletingAgent(false)
-                      setDeleteAgentError(null)
-                    }
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
-                      disabled={!canDeleteAgent || isLastAgent}
-                      title={
-                        !canDeleteAgent
-                          ? 'Only owners and admins can delete agents'
-                          : isLastAgent
-                            ? 'Cannot delete the last agent in this workspace'
-                            : undefined
-                      }
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete agent
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Delete agent</DialogTitle>
-                      <DialogDescription>
-                        This will permanently delete the agent <strong>{operatorAgentName}</strong> and
-                        its channel tokens, conversations, and settings. MCP connections stay in the workspace. This action cannot be undone.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-2 py-2">
-                      <Label htmlFor="deleteAgentConfirm" className="text-foreground">
-                        Type <strong>{operatorAgentName}</strong> to confirm
-                      </Label>
-                      <Input
-                        id="deleteAgentConfirm"
-                        value={deleteAgentConfirmName}
-                        onChange={(event) => setDeleteAgentConfirmName(event.target.value)}
-                        placeholder={operatorAgentName}
-                        disabled={!canDeleteAgent || isLastAgent}
-                      />
-                    </div>
-                    {deleteAgentError ? <p className="text-sm text-destructive">{deleteAgentError}</p> : null}
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setDeleteAgentDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={handleDeleteAgent}
-                        disabled={!deleteAgentConfirmValid || !canDeleteAgent || isLastAgent}
-                        loading={isDeletingAgent} icon={<Trash2 />}
-                      >
-                        Delete agent
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
             </SettingsCard>
           </section>
           ) : null}

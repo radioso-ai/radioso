@@ -5,14 +5,10 @@ import { useState } from 'react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
-import { agentBundleApi, agentBundleFileName } from '@/lib/api'
+import { downloadAgentBundle } from '@/lib/agent-bundle-download'
 import { getApiErrorMessage } from '@/lib/api-error'
 
-/**
- * Downloads the agent as a file. The bundle is fetched and written to disk in one
- * action rather than opened in a tab: it is a document the operator moves, not a
- * page they read.
- */
+/** Downloads the agent as a file the operator can import into another workspace. */
 export function AgentBundleExportCard({
   agentId,
   agentName,
@@ -28,17 +24,7 @@ export function AgentBundleExportCard({
     setIsExporting(true)
     setError(null)
     try {
-      const bundle = await agentBundleApi.exportBundle(agentId)
-      const fileName = agentBundleFileName(agentName, new Date())
-      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = fileName
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      const fileName = await downloadAgentBundle(agentId, agentName)
       setExportedFileName(fileName)
     } catch (caught) {
       setError(getApiErrorMessage(caught, 'The agent could not be exported.'))

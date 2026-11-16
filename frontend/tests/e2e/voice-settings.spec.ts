@@ -236,7 +236,8 @@ test("switching to another agent shows that agent's own lines before its voice s
   const card = await openVoiceCard(page);
   await expect(card.getByRole("textbox", { name: "Check line 1" })).toHaveValue(BRIDGE_LINE);
 
-  await page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: "sales-desk" }).click();
+  await page.locator('[data-sidebar="sidebar"]').getByRole("button", { name: "support-desk", exact: true }).click();
+  await page.getByRole("menuitem", { name: "sales-desk" }).click();
   await expect(page).toHaveURL(new RegExp(otherAgentId));
   // While the other agent loads, nothing of the first agent's lines can be saved over it.
   await expect(page.getByRole("button", { name: "Save voice settings" })).toHaveCount(0);

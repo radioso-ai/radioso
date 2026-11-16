@@ -219,7 +219,7 @@ test("an operator who signs in through / and moves to Test Chat on the client ca
   await page.evaluate(() => { (window as Window & { enteredThroughRoot?: boolean }).enteredThroughRoot = true; });
   const sidebar = page.locator('[data-slot="sidebar-container"]');
   await sidebar.getByRole("link", { name: "Agents", exact: true }).click();
-  await sidebar.getByRole("link", { name: "Test Chat", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Test", exact: true }).click();
 
   await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
   await expect(page.getByRole("button", { name: "Talk" })).toBeEnabled();

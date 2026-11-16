@@ -5,10 +5,9 @@ import { useEffect, useRef, type KeyboardEvent } from 'react'
 
 import { cn } from '@/lib/utils'
 
-export type AgentCockpitTab = 'chat' | 'profile' | 'directives' | 'routines' | 'skills' | 'context-variables'
+export type AgentCockpitTab = 'profile' | 'directives' | 'routines' | 'skills' | 'context-variables'
 
 const TABS: Array<{ id: AgentCockpitTab; label: string }> = [
-  { id: 'chat', label: 'Test Chat' },
   { id: 'profile', label: 'Profile' },
   { id: 'directives', label: 'Directives' },
   { id: 'routines', label: 'Routines' },
@@ -17,7 +16,7 @@ const TABS: Array<{ id: AgentCockpitTab; label: string }> = [
 ]
 
 /**
- * Routed agent navigation. Links intentionally retain browser navigation and URL
+ * Build's routed tab bar. Links intentionally retain browser navigation and URL
  * ownership so unsaved-editor protections remain in the existing section hosts.
  */
 export function AgentCockpitNav({
@@ -51,7 +50,7 @@ export function AgentCockpitNav({
       <div role="tablist" className="flex snap-x snap-mandatory overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
           const active = tab.id === activeTab
-          // Versions is reached from the Test Chat overflow, so it intentionally has
+          // Versions is reached from the header's Versions link, so it intentionally has
           // no matching cockpit tab. Keep the first visible tab in the page's roving
           // tabindex in that state; otherwise a keyboard user cannot enter navigation.
           const tabbable = active || (activeTab === null && tab.id === TABS[0].id)

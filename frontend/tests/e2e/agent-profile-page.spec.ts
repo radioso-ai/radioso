@@ -32,8 +32,8 @@ test("name, instructions, model and answer settings share one Profile page", asy
 test("renaming the agent keeps an unsaved Profile draft while the agent switcher refreshes", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
-  // The name autosaves on its own; the agent list is then read again, by the sidebar's switcher
-  // and by the agent view, so count the reads that follow the save.
+  // The name autosaves on its own; the agent list is then read again, once, by the agent area's
+  // shared list that the sidebar's switcher and the agent view both read, so count the reads that follow the save.
   let nameSaved = false;
   let refreshReads = 0;
   page.on("request", (request) => {
@@ -50,7 +50,7 @@ test("renaming the agent keeps an unsaved Profile draft while the agent switcher
 
   await page.getByLabel("Assistant name").fill("Renamed Desk");
 
-  await expect.poll(() => refreshReads).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => refreshReads).toBe(1);
   await expect(page.getByRole("button", { name: "Renamed Desk", exact: true })).toBeVisible();
 
   // The refreshed list is in, and it must not have replaced the page: the unsaved draft is still on

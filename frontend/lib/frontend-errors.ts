@@ -1,3 +1,5 @@
+import { createFrontendErrorReportLimiter } from '@/lib/frontend-error-report-limiter'
+
 type FrontendErrorType =
   | 'frontend.react.unhandled'
   | 'frontend.runtime.unhandled'
@@ -178,8 +180,11 @@ interface FrontendErrorReporterOptions {
   sinks?: FrontendErrorSink[]
 }
 
+// A reporter is one page load's budget: the shell keeps a single reporter per
+// document, so the limiter it is created with caps what that page can send.
 export const createFrontendErrorReporter = (
   options: FrontendErrorReporterOptions = {},
+  limiter = createFrontendErrorReportLimiter(),
 ): FrontendErrorReporter => ({
   async report(input: FrontendErrorInput): Promise<FrontendErrorEvent | null> {
     if (options.enabled === false) {
@@ -203,6 +208,10 @@ export const createFrontendErrorReporter = (
       componentStack: truncate(input.componentStack, FRONTEND_ERROR_COMPONENT_STACK_MAX_LENGTH),
       path: sanitizeFrontendErrorPath(input.path),
       source: input.source ?? 'frontend',
+    }
+
+    if (!limiter.admit(event)) {
+      return null
     }
 
     await Promise.all((options.sinks ?? [new NoopFrontendErrorSink()]).map(async (sink) => {

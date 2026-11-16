@@ -14740,6 +14740,11 @@ components:
           type:
             - string
             - "null"
+          description: The words the visitor typed in the message this turn answers. Readings of attached photos are never included; null when the message had no words.
+        questionPhotoCount:
+          type: integer
+          minimum: 0
+          description: Photos the message this turn answers carried; 0 when it carried none.
         answerPreview:
           type: string
         skillName:
@@ -14782,6 +14787,7 @@ components:
         - agentInternalName
         - channel
         - question
+        - questionPhotoCount
         - answerPreview
         - skillName
         - skillOutcome

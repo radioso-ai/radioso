@@ -24,11 +24,12 @@ import {
 } from "../../modules/chat/contracts/voiceTurnFacts.js";
 import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
-import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb, visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
 import { parseStoredInputMetadata, type UserMessageInputMetadata } from "../../shared/domain/chatInputMetadata.js";
+import { visibleMessageText } from "../../shared/domain/visibleMessageText.js";
 import { carriesSensitiveValue, SENSITIVE_SLOT_KEYS_METADATA_KEY } from "../../shared/domain/sensitiveTranscript.js";
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -373,6 +374,13 @@ const toPreview = (content: string): string => {
     : normalized;
 };
 
+/** A message's list preview: the words a person reads in it, so a message with photos shows what was typed, never the readings. */
+const previewOfMessage = (row: { role: string; content: string; metadata_json: unknown }): string =>
+  toPreview(visibleMessageText({
+    content: row.content,
+    inputMetadata: row.role === "user" ? parseStoredInputMetadata(row.metadata_json) : undefined,
+  }).text);
+
 export class MessageRepository
   implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims, VoiceTurnFactsRecorder {
   constructor(private readonly db: Db) {}
@@ -705,15 +713,16 @@ export class MessageRepository
 
     const firstUserMessageRows = await this.db
       .selectFrom("messages")
-      .select(["conversation_id", "content"])
+      .select(["conversation_id", "role", "content", "metadata_json"])
       .distinctOn("conversation_id")
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "in", conversationIds)
       .where("role", "=", "user")
-      // Skip whitespace-only user messages so a blank first turn doesn't overwrite the
+      // Skip user messages with no words so a blank first turn doesn't overwrite the
       // newest-message fallback below with an empty preview; DISTINCT ON then naturally
-      // lands on the earliest *non-blank* user message, or none at all.
-      .where(sql<boolean>`btrim(content) <> ''`)
+      // lands on the earliest user message with *visible text* (a photo-only message has
+      // none), or none at all.
+      .where(sql<boolean>`btrim(${visibleMessageTextSql(sql.ref("content"), sql.ref("metadata_json"))}) <> ''`)
       .orderBy("conversation_id")
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
@@ -721,7 +730,7 @@ export class MessageRepository
 
     const newestMessageRows = await this.db
       .selectFrom("messages")
-      .select(["conversation_id", "content"])
+      .select(["conversation_id", "role", "content", "metadata_json"])
       .distinctOn("conversation_id")
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "in", conversationIds)
@@ -731,10 +740,10 @@ export class MessageRepository
       .execute();
 
     const previewByConversationId = new Map(
-      newestMessageRows.map((row) => [row.conversation_id, toPreview(row.content)]),
+      newestMessageRows.map((row) => [row.conversation_id, previewOfMessage(row)]),
     );
     for (const row of firstUserMessageRows) {
-      previewByConversationId.set(row.conversation_id, toPreview(row.content));
+      previewByConversationId.set(row.conversation_id, previewOfMessage(row));
     }
 
     for (const row of countRows) {

@@ -6,6 +6,7 @@ import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, T
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { visibleMessageText } from "../../shared/domain/visibleMessageText.js";
 
 type ClaimInput = Parameters<TestExecutionRepositoryPort["claimTurn"]>[0];
 type CompleteInput = Parameters<TestExecutionRepositoryPort["complete"]>[0];
@@ -27,7 +28,7 @@ const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): bo
 const spokenMark = (input: { spoken?: true }) => (input.spoken ? { spoken: true as const } : {});
 const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input), ...(input.photos ? { imageInput: input.photos.imageInput } : {}) }];
 /** What a turn is listed by: the operator's message, or, for one with photos, what they typed, never the readings the turn text carries. */
-const listedMessage = (input: ClaimInput): string => input.photos ? input.photos.imageInput.typedText : input.message;
+const listedMessage = (input: ClaimInput): string => visibleMessageText({ content: input.message, inputMetadata: { imageInput: input.photos?.imageInput } }).text;
 
 /**
  * Binds a new turn's photos to its test in the transaction that stores the turn, so a stored turn

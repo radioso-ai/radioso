@@ -10,6 +10,7 @@ import type { RecentlyClosedInboxItemsResponse } from '@/lib/api-types'
 import type { DeliveryFailure, HeldReply } from '@/lib/api-reply-review'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
+import { questionLabel } from '@/lib/visitor-image-input'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
 import { buildDeliveryFailureRows, buildHeldReplyRows } from '@/lib/needs-attention-reply-review'
 import { conversationOwner, type ConversationOwner } from '@/lib/operator-actions'
@@ -241,7 +242,7 @@ export const buildInboxModel = (input: {
       conversationId: turn.conversationId,
       type: 'negative_feedback',
       severity: ESCALATION_SEVERITY.negative_feedback,
-      title: turn.question || 'Low-quality answer',
+      title: questionLabel(turn) || 'Low-quality answer',
       detail: feedbackComment.comment,
       timestamp: feedbackActivityTimestamp(turn),
       // The turn's own creation time is the closest available proxy for "last

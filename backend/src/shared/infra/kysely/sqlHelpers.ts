@@ -52,6 +52,15 @@ export const jsonbSet = (
 ): RawBuilder<JsonValue> =>
   sql`jsonb_set(coalesce(${column}, '{}'::jsonb), ${sql.lit(`{${path.join(",")}}`)}, ${value}, true)`;
 
+/**
+ * The text of a user message as a person reads it, in SQL: what the visitor typed when the message
+ * carries photos (`imageInput.typedText` in its metadata), otherwise its content. The query-side
+ * twin of `visibleMessageText`, for a query that must pick or match a message by the words a
+ * person sees: `content` of a message with photos is the turn text, readings included.
+ */
+export const visibleMessageTextSql = (content: Expression<unknown>, metadata: Expression<unknown>): RawBuilder<string> =>
+  sql`coalesce(${metadata} -> 'imageInput' ->> 'typedText', ${content})`;
+
 /** `<expression>::text` — cast to text (e.g. to compare a uuid column against an arbitrary string). */
 export const castText = (expr: Expression<unknown>): RawBuilder<string> => sql`${expr}::text`;
 

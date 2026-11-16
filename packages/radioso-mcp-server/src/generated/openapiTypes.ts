@@ -10391,7 +10391,10 @@ export interface components {
             agentName: string | null;
             agentInternalName: string | null;
             channel: string | null;
+            /** @description The words the visitor typed in the message this turn answers. Readings of attached photos are never included; null when the message had no words. */
             question: string | null;
+            /** @description Photos the message this turn answers carried; 0 when it carried none. */
+            questionPhotoCount: number;
             answerPreview: string;
             skillName: string | null;
             skillOutcome: string | null;

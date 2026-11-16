@@ -42,6 +42,46 @@ export const visitorMessageBody = (message: {
     : { kind: 'text', text: message.content }
 }
 
+/** What a person reads of a visitor message: the words, and how many photos came with them. */
+export interface VisibleMessageText {
+  text: string
+  photoCount: number
+}
+
+/**
+ * What an operator surface shows of a visitor message outside the thread bubble that renders the
+ * photos themselves (a header, a preview, a default name): what was typed and the photo count,
+ * never `content`, whose reading blocks are for the agent's model. The backend's twin is
+ * `visibleMessageText` in `shared/domain/visibleMessageText.ts`; each side reads the one stored
+ * `imageInput`, here as the API returns it.
+ */
+export const visibleMessageText = (message: {
+  content: string
+  inputMetadata?: object | null
+}): VisibleMessageText => {
+  const imageInput = readVisitorImageInput(message.inputMetadata)
+  return imageInput
+    ? { text: imageInput.typedText, photoCount: imageInput.images.length }
+    : { text: message.content, photoCount: 0 }
+}
+
+/** The short marker that stands for photos where a surface has no room for them: "1 photo", "3 photos". */
+export const photoCountLabel = (photoCount: number): string =>
+  photoCount === 1 ? '1 photo' : `${photoCount} photos`
+
+/** A one-line label for a message shown without its photos: its words, then the photo marker; either alone when the other is absent. */
+export const visibleMessageLabel = ({ text, photoCount }: VisibleMessageText): string => {
+  const words = text.trim()
+  if (photoCount === 0) {
+    return words
+  }
+  return words ? `${words} · ${photoCountLabel(photoCount)}` : photoCountLabel(photoCount)
+}
+
+/** The label of the question a low-quality turn answered: its words and photo count, or '' when it has neither. */
+export const questionLabel = (turn: { question: string | null; questionPhotoCount?: number }): string =>
+  visibleMessageLabel({ text: turn.question ?? '', photoCount: turn.questionPhotoCount ?? 0 })
+
 /** The metadata of the visitor's own message the moment it is sent, before the server's reading exists. */
 export const withVisitorImageInput = (
   metadata: ChatUserInputMetadata | undefined,

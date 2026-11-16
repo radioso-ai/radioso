@@ -31,7 +31,9 @@ test), and `release` them when the turn stored none. The door renders
 the readings into the turn text with `renderVisitorImageTurn` and stores the
 structured form as the user message's `inputMetadata.imageInput`, whose shape
 the shared input-metadata vocabulary owns (`shared/domain/chatInputMetadata.ts`). This
-module never reads `messages`.
+module never reads `messages`. A surface that shows a user message to a person as text, outside the
+thread bubble, reads it through `visibleMessageText` (`shared/domain/visibleMessageText.ts`: the typed
+text and the photo count), never `content`, whose readings are for the model.
 
 It does not know which model reads a photo or how storage is reached:
 `VisitorImageReader` and `VisitorImageObjectStore` (over document storage's

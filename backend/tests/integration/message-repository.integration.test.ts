@@ -732,4 +732,45 @@ describeIntegration("MessageRepository (Postgres)", () => {
     const summary = summaries.get(conversationId);
     expect(summary?.preview).toBe("What are your shop hours?");
   });
+
+  describe("a visitor message with photos", () => {
+    const IMAGE_ID = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
+    const READING = "A landscape photo of rolling countryside.";
+    const photoTurn = (typedText: string) => ({
+      content: [typedText, `<attached_photo index="1">${READING}</attached_photo>`].filter(Boolean).join("\n"),
+      inputMetadata: { method: "typed" as const, imageInput: { typedText, images: [{ id: IMAGE_ID, reading: READING }] } },
+    });
+
+    it("previews what the visitor typed, never the readings the turn text carries", async () => {
+      const first = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("Something like this, please") });
+      await setTime(first.id, "2026-06-05T00:00:00.000Z");
+      const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "I found three farmhouses." });
+      await setTime(reply.id, "2026-06-05T00:00:01.000Z");
+
+      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
+
+      expect(summary?.preview).toBe("Something like this, please");
+    });
+
+    it("skips a photo-only first message, which has no words, and previews the next typed one", async () => {
+      const photoOnly = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("") });
+      await setTime(photoOnly.id, "2026-06-05T00:00:00.000Z");
+      const question = await repository.create({ conversationId, workspaceId, role: "user", content: "Do you have this in blue?" });
+      await setTime(question.id, "2026-06-05T00:00:01.000Z");
+
+      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
+
+      expect(summary?.preview).toBe("Do you have this in blue?");
+    });
+
+    it("never previews the readings when the photo is the newest message of a conversation nobody has answered", async () => {
+      const photoOnly = await repository.create({ conversationId, workspaceId, role: "user", ...photoTurn("") });
+      await setTime(photoOnly.id, "2026-06-05T00:00:00.000Z");
+
+      const summary = (await repository.summarizeByConversationIds(workspaceId, [conversationId])).get(conversationId);
+
+      expect(summary?.preview ?? "").not.toContain("attached_photo");
+      expect(summary?.preview ?? "").not.toContain(READING);
+    });
+  });
 });

@@ -2,6 +2,7 @@ import type { ChatConversationDetail, ChatConversationSummary, ConversationChann
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { EscalationType, HandoffCandidateSource } from '@/lib/needs-attention'
 import { deriveOperatorActions } from '@/lib/operator-actions'
+import { visibleMessageText, type VisibleMessageText } from '@/lib/visitor-image-input'
 
 /**
  * Pure presentation helpers for the operator inbox's response view (spec
@@ -168,28 +169,41 @@ export interface SituationSource {
    * or its caller.
    */
   summary?: string | null
-  firstVisitorMessage: string | null
+  firstVisitorMessage: VisibleMessageText | null
 }
 
 /**
- * Selects the situation card's body text: the rolling summary when available,
- * otherwise the visitor's first message. Never blocks on summary generation —
- * a missing or expired summary silently falls back.
+ * Selects the situation card's body: the rolling summary when available,
+ * otherwise the visitor's first message (its words and photo count). Never
+ * blocks on summary generation — a missing or expired summary silently falls
+ * back. A first message with neither words nor photos has no body.
  */
-export const selectSituationBody = (source: SituationSource): string | null =>
-  source.summary ?? source.firstVisitorMessage ?? null
+export const selectSituationBody = (source: SituationSource): VisibleMessageText | null => {
+  if (source.summary) {
+    return { text: source.summary, photoCount: 0 }
+  }
+  const first = source.firstVisitorMessage
+  return first && (first.text.trim() !== '' || first.photoCount > 0) ? first : null
+}
 
 interface ConversationMessageLike {
   source?: string
   role: string
   content: string
+  inputMetadata?: object | null
 }
 
-/** The visitor's first message in the conversation, for the situation-card fallback. */
+/**
+ * The visitor's first message in the conversation, for the situation-card
+ * fallback: what they typed and how many photos came with it, never the
+ * reading blocks their `content` carries for the agent's model.
+ */
 export const findFirstVisitorMessage = (
   messages: readonly ConversationMessageLike[],
-): string | null =>
-  messages.find((message) => message.source === 'customer' || message.role === 'user')?.content ?? null
+): VisibleMessageText | null => {
+  const message = messages.find((candidate) => candidate.source === 'customer' || candidate.role === 'user')
+  return message ? visibleMessageText(message) : null
+}
 
 // ── Done control (FR-010) ───────────────────────────────────────────────────
 

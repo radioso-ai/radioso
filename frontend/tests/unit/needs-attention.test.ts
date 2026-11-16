@@ -595,6 +595,18 @@ describe('buildInboxItems', () => {
     ])
   })
 
+  it('titles written feedback on a photo question by its words and photos, never the readings', () => {
+    const titleOf = (overrides: Partial<LowQualityTurn>) => buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn(overrides)],
+    })[0]?.title
+
+    expect(titleOf({ question: 'Something like this', questionPhotoCount: 1 })).toBe('Something like this · 1 photo')
+    expect(titleOf({ question: null, questionPhotoCount: 2 })).toBe('2 photos')
+    expect(titleOf({ question: null, questionPhotoCount: 0 })).toBe('Low-quality answer')
+  })
+
   it('orders critical escalations above written feedback', () => {
     const items = buildInboxItems({
       decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],

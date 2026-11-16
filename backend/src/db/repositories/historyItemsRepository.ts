@@ -3,6 +3,7 @@ import { sql, type RawBuilder } from "kysely";
 import type { AuditEventRecord } from "./auditEventRepository.js";
 import type { ConversationRecord } from "./conversationRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
@@ -27,10 +28,12 @@ const toContainsPattern = (value: string): string => `%${escapeLikePattern(value
 
 /**
  * `q` matches the same text the row displays (see `resolveConversationDisplayTitle` on the
- * frontend): the generated title, OR the conversation's first non-blank user-role message —
- * the same message `messageRepository.summarizeByConversationIds`'s DISTINCT ON preview query
- * surfaces for this conversation. A later message (an assistant reply, or a second user
- * message) never counts; only the single earliest non-blank user message does.
+ * frontend): the generated title, OR the conversation's first user-role message with visible
+ * text — the same message `messageRepository.summarizeByConversationIds`'s DISTINCT ON preview
+ * query surfaces for this conversation, read the way it reads it (`visibleMessageTextSql`: what
+ * was typed beside photos, never the readings their turn text carries). A later message (an
+ * assistant reply, or a second user message) never counts; only the single earliest user
+ * message with words does.
  */
 const buildTextSearchFilter = (
   q: string | undefined,
@@ -42,15 +45,16 @@ const buildTextSearchFilter = (
     return sql``;
   }
   const pattern = toContainsPattern(q);
+  const visibleText = visibleMessageTextSql(sql.ref("m.content"), sql.ref("m.metadata_json"));
   return sql`AND (
     ${titleColumn} ILIKE ${pattern}
     OR (
-      SELECT m.content
+      SELECT ${visibleText}
       FROM messages m
       WHERE m.conversation_id = ${idColumn}
         AND m.workspace_id = ${workspaceColumn}
         AND m.role = 'user'
-        AND btrim(m.content) <> ''
+        AND btrim(${visibleText}) <> ''
       ORDER BY m.created_at ASC, m.id ASC
       LIMIT 1
     ) ILIKE ${pattern}

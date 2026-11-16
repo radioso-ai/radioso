@@ -8,7 +8,7 @@ import {
 /** A document names one picture for itself; a few addresses leave room for one being a site banner. */
 const MAX_PRIMARY_IMAGES = 3;
 /** More than capture keeps, because capture drops small images only once it has decoded them. */
-const MAX_INLINE_IMAGES = 24;
+export const MAX_INLINE_IMAGES = 24;
 /** The `document_images.source_url` bound. */
 const MAX_SOURCE_URL_LENGTH = 2048;
 const MAX_ALT_LENGTH = 300;
@@ -23,9 +23,27 @@ const cleanText = (value: unknown, max: number): string =>
     ? value.replace(CONTROL_CHARACTERS, " ").replace(/\s+/g, " ").trim().slice(0, max).trimEnd()
     : "";
 
-/** An absolute http(s) address within the column's bound that is not an SVG file, or null. */
-const acceptedSourceUrl = (value: unknown): string | null => {
+/**
+ * A picture embedded in an uploaded file has no address: it is named by `embedded:` and the
+ * SHA-256 of its bytes, so the same picture keeps its row across re-processing, and a picture used
+ * twice in a file is one image.
+ */
+const EMBEDDED_SOURCE_PREFIX = "embedded:";
+const EMBEDDED_SOURCE = /^embedded:[0-9a-f]{64}$/;
+
+/** The source key of a picture embedded in an uploaded file, from the SHA-256 of its bytes. */
+export const embeddedImageSource = (sha256: string): string => `${EMBEDDED_SOURCE_PREFIX}${sha256}`;
+
+/** Whether a row's source names a picture embedded in its document's file rather than an address. */
+export const isEmbeddedImageSource = (sourceUrl: string): boolean => sourceUrl.startsWith(EMBEDDED_SOURCE_PREFIX);
+
+/**
+ * An absolute http(s) address within the column's bound that is not an SVG file, or, where the
+ * caller reads pictures from the document's own file, an embedded picture's key; else null.
+ */
+const acceptedSourceUrl = (value: unknown, acceptEmbedded: boolean): string | null => {
   if (typeof value !== "string" || value.length > MAX_SOURCE_URL_LENGTH) return null;
+  if (EMBEDDED_SOURCE.test(value)) return acceptEmbedded ? value : null;
   try {
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
@@ -66,7 +84,8 @@ const pastTrailingPunctuation = (text: string, offset: number): number => {
  */
 const placeInStoredText = (content: string, offset: number, storedText: string): number | null => {
   if (!Number.isInteger(offset) || offset < 0 || offset > content.length) return null;
-  if (content === storedText) return offset;
+  // The stored text, or its start when a reader stopped early: the offset holds as it is.
+  if (storedText.startsWith(content)) return offset;
   const before = projectLetters(content.slice(0, offset)).letters;
   if (before.length === 0) return 0;
   const stored = projectLetters(storedText);
@@ -81,18 +100,21 @@ const placeInStoredText = (content: string, offset: number, storedText: string):
 /**
  * The images a document keeps from what its source named: valid addresses only, each once,
  * metadata images first, both kinds capped, alt text and captions cleaned, and each inline image's
- * offset moved from the ingested content into the stored text the chunks are cut from.
+ * offset moved from the ingested content into the stored text the chunks are cut from. An embedded
+ * picture's key is kept only when `embedded` says the candidates come from the document's own
+ * file: a page or a connector can never name one.
  */
 export const placeDocumentImages = (input: {
   candidates: readonly DocumentImageCandidate[];
   content: string;
   storedText: string;
+  embedded?: boolean;
 }): PlacedDocumentImage[] => {
   const seen = new Set<string>();
   // Sources are typed, but a crawler provider's pages arrive as data: an entry that is not an object is dropped.
   const accepted = input.candidates.flatMap((candidate: DocumentImageCandidate | null | undefined) => {
     if (!candidate || typeof candidate !== "object") return [];
-    const sourceUrl = acceptedSourceUrl(candidate.sourceUrl);
+    const sourceUrl = acceptedSourceUrl(candidate.sourceUrl, input.embedded === true);
     if (!sourceUrl || seen.has(sourceUrl) || (candidate.role !== "primary" && candidate.role !== "inline")) return [];
     seen.add(sourceUrl);
     return [{ ...candidate, sourceUrl }];

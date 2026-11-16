@@ -1,7 +1,7 @@
 ---
 title: "Document processing"
 description: "Operating the document worker and understanding the implications for user-visible behavior."
-last_updated: 2026-10-17
+last_updated: 2026-11-16
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -39,7 +39,7 @@ The worker materializes the source content, applies workspace ingestion settings
 
 If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags — the built-in `dateFrom` and `dateTo`, plus whatever fields the matched document type declares — onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 
-When the content names pictures (a crawled page's `og:image` and the images in its main content, a WordPress featured image), the worker also queues an `images` job at the same low priority. It fetches each picture from its public address, keeps a WebP copy at 320 and 640 pixels wide in document storage, and ties each picture in the text to the chunk it sits in. A picture under 200 pixels on its short side, an SVG, or one at an address that is not public is not kept, a document keeps at most 12, and a picture that cannot be fetched never fails the document. One that timed out is tried again on the next sync. [Show picture cards in replies](/guides/reply-cards) lists what is kept.
+When the content names pictures (a crawled page's `og:image` and the images in its main content, a WordPress featured image), and after every uploaded Word document, PDF or Markdown file, the worker also queues an `images` job at the same low priority. It fetches each picture from its public address, or reads it from the uploaded file in document storage, keeps a WebP copy at 320 and 640 pixels wide, and ties each picture in the text to the chunk it sits in. A picture under 200 pixels on its short side, an SVG, or one at an address that is not public is not kept, a document keeps at most 12, and a picture that cannot be fetched or read never fails the document. One that timed out is tried again on the next sync. [Show picture cards in replies](/guides/reply-cards) lists what is kept.
 </Steps>
 
 ## What users will notice
@@ -95,7 +95,7 @@ A processed chunk is only a search candidate once it has an embedding filed unde
 4. Confirm embeddings are succeeding for new jobs.
 5. Confirm embedding coverage is climbing rather than parked with failed jobs.
 6. Confirm the queue is draining rather than growing.
-7. For pictures that do not appear, read `document_image_capture_total` by `outcome`: `blocked_address`, `timeout` and `unreachable` point at the network path from the worker, `too_small` and `unsupported_type` at the content itself.
+7. For pictures that do not appear, read `document_image_capture_total` by `outcome`: `blocked_address`, `timeout` and `unreachable` point at the network path from the worker, `too_small` and `unsupported_type` at the content itself. Its `source` label says where a picture came from: `crawler_metadata`, `crawler_inline`, `wordpress_featured` and `wordpress_inline` for pages and posts, `docx`, `pdf` and `markdown` for uploaded files. For an uploaded file, `unreachable` means the worker could not read the file or its pictures; processing the document again reads it again.
 
 <Callout type="warning" emoji="!">
   Do not debug a missing answer from a fresh upload as a retrieval bug until processing has completed for that document revision.

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { placeDocumentImages } from "../../../src/modules/documents/domain/documentImageCandidates.js";
+import {
+  embeddedImageSource,
+  isEmbeddedImageSource,
+  placeDocumentImages,
+} from "../../../src/modules/documents/domain/documentImageCandidates.js";
 
 const CONTENT = [
   "# Alpine Flowers",
@@ -118,5 +122,32 @@ describe("placeDocumentImages", () => {
     });
 
     expect(image?.textOffset).toBe(0);
+  });
+
+  describe("pictures embedded in an uploaded file", () => {
+    const key = embeddedImageSource("ab".repeat(32));
+
+    it("keeps an embedded picture's key only from the document's own file, never from a page or a connector", () => {
+      const candidates = [{ sourceUrl: key, role: "inline" as const, textOffset: 0 }];
+
+      expect(placeDocumentImages({ content: CONTENT, storedText: CONTENT, candidates })).toEqual([]);
+      expect(placeDocumentImages({ content: CONTENT, storedText: CONTENT, candidates, embedded: true }).map((image) => image.sourceUrl)).toEqual([key]);
+      expect(placeDocumentImages({
+        content: CONTENT, storedText: CONTENT, embedded: true,
+        candidates: [{ sourceUrl: "embedded:not-a-hash", role: "inline", textOffset: 0 }],
+      })).toEqual([]);
+      expect(isEmbeddedImageSource(key)).toBe(true);
+      expect(isEmbeddedImageSource("https://cdn.shop.example/ridge.jpg")).toBe(false);
+    });
+
+    it("keeps the offset as it is when the text read is the start of the stored text", () => {
+      const start = CONTENT.slice(0, CONTENT.indexOf("Edelweiss") - 2);
+      const [image] = placeDocumentImages({
+        content: start, storedText: CONTENT, embedded: true,
+        candidates: [{ sourceUrl: key, role: "inline", textOffset: start.indexOf("Gentians on the ridge") }],
+      });
+
+      expect(image?.textOffset).toBe(CONTENT.indexOf("Gentians on the ridge"));
+    });
   });
 });

@@ -43,21 +43,22 @@ const readRenditions = (value: unknown): DocumentImageRendition[] =>
   }));
 
 /**
- * Per stored primary of the `image` alias, how many documents call the same picture their own,
- * counted from the covering index and only up to the limit: past it, the answer no longer changes.
+ * Per stored image of the `image` alias, how many documents carry the same picture in the same
+ * role, counted from the covering index and only up to the limit: past it, the answer no longer
+ * changes.
  */
-const primaryDocumentCount = (limit: number) => sql<number>`CASE WHEN image.role = 'primary' AND image.status = 'stored' THEN (
+const sharedDocumentCount = (limit: number) => sql<number>`CASE WHEN image.status = 'stored' THEN (
   SELECT count(*)::int FROM (
     SELECT DISTINCT other.document_id
     FROM document_images AS other
     WHERE other.workspace_id = image.workspace_id
+      AND other.role = image.role
       AND other.sha256 = image.sha256
       AND other.status = 'stored'
-      AND other.role = 'primary'
       AND other.document_id IS NOT NULL
     LIMIT ${Math.max(1, Math.trunc(limit))}
   ) AS sharing
-) ELSE 0 END`.as("primary_document_count");
+) ELSE 0 END`.as("shared_document_count");
 
 const isRole = (value: string): value is DocumentImageRole => value === "primary" || value === "inline";
 const isStatus = (value: string): value is DocumentImageStatus => value === "pending" || value === "stored" || value === "skipped";
@@ -81,7 +82,7 @@ export class DocumentImageRepository implements
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
-    primaryDocumentCountLimit: number;
+    sharedDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]> {
     if (input.documentIds.length === 0 && input.chunkIds.length === 0) {
       return [];
@@ -89,7 +90,7 @@ export class DocumentImageRepository implements
     const rows = await this.db
       .selectFrom("document_images as image")
       .select(["image.id", "image.document_id", "image.chunk_id", "image.role", "image.position", "image.alt", "image.caption", "image.width", "image.height", "image.sha256"])
-      .select(primaryDocumentCount(input.primaryDocumentCountLimit))
+      .select(sharedDocumentCount(input.sharedDocumentCountLimit))
       .where("image.workspace_id", "=", input.workspaceId)
       .where("image.status", "=", "stored")
       .where((eb) => eb.or([
@@ -118,7 +119,7 @@ export class DocumentImageRepository implements
         width: row.width,
         height: row.height,
         sha256: row.sha256,
-        primaryDocumentCount: Number(row.primary_document_count),
+        sharedDocumentCount: Number(row.shared_document_count),
       }];
     });
   }
@@ -205,11 +206,11 @@ export class DocumentImageRepository implements
     });
   }
 
-  async listForDocument(input: { workspaceId: string; documentId: string; primaryDocumentCountLimit: number }): Promise<ListedDocumentImage[]> {
+  async listForDocument(input: { workspaceId: string; documentId: string; sharedDocumentCountLimit: number }): Promise<ListedDocumentImage[]> {
     const rows = await this.db
       .selectFrom("document_images as image")
       .select(["image.id", "image.role", "image.status", "image.alt", "image.caption", "image.width", "image.height", "image.source_url"])
-      .select(primaryDocumentCount(input.primaryDocumentCountLimit))
+      .select(sharedDocumentCount(input.sharedDocumentCountLimit))
       .where("image.workspace_id", "=", input.workspaceId)
       .where("image.document_id", "=", input.documentId)
       .orderBy("image.position")
@@ -225,7 +226,7 @@ export class DocumentImageRepository implements
           width: row.width,
           height: row.height,
           sourceUrl: row.source_url,
-          primaryDocumentCount: Number(row.primary_document_count),
+          sharedDocumentCount: Number(row.shared_document_count),
         }]);
   }
 

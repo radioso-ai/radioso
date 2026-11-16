@@ -13,7 +13,7 @@ interface StoredRendition {
 }
 
 /** A stored image as a test seeds it: the share count is derived, as the database derives it. */
-type SeededImage = Omit<StoredDocumentImageRef, "primaryDocumentCount">;
+type SeededImage = Omit<StoredDocumentImageRef, "sharedDocumentCount">;
 
 /** Stored document images held in memory: what an answer's evidence reads, and what the image route serves. */
 export class InMemoryDocumentImages implements DocumentImageEvidenceReader, DocumentImageObjectLookup {
@@ -31,20 +31,18 @@ export class InMemoryDocumentImages implements DocumentImageEvidenceReader, Docu
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
-    primaryDocumentCountLimit: number;
+    sharedDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]> {
     const inWorkspace = [...this.images.values()].filter(({ workspaceId }) => workspaceId === input.workspaceId);
-    const primaryDocumentCount = (ref: SeededImage): number => ref.role === "primary"
-      ? new Set(inWorkspace
-        .filter((entry) => entry.ref.role === "primary" && entry.ref.sha256 === ref.sha256)
-        .map((entry) => entry.ref.documentId)).size
-      : 0;
-    const counted = (ref: SeededImage): number => Math.min(primaryDocumentCount(ref), input.primaryDocumentCountLimit);
+    const sharedDocumentCount = (ref: SeededImage): number => new Set(inWorkspace
+      .filter((entry) => entry.ref.role === ref.role && entry.ref.sha256 === ref.sha256)
+      .map((entry) => entry.ref.documentId)).size;
+    const counted = (ref: SeededImage): number => Math.min(sharedDocumentCount(ref), input.sharedDocumentCountLimit);
     return inWorkspace
       .filter(({ ref }) =>
         (ref.role === "primary" && input.documentIds.includes(ref.documentId))
         || (ref.role === "inline" && ref.chunkId !== null && input.chunkIds.includes(ref.chunkId)))
-      .map(({ ref }) => ({ ...ref, primaryDocumentCount: counted(ref) }));
+      .map(({ ref }) => ({ ...ref, sharedDocumentCount: counted(ref) }));
   }
 
   async findServable(input: { imageId: string; width: number }) {

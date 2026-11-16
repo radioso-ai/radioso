@@ -5,20 +5,21 @@ import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 const EVIDENCE_IMAGES_PER_ITEM = 3;
 
 /**
- * Many sites name the same `og:image` on every page: a banner or a logo. A picture more than this
- * many documents in the workspace name as their own is the site's, not any one document's, so it
- * is never shown as a document's main picture. The rule is structural (how widely one picture is
- * shared), and it is read at answer time, so it follows documents as they come and go. A series
- * that shares a cover across a handful of volumes stays under it.
+ * Many sites name the same `og:image` on every page, and many uploads carry the same logo at the
+ * top of their text: a banner or a logo. A picture more than this many documents in the workspace
+ * carry in the same role is the site's, not any one document's, so it is never shown as a
+ * document's own. The rule is structural (how widely one picture is shared), and it is read at
+ * answer time, so it follows documents as they come and go. A series that shares a cover across a
+ * handful of volumes stays under it.
  */
-const SITE_BANNER_PRIMARY_DOCUMENTS = 5;
+const SITE_BANNER_DOCUMENTS = 5;
 
-/** How far the reader counts the documents that share a primary: one past the threshold settles the rule. */
-export const PRIMARY_DOCUMENT_COUNT_LIMIT = SITE_BANNER_PRIMARY_DOCUMENTS + 1;
+/** How far the reader counts the documents that share a picture: one past the threshold settles the rule. */
+export const SHARED_DOCUMENT_COUNT_LIMIT = SITE_BANNER_DOCUMENTS + 1;
 
-/** Whether a stored image is a site banner rather than its document's own main picture. */
-export const isSiteBanner = (image: Pick<StoredDocumentImageRef, "role" | "primaryDocumentCount">): boolean =>
-  image.role === "primary" && image.primaryDocumentCount > SITE_BANNER_PRIMARY_DOCUMENTS;
+/** Whether a stored image is a site banner or a shared logo rather than its document's own picture. */
+export const isSiteBanner = (image: Pick<StoredDocumentImageRef, "sharedDocumentCount">): boolean =>
+  image.sharedDocumentCount > SITE_BANNER_DOCUMENTS;
 
 /** The part of an evidence item that decides which images it carries. */
 export interface EvidenceContext {

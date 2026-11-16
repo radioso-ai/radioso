@@ -77,10 +77,10 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
     return { captureNeeded };
   }
 
-  async listForDocument(input: { workspaceId: string; documentId: string; primaryDocumentCountLimit: number }): Promise<ListedDocumentImage[]> {
-    const sharing = (row: Row): number => row.role === "primary" && row.status === "stored"
-      ? Math.min(input.primaryDocumentCountLimit, new Set([...this.rows.values()]
-        .filter((other) => other.workspaceId === row.workspaceId && other.documentId !== null && other.role === "primary"
+  async listForDocument(input: { workspaceId: string; documentId: string; sharedDocumentCountLimit: number }): Promise<ListedDocumentImage[]> {
+    const sharing = (row: Row): number => row.status === "stored"
+      ? Math.min(input.sharedDocumentCountLimit, new Set([...this.rows.values()]
+        .filter((other) => other.workspaceId === row.workspaceId && other.documentId !== null && other.role === row.role
           && other.status === "stored" && other.sha256 === row.sha256)
         .map((other) => other.documentId)).size)
       : 0;
@@ -88,7 +88,7 @@ export class InMemoryDocumentImageRows implements DocumentImageCandidateWriter, 
       .filter((row) => row.workspaceId === input.workspaceId)
       .map((row) => ({
         id: row.id, role: row.role, status: row.status, alt: row.alt, caption: row.caption, width: row.width, height: row.height,
-        sourceUrl: row.sourceUrl, primaryDocumentCount: sharing(row),
+        sourceUrl: row.sourceUrl, sharedDocumentCount: sharing(row),
       }));
   }
 

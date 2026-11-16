@@ -9,6 +9,8 @@ export const DOCUMENT_IMAGE_RENDITION_WIDTHS = [320, 640] as const;
  */
 export const MAX_STORED_IMAGES_PER_DOCUMENT = 12;
 
+/** Icons, spacers and tracking pixels are smaller than this on their short side; no document keeps one. */
+export const MIN_DOCUMENT_IMAGE_SHORT_SIDE_PX = 200;
 
 /**
  * Where an image sits in its document: `primary` is the one the document's metadata names (a
@@ -35,11 +37,11 @@ export interface StoredDocumentImageRef {
   height: number;
   sha256: string;
   /**
-   * Primary only: how many documents in the workspace name an image with this content as their
-   * own stored primary, this one included, counted no higher than the reader was asked to count.
-   * Zero for an inline image.
+   * How many documents in the workspace name an image with this content as their
+   * own stored image in the same role, this one included, counted no higher than the reader was
+   * asked to count.
    */
-  primaryDocumentCount: number;
+  sharedDocumentCount: number;
 }
 
 /** Reads the stored images an answer's evidence can present. */
@@ -53,8 +55,8 @@ export interface DocumentImageEvidenceReader {
     workspaceId: string;
     documentIds: readonly string[];
     chunkIds: readonly string[];
-    /** Where counting the documents that share a primary stops, so the count costs at most this many index reads. */
-    primaryDocumentCountLimit: number;
+    /** Where counting the documents that share a picture stops, so the count costs at most this many index reads. */
+    sharedDocumentCountLimit: number;
   }): Promise<StoredDocumentImageRef[]>;
 }
 
@@ -69,7 +71,10 @@ export interface DocumentImageObjectLookup {
  * content says about it, never its bytes.
  */
 export interface DocumentImageCandidate {
-  /** Absolute http(s) address. */
+  /**
+   * Absolute http(s) address, or, for a picture embedded in an uploaded file, `embedded:` and the
+   * SHA-256 of its bytes (only the file's own reader may name one).
+   */
   sourceUrl: string;
   role: DocumentImageRole;
   alt?: string;
@@ -166,8 +171,8 @@ export interface DocumentImageSummary {
   height: number | null;
   sourceUrl: string;
   /**
-   * A stored main picture that so many documents in the workspace name as theirs that it is the
-   * site's (a banner, a logo): answers never show it as this document's own.
+   * A stored picture that so many documents in the workspace carry in the same role that it is the
+   * site's (a banner, a logo on every upload): answers never show it as this document's own.
    */
   siteWide: boolean;
   /** The stored copy's address at its widest width, and every width as a `srcset`; present once stored. */
@@ -182,13 +187,13 @@ export interface DocumentImageListing {
 
 /** A document's image row as its detail is built from: its share count in place of the verdicts. */
 export type ListedDocumentImage = Omit<DocumentImageSummary, "siteWide" | "src" | "srcSet"> & {
-  /** As on {@link StoredDocumentImageRef}: zero for an inline or unstored image. */
-  primaryDocumentCount: number;
+  /** As on {@link StoredDocumentImageRef}: zero for an unstored image. */
+  sharedDocumentCount: number;
 };
 
-/** Reads a document's image rows, counting shared primaries no higher than asked. */
+/** Reads a document's image rows, counting shared pictures no higher than asked. */
 export interface DocumentImageRows {
-  listForDocument(input: { workspaceId: string; documentId: string; primaryDocumentCountLimit: number }): Promise<ListedDocumentImage[]>;
+  listForDocument(input: { workspaceId: string; documentId: string; sharedDocumentCountLimit: number }): Promise<ListedDocumentImage[]>;
 }
 
 /** The rows a deleted document, or a re-sync, released: their stored copies are deleted, then the rows. */

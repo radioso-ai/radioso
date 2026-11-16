@@ -109,6 +109,30 @@ describe("DocumentImageCaptureQueue", () => {
     expect(dispatcher.dispatch).toHaveBeenCalledTimes(2);
   });
 
+  it("queues capture after an upload whose type carries pictures is published, before any image is recorded", async () => {
+    const uploads: Record<string, { sourceKind: string; sourceFilename: string; sourceMimeType: string | null }> = {
+      "33333333-3333-4333-8333-333333333331": { sourceKind: "uploaded_file", sourceFilename: "guide.docx", sourceMimeType: null },
+      "33333333-3333-4333-8333-333333333332": { sourceKind: "uploaded_file", sourceFilename: "flowers.pdf", sourceMimeType: "application/pdf" },
+      "33333333-3333-4333-8333-333333333333": { sourceKind: "uploaded_file", sourceFilename: "notes.md", sourceMimeType: "text/markdown" },
+      "33333333-3333-4333-8333-333333333334": { sourceKind: "uploaded_file", sourceFilename: "notes.txt", sourceMimeType: "text/plain" },
+      "33333333-3333-4333-8333-333333333335": { sourceKind: "inline_text", sourceFilename: "page.md", sourceMimeType: null },
+    };
+    const rows = new InMemoryDocumentImageRows();
+    const jobs = new InMemoryDocumentProcessingJobRepository(new InMemoryDocumentRepository());
+    const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined), dispatchMany: vi.fn().mockResolvedValue(undefined) };
+    const queue = new DocumentImageCaptureQueue({
+      images: rows, jobs, dispatcher,
+      documents: { findByIdAndWorkspaceId: async (documentId) => uploads[documentId] ?? null },
+    });
+
+    for (const documentId of Object.keys(uploads)) {
+      await queue.afterRevisionPublished({ documentId, workspaceId: WORKSPACE_ID, documentRevision: 1 });
+    }
+
+    expect([...jobs.items.values()].filter((job) => job.kind === "images").map((job) => uploads[job.documentId]?.sourceFilename).sort())
+      .toEqual(["flowers.pdf", "guide.docx", "notes.md"]);
+  });
+
   it("never fails the caller when recording or queueing does", async () => {
     const { queue, rows, dispatcher, logger } = setup();
     rows.recordCandidates = () => Promise.reject(new Error("database unavailable"));

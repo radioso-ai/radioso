@@ -8295,12 +8295,12 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description `primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text.
+             * @description `primary` is the picture the document's metadata names for itself (a page's `og:image`, a post's featured image); `inline` sits in its text, including a picture embedded in an uploaded DOCX or PDF.
              * @enum {string}
              */
             role: "primary" | "inline";
             /**
-             * @description `stored` once Radioso keeps a copy; `pending` until the worker fetches it; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).
+             * @description `stored` once Radioso keeps a copy; `pending` until the worker fetches it or reads it from the uploaded file; `skipped` when it was refused (smaller than 200 px on its short side, a type Radioso does not read, too large, or at an address it may not fetch).
              * @enum {string}
              */
             status: "pending" | "stored" | "skipped";
@@ -8309,9 +8309,9 @@ export interface components {
             /** @description The source's upright width in pixels; null until stored. */
             width: number | null;
             height: number | null;
-            /** @description The address the content names the picture by. */
+            /** @description The address the content names the picture by; for a picture embedded in an uploaded file, `embedded:` followed by the SHA-256 of its bytes. */
             sourceUrl: string;
-            /** @description A stored main picture that more than five documents in the workspace name as theirs, such as a site banner: answers never show it as this document's own. */
+            /** @description A stored picture that more than five documents in the workspace carry in the same role, such as a site banner or a logo on every upload: answers never show it as this document's own. */
             siteWide: boolean;
             /** @description The stored copy at its widest width, served by `GET /api/v1/public/reply-images/{imageId}/{width}`; present once stored. */
             src?: string;

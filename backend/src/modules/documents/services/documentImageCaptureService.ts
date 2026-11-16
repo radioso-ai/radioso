@@ -9,15 +9,16 @@ import { traceOperation } from "../../../shared/observability/tracing/operations
 import type { ChunkRepositoryPort, ChunkSummary } from "../contracts/documentContracts.js";
 import {
   MAX_STORED_IMAGES_PER_DOCUMENT,
+  MIN_DOCUMENT_IMAGE_SHORT_SIDE_PX,
   type CapturableDocumentImage,
   type DocumentImageCaptureStore,
   type DocumentImageRendition,
   type ReleasedDocumentImageStore,
 } from "../contracts/documentImages.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
+import { isEmbeddedImageSource } from "../domain/documentImageCandidates.js";
+import type { UploadedDocumentFile, UploadedFileImages, UploadedFilePictures } from "./uploadedFileImages.js";
 
-/** Icons, spacers and tracking pixels are smaller than this on their short side. */
-const MIN_SHORT_SIDE_PX = 200;
 /** One job's share of the worker's lease: images not reached by then wait for the next capture. */
 const CAPTURE_BUDGET_MS = 150_000;
 /** Released rows the worker clears after each job. */
@@ -65,10 +66,13 @@ const FETCH_FAILURE_OUTCOMES: Readonly<Record<Extract<PublicBytesFetchResult, { 
   unreachable: "unreachable",
 };
 
+/** A document as capture reads it: its revision, its metadata and, for an upload, its stored file. */
+type CapturedDocument = UploadedDocumentFile & { revision: number; metadata?: Record<string, unknown> | null };
+
 interface CaptureDependencies {
   images: DocumentImageCaptureStore & ReleasedDocumentImageStore;
   documents: {
-    findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<{ revision: number; metadata?: Record<string, unknown> | null } | null>;
+    findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<CapturedDocument | null>;
   };
   chunks: Pick<ChunkRepositoryPort, "listSummariesForDocument">;
   storage: DocumentStoragePort;
@@ -77,13 +81,21 @@ interface CaptureDependencies {
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   logger?: Pick<AppLogger, "warn">;
   now?: () => number;
+  /** Reads and records the pictures an uploaded file carries; absent, only images with an address are captured. */
+  uploadedFiles?: Pick<UploadedFileImages, "record">;
 }
 
 /**
- * Where an image came from, as a bounded metric label. The WordPress connector marks its documents'
- * metadata with `source: "wordpress"`; every other document with images came from a crawl.
+ * Where an image came from, as a bounded metric label: the type of the uploaded file that carries
+ * it, else the WordPress connector (which marks its documents' metadata with `source: "wordpress"`),
+ * else a crawl.
  */
-const captureSourceLabel = (metadata: Record<string, unknown> | null | undefined, image: CapturableDocumentImage): string => {
+const captureSourceLabel = (
+  metadata: Record<string, unknown> | null | undefined,
+  image: CapturableDocumentImage,
+  upload: UploadedFilePictures | null,
+): string => {
+  if (upload) return upload.source;
   if (metadata?.source === "wordpress") return image.role === "primary" ? "wordpress_featured" : "wordpress_inline";
   return image.role === "primary" ? "crawler_metadata" : "crawler_inline";
 };
@@ -100,8 +112,19 @@ const anchorChunk = (chunks: readonly ChunkSummary[], image: CapturableDocumentI
 const objectLeaf = (imageId: string, slotWidth: number): string => `document-image-${imageId}-w${slotWidth}`;
 
 /**
- * The document worker's `images` job: fetches each image a document's content names, re-encodes
- * it, stores the copies and fills its row, anchored to the published chunks. A stored image whose
+ * An embedded picture's bytes come from its file, read once per job. A file that could not be read
+ * this time leaves the picture as it is, for the next capture.
+ */
+const embeddedBytes = (upload: UploadedFilePictures | null, sourceUrl: string): PublicBytesFetchResult => {
+  const bytes = upload?.embedded.get(sourceUrl);
+  return bytes ? { kind: "fetched", bytes, contentType: null, url: sourceUrl } : { kind: "failed", reason: "unreachable" };
+};
+
+/**
+ * The document worker's `images` job: fetches each image a document's content names (for an
+ * uploaded file, first recording the pictures the file carries and taking an embedded one's bytes
+ * from the file), re-encodes it, stores the copies and fills its row, anchored to the published
+ * chunks. A stored image whose
  * source has not changed is reused. A failed image never fails the job: an image capture will not
  * keep is marked skipped, one that may work next time stays pending. It also sweeps the images that
  * deleted documents and re-syncs released.
@@ -142,6 +165,7 @@ export class DocumentImageCaptureService {
     const document = await this.deps.documents.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
     if (!document) return "deleted";
     if (document.revision !== job.documentRevision) return "stale";
+    const upload = await this.deps.uploadedFiles?.record({ workspaceId: job.workspaceId, documentId: job.documentId, document }) ?? null;
     const images = await this.deps.images.listForCapture({ workspaceId: job.workspaceId, documentId: job.documentId });
     const chunks = images.some((image) => image.role === "inline")
       ? await this.deps.chunks.listSummariesForDocument({ documentId: job.documentId, workspaceId: job.workspaceId })
@@ -154,11 +178,11 @@ export class DocumentImageCaptureService {
         continue;
       }
       if (now() - startedAt > CAPTURE_BUDGET_MS) break;
-      const outcome = await this.captureImage(job, image, anchorChunk(chunks, image));
+      const outcome = await this.captureImage(job, image, anchorChunk(chunks, image), upload);
       if (outcome === "stored" || outcome === "reused" || (image.status === "stored" && RETRIED_OUTCOMES.has(outcome))) kept += 1;
       this.deps.metrics?.incrementCounter("document_image_capture_total", {
         help: "Images named by documents' content that capture fetched, by where they came from and what became of them",
-        labels: { source: captureSourceLabel(document.metadata, image), outcome },
+        labels: { source: captureSourceLabel(document.metadata, image, upload), outcome },
       });
     }
     this.deps.metrics?.observeHistogram("document_image_capture_duration_seconds", {
@@ -169,12 +193,19 @@ export class DocumentImageCaptureService {
     return "completed";
   }
 
-  private async captureImage(job: DocumentProcessingJobRecord, image: CapturableDocumentImage, chunkId: string | null): Promise<CaptureOutcome> {
+  private async captureImage(
+    job: DocumentProcessingJobRecord,
+    image: CapturableDocumentImage,
+    chunkId: string | null,
+    upload: UploadedFilePictures | null,
+  ): Promise<CaptureOutcome> {
     const keepStored = async (outcome: CaptureOutcome): Promise<CaptureOutcome> => {
       await this.deps.images.reanchor({ id: image.id, chunkId });
       return outcome;
     };
-    const fetched = await this.deps.fetchImage(image.sourceUrl, { ifNoneMatch: image.status === "stored" ? image.sourceEtag : null });
+    const fetched = isEmbeddedImageSource(image.sourceUrl)
+      ? embeddedBytes(upload, image.sourceUrl)
+      : await this.deps.fetchImage(image.sourceUrl, { ifNoneMatch: image.status === "stored" ? image.sourceEtag : null });
     if (fetched.kind === "not_modified") return keepStored("reused");
     if (fetched.kind === "failed") {
       const outcome = FETCH_FAILURE_OUTCOMES[fetched.reason];
@@ -184,7 +215,7 @@ export class DocumentImageCaptureService {
     }
     const sha256 = createHash("sha256").update(fetched.bytes).digest("hex");
     if (image.status === "stored" && image.sha256 === sha256) return keepStored("reused");
-    const encoded = await this.deps.encodeImage(fetched.bytes, { minShortSidePx: MIN_SHORT_SIDE_PX });
+    const encoded = await this.deps.encodeImage(fetched.bytes, { minShortSidePx: MIN_DOCUMENT_IMAGE_SHORT_SIDE_PX });
     if (encoded.kind === "refused") {
       if (image.status === "stored" && encoded.reason === "busy") return keepStored("busy");
       return this.refuse(image, encoded.reason);

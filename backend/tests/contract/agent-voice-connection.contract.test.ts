@@ -104,7 +104,8 @@ const operatorWith = async (options: { vendor?: ReturnType<typeof fakeElevenLabs
     connect: () => request(app).post(connection).set({ ...dashboard, ...csrf }),
     disconnect: () => request(app).delete(connection).set({ ...dashboard, ...csrf }),
     status: () => request(app).get(connection).set(dashboard),
-    agent: async () => (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body as { voice: { runtime: unknown } },
+    switchChannel: (body: unknown) => request(app).put(`/api/v1/agents/${agentId}/voice/channel`).set({ ...dashboard, ...csrf }).send(body as object),
+    agent: async () => (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body as { voice: { runtime: unknown; enabled: boolean } },
     restCredentials: async () => (await request(app).get(`/api/v1/agents/${agentId}/channel-credentials?audience=rest`).set(dashboard).expect(200))
       .body.credentials as Array<{ id: string; label: string; prefix: string; status: string; expiresAt: string | null }>,
   };
@@ -121,6 +122,7 @@ describe("agent voice connection contract", () => {
       vendorKey: "missing",
       connectAvailable: true,
       runtime: null,
+      enabled: false,
     });
   });
 
@@ -130,7 +132,7 @@ describe("agent voice connection contract", () => {
     const connected = await connect().expect(200);
 
     const runtime = { vendor: "elevenlabs", agentId: "agent_2", region: "eu" };
-    expect(connected.body).toEqual({ vendor: "elevenlabs", state: "connected", region: "eu", vendorKey: "stored", connectAvailable: true, runtime });
+    expect(connected.body).toEqual({ vendor: "elevenlabs", state: "connected", region: "eu", vendorKey: "stored", connectAvailable: true, runtime, enabled: false });
     expect((await agent()).voice.runtime).toEqual(runtime);
     expect((await status().expect(200)).body.state).toBe("connected");
     const created = vendor.agents.get("agent_2") as { conversation_config: { agent: { prompt: { custom_llm: { url: string } } } } };
@@ -208,6 +210,7 @@ describe("agent voice connection contract", () => {
       vendorKey: "stored",
       connectAvailable: true,
       runtime: null,
+      enabled: false,
       vendorAgentLeft: false,
     });
     expect(vendor.agents.size).toBe(0);
@@ -294,18 +297,59 @@ describe("agent voice connection contract", () => {
     expect(await restCredentials()).toHaveLength(1);
   });
 
-  it("asks for the CSRF header on Connect and Disconnect", async () => {
-    const { app, dashboard, connection } = await operatorWith();
+  it("turns voice on by connecting ElevenLabs first when the agent has no runtime", async () => {
+    const { switchChannel, agent, vendor } = await operatorWith();
+
+    const switched = await switchChannel({ enabled: true }).expect(200);
+
+    const runtime = { vendor: "elevenlabs", agentId: "agent_2", region: "eu" };
+    expect(switched.body).toEqual({ vendor: "elevenlabs", state: "connected", region: "eu", vendorKey: "stored", connectAvailable: true, runtime, enabled: true });
+    expect((await agent()).voice).toMatchObject({ enabled: true, runtime });
+    expect(vendor.agents.has("agent_2")).toBe(true);
+  });
+
+  it("turns voice off keeping the ElevenLabs agent, and on again without calling ElevenLabs", async () => {
+    const { switchChannel, agent, vendor } = await operatorWith();
+    await switchChannel({ enabled: true }).expect(200);
+    const callsAfterConnect = vendor.calls.length;
+
+    expect((await switchChannel({ enabled: false }).expect(200)).body).toMatchObject({ state: "connected", enabled: false });
+    expect((await agent()).voice).toMatchObject({ enabled: false, runtime: { agentId: "agent_2" } });
+    expect((await switchChannel({ enabled: true }).expect(200)).body).toMatchObject({ state: "connected", enabled: true });
+    expect(vendor.calls.length).toBe(callsAfterConnect);
+    expect(vendor.agents.has("agent_2")).toBe(true);
+  });
+
+  it("names a missing key when turning voice on needs a Connect, and leaves voice off", async () => {
+    const { switchChannel, agent } = await operatorWith({ vendorKey: null });
+
+    const refused = await switchChannel({ enabled: true }).expect(409);
+
+    expect(refused.body.error.code).toBe("voice_vendor_key_missing");
+    expect((await agent()).voice).toMatchObject({ enabled: false, runtime: null });
+  });
+
+  it("refuses a switch without a boolean", async () => {
+    const { switchChannel } = await operatorWith();
+
+    await switchChannel({}).expect(400);
+    await switchChannel({ enabled: "yes" }).expect(400);
+  });
+
+  it("asks for the CSRF header on Connect, Disconnect and the voice switch", async () => {
+    const { app, dashboard, connection, agentId } = await operatorWith();
 
     await request(app).post(connection).set(dashboard).expect(403);
     await request(app).delete(connection).set(dashboard).expect(403);
+    await request(app).put(`/api/v1/agents/${agentId}/voice/channel`).set(dashboard).send({ enabled: true }).expect(403);
   });
 
   it("is for dashboard sessions only: an API token is not a session", async () => {
-    const { app, bearer, connection } = await operatorWith();
+    const { app, bearer, connection, agentId } = await operatorWith();
 
     await request(app).get(connection).set(bearer).expect(401);
     await request(app).post(connection).set({ ...bearer, ...csrf }).expect(401);
+    await request(app).put(`/api/v1/agents/${agentId}/voice/channel`).set({ ...bearer, ...csrf }).send({ enabled: true }).expect(401);
   });
 
   it("answers 404 for an agent that does not exist", async () => {

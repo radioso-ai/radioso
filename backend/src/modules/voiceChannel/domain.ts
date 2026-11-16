@@ -385,11 +385,12 @@ export interface VoiceRuntimeChannelCredentials {
 }
 
 /**
- * Writes the agent's `voice.runtime` binding, through the agent's own write path so every side
- * effect of an agent write runs. The rest of the `voice` block stays as stored.
+ * Writes the agent's `voice.runtime` binding and, when given, `voice.enabled`, in one write through
+ * the agent's own write path so every side effect of an agent write runs. The rest of the `voice`
+ * block stays as stored.
  */
 export interface VoiceRuntimeBinder {
-  bind(input: { workspaceId: string; agentId: string; runtime: VoiceRuntimeBinding | null }): Promise<void>;
+  bind(input: { workspaceId: string; agentId: string; runtime: VoiceRuntimeBinding | null; enabled?: boolean }): Promise<void>;
 }
 
 /** What connecting reads of the Radioso agent. Null when the agent does not exist. */
@@ -398,6 +399,7 @@ export interface VoiceRuntimeAgentProfileSource {
     name: string;
     defaultLocale: string | null;
     runtime: VoiceRuntimeBinding | null;
+    enabled: boolean;
   } | null>;
 }
 
@@ -446,8 +448,9 @@ export type VoiceRuntimeConnectionState = (typeof VOICE_RUNTIME_CONNECTION_STATE
 /**
  * An agent's voice runtime as the Voice card shows it. `region` is the bound vendor account's.
  * `vendorKey` is the presence of the workspace's key for `vendor`. `connectAvailable` is false
- * when the deployment has no public origin a vendor can reach. `runtime` is the agent's binding
- * as stored, so a dashboard form can carry it on its next save.
+ * when the deployment has no public origin a vendor can reach. `runtime` and `enabled` are the
+ * agent's binding and voice channel switch as stored, so a dashboard form can carry them on its
+ * next save.
  */
 export interface VoiceRuntimeConnectionStatus {
   vendor: VoiceVendor;
@@ -456,6 +459,7 @@ export interface VoiceRuntimeConnectionStatus {
   vendorKey: VoiceVendorCredentialPresence;
   connectAvailable: boolean;
   runtime: VoiceRuntimeBinding | null;
+  enabled: boolean;
 }
 
 /** The status after a disconnect, and whether the vendor agent Radioso created may still be at the vendor. */
@@ -497,6 +501,16 @@ export interface VoiceRuntimeConnectionPort {
    * its connection runs.
    */
   disconnect(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection>;
+  /**
+   * The agent's voice channel switch. On connects first, as Connect does, when no runtime is bound;
+   * off keeps the runtime and its vendor agent. Rejects with `VoiceRuntimeConnectionError`.
+   */
+  switchChannel(input: {
+    workspaceId: string;
+    agentId: string;
+    actor: VoiceRuntimeConnectionActor;
+    enabled: boolean;
+  }): Promise<VoiceRuntimeConnectionStatus>;
 }
 
 /**

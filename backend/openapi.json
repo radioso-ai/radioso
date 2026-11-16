@@ -23566,6 +23566,10 @@
               "region"
             ],
             "description": "The agent's `voice.runtime` as stored after the request. A client that saves the whole `voice` block sends this value, or the save unbinds the agent."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "The agent's `voice.enabled` as stored after the request: whether pages may start calls with it. A client that saves the whole `voice` block sends this value."
           }
         },
         "required": [
@@ -23574,7 +23578,8 @@
           "region",
           "vendorKey",
           "connectAvailable",
-          "runtime"
+          "runtime",
+          "enabled"
         ],
         "description": "Where the agent's voice runtime stands."
       },
@@ -40890,6 +40895,158 @@
           },
           "409": {
             "description": "`voice_connection_busy`: another Connect or Disconnect of this agent is running, and this one changed nothing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/voice/channel": {
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Turn the agent's voice channel on or off",
+        "description": "Sets the agent's `voice.enabled`. Turning it on when no `voice.runtime` is bound first connects, exactly as `POST /api/v1/agents/{agentId}/voice/connection` does, and binds the runtime and turns voice on in one write; when that Connect fails, voice stays off and the answer names why with Connect's codes. Turning it on with a runtime bound calls no vendor. Turning it off keeps the runtime and the vendor agent, so turning it on again calls no vendor either. Runs as one change of the agent's connection: while a Connect or Disconnect runs, it answers `409 voice_connection_busy`. Dashboard session only.",
+        "operationId": "switchAgentVoiceChannel",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required on writes from the dashboard session."
+            },
+            "required": true,
+            "description": "Required on writes from the dashboard session.",
+            "name": "x-radioso-csrf",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "True turns voice on, connecting first when no runtime is bound; false turns it off."
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The voice channel as switched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVoiceConnection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ \"enabled\": boolean }`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required; API tokens are refused, this is for dashboard sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required, or the CSRF header is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`voice_vendor_key_missing`, `voice_vendor_key_unreadable`: turning voice on needed a Connect and no readable key is stored; `voice_connection_busy`: another change of this agent's connection is running, and this one changed nothing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`voice_vendor_key_rejected`, `voice_vendor_key_lacks_agents_permission`: turning voice on needed a Connect and the vendor refused the key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`voice_vendor_failed`: turning voice on needed a Connect and the vendor refused to set up the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`voice_vendor_unreachable`, `voice_connection_unavailable`: turning voice on needed a Connect and the vendor, or this deployment, could not be reached",
             "content": {
               "application/json": {
                 "schema": {

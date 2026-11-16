@@ -131,6 +131,7 @@ import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { AgentToolCatalogPort, RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
+import type { StarterPackApplyService, StarterPackDraftService } from "../../modules/agentStarterPack/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type {
   ContextVariableResolutionReaderPort,
@@ -472,6 +473,8 @@ export interface AppDependencies {
   routineDefinitionService: RoutineDefinitionService;
   routineDraftAssistService: RoutineDraftAssistService;
   directiveAuthorService: DirectiveAuthorService;
+  starterPackDraftService: StarterPackDraftService;
+  starterPackApplyService: StarterPackApplyService;
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;

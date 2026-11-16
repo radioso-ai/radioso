@@ -173,6 +173,9 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       sampleDocumentsImported: z.boolean(),
       websiteCrawlerEnabled: z.boolean(),
       setup: WorkspaceSetupStateSchema,
+      llmConfigured: z.boolean().openapi({
+        description: "Whether the workspace can make chat model calls. When false, features that need a model, such as Ray and starter pack drafting, return 503 provider_misconfigured until a provider is configured.",
+      }),
     }),
   );
 

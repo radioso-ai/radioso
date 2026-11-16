@@ -694,6 +694,13 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentRoutine: "propose_routine_edit",
   draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: Ray drafts new routines through propose_routine, which reaches this drafting pass through the service rather than the route."),
   validateAgentRoutine: "validate_routine",
+  // The starter pack is the operator's own review-and-apply flow for a new agent. Ray reaches the
+  // same outcome one operator-confirmed proposal at a time (propose_directive, propose_routine);
+  // a batch apply would skip that per-item confirmation, so it stays off Ray's catalog.
+  ...coverage([
+    "draftAgentStarterPack",
+    "applyAgentStarterPack",
+  ], permanent("Permanent exclusion: the starter pack is an operator review-and-apply flow; Ray authors the same directives and routine through per-item proposals (propose_directive, propose_routine) and never runs a batch write that skips them.")),
   // Bundle export/import moves a whole agent as a file between workspaces. Export is a
   // bulk dump of what Ray already reads field by field through get_agent, so a tool for
   // it would add reach without adding an operator outcome. Import is the stronger

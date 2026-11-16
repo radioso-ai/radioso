@@ -231,6 +231,8 @@ export const buildRepositories = (
   accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentConverseSessionMappingRepository: new AgentConverseSessionMappingRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
+  /** The same agent repository bound to a caller's transaction, for composition-owned atomic writes. */
+  agentRepositoryOn: (db: Db) => new AgentRepository(db, options.agentSurfaceExtensions, options.agentSkillSettings),
   agentRevisionRepository: new AgentRevisionRepository(database.kysely),
   agentBundleImportRepository: new AgentBundleImportRepository(database.kysely),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),

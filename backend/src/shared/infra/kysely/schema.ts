@@ -277,6 +277,17 @@ export interface AgentSkills {
   workspace_id: string;
 }
 
+export interface AgentStarterPackApplies {
+  actor_account_id: string | null;
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  idempotency_key: string;
+  request_fingerprint: string;
+  result: Json;
+  workspace_id: string;
+}
+
 export interface AgentTestExecutionAttempts {
   attempt_id: string;
   created_at: Generated<Timestamp>;
@@ -2388,6 +2399,7 @@ export interface DB {
   agent_revision_migration_classifications: AgentRevisionMigrationClassifications;
   agent_revisions: AgentRevisions;
   agent_skills: AgentSkills;
+  agent_starter_pack_applies: AgentStarterPackApplies;
   agent_test_execution_attempts: AgentTestExecutionAttempts;
   agent_test_execution_sides: AgentTestExecutionSides;
   agent_test_execution_turns: AgentTestExecutionTurns;

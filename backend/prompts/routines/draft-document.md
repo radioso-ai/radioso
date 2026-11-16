@@ -24,6 +24,10 @@ Operator procedure:
 {{procedure_text}}
 </procedure_text>
 
+Output language:
+{{output_language_instruction}}
+User-facing fields are activation.triggerDescription, slot descriptions, step and terminal instructions, and metadata.outlineLabel.
+
 Return one JSON object with this shape:
 
 {

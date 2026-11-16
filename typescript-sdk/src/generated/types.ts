@@ -1719,6 +1719,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/starter-pack/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft a starter pack of directives and one routine from the agent's purpose
+         * @description Suggests one to six directives and exactly one routine from a plain-language purpose, written in the language the purpose is detected to be in. Nothing is saved; send the items you keep to the apply operation.
+         */
+        post: operations["draftAgentStarterPack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/starter-pack/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create the selected starter pack items
+         * @description Creates exactly the selected directives and routine in the agent's draft, all or nothing. Existing directives and routines are never overwritten. Repeating a request with the same idempotency key returns the first result. Items are not published; publish the agent's draft as usual.
+         */
+        post: operations["applyAgentStarterPack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/routines/{routineId}/validate": {
         parameters: {
             query?: never;
@@ -5611,6 +5651,8 @@ export interface components {
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
             setup: components["schemas"]["WorkspaceSetupState"];
+            /** @description Whether the workspace can make chat model calls. When false, features that need a model, such as Ray and starter pack drafting, return 503 provider_misconfigured until a provider is configured. */
+            llmConfigured: boolean;
         };
         RegisterRequest: {
             /** Format: email */
@@ -10981,6 +11023,87 @@ export interface components {
          *     data: {"suggestedName":"Acme Support","sourceUrl":"https://acme.example.com","pagesAnalyzed":[]}
          */
         AgentWizardAnalysisStream: string;
+        /** @description The agent's purpose in plain language, in any language. The suggestions are written in the language it is detected to be in. */
+        StarterPackDraftRequest: {
+            purpose: string;
+        };
+        StarterPackDraftResponse: {
+            /** @description The detected language label, such as German, or null when it could not be detected and the suggestions mirror the purpose's language. */
+            outputLanguage: string | null;
+            /** @description One to six directives and exactly one routine. Nothing is saved. */
+            items: ({
+                /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
+                itemKey: string;
+                /** @enum {string} */
+                kind: "directive";
+                directive: components["schemas"]["AuthoredDirectiveCreateRequest"];
+                /**
+                 * @description name_exists when the agent already has a directive or routine with this name. Applying it would be refused; nothing existing is ever overwritten.
+                 * @enum {string|null}
+                 */
+                conflict: "name_exists" | null;
+            } | {
+                /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
+                itemKey: string;
+                /** @enum {string} */
+                kind: "routine";
+                routine: components["schemas"]["RoutineDefinitionCreateRequest"];
+                /** @description The plain-language procedure the routine definition was drafted from. */
+                procedure: string;
+                validation: components["schemas"]["RoutineValidationResult"];
+                /**
+                 * @description name_exists when the agent already has a directive or routine with this name. Applying it would be refused; nothing existing is ever overwritten.
+                 * @enum {string|null}
+                 */
+                conflict: "name_exists" | null;
+            })[];
+        };
+        StarterPackApplyRequest: {
+            /** @description Client-chosen key for this apply. Sending the same key with the same items returns the first result instead of creating anything again; the same key with different items is refused. */
+            idempotencyKey: string;
+            /** @description Only the items the user selected, possibly edited: at most six directives and one routine, with unique item keys and directive names. */
+            items: ({
+                /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
+                itemKey: string;
+                /** @enum {string} */
+                kind: "directive";
+                directive: components["schemas"]["AuthoredDirectiveCreateRequest"];
+            } | {
+                /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
+                itemKey: string;
+                /** @enum {string} */
+                kind: "routine";
+                routine: components["schemas"]["RoutineDefinitionCreateRequest"];
+            })[];
+        };
+        /** @description Created items with their ids. Each directive item includes its advisory coherence verdict; a conflict's directiveId names the directive it conflicts with, including one created by the same apply. */
+        StarterPackApplyResponse: {
+            applyId: string;
+            items: ({
+                itemKey: string;
+                /** @enum {string} */
+                kind: "directive";
+                id: string;
+                name: string;
+                coherence: {
+                    coherent: boolean;
+                    conflicts: {
+                        directiveId?: string;
+                        directiveName: string;
+                        reason: string;
+                    }[];
+                    rationale: string;
+                };
+            } | {
+                itemKey: string;
+                /** @enum {string} */
+                kind: "routine";
+                id: string;
+                name: string;
+            })[];
+            /** @description True when this request repeated an earlier one with the same key; nothing new was created. */
+            replayed: boolean;
+        };
         AudiencePulseGrounding: {
             grounded: number;
             degraded: number;
@@ -19932,6 +20055,184 @@ export interface operations {
             };
             /** @description Routine draft could not be generated */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    draftAgentStarterPack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StarterPackDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Suggestions returned; nothing saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StarterPackDraftResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller cannot manage agents */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description invalid_starter_pack_draft when the model did not return a valid pack */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Starter pack drafting rate limit reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description provider_misconfigured when the workspace has no chat model, or llm_unavailable when the model call failed */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    applyAgentStarterPack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StarterPackApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description This idempotency key was already applied; the stored result is returned and nothing new is created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StarterPackApplyResponse"];
+                };
+            };
+            /** @description Every selected item was created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StarterPackApplyResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller cannot manage agents */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description starter_pack_name_conflict when a selected name is already used on the agent (details list the items); idempotency_key_reused when the key was used for different items; or starter_pack_agent_changed when the agent kept changing while its directives were being checked, which is safe to retry with the same key. Nothing was created. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Starter pack apply rate limit reached */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

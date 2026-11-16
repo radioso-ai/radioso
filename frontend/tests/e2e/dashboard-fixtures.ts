@@ -915,6 +915,7 @@ const buildWorkspaceSummary = (input: {
     sampleDocumentsImported: sampleDocumentSlugs.length > 0,
     websiteCrawlerEnabled: true,
     setup: establishedWorkspaceSetupState(),
+    llmConfigured: true,
   };
 };
 

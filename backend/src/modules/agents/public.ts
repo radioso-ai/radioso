@@ -77,7 +77,10 @@ export {
 export {
   AuthoredDirectiveService,
   isDirectiveNameConflict,
+  pendingDirectiveId,
   type AuthoredDirectiveServiceOptions,
+  type DirectiveCoherenceAssessment,
+  type DirectiveCoherenceCandidate,
 } from "./services/authoredDirectiveService.js";
 export {
   createRoutineScopedReferenceGuard,

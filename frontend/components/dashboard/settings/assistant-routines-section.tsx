@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Route, Trash2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
@@ -11,7 +11,8 @@ import { RoutineMapDialog } from '@/components/dashboard/settings/routine-canvas
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineEditorHeader, type RoutineValidationStatus } from '@/components/dashboard/settings/routine-editor-header'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
-import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
+import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
 import { useRoutineEnabledToggle } from '@/hooks/use-routine-enabled-toggle'
@@ -176,10 +177,8 @@ const clearNewRoutineRecovery = (agentId: string) => {
   window.sessionStorage.removeItem(newRoutineRecoveryKey(agentId))
 }
 
-// Shared by the routine list row and the editor screen — same confirmation, different local
-// state backing "which routine, if any, is pending delete". A routine that never went live is
-// removed outright; one that did is taken out of service instead, so an in-flight conversation
-// resuming it keeps working.
+// A routine that never went live is removed outright; one that did is taken out of service
+// instead, so an in-flight conversation resuming it keeps working.
 function DeleteRoutineDialog({
   open,
   onOpenChange,
@@ -268,8 +267,7 @@ function RoutineListScreen({
   const router = useRouter()
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [deletingRoutine, setDeletingRoutine] = useState<RoutineDefinition | null>(null)
+  const rowMutations = useScopedRowMutations(agentId)
   const [error, setError] = useState<string | null>(null)
 
   const sortedRoutines = useMemo(
@@ -311,25 +309,6 @@ function RoutineListScreen({
     }
   }, [agentId])
 
-  // A routine that has ever served can't be hard-deleted (an in-flight conversation may have
-  // pinned it), so the backend disables it in place instead and it stays listed. Refetching
-  // rather than filtering locally means the row reflects what the server actually did instead
-  // of a "deleted" state the next reload would silently contradict.
-  const deleteRoutine = async (routine: RoutineDefinition) => {
-    setBusyAction(`delete:${routine.id}`)
-    setError(null)
-    try {
-      await routinesApi.deleteRoutine(agentId, routine.id)
-      const response = await routinesApi.listRoutines(agentId)
-      setRoutines(response.routines)
-      setDeletingRoutine(null)
-    } catch (deleteError) {
-      setError(getApiErrorMessage(deleteError, 'Failed to delete routine.'))
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   // Whether a routine may activate is one field on the routine, so it goes through the same
   // update path as its content. The row is replaced from the response rather than flipped
   // optimistically, so what the list shows is what the server stored.
@@ -338,89 +317,61 @@ function RoutineListScreen({
     onSuccess: (routine) => setRoutines((current) => current.map((item) => item.id === routine.id ? routine : item)),
     onError: setError,
   })
+  // Each row holds its own switch until its own request settles, so toggling a second routine
+  // never releases the first one's switch while its update is still in flight.
   const toggleRoutine = async (routine: RoutineDefinition, enabled: boolean) => {
-    setBusyAction(`toggle:${routine.id}`)
     setError(null)
-    try {
-      await applyRoutineEnabledToggle(routine.id, enabled)
-    } finally {
-      setBusyAction(null)
-    }
+    await rowMutations.run(routine.id, () => applyRoutineEnabledToggle(routine.id, enabled))
   }
 
-  const renderRoutineRow = (routine: RoutineDefinition) => (
-    <div key={routine.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
-      <CopilotRoutineEntity routine={routine} />
-      <button
-        type="button"
-        className="min-w-0 flex-1 text-left"
-        onClick={() => router.push(buildRoutineHref(routine.id))}
-      >
-        <p className="text-sm font-medium text-foreground">{routine.name}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{routine.activation.triggerDescription}</p>
-      </button>
-      <div className="flex shrink-0 items-center gap-2">
-        <Switch
-          checked={routine.enabled}
-          onCheckedChange={(enabled) => void toggleRoutine(routine, enabled)}
-          disabled={busyAction === `toggle:${routine.id}`}
-          aria-label={`Enable ${routine.name}`}
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setDeletingRoutine(routine)}
-          aria-label={`Delete ${routine.name}`}
-        >
-          <Trash2 className="h-4 w-4" />
+  return (
+    <section id="assistant-routines-card" className="scroll-mt-24 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Multi-step flows the agent runs to finish a task: collect details, call a skill, then end or hand off.
+        </p>
+        <Button type="button" size="sm" className="shrink-0" onClick={() => router.push(buildRoutineHref('new'))}>
+          <Plus className="mr-2 h-4 w-4" />
+          New routine
         </Button>
       </div>
-    </div>
-  )
 
-  return (
-    <SettingsCard
-      id="assistant-routines-card"
-      icon={<Route className="h-5 w-5 text-primary" />}
-      title="Routines"
-      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough. Routine changes prepare the agent draft; customers get them only after Review & Publish."
-      headerEnd={(
-        <div className="flex items-center gap-2">
-          <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
-            <Plus className="mr-2 h-4 w-4" />
-            New routine
-          </Button>
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" />
+          Loading routines...
         </div>
+      ) : sortedRoutines.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          No routines yet.
+        </p>
+      ) : (
+        <QuietList>
+          {sortedRoutines.map((routine) => (
+            <QuietListRow
+              key={routine.id}
+              domId={`routine-${routine.id}`}
+              title={routine.name}
+              summary={routine.activation.triggerDescription}
+              isDimmed={!routine.enabled}
+              onOpen={() => router.push(buildRoutineHref(routine.id))}
+              lead={(
+                <>
+                  <CopilotRoutineEntity routine={routine} />
+                  <Switch
+                    checked={routine.enabled}
+                    onCheckedChange={(enabled) => void toggleRoutine(routine, enabled)}
+                    disabled={rowMutations.isPending(routine.id)}
+                    aria-label={`Enable ${routine.name}`}
+                  />
+                </>
+              )}
+            />
+          ))}
+        </QuietList>
       )}
-    >
-      <div className="space-y-6">
-        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="h-4 w-4" />
-            Loading routines...
-          </div>
-        ) : sortedRoutines.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-            No routines yet.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {sortedRoutines.map(renderRoutineRow)}
-          </div>
-        )}
-      </div>
-      <DeleteRoutineDialog
-        open={Boolean(deletingRoutine)}
-        onOpenChange={(open) => { if (!open) setDeletingRoutine(null) }}
-        routineName={deletingRoutine?.name}
-        // Scoped to the routine this dialog is actually confirming, not `busyAction` at large —
-        // otherwise an unrelated row's in-flight toggle would disable this dialog's buttons too.
-        busy={busyAction === `delete:${deletingRoutine?.id}`}
-        onConfirm={() => { if (deletingRoutine) void deleteRoutine(deletingRoutine) }}
-      />
-    </SettingsCard>
+    </section>
   )
 }
 

@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-13
+last_updated: 2026-11-16
 ---
 
 # Authoring Routines
@@ -10,9 +10,11 @@ A routine carries an agent through a multi-step task across turns. It can collec
 information, call skills, take a branch, finish with a message, or hand the
 conversation to a person.
 
-Open an agent's **Routines** settings to manage its routines. The list has one
-row for each routine. Choose **New routine** to start one, or select a routine to
-open its editor.
+Open an agent's **Routines** settings to manage its routines. Each routine is
+one row: its switch, its name, and when it starts. The switch is the routine's
+`enabled` flag, the same one the editor's **Draft** and **Live** pill shows, and
+like any routine change it reaches visitors at the next **Review & Publish**.
+Choose **New routine** to start one, or select a row to open its editor.
 
 The editor presents the routine as a **Document**: it reads as the flow the agent
 follows, with the controls for each part alongside the words that describe it.
@@ -890,9 +892,10 @@ A conversation pins one agent revision for its whole life. A visitor part-way
 through a routine finishes on the version they started with, while you work on
 the next one.
 
-Each routine carries an `enabled` flag — the **Draft** and **Live** pill in the
-header, flipped by the round button beside it — set through the same update
-call as the rest of its content:
+Each routine carries an `enabled` flag — the switch on its row in the routine
+list, and the **Draft** and **Live** pill in the editor header, flipped by the
+round button beside it — set through the same update call as the rest of its
+content:
 
 ```http
 PATCH /api/v1/agents/{agentId}/routines/{routineId}

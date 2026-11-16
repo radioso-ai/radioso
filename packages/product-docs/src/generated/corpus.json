@@ -1615,8 +1615,8 @@
       "title": "Test your agent in the workbench",
       "description": "Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench.",
       "section": "Guides",
-      "lastUpdated": "2026-10-27",
-      "intro": "The workbench is where you talk to your agent the way a visitor would — but signed in, with the tools an operator needs. Use **Test Chat** to check a saved agent candidate before it reaches real conversations. You reach it from an agent's **Test Chat** tab.\n\nTest Chat runs the selected immutable agent configuration through the private safe-test execution path. Shared documents, models, skills, and channel settings remain live dependencies, so check those settings when comparing results.\n\n![A private comparison in Test Chat, with two selected agent versions and a shared message composer.](/screenshots/dashboard-agents-workbench.png)",
+      "lastUpdated": "2026-11-16",
+      "intro": "The workbench is where you talk to your agent the way a visitor would — but signed in, with the tools an operator needs. Use **Test Chat** to check a saved agent candidate before it reaches real conversations. You reach it from the **Test** row under the agent menu in the sidebar.\n\nTest Chat runs the selected immutable agent configuration through the private safe-test execution path. Shared documents, models, skills, and channel settings remain live dependencies, so check those settings when comparing results.\n\n![A private comparison in Test Chat, with two selected agent versions and a shared message composer.](/screenshots/dashboard-agents-workbench.png)",
       "sections": [
         {
           "id": "chat-with-your-agent",

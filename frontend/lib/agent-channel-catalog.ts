@@ -11,9 +11,10 @@ export type AgentChannelCatalogId =
 /**
  * What a listed channel is doing for one agent, independent of how it is rendered.
  * `on` means the channel can take traffic now; `needs-setup` means it is configured
- * and cannot serve; `not-set-up` means nothing is configured yet.
+ * and cannot serve; `not-set-up` means nothing is configured yet; `answered-elsewhere`
+ * means a connection shared by the workspace is on, but another agent answers it.
  */
-export type AgentChannelCatalogStatus = 'on' | 'needs-setup' | 'not-set-up'
+export type AgentChannelCatalogStatus = 'on' | 'needs-setup' | 'not-set-up' | 'answered-elsewhere'
 
 export interface AgentChannelCatalogEntry {
   id: AgentChannelCatalogId
@@ -29,6 +30,8 @@ interface AgentChannelCatalogInput {
   webChatEnabled: boolean
   apiCredentialCount: number
   mcpCredentialCount: number
+  /** The deployment has a Slack app configured, so an operator can install it. */
+  slackAvailable: boolean
   /** This agent is bound to a Slack channel or DM route. */
   slackBound: boolean
   slackConnected: boolean
@@ -46,6 +49,9 @@ interface AgentChannelCatalogInput {
   emailMailboxes: ReadonlyArray<EmailMailboxHealth>
 }
 
+/** What is known about an agent's channels before the workspace's WhatsApp answerer is taken into account. */
+export type AgentChannelFacts = Omit<AgentChannelCatalogInput, 'whatsappAnsweredHere'>
+
 type EmailMailboxHealth = Pick<EmailMailbox, 'enabled'> & {
   receiving: Pick<EmailMailbox['receiving'], 'state'>
   sending: EmailMailbox['sending']
@@ -61,7 +67,7 @@ type EmailMailboxHealth = Pick<EmailMailbox, 'enabled'> & {
 export function resolveEmailChannelStatus(
   available: boolean,
   mailboxes: ReadonlyArray<EmailMailboxHealth>,
-): AgentChannelCatalogStatus | null {
+): Exclude<AgentChannelCatalogStatus, 'answered-elsewhere'> | null {
   const enabled = mailboxes.filter((mailbox) => mailbox.enabled)
   if (enabled.length === 0) return available ? 'not-set-up' : null
   if (!available) return 'needs-setup'
@@ -72,8 +78,13 @@ export function resolveEmailChannelStatus(
 function resolveWhatsAppEntry(input: AgentChannelCatalogInput): AgentChannelCatalogEntry | null {
   if (!input.whatsappAvailable && !input.whatsappConfigured && !input.whatsappError) return null
   if (!input.whatsappAnsweredHere) {
-    // Another agent answers the number, so a broken connection is that agent's to fix.
-    return { id: 'whatsapp-channel', status: 'not-set-up', workspaceConnection: { answeredBy: 'another-agent' } }
+    // Another agent answers the number, so a broken connection is that agent's to fix. Until the
+    // number is set up nobody answers it, so there is nothing to attribute yet.
+    return {
+      id: 'whatsapp-channel',
+      status: input.whatsappConfigured ? 'answered-elsewhere' : 'not-set-up',
+      workspaceConnection: { answeredBy: 'another-agent' },
+    }
   }
   return {
     id: 'whatsapp-channel',
@@ -84,8 +95,9 @@ function resolveWhatsAppEntry(input: AgentChannelCatalogInput): AgentChannelCata
 
 /**
  * Resolve every channel the deployment offers this agent, from the same
- * configuration surfaces each channel page uses. Web chat, the agent API, MCP and
- * Slack are always offered. WhatsApp is listed once its connector is registered
+ * configuration surfaces each channel page uses. Web chat, the agent API and MCP are
+ * always offered. Slack is listed once the deployment has a Slack app (or an
+ * installation or binding already exists), WhatsApp once its connector is registered
  * (or already configured) and email once the deployment offers it (or a mailbox
  * exists), so an operator is never sent to a channel that cannot be set up.
  *
@@ -98,11 +110,13 @@ export function resolveAgentChannelCatalog(input: AgentChannelCatalogInput): Age
     { id: 'web-chat', status: input.webChatEnabled ? 'on' : 'not-set-up' },
     { id: 'api-channel', status: input.apiCredentialCount > 0 ? 'on' : 'not-set-up' },
     { id: 'mcp-channel', status: input.mcpCredentialCount > 0 ? 'on' : 'not-set-up' },
-    {
+  ]
+  if (input.slackAvailable || input.slackBound || input.slackConnected) {
+    entries.push({
       id: 'slack-channel',
       status: !input.slackBound ? 'not-set-up' : input.slackConnected ? 'on' : 'needs-setup',
-    },
-  ]
+    })
+  }
   const whatsapp = resolveWhatsAppEntry(input)
   if (whatsapp) entries.push(whatsapp)
   const emailStatus = resolveEmailChannelStatus(input.emailAvailable, input.emailMailboxes)
@@ -128,6 +142,7 @@ interface AgentChannelGroups {
   needsSetup: AgentChannelCatalogEntry[]
   on: AgentChannelCatalogEntry[]
   notSetUp: AgentChannelCatalogEntry[]
+  answeredElsewhere: AgentChannelCatalogEntry[]
 }
 
 /** The Channels overview's three lists, each keeping the catalog's order. */
@@ -136,5 +151,6 @@ export function groupAgentChannels(entries: ReadonlyArray<AgentChannelCatalogEnt
     needsSetup: entries.filter((entry) => entry.status === 'needs-setup'),
     on: entries.filter((entry) => entry.status === 'on'),
     notSetUp: entries.filter((entry) => entry.status === 'not-set-up'),
+    answeredElsewhere: entries.filter((entry) => entry.status === 'answered-elsewhere'),
   }
 }

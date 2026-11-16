@@ -17,6 +17,7 @@ import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/s
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { resolveEmailChannelStatus, type AgentChannelCatalogStatus } from '@/lib/agent-channel-catalog'
+import { useAgentChannels } from '@/lib/agent-channels-context'
 import { getApiErrorCode, getApiErrorStatus } from '@/lib/api-error'
 import {
   emailChannelApi,
@@ -45,7 +46,7 @@ type CardLoad =
   | { status: 'error'; message: string }
   | { status: 'ready'; overview: EmailChannelOverview }
 
-const STATUS_BADGES: Record<AgentChannelCatalogStatus | 'off', string> = {
+const STATUS_BADGES: Record<Exclude<AgentChannelCatalogStatus, 'answered-elsewhere'> | 'off', string> = {
   on: 'On',
   'not-set-up': 'Not set up',
   'needs-setup': 'Needs setup',
@@ -73,6 +74,7 @@ const replaceById = <T extends { id: string }>(items: T[], next: T) =>
  * Modes come from what the server supports, never from a list kept here.
  */
 export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps) {
+  const { refresh: refreshChannels } = useAgentChannels()
   const [load, setLoad] = useState<CardLoad>({ status: 'loading' })
   const [announcement, setAnnouncement] = useState('')
   const [addressDraft, setAddressDraft] = useState('')
@@ -144,6 +146,11 @@ export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps
     : load.status === 'error'
       ? 'Unavailable'
       : STATUS_BADGES[resolveEmailChannelStatus(load.status === 'ready', agentMailboxes) ?? 'off']
+
+  // The badge is this card's verdict on the channel: when it changes, the agent menu's Channels row follows.
+  useEffect(() => {
+    if (load.status === 'ready') refreshChannels()
+  }, [badge, load.status, refreshChannels])
 
   const createMailbox = async () => {
     if (!workspaceId || !canCreate || isCreating || !selectedMode) return

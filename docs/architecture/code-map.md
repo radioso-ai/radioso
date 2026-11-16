@@ -2821,6 +2821,11 @@ Agent settings and channels entry points:
 - `frontend/components/dashboard/agent-switcher.tsx`, `area-subnavs.tsx`,
   `agent-channels-overview.tsx` and `frontend/lib/agent-channel-catalog.ts` — the
   agent menu, its Channels summary and the grouped Channels overview
+- `frontend/lib/agents-context.tsx`, `agent-channels-context.tsx` and
+  `agent-revision-context.tsx`, mounted by
+  `frontend/components/dashboard/agent-area-providers.tsx` — the agent list and
+  selection, the channel entries and the draft state, shared by the sidebar and
+  the agent view
 - `frontend/components/dashboard/settings/assistant-profile-section.tsx` —
   exports `AssistantProfileSection`, owning the Profile page: Name, Instructions,
   Model, and Answers. It is section id `profile`, reached at

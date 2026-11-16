@@ -23,7 +23,7 @@ describe('getHomeDashboardRedirectHref', () => {
         publicRouteKey: 'support-abc123',
       },
       section: 'agents',
-    })).toBe('/w/support-abc123/agents')
+    })).toBe('/w/support-abc123/agents?tab=chat')
   })
 
   it('redirects a workspace that still needs onboarding directly to the resolved agent when available', () => {
@@ -37,7 +37,7 @@ describe('getHomeDashboardRedirectHref', () => {
       },
       section: 'agents',
       agentId: '67acb0c8-caad-4a1b-9fef-70cbca3f7d12',
-    })).toBe('/w/support-abc123/agents/67acb0c8-caad-4a1b-9fef-70cbca3f7d12')
+    })).toBe('/w/support-abc123/agents/67acb0c8-caad-4a1b-9fef-70cbca3f7d12?tab=chat')
   })
 
   it('redirects a workspace that does not need onboarding to the Inbox — the normal landing section', () => {

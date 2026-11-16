@@ -9,11 +9,47 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { agentsApi } from '@/lib/api'
 import { loadAgentCreationActionDefinitions, resolveAgentCreationActions, type AgentCreationActionDefinition } from '@/lib/agent-creation-extensions'
 import { WizardDialog as RawWizardDialog } from '@/lib/agent-creation-contributions'
-import { setLastSelectedAgentId } from '@/lib/agent-selection'
+import { useAgents } from '@/lib/agents-context'
 import { editionController } from '@/lib/edition-controller'
+
+// The name form mounts with the dialog and unmounts with it, so every opening starts with no name and no error.
+function CreateByNameForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (agentId: string) => void }) {
+  const { createAgent } = useAgents()
+  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed || creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await createAgent(trimmed)
+      onCreated(created.id)
+    } catch {
+      setError('Failed to create agent')
+      setCreating(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="space-y-2">
+        <Label htmlFor="sidebar-new-agent-name">Name</Label>
+        <Input id="sidebar-new-agent-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Acme Support" />
+      </div>
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={!name.trim() || creating}>{creating ? 'Creating…' : 'Create manually'}</Button>
+      </DialogFooter>
+    </form>
+  )
+}
 
 /**
  * The three ways to add an agent: pick a setup path and name it, import a bundle, or run the
@@ -21,31 +57,25 @@ import { editionController } from '@/lib/edition-controller'
  */
 export function AgentCreationDialogs({
   accountId,
-  workspaceId,
   workspacePublicRouteKey,
   createOpen,
   onCreateOpenChange,
   importOpen,
   onImportOpenChange,
-  onImported,
   profileHrefForAgent,
 }: {
   accountId: string
-  workspaceId: string | null
   workspacePublicRouteKey: string | undefined
   createOpen: boolean
   onCreateOpenChange: (open: boolean) => void
   importOpen: boolean
   onImportOpenChange: (open: boolean) => void
-  onImported: () => void
   /** Where a new agent opens: its Build → Profile page. */
   profileHrefForAgent: (agentId: string) => string
 }) {
   const router = useRouter()
+  const { refresh } = useAgents()
   const [wizardOpen, setWizardOpen] = useState(false)
-  const [newAgentName, setNewAgentName] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
   const [creationDefinitions, setCreationDefinitions] = useState<AgentCreationActionDefinition[]>([])
   const extensionsEnabled = editionController.canUseAgentCreationExtensions()
   const creationActions = useMemo(() => extensionsEnabled
@@ -60,29 +90,9 @@ export function AgentCreationDialogs({
     return () => { active = false }
   }, [extensionsEnabled])
 
-  const createAgent = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const name = newAgentName.trim()
-    if (!name || !workspaceId || creating) return
-    setCreating(true)
-    setCreateError(null)
-    try {
-      const created = await agentsApi.createAgent({ name })
-      setLastSelectedAgentId(workspaceId, created.id)
-      onCreateOpenChange(false)
-      setNewAgentName('')
-      window.dispatchEvent(new CustomEvent('radioso:agents-updated', { detail: { agentId: created.id } }))
-      router.push(profileHrefForAgent(created.id))
-    } catch {
-      setCreateError('Failed to create agent')
-    } finally {
-      setCreating(false)
-    }
-  }
-
   return (
     <>
-      <Dialog open={createOpen} onOpenChange={(open) => { if (open) setCreateError(null); onCreateOpenChange(open) }}>
+      <Dialog open={createOpen} onOpenChange={onCreateOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create agent</DialogTitle>
@@ -116,23 +126,19 @@ export function AgentCreationDialogs({
               Import a bundle
             </Button>
           </div>
-          <form onSubmit={createAgent} className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="sidebar-new-agent-name">Name</Label>
-              <Input id="sidebar-new-agent-name" value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} placeholder="e.g. Acme Support" />
-            </div>
-            {createError ? <p role="alert" className="text-sm text-destructive">{createError}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onCreateOpenChange(false)}>Cancel</Button>
-              <Button type="submit" disabled={!newAgentName.trim() || creating}>{creating ? 'Creating…' : 'Create manually'}</Button>
-            </DialogFooter>
-          </form>
+          <CreateByNameForm
+            onCancel={() => onCreateOpenChange(false)}
+            onCreated={(agentId) => {
+              onCreateOpenChange(false)
+              router.push(profileHrefForAgent(agentId))
+            }}
+          />
         </DialogContent>
       </Dialog>
       <AgentBundleImportDialog
         open={importOpen}
         onOpenChange={onImportOpenChange}
-        onImported={onImported}
+        onImported={() => void refresh()}
         agentSettingsHrefBuilder={profileHrefForAgent}
       />
       {WizardDialog ? <WizardDialog open={wizardOpen} onOpenChange={setWizardOpen} agentSettingsHrefBuilder={profileHrefForAgent} /> : null}

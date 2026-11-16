@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, RefreshCw, X } from 'lucide-react'
@@ -23,9 +23,8 @@ import {
 } from '@/lib/dashboard-routes'
 import type { TestChatNavigation, TestChatRoute } from '@/lib/test-chat-open-route'
 import { AGENT_DELETE_ANCHOR, agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
-import { AGENT_DELETE_REQUESTED_EVENT } from '@/lib/agent-delete-request'
-import { agentsApi, type AgentSettings } from '@/lib/api'
-import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import { useAgentChannels } from '@/lib/agent-channels-context'
+import { useAgents } from '@/lib/agents-context'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import {
   clearAgentCreationHandoff as rawClearAgentCreationHandoff,
@@ -223,81 +222,18 @@ export function AgentView({
 }) {
   const router = useRouter()
   const { activeWorkspaceId, accounts } = useWorkspace()
-  const [agents, setAgents] = useState<AgentSettings[]>([])
-  const [agentsError, setAgentsError] = useState<string | null>(null)
-  const [isAgentsLoading, setIsAgentsLoading] = useState(true)
+  const { agents, status: agentsStatus, selectedAgent, reload: reloadAgents, deleteRequest, dismissDeleteRequest } = useAgents()
+  const channels = useAgentChannels()
   const [saveState, setSaveState] = useState<AgentPageSaveState>({ state: 'idle' })
   const [isDraftDirty, setIsDraftDirty] = useState(false)
   const [testActionsContainer, setTestActionsContainer] = useState<HTMLDivElement | null>(null)
   const [testTitleContainer, setTestTitleContainer] = useState<HTMLDivElement | null>(null)
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
-  const [deleteRequested, setDeleteRequested] = useState(false)
 
-  // A blocking load replaces the page with the loading state; a silent one only swaps the list in,
-  // so the tab and the unsaved draft it holds stay mounted. Failures are reported by blocking loads.
-  const loadAgents = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
-    if (!activeWorkspaceId) {
-      setAgents([])
-      setIsAgentsLoading(false)
-      return
-    }
-    if (!silent) setIsAgentsLoading(true)
-    try {
-      const response = await agentsApi.listAgents()
-      setAgents(response.agents)
-      setAgentsError(null)
-    } catch {
-      if (!silent) {
-        setAgents([])
-        setAgentsError('Failed to load agents')
-      }
-    } finally {
-      if (!silent) setIsAgentsLoading(false)
-    }
-  }, [activeWorkspaceId])
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadAgents()
-    }, 0)
-
-    return () => window.clearTimeout(timeout)
-  }, [loadAgents, routeState.agentId])
-
-  useEffect(() => {
-    // The sidebar's AgentAreaSubNav reads its own list for the switcher's label. This list drives
-    // selection, the redirect to the selected agent, the Test Chat title and the copilot label.
-    // Creating or deleting an agent navigates right after announcing it, so that load blocks until
-    // the list holds the agent the route now names. A rename leaves the route alone, so its refresh
-    // is silent and keeps the open tab, and the unsaved draft it holds, mounted.
-    const handleAgentsUpdated = () => {
-      void loadAgents()
-    }
-    const handleAssistantNameUpdated = () => {
-      void loadAgents({ silent: true })
-    }
-
-    window.addEventListener('radioso:agents-updated', handleAgentsUpdated)
-    window.addEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
-    return () => {
-      window.removeEventListener('radioso:agents-updated', handleAgentsUpdated)
-      window.removeEventListener('radioso:assistant-name-updated', handleAssistantNameUpdated)
-    }
-  }, [loadAgents])
-
-  const fallbackAgent = useMemo(() => agents[0] ?? null, [agents])
-  const rememberedAgentId = getLastSelectedAgentId(activeWorkspaceId)
-  const selectedAgent = useMemo(
-    () => {
-      if (routeState.agentId) {
-        return agents.find((agent) => agent.id === routeState.agentId)
-          ?? agents.find((agent) => agent.id === rememberedAgentId)
-          ?? fallbackAgent
-      }
-      return agents.find((agent) => agent.id === rememberedAgentId) ?? fallbackAgent
-    },
-    [agents, fallbackAgent, rememberedAgentId, routeState.agentId],
-  )
+  // The agent list, the selected agent and what changes either live in the agent area's shared port,
+  // which the sidebar's agent menu reads too: the two cannot disagree about which agent is open.
+  const isAgentsLoading = agentsStatus === 'loading'
+  const agentsError = agentsStatus === 'error' ? 'Failed to load agents' : null
   const selectedAgentId = selectedAgent?.id
   const profileHref = useMemo(
     () =>
@@ -318,12 +254,6 @@ export function AgentView({
   const agentSelectionUnavailable = Boolean(!isAgentsLoading && (agentsError || !selectedAgent))
 
   useEffect(() => {
-    if (selectedAgentId) {
-      setLastSelectedAgentId(activeWorkspaceId, selectedAgentId)
-    }
-  }, [activeWorkspaceId, selectedAgentId])
-
-  useEffect(() => {
     const timeout = window.setTimeout(() => {
       setAgentCreationHandoff(readAgentCreationHandoff(selectedAgentId))
     }, 0)
@@ -341,36 +271,46 @@ export function AgentView({
       return
     }
 
+    // The one move to the selected agent: it is also where a deleted agent's page goes, replacing its
+    // URL in the history. What the old URL held (a routine, a saved test) belonged to the old agent.
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
       agentId: selectedAgentId,
+      agentRoutineId: undefined,
+      agentTestExecutionId: undefined,
+      agentTestChatView: undefined,
       anchor: undefined,
     }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
-  // The confirmation opens when the agent menu asks for it, or when the link names it by anchor.
-  // The anchor is the URL's own state, so closing the confirmation also clears it from the URL.
-  useEffect(() => {
-    const requested = (event: Event) => {
-      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === selectedAgentId) setDeleteRequested(true)
-    }
-    window.addEventListener(AGENT_DELETE_REQUESTED_EVENT, requested)
-    return () => window.removeEventListener(AGENT_DELETE_REQUESTED_EVENT, requested)
-  }, [selectedAgentId])
-  const deleteOpen = deleteRequested || routeState.anchor === AGENT_DELETE_ANCHOR
+  // The delete confirmation opens when the agent menu asks for an agent's, or when the link names it by
+  // anchor, which means the selected agent's. The anchor is the URL's own state, so closing the
+  // confirmation also clears it from the URL.
+  const anchoredDelete = routeState.anchor === AGENT_DELETE_ANCHOR
+  const deleteTarget = (deleteRequest ? agents.find((agent) => agent.id === deleteRequest) : anchoredDelete ? selectedAgent : null) ?? null
   const handleDeleteOpenChange = (open: boolean) => {
     if (open) return
-    setDeleteRequested(false)
-    if (routeState.anchor === AGENT_DELETE_ANCHOR) router.replace(profileHref)
+    dismissDeleteRequest()
+    if (anchoredDelete) router.replace(profileHref)
   }
   const accountRole = accounts.find((account) => account.accountId === accountId)?.role
   const canDeleteAgent = accountRole === 'owner' || accountRole === 'admin'
 
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
+  const section = agentSectionFromRoute(routeState)
+  const onChannelPage = AGENT_SECTION_META[section === 'chat' || section === 'changes' ? 'profile' : section].mode === 'channels'
   const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
     setSaveState(next)
-  }, [])
+    // A channel page that saved may have turned a channel on or off, which the menu's Channels row shows.
+    if (next.state === 'saved' && onChannelPage) channels.refresh()
+  }, [channels, onChannelPage])
+  const wasOnChannelPage = useRef(onChannelPage)
+  useEffect(() => {
+    // Leaving a channel page re-reads the channels, whichever control on it changed one.
+    if (wasOnChannelPage.current && !onChannelPage) channels.refresh()
+    wasOnChannelPage.current = onChannelPage
+  }, [channels, onChannelPage])
 
   // Test chat has no tab: it is its own row in the agent menu, and Build owns the tab bar.
   const cockpitTab = (section: AgentSectionId): AgentCockpitTab | null =>
@@ -442,7 +382,7 @@ export function AgentView({
           Agent details could not be loaded. Try again before chatting or editing this agent.
         </p>
       </div>
-      <Button type="button" variant="outline" onClick={() => void loadAgents()}>
+      <Button type="button" variant="outline" onClick={() => void reloadAgents()}>
         Retry
       </Button>
     </div>
@@ -490,7 +430,7 @@ export function AgentView({
     </DashboardPage>
   )
 
-  if (agentSelectionPending || agentSelectionUnavailable) {
+  if (agentSelectionPending || agentSelectionUnavailable || !selectedAgent) {
     return (
       <>
         {renderAgentUnavailablePage('')}
@@ -499,7 +439,6 @@ export function AgentView({
   }
 
   // The sidebar owns section selection; this view renders the route's section.
-  const section = agentSectionFromRoute(routeState)
   const showRevisionActions = section === 'chat'
     || section === 'changes'
     || section === 'profile'
@@ -511,7 +450,7 @@ export function AgentView({
     ? <AgentCockpitNav activeTab={cockpitTab(section)} hrefForTab={sectionHrefFor} />
     : null
   const cockpitActions = showRevisionActions
-    ? <AgentRevisionHeader key={selectedAgentId} agentId={selectedAgentId} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={sectionHrefFor('chat')} versionsHref={agentVersionsHref} />
+    ? <AgentRevisionHeader key={selectedAgent.id} agentId={selectedAgent.id} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={sectionHrefFor('chat')} versionsHref={agentVersionsHref} />
     : null
 
   const settingsSection = section === 'chat' || section === 'changes' ? 'profile' : section
@@ -539,7 +478,7 @@ export function AgentView({
           cockpitActions={section === 'chat' ? null : cockpitActions}
           backAction={channelsBackAction}
           section={settingsSection}
-          selectedAgentId={selectedAgentId}
+          selectedAgentId={selectedAgent.id}
           onSaveStateChange={handleSaveStateChange}
           onDraftDirtyChange={setIsDraftDirty}
         />
@@ -554,8 +493,8 @@ export function AgentView({
       {section === 'chat' ? (
         <DashboardPage title={selectedAgent.name ? `${selectedAgent.name} Test Chat` : 'Test Chat'} titleAccessory={<div ref={setTestTitleContainer} className="min-w-0" />} titleAccessoryAlignment="center" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
           <AgentRevisionTestChat
-            key={selectedAgentId}
-            agentId={selectedAgentId}
+            key={selectedAgent.id}
+            agentId={selectedAgent.id}
             workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId}
             assistantName={selectedAgent?.name}
             privacyNotice={choosePrivacyNotice(selectedAgent?.branding?.privacyNotice, selectedAgent?.assistantDefaultLocale)}
@@ -571,18 +510,19 @@ export function AgentView({
       ) : null}
       {section === 'changes' ? (
         <DashboardPage title="Agent versions" actions={cockpitActions} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation}>
-          <AgentRevisionHistory key={selectedAgentId} agentId={selectedAgentId} />
+          <AgentRevisionHistory key={selectedAgent.id} agentId={selectedAgent.id} />
         </DashboardPage>
       ) : null}
-      <AgentDeleteDialog
-        accountId={accountId}
-        agentId={selectedAgentId}
-        agentName={getAgentOperatorLabel(selectedAgent)}
-        agentCount={agents.length}
-        canDelete={canDeleteAgent}
-        open={deleteOpen}
-        onOpenChange={handleDeleteOpenChange}
-      />
+      {deleteTarget ? (
+        <AgentDeleteDialog
+          agentId={deleteTarget.id}
+          agentName={getAgentOperatorLabel(deleteTarget)}
+          agentCount={agents.length}
+          canDelete={canDeleteAgent}
+          open
+          onOpenChange={handleDeleteOpenChange}
+        />
+      ) : null}
     </>
   )
 }

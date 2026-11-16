@@ -1,33 +1,30 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { useAgents } from '@/lib/agents-context'
 
 type DeleteBlock = 'last-agent' | 'not-allowed' | null
 
 // The form mounts with the dialog and unmounts with it, so every opening starts with an empty confirmation.
 function DeleteForm({
-  accountId,
   agentId,
   agentName,
   block,
   onDone,
 }: {
-  accountId: string
   agentId: string
   agentName: string
   block: DeleteBlock
   onDone: () => void
 }) {
-  const router = useRouter()
+  const { deleteAgent } = useAgents()
   const [confirmName, setConfirmName] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,10 +35,9 @@ function DeleteForm({
     setDeleting(true)
     setError(null)
     try {
-      await agentsApi.deleteAgent(agentId)
-      onDone()
-      window.dispatchEvent(new CustomEvent('radioso:agents-updated'))
-      router.push(`/account/${accountId}/agents`)
+      // The agent list drops it and selects the next agent, and the agent view follows that selection:
+      // one move away from the deleted agent's URL, which replaces it rather than adding to the history.
+      await deleteAgent(agentId)
     } catch (caught) {
       setError(getApiErrorMessage(caught, 'Failed to delete the agent.'))
       setDeleting(false)
@@ -90,7 +86,6 @@ function DeleteForm({
  * workspace's last one, or an operator who is not an owner or admin, can read why it cannot go ahead.
  */
 export function AgentDeleteDialog({
-  accountId,
   agentId,
   agentName,
   agentCount,
@@ -98,7 +93,6 @@ export function AgentDeleteDialog({
   open,
   onOpenChange,
 }: {
-  accountId: string
   agentId: string
   agentName: string
   agentCount: number
@@ -110,7 +104,7 @@ export function AgentDeleteDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DeleteForm accountId={accountId} agentId={agentId} agentName={agentName} block={block} onDone={() => onOpenChange(false)} />
+        <DeleteForm agentId={agentId} agentName={agentName} block={block} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

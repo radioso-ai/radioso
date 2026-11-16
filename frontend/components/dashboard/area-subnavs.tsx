@@ -14,7 +14,7 @@ import {
   Radio,
   SquarePen,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { AgentCreationDialogs } from '@/components/dashboard/agent-creation-dialogs'
 import { AgentSwitcher } from '@/components/dashboard/agent-switcher'
@@ -31,12 +31,10 @@ import {
   type SettingsTab,
 } from '@/lib/dashboard-routes'
 import { agentRowForSection, agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
-import { agentsApi, type AgentSettings } from '@/lib/api'
 import { summarizeAgentChannels, type AgentChannelCatalogEntry } from '@/lib/agent-channel-catalog'
-import { requestAgentDelete } from '@/lib/agent-delete-request'
-import { getLastSelectedAgentId } from '@/lib/agent-selection'
-import { useAgentChannelCatalog } from '@/lib/use-agent-channel-catalog'
-import { hasPublishableChanges, useAgentRevisionState } from '@/lib/use-agent-revision-state'
+import { useAgentChannels } from '@/lib/agent-channels-context'
+import { hasPublishableChanges, useAgentRevision } from '@/lib/agent-revision-context'
+import { useAgents } from '@/lib/agents-context'
 import { useWorkspace } from '@/lib/workspace-context'
 
 function useWorkspaceRouteParts() {
@@ -120,42 +118,17 @@ const channelsRowStatus = (entries: ReadonlyArray<AgentChannelCatalogEntry> | nu
 /** Agent area navigation mounted inside the single application sidebar. */
 export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const [agents, setAgents] = useState<AgentSettings[]>([])
+  const { agents, selectedAgent, requestDelete } = useAgents()
+  const { entries: channelEntries } = useAgentChannels()
+  const { state: draftState } = useAgentRevision()
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  const selectedAgent = useMemo(() => {
-    const preferred = routeState.agentId ?? getLastSelectedAgentId(activeWorkspaceId)
-    return agents.find((agent) => agent.id === preferred) ?? agents[0] ?? null
-  }, [activeWorkspaceId, agents, routeState.agentId])
   const selectedAgentId = selectedAgent?.id
   const activeSection = agentSectionFromRoute(routeState)
   const activeRow = agentRowForSection(activeSection)
   const workspacePublicRouteKey = activeWorkspace?.publicRouteKey
   const hrefFor = (agentId: string, section: AgentSectionId) => agentHref(accountId, routeState, agentId, section, activeWorkspaceId ?? undefined, workspacePublicRouteKey)
-
-  const draft = useAgentRevisionState(selectedAgentId)
-  // The operator may change a channel on its page, so the summary is read again on the way into and
-  // out of Channels, and between its pages, but not on every Build tab.
-  const channels = useAgentChannelCatalog({
-    workspaceId: activeWorkspaceId,
-    agentId: selectedAgentId,
-    refreshKey: activeRow === 'channels' ? activeSection : 'elsewhere',
-  })
-
-  useEffect(() => {
-    if (!activeWorkspaceId) return
-    let active = true
-    const load = () => void agentsApi.listAgents().then((result) => { if (active) setAgents(result.agents) }).catch(() => { if (active) setAgents([]) })
-    load()
-    window.addEventListener('radioso:agents-updated', load)
-    window.addEventListener('radioso:assistant-name-updated', load)
-    return () => {
-      active = false
-      window.removeEventListener('radioso:agents-updated', load)
-      window.removeEventListener('radioso:assistant-name-updated', load)
-    }
-  }, [activeWorkspaceId])
 
   const rows: SubNavEntry[] = [
     {
@@ -164,7 +137,7 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       icon: SquarePen,
       href: selectedAgentId ? hrefFor(selectedAgentId, 'profile') : undefined,
       active: activeRow === 'build',
-      status: draft.state && hasPublishableChanges(draft.state) ? { tone: 'warning', label: 'Unpublished changes', dotOnly: true } : undefined,
+      status: draftState && hasPublishableChanges(draftState) ? { tone: 'warning', label: 'Unpublished changes', dotOnly: true } : undefined,
     },
     {
       id: 'test',
@@ -179,19 +152,17 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       icon: Radio,
       href: selectedAgentId ? hrefFor(selectedAgentId, 'channels-overview') : undefined,
       active: activeRow === 'channels',
-      status: channelsRowStatus(channels.entries),
+      status: channelsRowStatus(channelEntries),
     },
   ]
 
   return (
     <div className="ml-2 space-y-1.5 border-l border-sidebar-border/70 pl-2">
       <AgentSwitcher
-        agents={agents}
-        selectedAgent={selectedAgent}
         hrefForAgent={(agentId) => hrefFor(agentId, activeSection)}
         onNewAgent={() => setCreateOpen(true)}
         onImportBundle={() => setImportOpen(true)}
-        onDeleteAgent={requestAgentDelete}
+        onDeleteAgent={requestDelete}
       />
       <div className="space-y-0.5">
         {rows.map((entry) => <SubNavRow key={entry.id} entry={entry} />)}
@@ -204,13 +175,11 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       ) : null}
       <AgentCreationDialogs
         accountId={accountId}
-        workspaceId={activeWorkspaceId}
         workspacePublicRouteKey={workspacePublicRouteKey}
         createOpen={createOpen}
         onCreateOpenChange={setCreateOpen}
         importOpen={importOpen}
         onImportOpenChange={setImportOpen}
-        onImported={() => void agentsApi.listAgents().then((result) => setAgents(result.agents)).catch(() => undefined)}
         profileHrefForAgent={(agentId) => hrefFor(agentId, 'profile')}
       />
     </div>

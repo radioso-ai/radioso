@@ -35,15 +35,17 @@ export function SettingsRow({
   description,
   status,
   action,
+  testId,
 }: {
   icon: ReactNode
   title: string
   description: string
   status?: SettingsRowStatus
   action: ReactNode
+  testId?: string
 }) {
   return (
-    <div className="flex w-full items-center gap-3 px-5 py-4">
+    <div data-testid={testId} className="flex w-full items-center gap-3 px-5 py-4">
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10">
         {icon}
       </div>

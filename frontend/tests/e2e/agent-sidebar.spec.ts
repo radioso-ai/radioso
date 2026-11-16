@@ -27,6 +27,15 @@ const expectOnlyRowCurrent = async (page: Page, current: Row) => {
 
 const switcher = (page: Page, name: string) => sidebar(page).getByRole('button', { name, exact: true })
 
+const whatsappConnector = (enabled: boolean) => ({
+  id: 'whatsapp', name: 'WhatsApp', description: 'WhatsApp', enabled, errorStatus: null, supportsManualSync: false, schema: [], config: {}, webhookUrl: '', syncState: {},
+})
+const mockWhatsapp = (page: Page, enabled: boolean) =>
+  page.route('**/backend/api/v1/connectors/whatsapp', (route) => route.fulfill({ json: whatsappConnector(enabled) }))
+
+const group = (page: Page, name: 'needs-setup' | 'on' | 'not-set-up' | 'answered-by-another-agent') => page.getByTestId(`channel-group-${name}`)
+const channelRow = (page: Page, id: string) => page.getByTestId(`channel-row-${id}`)
+
 const secondaryAgent = { settings: { id: secondaryAgentId, name: 'Sales', internalName: 'sales', isDefault: false } }
 
 const routine: RoutineFixture = {
@@ -170,22 +179,20 @@ test('the Channels overview groups every channel by what needs doing', async ({ 
     slackStatus: { status: 'needs_reauth', readiness: { configured: true, missingEnvVars: [] }, teamName: 'Radioso' },
     slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: null, gapEscalationEnabled: false, respondMode: 'mention' },
   })
-  await page.route('**/backend/api/v1/connectors/whatsapp', async (route) => {
-    await route.fulfill({ json: { id: 'whatsapp', name: 'WhatsApp', description: 'WhatsApp', enabled: false, errorStatus: null, supportsManualSync: false, schema: [], config: {}, webhookUrl: '', syncState: {} } })
-  })
+  await mockWhatsapp(page, false)
   await page.goto(`${agentUrl}?tab=channels`)
 
   await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Needs setup · 1' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'On · 2' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Not set up · 2' })).toBeVisible()
+  await expect(group(page, 'needs-setup').getByTestId('channel-row-slack-channel')).toBeVisible()
+  await expect(group(page, 'on').getByTestId('channel-row-web-chat')).toBeVisible()
+  await expect(group(page, 'on').getByTestId('channel-row-api-channel')).toBeVisible()
+  await expect(group(page, 'not-set-up').getByTestId('channel-row-mcp-channel')).toBeVisible()
+  await expect(group(page, 'not-set-up').getByTestId('channel-row-whatsapp-channel')).toBeVisible()
+  await expect(page.getByTestId('channel-group-answered-by-another-agent')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Fix Slack' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Manage Web chat' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Manage Agent API' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Set up MCP' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Set up WhatsApp' })).toBeVisible()
-  // The retired "Available" word names nothing any more.
-  await expect(page.getByText('Available', { exact: true })).toHaveCount(0)
 
   await page.getByRole('link', { name: 'Fix Slack' }).click()
   await expect(page).toHaveURL(/tab=channels&anchor=slack-channel/)
@@ -194,19 +201,71 @@ test('the Channels overview groups every channel by what needs doing', async ({ 
   await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
 })
 
-test('WhatsApp is shared across the workspace and counts only for the agent that answers it', async ({ page }) => {
-  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
-  await page.route('**/backend/api/v1/connectors/whatsapp', async (route) => {
-    await route.fulfill({ json: { id: 'whatsapp', name: 'WhatsApp', description: 'WhatsApp', enabled: true, errorStatus: null, supportsManualSync: false, schema: [], config: {}, webhookUrl: '', syncState: {} } })
+test('Slack is not offered while the deployment has no Slack app', async ({ page }) => {
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    slackStatus: { status: 'not_configured', readiness: { configured: false, missingEnvVars: ['SLACK_CLIENT_ID'] } },
   })
+  await page.goto(`${agentUrl}?tab=channels`)
+
+  await expect(group(page, 'not-set-up').getByTestId('channel-row-api-channel')).toBeVisible()
+  await expect(channelRow(page, 'slack-channel')).toHaveCount(0)
+})
+
+test('WhatsApp counts for the agent that answers it, and sits in its own group for every other agent', async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
+  await mockWhatsapp(page, true)
 
   await page.goto(`${agentUrl}?tab=channels`)
   await expect(row(page, 'Channels')).toContainText('1 on')
-  await expect(page.getByText('Shared across the workspace. This agent answers it.')).toBeVisible()
+  await expect(group(page, 'on').getByTestId('channel-row-whatsapp-channel')).toBeVisible()
 
   await page.goto(`/w/${workspaceKey}/agents/${secondaryAgentId}?tab=channels`)
+  await expect(group(page, 'answered-by-another-agent').getByTestId('channel-row-whatsapp-channel')).toBeVisible()
+  await expect(channelRow(page, 'whatsapp-channel')).toContainText('Marta')
+  // It is not this agent's, so it is neither counted nor flagged.
   await expect(row(page, 'Channels')).toContainText('0 on')
-  await expect(page.getByText('Shared across the workspace. Answered by Marta.')).toBeVisible()
+  await expect(row(page, 'Channels')).not.toContainText('Needs setup')
+})
+
+test('a WhatsApp connection that is broken is not flagged on an agent that does not answer it', async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
+  await page.route('**/backend/api/v1/connectors/whatsapp', (route) => route.fulfill({ json: { ...whatsappConnector(true), errorStatus: 'token_expired' } }))
+
+  await page.goto(`/w/${workspaceKey}/agents/${secondaryAgentId}?tab=channels`)
+  await expect(group(page, 'answered-by-another-agent').getByTestId('channel-row-whatsapp-channel')).toBeVisible()
+  await expect(row(page, 'Channels')).not.toContainText('Needs setup')
+
+  await page.goto(`${agentUrl}?tab=channels`)
+  await expect(group(page, 'needs-setup').getByTestId('channel-row-whatsapp-channel')).toBeVisible()
+  await expect(row(page, 'Channels')).toContainText('Needs setup')
+})
+
+test('the Channels row follows a change made on a channel page without leaving it', async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
+  await page.goto(`${agentUrl}?tab=channels&anchor=web-chat`)
+  await expect(row(page, 'Channels')).toContainText('0 on')
+
+  await page.locator('#anonChatToggle').click()
+  await expect(row(page, 'Channels')).toContainText('1 on')
+})
+
+test('the agent area reads the agent list, the draft state and the channels once each', async ({ page }) => {
+  const reads: Record<string, number> = { agents: 0, revisionState: 0, whatsapp: 0, general: 0 }
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
+  page.on('request', (request) => {
+    if (request.method() !== 'GET') return
+    const { pathname } = new URL(request.url())
+    if (pathname === '/backend/api/v1/agents') reads.agents += 1
+    if (pathname === `/backend/api/v1/agents/${defaultAgentId}/revision-state`) reads.revisionState += 1
+    if (pathname === '/backend/api/v1/connectors/whatsapp') reads.whatsapp += 1
+  })
+  await page.goto(`${agentUrl}?tab=channels`)
+  await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
+  await expect(row(page, 'Channels')).toContainText(/\d+ on/)
+  await expect(group(page, 'not-set-up').getByTestId('channel-row-web-chat')).toBeVisible()
+
+  expect(reads).toMatchObject({ agents: 1, revisionState: 1, whatsapp: 1 })
 })
 
 test('the agent menu switches agents and keeps the page', async ({ page }) => {
@@ -226,7 +285,7 @@ test('the agent menu switches agents and keeps the page', async ({ page }) => {
   await expect(sidebar(page).getByRole('button', { name: 'New agent', exact: true })).toHaveCount(0)
 })
 
-test('Rename… writes the name the menu shows and the menu takes it at once', async ({ page }) => {
+test('Rename… writes the name visitors see and the internal name, and the menu takes them at once', async ({ page }) => {
   const agentUpdates: unknown[] = []
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), agentUpdates })
   await page.goto(agentUrl)
@@ -234,16 +293,82 @@ test('Rename… writes the name the menu shows and the menu takes it at once', a
   await switcher(page, 'Marta').click()
   await page.getByRole('menuitem', { name: 'Rename…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Rename agent' })
-  await expect(dialog.getByLabel('Name')).toHaveValue('Marta')
-  await dialog.getByLabel('Name').fill('Marta Prime')
+  await expect(dialog.getByLabel('Name visitors see')).toHaveValue('Marta')
+  await expect(dialog.getByLabel('Internal name (optional)')).toHaveValue('')
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await dialog.getByLabel('Name visitors see').fill('Marta Prime')
+  await dialog.getByLabel('Internal name (optional)').fill('Marta (IT)')
   await dialog.getByRole('button', { name: 'Save' }).click()
 
   await expect(dialog).toBeHidden()
-  await expect.poll(() => agentUpdates).toContainEqual({ name: 'Marta Prime' })
-  await expect(switcher(page, 'Marta Prime')).toBeVisible()
+  await expect.poll(() => agentUpdates).toContainEqual({ name: 'Marta Prime', internalName: 'Marta (IT)' })
+  // The menu shows the internal name, and the open Profile shows both, so its autosave cannot undo them.
+  await expect(switcher(page, 'Marta (IT)')).toBeVisible()
+  await expect(page.getByLabel('Assistant name')).toHaveValue('Marta Prime')
+  await expect(page.locator('#agentInternalName')).toHaveValue('Marta (IT)')
 })
 
-test('Delete agent… asks for the agent name before it deletes, and refuses the only agent', async ({ page }) => {
+test('creating an agent that fails says so once, and a new try starts clean', async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
+  await page.route('**/backend/api/v1/agents', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    await route.fulfill({ status: 500, json: { error: 'boom' } })
+  })
+  await page.goto(agentUrl)
+
+  await switcher(page, 'Marta').click()
+  await page.getByRole('menuitem', { name: 'New agent' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Create agent' })
+  await dialog.getByLabel('Name').fill('Acme Support')
+  await dialog.getByRole('button', { name: 'Create manually' }).click()
+  await expect(dialog.getByRole('alert')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toBeHidden()
+
+  await switcher(page, 'Marta').click()
+  await page.getByRole('menuitem', { name: 'New agent' }).click()
+  await expect(page.getByRole('dialog', { name: 'Create agent' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Create agent' }).getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: 'Create agent' }).getByLabel('Name')).toHaveValue('')
+})
+
+const historyLength = (page: Page) => page.evaluate(() => window.history.length)
+
+test('Delete agent… from the menu moves once to the next agent, and the deleted agent is gone from the menu', async ({ page }) => {
+  const deletes: string[] = []
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
+  await page.route(`**/backend/api/v1/agents/${secondaryAgentId}`, async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback()
+    deletes.push(route.request().url())
+    await route.fulfill({ status: 204, body: '' })
+  })
+  await page.goto(`/w/${workspaceKey}/agents/${secondaryAgentId}?tab=chat`)
+  await expect(switcher(page, 'sales')).toBeVisible()
+  const entries = await historyLength(page)
+
+  await switcher(page, 'sales').click()
+  await page.getByRole('menuitem', { name: 'Delete agent…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Delete agent' })
+  const confirm = dialog.getByRole('button', { name: 'Delete agent' })
+  await expect(confirm).toBeDisabled()
+  // The page behind the confirmation is the one the operator was on.
+  await expect(page).toHaveURL(/tab=chat/)
+  await dialog.getByLabel('Type sales to confirm').fill('sales')
+  await confirm.click()
+
+  await expect.poll(() => deletes).toHaveLength(1)
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}\\?tab=chat$`))
+  await expect(switcher(page, 'Marta')).toBeVisible()
+  // One replacement of the deleted agent's URL: no new history entry, so Back cannot land on it.
+  expect(await historyLength(page)).toBe(entries)
+  await switcher(page, 'Marta').click()
+  await expect(page.getByRole('menuitem', { name: 'sales' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.goBack()
+  await expect(page).not.toHaveURL(new RegExp(secondaryAgentId))
+})
+
+test('Delete agent… from a link that names no agent deletes the agent the menu shows', async ({ page }) => {
   const deletes: string[] = []
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
   await page.route(`**/backend/api/v1/agents/${defaultAgentId}`, async (route) => {
@@ -251,18 +376,15 @@ test('Delete agent… asks for the agent name before it deletes, and refuses the
     deletes.push(route.request().url())
     await route.fulfill({ status: 204, body: '' })
   })
-  await page.goto(`${agentUrl}?tab=chat`)
-
+  // The URL names no agent, so the last agent used is the selection: the menu and the page must agree.
+  await page.goto(`/w/${workspaceKey}/agents`)
   await switcher(page, 'Marta').click()
   await page.getByRole('menuitem', { name: 'Delete agent…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Delete agent' })
-  const confirm = dialog.getByRole('button', { name: 'Delete agent' })
-  await expect(confirm).toBeDisabled()
-  // The page behind the confirmation is the one the operator was on.
-  await expect(page).toHaveURL(/tab=chat/)
   await dialog.getByLabel('Type Marta to confirm').fill('Marta')
-  await confirm.click()
+  await dialog.getByRole('button', { name: 'Delete agent' }).click()
   await expect.poll(() => deletes).toHaveLength(1)
+  await expect(switcher(page, 'sales')).toBeVisible()
 })
 
 test('Delete agent… tells the operator why the only agent cannot go', async ({ page }) => {
@@ -289,6 +411,30 @@ test('the old Danger zone link opens Profile with the delete confirmation', asyn
   await expect(page).not.toHaveURL(/agent-danger-zone/)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
   await expectOnlyRowCurrent(page, 'Build')
+})
+
+test('deleting from the old Danger zone link moves once, off the deleted agent', async ({ page }) => {
+  const deletes: string[] = []
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), extraAgents: [secondaryAgent] })
+  await page.route(`**/backend/api/v1/agents/${secondaryAgentId}`, async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback()
+    deletes.push(route.request().url())
+    await route.fulfill({ status: 204, body: '' })
+  })
+  await page.goto(`/w/${workspaceKey}/agents/${secondaryAgentId}?tab=behavior&anchor=agent-danger-zone`)
+  const dialog = page.getByRole('dialog', { name: 'Delete agent' })
+  await expect(dialog).toBeVisible()
+  const entries = await historyLength(page)
+
+  await dialog.getByLabel('Type sales to confirm').fill('sales')
+  await dialog.getByRole('button', { name: 'Delete agent' }).click()
+
+  await expect.poll(() => deletes).toHaveLength(1)
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}(\\?|$)`))
+  await expect(page).not.toHaveURL(/agent-danger-zone/)
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
+  expect(await historyLength(page)).toBe(entries)
 })
 
 test('old channel links open their channel page', async ({ page }) => {

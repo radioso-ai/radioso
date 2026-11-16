@@ -21,7 +21,8 @@ import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
 import { AgentChannelsOverview } from '@/components/dashboard/agent-channels-overview'
 import { type AgentSectionId, agentSectionRoute } from '@/lib/dashboard-areas'
 import { buildAgentSectionHref, buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { AGENT_RENAMED_EVENT, type AgentRenamedDetail } from '@/lib/agent-rename'
+import { useAgentChannels } from '@/lib/agent-channels-context'
+import { useAgentById, useAgents } from '@/lib/agents-context'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { mergeGeneralSettingsSnapshot } from '@/lib/general-settings-snapshot'
 import {
@@ -141,8 +142,11 @@ export function WorkspaceAssistantChannelsTab({
   const [isDeletingOrg, setIsDeletingOrg] = useState(false)
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false)
   const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null)
-  const [agentName, setAgentName] = useState<string>('')
-  const [agentInternalName, setAgentInternalName] = useState<string>('')
+  const { onRenamed, refresh: refreshAgents } = useAgents()
+  const currentAgent = useAgentById(agentId)
+  const channels = useAgentChannels()
+  // The name the dashboard shows for this agent, as the agent area's list holds it (Profile only).
+  const labelledAgent = mode === 'assistant' ? currentAgent : undefined
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
@@ -351,6 +355,8 @@ export function WorkspaceAssistantChannelsTab({
       const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
       setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
       setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+      // Turning the public chat on or off changes what the menu's Channels row counts.
+      channels.refresh()
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
     } finally {
@@ -388,54 +394,18 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  const operatorAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, 'Agent')
+  const operatorAgentName = getAgentOperatorLabel(labelledAgent, 'Agent')
   // Slack must use an empty label fallback so the workspace assistant name can still be used.
-  const slackAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, '') || anonSettings?.assistantName || ''
+  const slackAgentName = getAgentOperatorLabel(labelledAgent, '') || anonSettings?.assistantName || ''
 
-  useEffect(() => {
-    if (mode !== 'assistant') {
-      return
-    }
-
-    let active = true
-    void (async () => {
-      try {
-        const response = await agentsApi.listAgents()
-        if (!active) return
-        if (agentId) {
-          const current = response.agents.find((agent) => agent.id === agentId)
-          setAgentName(current?.name ?? '')
-          setAgentInternalName(current?.internalName ?? '')
-        } else {
-          setAgentName('')
-          setAgentInternalName('')
-        }
-      } catch {
-        if (!active) return
-        setAgentName('')
-        setAgentInternalName('')
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [agentId, mode, activeWorkspaceId])
-
-  // A rename from the agent menu writes the server's name, so the fields held here take it too;
+  // A rename from the agent menu writes the server's names, so the fields held here take them too;
   // otherwise the next autosave would write the old name back.
-  useEffect(() => {
-    const takeRename = (event: Event) => {
-      const { agentId: renamedAgentId, field, value } = (event as CustomEvent<AgentRenamedDetail>).detail
-      if (renamedAgentId !== agentId) return
-      const patch: Partial<GeneralSettings> = field === 'name' ? { assistantName: value } : { internalName: value }
-      setAnonSettings((current) => current && { ...current, ...patch })
-      setSavedAnonSettings((current) => current && { ...current, ...patch })
-      if (field === 'name') setAgentName(value)
-      else setAgentInternalName(value)
-    }
-    window.addEventListener(AGENT_RENAMED_EVENT, takeRename)
-    return () => window.removeEventListener(AGENT_RENAMED_EVENT, takeRename)
-  }, [agentId])
+  useEffect(() => onRenamed((renamed) => {
+    if (renamed.agentId !== agentId) return
+    const names: Partial<GeneralSettings> = { assistantName: renamed.name, internalName: renamed.internalName }
+    setAnonSettings((current) => current && { ...current, ...names })
+    setSavedAnonSettings((current) => current && { ...current, ...names })
+  }), [agentId, onRenamed])
 
   const effectiveRetrievalDefaults = retrievalDefaults ?? fallbackRetrievalDefaults
 
@@ -669,11 +639,7 @@ export function WorkspaceAssistantChannelsTab({
           setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
           setAssistantSettingsError(null)
           // Both feed the agent switcher's label; either change should refresh it.
-          if (nameChanged || internalNameChanged) {
-            window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
-              detail: { assistantName: updated.assistantName },
-            }))
-          }
+          if (nameChanged || internalNameChanged) void refreshAgents()
           if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
             setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
             setSaveState('saved')
@@ -692,7 +658,7 @@ export function WorkspaceAssistantChannelsTab({
       })()
     }, 700)
     return () => window.clearTimeout(timeout)
-  }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
+  }, [anonSettings, hasAssistantChanges, refreshAgents, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
 
   useEffect(() => {
     if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasLiveAssistantBehaviorChanges) {
@@ -913,7 +879,6 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'channels' && agentId && agentSection === 'channels-overview' ? (
             <AgentChannelsOverview
-              agentId={agentId}
               hrefForChannel={(channelId) => buildAgentSectionHref(accountId, routeState ?? { section: 'agents' }, agentId, agentSectionRoute(channelId))}
             />
           ) : null}
@@ -1001,7 +966,11 @@ export function WorkspaceAssistantChannelsTab({
             <ConnectorSetupDialog
               open={whatsappSetupOpen}
               connectorId="whatsapp"
-              onOpenChange={setWhatsappSetupOpen}
+              onOpenChange={(open) => {
+                setWhatsappSetupOpen(open)
+                // Closing the setup is when a connection it saved starts to count in the agent menu.
+                if (!open) channels.refresh()
+              }}
             />
           </section>
           ) : null}

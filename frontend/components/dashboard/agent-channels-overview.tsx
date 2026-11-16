@@ -7,8 +7,7 @@ import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/se
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { groupAgentChannels, type AgentChannelCatalogEntry, type AgentChannelCatalogId } from '@/lib/agent-channel-catalog'
-import { useAgentChannelCatalog } from '@/lib/use-agent-channel-catalog'
-import { useWorkspace } from '@/lib/workspace-context'
+import { useAgentChannels } from '@/lib/agent-channels-context'
 
 const CHANNEL_PRESENTATION: Record<AgentChannelCatalogId, { title: string; icon: LucideIcon; description: string }> = {
   'web-chat': { title: 'Web chat', icon: Globe, description: 'A shareable link and a website widget, sharing one look and wording.' },
@@ -24,12 +23,14 @@ const channelDescription = (entry: AgentChannelCatalogEntry, answeringAgentName:
   const base = CHANNEL_PRESENTATION[entry.id].description
   if (!entry.workspaceConnection) return base
   if (entry.workspaceConnection.answeredBy === 'this-agent') return 'Shared across the workspace. This agent answers it.'
-  return answeringAgentName ? `Shared across the workspace. Answered by ${answeringAgentName}.` : 'Shared across the workspace. Another agent answers it.'
+  return answeringAgentName ? `Answered by ${answeringAgentName}. Shared across the workspace.` : 'Answered by another agent. Shared across the workspace.'
 }
 
-const actionLabel = (entry: AgentChannelCatalogEntry): string => {
-  if (entry.workspaceConnection?.answeredBy === 'another-agent') return 'View'
-  return entry.status === 'needs-setup' ? 'Fix' : entry.status === 'on' ? 'Manage' : 'Set up'
+const ACTION_LABELS: Record<AgentChannelCatalogEntry['status'], string> = {
+  'needs-setup': 'Fix',
+  on: 'Manage',
+  'not-set-up': 'Set up',
+  'answered-elsewhere': 'View',
 }
 
 function ChannelRow({
@@ -42,13 +43,14 @@ function ChannelRow({
   answeringAgentName: string | null
 }) {
   const { title, icon: Icon } = CHANNEL_PRESENTATION[entry.id]
-  const label = actionLabel(entry)
+  const label = ACTION_LABELS[entry.status]
   return (
     <SettingsRow
       icon={<Icon className="h-5 w-5 text-primary" />}
       title={title}
       description={channelDescription(entry, answeringAgentName)}
       status={entry.status === 'on' ? { label: 'On', tone: 'active' } : entry.status === 'needs-setup' ? { label: 'Needs setup', tone: 'warning' } : undefined}
+      testId={`channel-row-${entry.id}`}
       action={
         <Button asChild size="sm" variant={entry.status === 'needs-setup' ? 'default' : 'outline'}>
           <Link href={href} aria-label={`${label} ${title}`}>{label}</Link>
@@ -71,7 +73,7 @@ function ChannelGroup({
 }) {
   if (entries.length === 0) return null
   return (
-    <section className="space-y-2">
+    <section className="space-y-2" aria-label={heading} data-testid={`channel-group-${heading.toLowerCase().replace(/ /g, '-')}`}>
       <h2 className="text-sm font-medium text-muted-foreground">{heading} · {entries.length}</h2>
       <SettingsRowList>
         {entries.map((entry) => (
@@ -83,15 +85,8 @@ function ChannelGroup({
 }
 
 /** Every channel the deployment offers this agent, grouped by what needs doing: fix, manage, or set up. */
-export function AgentChannelsOverview({
-  agentId,
-  hrefForChannel,
-}: {
-  agentId: string
-  hrefForChannel: (channelId: AgentChannelCatalogId) => string
-}) {
-  const { activeWorkspaceId } = useWorkspace()
-  const { entries, whatsappAnsweringAgentName } = useAgentChannelCatalog({ workspaceId: activeWorkspaceId, agentId })
+export function AgentChannelsOverview({ hrefForChannel }: { hrefForChannel: (channelId: AgentChannelCatalogId) => string }) {
+  const { entries, whatsappAnsweringAgentName } = useAgentChannels()
 
   if (!entries) {
     return (
@@ -107,6 +102,7 @@ export function AgentChannelsOverview({
       <ChannelGroup heading="Needs setup" entries={groups.needsSetup} hrefForChannel={hrefForChannel} answeringAgentName={whatsappAnsweringAgentName} />
       <ChannelGroup heading="On" entries={groups.on} hrefForChannel={hrefForChannel} answeringAgentName={whatsappAnsweringAgentName} />
       <ChannelGroup heading="Not set up" entries={groups.notSetUp} hrefForChannel={hrefForChannel} answeringAgentName={whatsappAnsweringAgentName} />
+      <ChannelGroup heading="Answered by another agent" entries={groups.answeredElsewhere} hrefForChannel={hrefForChannel} answeringAgentName={whatsappAnsweringAgentName} />
     </section>
   )
 }

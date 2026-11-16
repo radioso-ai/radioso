@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
   workspaceKey,
@@ -45,10 +46,9 @@ test("first-run developer paths expose separate upload and chat instructions", a
     workspaceSummary: freshWorkspaceSummary(),
   });
 
-  // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
-  // isAgentChatView), not the bare workspace root — the Inbox is the dashboard's
-  // default landing section, so this needs an explicit path.
-  await page.goto(`/w/${workspaceKey}/agents`);
+  // First-run onboarding is scoped to the agent's Test chat (dashboard-shell.tsx's
+  // isAgentChatView), not the bare workspace root or Build — so this needs an explicit path.
+  await page.goto(`/w/${workspaceKey}/agents?tab=chat`);
 
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
   const uploadApiButton = page.getByRole("button", { name: "Upload with API or SDK" });
@@ -92,10 +92,9 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
     workspaceSummary: freshWorkspaceSummary(),
   });
 
-  // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
-  // isAgentChatView), not the bare workspace root — the Inbox is the dashboard's
-  // default landing section, so this needs an explicit path.
-  await page.goto(`/w/${workspaceKey}/agents`);
+  // First-run onboarding is scoped to the agent's Test chat (dashboard-shell.tsx's
+  // isAgentChatView), not the bare workspace root or Build — so this needs an explicit path.
+  await page.goto(`/w/${workspaceKey}/agents?tab=chat`);
 
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
   await page.getByRole("button", { name: "Skip" }).click();
@@ -110,7 +109,7 @@ test("first-run dismissal follows server state into a fresh browser context", as
   const workspaceSummary = freshWorkspaceSummary();
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { workspaceSummary });
-  await page.goto(`/w/${workspaceKey}/agents`);
+  await page.goto(`/w/${workspaceKey}/agents?tab=chat`);
   await page.getByRole("button", { name: "Skip" }).click();
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
 
@@ -118,7 +117,29 @@ test("first-run dismissal follows server state into a fresh browser context", as
   const freshPage = await freshContext.newPage();
   await seedDashboardStorage(freshPage);
   await installDashboardApiMocks(freshPage, { workspaceSummary });
-  await freshPage.goto(`/w/${workspaceKey}/agents`);
+  await freshPage.goto(`/w/${workspaceKey}/agents?tab=chat`);
   await expect(freshPage.getByRole("heading", { name: "Get started with Radioso" })).toBeHidden();
   await freshContext.close();
+});
+
+test("a workspace in first-run still gets every Build page, which onboarding does not cover", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    documentList: { documents: [], total: 0, nextCursor: null, hasMore: false },
+    workspaceSummary: freshWorkspaceSummary(),
+  });
+
+  // The bare agent link opens Build, Profile, with no onboarding takeover and no wait on it.
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}`);
+  await expect(page.getByRole("heading", { name: "Profile", level: 1, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toHaveCount(0);
+
+  // So does a link into another Build page, such as Ray's "give the agent a rule" step.
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+  await expect(page.getByRole("heading", { name: "Directives", level: 1, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toHaveCount(0);
+
+  // The chat tab is where onboarding lives.
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
+  await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
 });

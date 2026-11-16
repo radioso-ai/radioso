@@ -24,7 +24,7 @@ import {
   retargetDashboardRouteToWorkspace,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
-import { activeArea } from '@/lib/dashboard-areas'
+import { activeArea, agentSectionFromRoute } from '@/lib/dashboard-areas'
 import {
   shouldRewriteToActiveWorkspace,
   shouldWaitForRouteWorkspace,
@@ -60,9 +60,10 @@ export function DashboardShell({
     ? workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.publicRouteKey
     : undefined
   const currentView = routeState.section
-  // First-run onboarding takes over the agent landing and the chat tab; an agent whose onboarding
-  // is done opens on Build instead, so the landing needs the onboarding answer before it renders.
-  const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
+  // First-run onboarding takes over Test chat and nothing else: it is the one agent page it renders
+  // into. An agent opens on Build, so the bare agent URL is a Build page and belongs to the page itself;
+  // the home redirect names the chat tab for a workspace that still needs onboarding.
+  const isAgentChatView = currentView === 'agents' && agentSectionFromRoute(routeState) === 'chat'
   // The labeled sidebar is the single nav surface: the active section's sub-nav
   // nests under its rail row instead of occupying a second column. The first-run
   // takeover still shows full-width content.

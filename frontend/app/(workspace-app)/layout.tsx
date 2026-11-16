@@ -1,4 +1,5 @@
 import { SunriseProvider } from '@/components/auth/sunrise'
+import { AgentAreaProviders } from '@/components/dashboard/agent-area-providers'
 import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 
@@ -15,7 +16,7 @@ export default function WorkspaceAppLayout({
     <SunriseProvider>
       <AuthProvider>
         <WorkspaceProvider>
-          {children}
+          <AgentAreaProviders>{children}</AgentAreaProviders>
         </WorkspaceProvider>
       </AuthProvider>
     </SunriseProvider>

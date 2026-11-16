@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { downloadAgentBundle } from '@/lib/agent-bundle-download'
+import { useAgents } from '@/lib/agents-context'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { AgentSettings } from '@/lib/api'
 import { agentToGeneralSettings } from '@/lib/api-types'
@@ -42,20 +43,17 @@ function AgentAvatar({ agent, label, size }: { agent: AgentSettings | null; labe
  * add one. It navigates only through the links it is given and acts only through the callbacks it is given.
  */
 export function AgentSwitcher({
-  agents,
-  selectedAgent,
   hrefForAgent,
   onNewAgent,
   onImportBundle,
   onDeleteAgent,
 }: {
-  agents: AgentSettings[]
-  selectedAgent: AgentSettings | null
   hrefForAgent: (agentId: string) => string
   onNewAgent: () => void
   onImportBundle: () => void
   onDeleteAgent: (agentId: string) => void
 }) {
+  const { agents, selectedAgent } = useAgents()
   const [renameOpen, setRenameOpen] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const selectedLabel = selectedAgent ? getAgentOperatorLabel(selectedAgent) : 'Select an agent'
@@ -133,7 +131,7 @@ export function AgentSwitcher({
         </DropdownMenuContent>
       </DropdownMenu>
       {exportError ? <p role="alert" className="px-2 text-xs text-destructive">{exportError}</p> : null}
-      {selectedAgent ? <AgentRenameDialog agentId={selectedAgent.id} agent={selectedAgent} open={renameOpen} onOpenChange={setRenameOpen} /> : null}
+      {selectedAgent ? <AgentRenameDialog agent={selectedAgent} open={renameOpen} onOpenChange={setRenameOpen} /> : null}
     </div>
   )
 }

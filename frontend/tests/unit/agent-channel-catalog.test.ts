@@ -11,6 +11,7 @@ const noChannels = {
   webChatEnabled: false,
   apiCredentialCount: 0,
   mcpCredentialCount: 0,
+  slackAvailable: true,
   slackBound: false,
   slackConnected: false,
   whatsappAvailable: false,
@@ -31,7 +32,7 @@ const mailbox = ({ receiving, sending, enabled = true }: {
 }) => ({ enabled, receiving: { state: receiving }, sending: { state: sending } })
 
 describe('agent channel catalog', () => {
-  it('always lists web chat, the agent API, MCP and Slack, and reports what is configured', () => {
+  it('lists web chat, the agent API, MCP and Slack, and reports what is configured', () => {
     expect(resolveAgentChannelCatalog(noChannels)).toEqual([
       { id: 'web-chat', status: 'not-set-up' },
       { id: 'api-channel', status: 'not-set-up' },
@@ -44,6 +45,13 @@ describe('agent channel catalog', () => {
       apiCredentialCount: 1,
       mcpCredentialCount: 2,
     }).map((entry) => entry.status)).toEqual(['on', 'on', 'on', 'not-set-up'])
+  })
+
+  it('keeps Slack out of the list while the deployment has no Slack app and nothing is bound or connected', () => {
+    expect(statusOf(resolveAgentChannelCatalog({ ...noChannels, slackAvailable: false }), 'slack-channel')).toBeUndefined()
+    // A binding or an installation that already exists stays visible so it can be repaired.
+    expect(statusOf(resolveAgentChannelCatalog({ ...noChannels, slackAvailable: false, slackBound: true }), 'slack-channel')).toBe('needs-setup')
+    expect(statusOf(resolveAgentChannelCatalog({ ...noChannels, slackAvailable: false, slackConnected: true }), 'slack-channel')).toBe('not-set-up')
   })
 
   it('treats Slack as on only when the app is connected and the agent is bound', () => {
@@ -67,14 +75,22 @@ describe('agent channel catalog', () => {
     expect(whatsapp({ whatsappConfigured: true, whatsappError: true })).toEqual({ id: 'whatsapp-channel', status: 'needs-setup', ...here })
   })
 
-  it('does not count or flag WhatsApp on an agent that does not answer the number', () => {
+  it('gives WhatsApp its own state on an agent that does not answer a number that is on', () => {
     const whatsapp = (overrides: Partial<typeof noChannels>) =>
       resolveAgentChannelCatalog({ ...noChannels, whatsappAvailable: true, whatsappAnsweredHere: false, ...overrides }).find((entry) => entry.id === 'whatsapp-channel')
-    const elsewhere = { id: 'whatsapp-channel', status: 'not-set-up', workspaceConnection: { answeredBy: 'another-agent' } }
-    expect(whatsapp({ whatsappConfigured: true })).toEqual(elsewhere)
+    expect(whatsapp({ whatsappConfigured: true })).toEqual({
+      id: 'whatsapp-channel',
+      status: 'answered-elsewhere',
+      workspaceConnection: { answeredBy: 'another-agent' },
+    })
     // A broken connection is the answering agent's to fix, so it cannot turn this agent's row amber.
-    expect(whatsapp({ whatsappConfigured: true, whatsappError: true })).toEqual(elsewhere)
-    expect(whatsapp({})).toEqual(elsewhere)
+    expect(whatsapp({ whatsappConfigured: true, whatsappError: true })?.status).toBe('answered-elsewhere')
+  })
+
+  it('leaves WhatsApp not set up while nobody has set the number up, whichever agent is looking', () => {
+    const whatsapp = resolveAgentChannelCatalog({ ...noChannels, whatsappAvailable: true, whatsappAnsweredHere: false })
+      .find((entry) => entry.id === 'whatsapp-channel')
+    expect(whatsapp).toEqual({ id: 'whatsapp-channel', status: 'not-set-up', workspaceConnection: { answeredBy: 'another-agent' } })
   })
 
   it('lists email as not set up once the server offers it, before any mailbox exists', () => {
@@ -126,16 +142,18 @@ describe('agent channel summary and grouping', () => {
     { id: 'mcp-channel', status: 'not-set-up' },
     { id: 'slack-channel', status: 'needs-setup' },
     { id: 'email-channel', status: 'on' },
+    { id: 'whatsapp-channel', status: 'answered-elsewhere', workspaceConnection: { answeredBy: 'another-agent' } },
   ]
 
-  it('counts the channels that are on and says when any needs setup', () => {
+  it('counts the channels that are on and says when any needs setup, ignoring a channel another agent answers', () => {
     expect(summarizeAgentChannels(entries)).toEqual({ onCount: 2, needsSetup: true })
     expect(summarizeAgentChannels(entries.filter((entry) => entry.status !== 'needs-setup'))).toEqual({ onCount: 2, needsSetup: false })
     expect(summarizeAgentChannels([])).toEqual({ onCount: 0, needsSetup: false })
   })
 
-  it('groups into needs setup, on and not set up, keeping catalog order', () => {
+  it('groups into needs setup, on, not set up and answered elsewhere, keeping catalog order', () => {
     const groups = groupAgentChannels(entries)
+    expect(groups.answeredElsewhere.map((entry) => entry.id)).toEqual(['whatsapp-channel'])
     expect(groups.needsSetup.map((entry) => entry.id)).toEqual(['slack-channel'])
     expect(groups.on.map((entry) => entry.id)).toEqual(['web-chat', 'email-channel'])
     expect(groups.notSetUp.map((entry) => entry.id)).toEqual(['api-channel', 'mcp-channel'])

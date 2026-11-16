@@ -30,7 +30,7 @@
   "frontend/components/dashboard/settings/assistant-routines-section.tsx": 1007,
   "frontend/components/dashboard/settings/routine-chip-node.tsx": 1346,
   "frontend/components/dashboard/settings/skills/SkillForm.tsx": 1115,
-  "frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx": 1184,
+  "frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx": 1153,
   "frontend/components/dashboard/spine-stage-detail.tsx": 1186,
   "frontend/lib/anonymous-chat-context.tsx": 1159,
   "frontend/lib/dashboard-routes.ts": 1222,

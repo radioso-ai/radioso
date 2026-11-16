@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AGENT_DRAFT_SAVED_EVENT } from '@/lib/agent-draft-save-port'
 import { describeReleaseRefusal } from '@/lib/agent-revision-testable-revisions'
 import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, type PublishRevisionCommand } from '@/lib/api-agent-revisions'
-import { hasPublishableChanges, useAgentRevisionState } from '@/lib/use-agent-revision-state'
+import { hasPublishableChanges, useAgentRevision } from '@/lib/agent-revision-context'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
 import { describeGreeting } from '@/lib/exact-greeting-editor'
@@ -74,7 +74,7 @@ export function AgentRevisionHeader({
   /** The Agent versions page, which the header links to from both Build and Test. */
   versionsHref: string
 }) {
-  const { state, error, setState, setError, requestGenerationRef } = useAgentRevisionState(agentId)
+  const { state, error, setState, setError, requestGenerationRef } = useAgentRevision()
   const [detail, setDetail] = useState<AgentRevisionDetail | null>(null)
   const [catalog, setCatalog] = useState<ContextVariable[]>([])
   const [publicationCommand, setPublicationCommand] = useState<PublicationCommand | null>(null)

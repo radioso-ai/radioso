@@ -1,6 +1,7 @@
 import type { ChatConversationDetail, ChatConversationTurn } from './api'
 import type { EvalAssertion, EvalSnapshot } from './api-eval'
 import type { WorkbenchSeedTurn } from '@/components/dashboard/workbench/use-workbench-state'
+import { snapshotInputMetadata } from '@/lib/eval-snapshot-message'
 
 interface EventRetrievalWorkbenchSeedCase {
   id: string
@@ -73,6 +74,7 @@ const snapshotMessageToTurn = (
   createdAt: message.createdAt,
   citations: message.citations,
   answerSegments: message.answerSegments,
+  inputMetadata: snapshotInputMetadata(message),
 })
 
 const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({

@@ -11,6 +11,7 @@ import type { AgentRevision } from "../agents/public.js";
 import { revisionTakesPhotos, type VisitorImageRevisionSwitch } from "../visitorImages/contracts/revisionSwitch.js";
 import type { VisitorImageClaim, VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import type { MessageImageInput } from "../../shared/domain/chatInputMetadata.js";
 import { visibleMessageText } from "../../shared/domain/visibleMessageText.js";
 import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
@@ -65,10 +66,7 @@ export interface TestExecutionHistoryEntry {
 }
 
 /** What a message with photos shows: the typed words and each photo, with what the agent read in it. */
-export interface TestExecutionImageInput {
-  typedText: string;
-  images: readonly { id: string; reading: string | null }[];
-}
+export type TestExecutionImageInput = MessageImageInput;
 
 /**
  * One send's photos, claimed: the turn text every side runs on (the typed text, then a block per

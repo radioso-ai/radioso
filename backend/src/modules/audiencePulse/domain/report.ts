@@ -26,6 +26,14 @@ export interface AudiencePulseEvidence {
   reference: AudiencePulseEvidenceReference;
   /** Transient, untrusted prompt evidence. Never persists in a snapshot. */
   question: string;
+  /**
+   * What a person reads of the question: for a message with photos, the words typed beside them,
+   * never the readings `question` carries for the census and the models. Absent, the question is
+   * shown as it is.
+   */
+  displayQuestion?: string;
+  /** The photos the question's message carried; absent reads as none. */
+  questionPhotoCount?: number;
   weekStart: string;
   channel: string | null;
   grounding: AudiencePulseGroundingSignal;

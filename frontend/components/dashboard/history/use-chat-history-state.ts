@@ -24,6 +24,7 @@ import { getPrimaryLeaf } from '@/lib/turn-trace'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { mergeTailMessages } from '@/lib/conversation-tail'
+import { evidenceAnchorContent } from '@/lib/audience-pulse-evidence-handoff'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
@@ -389,7 +390,7 @@ const withAudiencePulseEvidenceWindow = (
     id: message.messageId,
     role: message.role,
     source: message.source,
-    content: message.content,
+    content: evidenceAnchorContent(message),
     createdAt: message.createdAt,
   }))
 

@@ -3,6 +3,7 @@
  * Activity drawer. Conversation and message identifiers stay out of URLs so
  * they cannot be copied into browser history, referrers, or analytics.
  */
+import { visibleMessageLabel } from '@/lib/visitor-image-input'
 
 export interface AudiencePulseEvidenceHandoff {
   conversationId: string
@@ -66,6 +67,15 @@ export function writeAudiencePulseEvidenceHandoff(scope: {
   } catch {
     // Storage is best-effort; the normal Activity route remains usable.
   }
+}
+
+/**
+ * The text of a message in the evidence window the drawer opens on: a visitor's message is the
+ * words they typed with a short count of the photos that came with them (the window carries no
+ * photo to render, and never the readings), and a reply is its content.
+ */
+export function evidenceAnchorContent(message: { content: string; photoCount?: number }): string {
+  return message.photoCount ? visibleMessageLabel({ text: message.content, photoCount: message.photoCount }) : message.content
 }
 
 export function clearAudiencePulseEvidenceHandoff(): void {

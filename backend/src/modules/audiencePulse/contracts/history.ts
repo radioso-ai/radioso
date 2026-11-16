@@ -25,7 +25,10 @@ export interface AudiencePulseHydratedEvidence {
   evidenceId: string;
   conversationId: string;
   messageId: string;
+  /** What a person reads of the question: for a message with photos, the words typed beside them. */
   question: string;
+  /** The photos the question's message carried; absent reads as none. */
+  questionPhotoCount?: number;
 }
 
 /** A server-authorized, bounded history window for one representative source. */
@@ -35,7 +38,10 @@ export interface AudiencePulseEvidenceAnchor {
     messageId: string;
     role: "user";
     source: "customer";
+    /** The words the visitor typed; for a message with photos, never the readings of them. */
     content: string;
+    /** The photos the message carried. */
+    photoCount: number;
     createdAt: string;
   };
   nextAssistant: {

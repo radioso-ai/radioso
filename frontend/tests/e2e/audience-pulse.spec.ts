@@ -471,7 +471,18 @@ test.describe("Audience Pulse dashboard", () => {
         hasMore: false,
       },
     });
-    await installAudiencePulseMocks(page, { read: "completed" });
+    // The first example's visitor sent a photo with the question: the report carries the words they
+    // typed and the photo count, never the agent's reading of the photo.
+    await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: {
+        ...completedReport,
+        themes: [{
+          ...completedReport.themes[0],
+          evidence: [{ ...completedReport.themes[0].evidence[0], questionPhotoCount: 1 }, completedReport.themes[0].evidence[1]],
+        }],
+      },
+    });
 
     const recentMessages = Array.from({ length: 50 }, (_, index) => ({
       id: `dddddddd-dddd-4ddd-8ddd-${String(index + 1).padStart(12, "0")}`,
@@ -542,6 +553,7 @@ test.describe("Audience Pulse dashboard", () => {
             role: "user",
             source: "customer",
             content: "How long until I get my refund after returning?",
+            photoCount: 1,
             createdAt: nowIso,
           },
           nextAssistant: {
@@ -561,6 +573,8 @@ test.describe("Audience Pulse dashboard", () => {
     await topicRow.getByRole("button", { name: /Show examples/ }).click();
     await expect(topicRow.getByText(completedReport.themes[0].description)).toBeVisible();
     await expect(topicRow.getByText("Examples · 2 of 30 questions")).toBeVisible();
+    await expect(topicRow.getByRole("button", { name: "How long until I get my refund after returning? · 1 photo" })).toBeVisible();
+    await expect(page.getByText("attached_photo")).toHaveCount(0);
     await page.getByRole("button", { name: "How long until I get my refund after returning?" }).click();
 
     await expect(page).toHaveURL(/\/activity\?tab=all$/);
@@ -569,6 +583,9 @@ test.describe("Audience Pulse dashboard", () => {
     expect(currentUrl).not.toContain(evidenceMessageOne);
     await expect(page.getByLabel("Conversation details")).toBeVisible();
     await expect(page.locator(`[data-message-id="${evidenceMessageOne}"]`)).toBeVisible();
+    // The window shows the visitor's words with the photo count, not a reading's markup.
+    await expect(page.locator(`[data-message-id="${evidenceMessageOne}"]`)).toContainText("How long until I get my refund after returning? · 1 photo");
+    await expect(page.getByLabel("Conversation details").getByText("attached_photo")).toHaveCount(0);
     await expect(page.locator(`[data-message-id="${evidenceMessageOne}"] .ring-1`)).toHaveCount(1);
     expect(historyCursors).toEqual([null]);
     expect(evidenceAnchorBodies).toEqual([{ conversationId: conversationOne, messageId: evidenceMessageOne }]);

@@ -30,6 +30,7 @@ import {
 } from '@/lib/audience-pulse-draft-seed'
 import { writeAudiencePulseEvidenceHandoff } from '@/lib/audience-pulse-evidence-handoff'
 import { answerStatusLabel } from '@/lib/answer-coverage'
+import { questionLabel } from '@/lib/visitor-image-input'
 import { formatTopicAnswerCounts, getTopicShortfalls } from '@/lib/audience-pulse-answer-status'
 
 interface AudiencePulseViewProps {
@@ -847,7 +848,7 @@ function TopicDetails({
                   className="group flex min-w-0 flex-1 items-start text-left text-sm text-foreground focus:outline-none"
                 >
                   <span className="underline-offset-2 group-hover:underline group-focus-visible:underline">
-                    {evidence.question}
+                    {questionLabel(evidence)}
                     {evidence.occurrenceCount > 1
                       ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
                       : null}

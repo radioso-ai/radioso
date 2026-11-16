@@ -154,11 +154,15 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
     ? extractDirectiveFirings(record.metadata)
     : undefined;
   const withheld = carriesSensitiveValue(record.metadata);
+  // A visitor's photos come with their message, as they do into a Test Chat seed; a withheld
+  // message leaves them out, since the typed text and the readings are what it withholds.
+  const imageInput = record.role === "user" && !withheld ? record.inputMetadata?.imageInput : undefined;
   return {
     id: record.id,
     role: record.role,
     content: transcriptCopyContent(record),
     createdAt: record.createdAt.toISOString(),
+    ...(imageInput ? { imageInput } : {}),
     ...(record.role === "assistant" ? {
       citations: extractCitations(record.metadata),
       ...(withheld ? {} : { answerSegments: extractAnswerSegments(record.metadata) }),
@@ -362,6 +366,7 @@ export class EvalSnapshotService {
         role: entry.role,
         content: entry.content,
         createdAt: entry.createdAt.toISOString(),
+        ...(entry.role === "user" && entry.imageInput ? { imageInput: entry.imageInput } : {}),
       })),
       originalInstructionBlock: null,
       originalModelId: candidate.chatModelOverride?.model ?? null,

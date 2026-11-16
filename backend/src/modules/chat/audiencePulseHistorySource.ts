@@ -19,6 +19,7 @@ import {
   type AudiencePulseGroundingSignal,
 } from "../../shared/domain/audiencePulseContentGap.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { visibleMessagePhotoCountSql, visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import { audiencePulseCoverageGapEligible } from "../../shared/domain/audiencePulseContentGap.js";
 import type { AnswerCoverageRepositoryPort } from "../answerCoverage/public.js";
 
@@ -30,7 +31,12 @@ interface AudiencePulseEligibleQuestionMetadataRow {
 }
 
 export interface AudiencePulseEligibleQuestionRow extends AudiencePulseEligibleQuestionMetadataRow {
+  /** The turn text, readings of any photos included: what the census and the models read. */
   content: string;
+  /** What a person reads of it: the typed words beside any photos. Absent reads as `content`. */
+  display_content?: string;
+  /** The photos the message carried. Absent reads as none. */
+  photo_count?: number;
 }
 
 export interface AudiencePulseConversationMessageRow {
@@ -51,7 +57,9 @@ export interface AudiencePulseConversationMessageRow {
 interface RehydratedQuestionRow {
   id: string;
   conversation_id: string;
+  /** What a person reads of the question: the typed words beside any photos. */
   content: string;
+  photo_count: number;
   role: "user" | "assistant" | "system";
   source: MessageSource | null;
   source_channel: string | null;
@@ -63,8 +71,16 @@ interface AudiencePulseAnchorMessageRow {
   role: "user" | "assistant" | "system";
   source: MessageSource | null;
   content: string;
+  /** Set on the visitor's message, which reads as the typed words beside any photos. */
+  photo_count?: number;
   created_at: Date;
 }
+
+/** The text of a user message a person reads, bounded for transport, and how many photos came with it. */
+const visibleQuestionColumns = (contentColumn: string, metadataColumn: string) => ({
+  text: sql<string>`left(${visibleMessageTextSql(sql.ref(contentColumn), sql.ref(metadataColumn))}, ${AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS})`,
+  photoCount: visibleMessagePhotoCountSql(sql.ref(metadataColumn)),
+});
 
 export const audiencePulseWeekStartUtc = (date: Date): string => {
   const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -210,6 +226,11 @@ export const buildAudiencePulseEligibleQuestionContentQuery = (
   ])
   // Keep transport and memory bounded even when a visitor message is very large.
   .select(sql<string>`left(m.content, ${AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS})`.as("content"))
+  // The report shows the display text; the census and the models read `content`, readings included.
+  .select([
+    visibleQuestionColumns("m.content", "m.metadata_json").text.as("display_content"),
+    visibleQuestionColumns("m.content", "m.metadata_json").photoCount.as("photo_count"),
+  ])
   .orderBy("m.created_at", "asc")
   .orderBy("m.id", "asc");
 
@@ -268,7 +289,11 @@ export const buildAudiencePulseEvidenceAnchorTargetQuery = (
     "m.source as source",
     "m.created_at as created_at",
   ])
-  .select(sql<string>`left(m.content, ${AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS})`.as("content"))
+  // The anchor is shown, not analysed: the visitor's words beside any photos, and how many photos.
+  .select([
+    visibleQuestionColumns("m.content", "m.metadata_json").text.as("content"),
+    visibleQuestionColumns("m.content", "m.metadata_json").photoCount.as("photo_count"),
+  ])
   .where("m.workspace_id", "=", input.workspaceId)
   .where("c.workspace_id", "=", input.workspaceId)
   .where("m.conversation_id", "=", input.conversationId)
@@ -354,6 +379,7 @@ const presentAudiencePulseAnchorSource = (
   role: "user",
   source: "customer",
   content: row.content,
+  photoCount: Number(row.photo_count ?? 0),
   createdAt: new Date(row.created_at).toISOString(),
 });
 
@@ -436,6 +462,8 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
         id: question.id,
         reference: { messageId: question.id, conversationId: question.conversation_id },
         question: question.content,
+        displayQuestion: question.display_content ?? question.content,
+        questionPhotoCount: Number(question.photo_count ?? 0),
         weekStart: audiencePulseWeekStartUtc(question.created_at),
         channel: question.source_channel,
         grounding: answer.grounding,
@@ -474,7 +502,9 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
       .select([
         "m.id as id",
         "m.conversation_id as conversation_id",
-        sql<string>`left(m.content, ${AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS})`.as("content"),
+        // A saved report shows a question, never analyses it: the words a person reads of it.
+        visibleQuestionColumns("m.content", "m.metadata_json").text.as("content"),
+        visibleQuestionColumns("m.content", "m.metadata_json").photoCount.as("photo_count"),
         "m.role as role",
         "m.source as source",
         "c.source_channel as source_channel",
@@ -494,6 +524,7 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
         conversationId: reference.conversationId,
         messageId: row.id,
         question: row.content.slice(0, AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+        questionPhotoCount: Number(row.photo_count),
       });
     }
     return hydrated;

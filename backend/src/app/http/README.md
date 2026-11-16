@@ -48,7 +48,9 @@ owning module.
 from `RADIOSO_TRUSTED_PROXY_HOPS` and, for requests the frontend relayed, its
 signed edge-facts envelope. Read it with `readRequestSource(req, res)`: key rate
 limits on `.digest`, and write `.address` only where an audit record keeps the
-IP. `req.ip` is always the socket peer, and lint rejects it in production code.
+IP. `.identifiesClient` is false when the address is the relaying frontend's
+own (no edge-proof secret, or zero trusted hops), so a budget meant for one
+address, like public chat's `public.chat.source`, can step aside. `req.ip` is always the socket peer, and lint rejects it in production code.
 Application route mounts get the same digest through their `requestSource`
 dependency. Pre-authentication source limiters
 (`middleware/preAuthSourceRateLimiter.ts`) key on a verified standalone MCP

@@ -1,3 +1,5 @@
+import { AppError } from "../../../shared/domain/errors.js";
+
 export interface AbuseControlPolicy {
   scope: string;
   subjectKey: string;
@@ -90,4 +92,20 @@ export interface AbuseControlPort {
 /** Narrow port for callers that must consume related budgets atomically. */
 export interface AbuseControlBatchPort {
   enforceBatch(policies: readonly AbuseControlPolicy[]): Promise<AbuseControlDecision[]>;
+}
+
+/**
+ * The 429 a batch raises. Its details are the refused policy's decision, as for a single policy;
+ * `refusedPolicy` names which policy that was, so the HTTP layer can choose what the caller is told
+ * and what the audit records. The error handler serializes the details alone, so the name stays
+ * off the response.
+ */
+export class AbuseControlBatchRefusal extends AppError {
+  readonly refusedPolicy: { scope: string; subjectKey: string };
+
+  constructor(message: string, decision: AbuseControlDecision, refusedPolicy: { scope: string; subjectKey: string }) {
+    super(429, "rate_limit_exceeded", message, decision);
+    this.name = "AbuseControlBatchRefusal";
+    this.refusedPolicy = refusedPolicy;
+  }
 }

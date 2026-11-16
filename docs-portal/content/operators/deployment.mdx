@@ -145,15 +145,21 @@ The backend refuses to start when a sink list names `ops_webhook` without both a
 
 Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults. The counters live in Postgres, or in Redis when `ABUSE_CONTROL_REDIS_URL` is set, so every backend instance spends the same budgets.
 
-Each message a visitor sends spends three budgets in turn, and the first one that is used up answers `429`:
+Each message a visitor sends spends three budgets at once. When any one of them is used up, the message is refused with `429` and spends none of the three:
 
-- `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` defaults to 10 messages per browser. A browser is known by a signed rate-limit cookie; a request without one counts against its request source instead. Starting a session has a budget of the same size, per launch link and request source.
-- `PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 messages per request source and workspace, shared by every browser behind that address. The backend signs a fresh cookie for anyone who arrives without one, so this is the budget that holds for a caller that throws its cookie away. Raise it when many visitors reach one workspace through one address, such as a school or office network.
-- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors.
+- `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` defaults to 10 messages per visitor. A browser that keeps the signed rate-limit cookie is one visitor across all of its tabs. The website embed runs in a frame on another site, where browsers withhold that cookie, so an embed visitor is known by its signed public session instead. Starting a session has a budget of the same size, per launch link and request source.
+- `PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 messages per request source and workspace, shared by every visitor behind that address. The backend hands a fresh cookie or session to anyone who asks, so this is the budget that holds for a caller that keeps discarding them. Raise it when many visitors reach one workspace through one address, such as a school or office network.
+- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors. Five addresses sending at the source budget's default reach it together.
 
-`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them.
+The `RateLimit-*` headers on a public chat response describe the visitor's own budgets. A message the workspace budget refuses gets `429` with `Retry-After`, and nothing that states the workspace budget's size.
 
-A request source is the client address the backend resolves with `RADIOSO_TRUSTED_PROXY_HOPS` (see [Visitor request facts](/operators/self-hosting-operations#visitor-request-facts)), and an IPv6 address counts as its /64. Every limit here is deployment-wide, so set them to values every workspace on this deployment can share.
+`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them. Every limit here is deployment-wide, so set them to values every workspace on this deployment can share.
+
+### What the source budget needs
+
+A request source is the client address the backend resolves with `RADIOSO_TRUSTED_PROXY_HOPS`, and an IPv6 address counts as its /64. The source budget only works when that address is the visitor's. Public chat reaches the backend through the frontend, so the backend sees the visitor only through the frontend's signed edge facts: `RADIOSO_EDGE_PROOF_SECRET` set on both services, and a `RADIOSO_TRUSTED_PROXY_HOPS` that counts the proxy in front of them (see [Reverse proxy client IPs](#reverse-proxy-client-ips)). Hosted Terraform sets both.
+
+Without them, every relayed visitor resolves to the frontend's own address, so the backend skips the source budget for those messages rather than let one address's share cap the whole workspace. The per-visitor and workspace budgets still apply, and session starts still count per launch link and that one address, which every visitor of a launch link then shares. The bundled `docker-compose.yml` sets the secret with `0` hops, so it runs without the source budget.
 
 ## Voice session start rate limits
 

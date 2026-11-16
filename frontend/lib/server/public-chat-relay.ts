@@ -54,12 +54,14 @@ export const visitorSessionHeaders = (request: Request): Record<string, string> 
   }
 }
 
-/** The visitor session the backend set or confirmed, passed back to the page. */
+/**
+ * The visitor session the backend set or confirmed, passed back to the page. Each cookie travels
+ * as its own `Set-Cookie`: joined into one header, the browser keeps only the first.
+ */
 export const relayVisitorSessionHeaders = (upstream: Headers, target: Headers): void => {
   const anonymousSession = upstream.get(ANONYMOUS_SESSION_HEADER)
   if (anonymousSession) target.set('X-Radioso-Anonymous-Session', anonymousSession)
-  const setCookie = upstream.get('set-cookie')
-  if (setCookie) target.set('Set-Cookie', setCookie)
+  for (const cookie of upstream.getSetCookie()) target.append('Set-Cookie', cookie)
 }
 
 /** The public chat CORS headers, admitting `allowOrigin` when there is one. */

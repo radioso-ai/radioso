@@ -10,7 +10,7 @@ import {
   readRequestSource,
 } from "../../src/app/http/middleware/requestSource.js";
 import { readEdgeFactsEnvelope } from "../../src/shared/domain/edgeFactsEnvelope.js";
-import { resolveRequestSourceAddress } from "../../src/shared/domain/requestSource.js";
+import { requestSourceIdentifiesClient, resolveRequestSourceAddress } from "../../src/shared/domain/requestSource.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 
 const SECRET = "a".repeat(32);
@@ -181,6 +181,45 @@ describe("resolveRequestSourceAddress", () => {
   });
 });
 
+describe("requestSourceIdentifiesClient", () => {
+  const identifies = (input: { headers?: Record<string, string>; trustedProxyHops: number; secret?: string }) => {
+    const headers = input.headers ?? {};
+    return requestSourceIdentifiesClient({
+      envelope: readEdgeFactsEnvelope({ headers, secret: input.secret, method: METHOD, path: PATH, now: NOW }),
+      edgeProofConfigured: input.secret !== undefined,
+      trustedProxyHops: input.trustedProxyHops,
+    });
+  };
+
+  it("names a caller that reached the backend directly, on the backend's own observation", () => {
+    expect(identifies({ headers: { "x-forwarded-for": CLIENT }, trustedProxyHops: HOSTED_HOPS, secret: SECRET })).toBe(true);
+    expect(identifies({ trustedProxyHops: 0 })).toBe(true);
+  });
+
+  it("names the visitor a verified envelope carries", () => {
+    expect(identifies({ headers: signedEnvelope(CLIENT), trustedProxyHops: HOSTED_HOPS, secret: SECRET })).toBe(true);
+  });
+
+  it("names nobody for a relayed request whose verified chain resolves to nothing at zero trusted hops", () => {
+    expect(identifies({ headers: signedEnvelope(CLIENT), trustedProxyHops: 0, secret: SECRET })).toBe(false);
+  });
+
+  it("names nobody for a relayed request a backend without the edge-proof secret cannot verify", () => {
+    expect(identifies({
+      headers: { ...signedEnvelope(CLIENT), "x-forwarded-for": FRONTEND_EGRESS },
+      trustedProxyHops: HOSTED_HOPS,
+    })).toBe(false);
+  });
+
+  it("keeps a marker that fails the configured secret on the caller's own address, so a bogus marker sheds nothing", () => {
+    expect(identifies({
+      headers: { [EDGE_FACTS_HEADERS.marker]: "frontend", "x-forwarded-for": CLIENT },
+      trustedProxyHops: HOSTED_HOPS,
+      secret: SECRET,
+    })).toBe(true);
+  });
+});
+
 describe("readRequestSource", () => {
   it("falls back to the socket peer, never X-Forwarded-For, when the app-level middleware did not run", () => {
     const req = {
@@ -189,7 +228,11 @@ describe("readRequestSource", () => {
     } as unknown as Request;
     const res = { locals: {} } as unknown as Response;
 
-    expect(readRequestSource(req, res, SESSION_COOKIE_SECRET)).toEqual({ address: SOCKET, digest: digestSourceAddress(SOCKET, SESSION_COOKIE_SECRET) });
+    expect(readRequestSource(req, res, SESSION_COOKIE_SECRET)).toEqual({
+      address: SOCKET,
+      digest: digestSourceAddress(SOCKET, SESSION_COOKIE_SECRET),
+      identifiesClient: true,
+    });
     expect(readPublishedEdgeFactsEnvelope(res)).toBeUndefined();
   });
 });
@@ -238,7 +281,7 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200);
 
     expect(tamperedResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET), identifiesClient: true },
       envelopeStatus: "rejected",
     });
     const rendered = metricsRegistry.renderPrometheus();
@@ -276,11 +319,11 @@ describe("createRequestSourceMiddleware", () => {
       .expect(200);
 
     expect(verifiedResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET), identifiesClient: true },
       envelopeStatus: "verified",
     });
     expect(directResponse.body).toEqual({
-      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET) },
+      source: { address: CLIENT, digest: digestSourceAddress(CLIENT, SESSION_COOKIE_SECRET), identifiesClient: true },
       envelopeStatus: "absent",
     });
     expect(metricsRegistry.renderPrometheus()).not.toContain("edge_facts_proof_rejected_total");
@@ -296,8 +339,9 @@ describe("createRequestSourceMiddleware", () => {
       .set("X-Forwarded-For", `${CLIENT}, ${FRONTEND_EGRESS}`)
       .expect(200);
 
+    // The address is the frontend's own, shared by every visitor it relays, and is published as such.
     expect(response.body).toEqual({
-      source: { address: FRONTEND_EGRESS, digest: digestSourceAddress(FRONTEND_EGRESS, SESSION_COOKIE_SECRET) },
+      source: { address: FRONTEND_EGRESS, digest: digestSourceAddress(FRONTEND_EGRESS, SESSION_COOKIE_SECRET), identifiesClient: false },
       envelopeStatus: "rejected",
     });
     expect(metricsRegistry.renderPrometheus()).not.toContain("edge_facts_proof_rejected_total");

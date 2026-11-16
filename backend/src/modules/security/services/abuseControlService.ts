@@ -6,6 +6,7 @@ import type {
   AbuseControlDecision,
   AbuseControlRepositoryPort,
 } from "../contracts/abuseControl.js";
+import { AbuseControlBatchRefusal } from "../contracts/abuseControl.js";
 import type { AbuseControlBatchPort, AbuseControlPolicy, AbuseControlPort } from "../contracts/abuseControl.js";
 import { earliestReadmissionAtMs } from "../domain/slidingWindowReadmission.js";
 
@@ -66,8 +67,18 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
     const rejected = batch.rejected;
     const rejectedInput = inputs.find((input) =>
       input.scope === rejected.entry.scope && input.subjectKey === rejected.entry.subjectKey,
-    );
-    this.decide(rejected, rejectedInput ?? inputs[0]);
+    ) ?? inputs[0];
+    try {
+      this.decide(rejected, rejectedInput);
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 429) {
+        throw new AbuseControlBatchRefusal(error.message, error.details as AbuseControlDecision, {
+          scope: rejectedInput.scope,
+          subjectKey: rejectedInput.subjectKey,
+        });
+      }
+      throw error;
+    }
   }
 
   /**

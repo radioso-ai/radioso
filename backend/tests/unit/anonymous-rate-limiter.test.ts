@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 import {
-  anonymousRateLimiters,
+  publicChatTurnRateLimiter,
   publicChatEmbedConfigRateLimiter,
   publicChatFeedbackRateLimiter,
   publicChatSessionReadRateLimiter,
@@ -10,6 +10,7 @@ import {
 import type { Env } from "../../src/app/config/env.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 import { createTestDependencies } from "../support/testApp.js";
+import { InMemoryAbuseControlRepository } from "../support/fakes.js";
 
 const createMockReqRes = (
   locals: Record<string, unknown> = {},
@@ -67,7 +68,7 @@ const createMockReqRes = (
   };
 };
 
-const middleware = () => anonymousRateLimiters(createTestDependencies().dependencies)[0];
+const middleware = () => publicChatTurnRateLimiter(createTestDependencies().dependencies);
 
 describe("anonymousRateLimiter", () => {
   beforeEach(() => {
@@ -221,15 +222,16 @@ describe("public chat turn budgets for one request source", () => {
     vi.restoreAllMocks();
   });
 
-  type ChainOutcome = { admitted: boolean; status: number };
+  type TurnOutcome = { admitted: boolean; status: number };
+  type RequestSourceLocal = { address: string | null; digest: string; identifiesClient: boolean };
 
-  const turnLimiters = (env: Partial<Env>) => anonymousRateLimiters(createTestDependencies({ envOverrides: env }).dependencies);
+  const turnLimiter = (env: Partial<Env>) =>
+    publicChatTurnRateLimiter(createTestDependencies({ envOverrides: env }).dependencies);
 
-  // Runs the whole turn-creation chain the way Express would: stop at the first refusal.
   const sendTurn = async (
-    chain: ReturnType<typeof anonymousRateLimiters>,
-    input: { workspaceId?: string; browserId?: string; ip?: string; requestSource?: { address: string | null; digest: string } },
-  ): Promise<ChainOutcome> => {
+    limiter: RequestHandler,
+    input: { workspaceId?: string; browserId?: string; ip?: string; requestSource?: RequestSourceLocal },
+  ): Promise<TurnOutcome> => {
     const locals: Record<string, unknown> = {
       workspaceId: input.workspaceId ?? "workspace-1",
       anonymousSessionId: "session-1",
@@ -237,18 +239,13 @@ describe("public chat turn budgets for one request source", () => {
       anonymousRateLimitIdFromCookie: input.browserId !== undefined,
       ...(input.requestSource ? { requestSource: input.requestSource } : {}),
     };
-    for (const middleware of chain) {
-      const { req, res, next, wasNextCalled, getStatus } = createMockReqRes(locals, { ip: input.ip ?? "203.0.113.70" });
-      await middleware(req, res, next);
-      if (!wasNextCalled()) {
-        return { admitted: false, status: getStatus() };
-      }
-    }
-    return { admitted: true, status: 200 };
+    const { req, res, next, wasNextCalled, getStatus } = createMockReqRes(locals, { ip: input.ip ?? "203.0.113.70" });
+    await limiter(req, res, next);
+    return wasNextCalled() ? { admitted: true, status: 200 } : { admitted: false, status: getStatus() };
   };
 
   it("runs out for a caller that presents a fresh rate-limit cookie on every message", async () => {
-    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
+    const chain = turnLimiter({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
 
     for (let i = 0; i < 3; i++) {
       expect(await sendTurn(chain, { browserId: `rotated-${i}` })).toEqual({ admitted: true, status: 200 });
@@ -258,7 +255,7 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("counts messages sent without a rate-limit cookie against the same source budget", async () => {
-    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
+    const chain = turnLimiter({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
 
     expect((await sendTurn(chain, {})).admitted).toBe(true);
     expect((await sendTurn(chain, { browserId: "browser-a" })).admitted).toBe(true);
@@ -268,7 +265,7 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("gives browsers behind one shared address their own budgets until the source budget runs out", async () => {
-    const chain = turnLimiters({
+    const chain = turnLimiter({
       PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2,
       PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 5,
     });
@@ -284,7 +281,7 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("leaves the workspace budget to other visitors once one source is refused", async () => {
-    const chain = turnLimiters({
+    const chain = turnLimiter({
       PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 2,
       PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 4,
     });
@@ -299,7 +296,7 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("keeps the source budget per workspace", async () => {
-    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
+    const chain = turnLimiter({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
 
     expect((await sendTurn(chain, { workspaceId: "workspace-a", browserId: "browser-a" })).admitted).toBe(true);
     expect((await sendTurn(chain, { workspaceId: "workspace-a", browserId: "browser-b" })).admitted).toBe(false);
@@ -308,7 +305,7 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("keys an IPv6 caller's source budget on its /64", async () => {
-    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 2 });
+    const chain = turnLimiter({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 2 });
 
     expect((await sendTurn(chain, { browserId: "v6-a", ip: "2001:db8:1:2::a" })).admitted).toBe(true);
     expect((await sendTurn(chain, { browserId: "v6-b", ip: "2001:db8:1:2:ffff::b" })).admitted).toBe(true);
@@ -318,13 +315,139 @@ describe("public chat turn budgets for one request source", () => {
   });
 
   it("keys the source budget on the request source the app resolved, not the socket peer", async () => {
-    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
-    const behindProxy = (digest: string) => ({ ip: "10.0.0.2", requestSource: { address: null, digest } });
+    const chain = turnLimiter({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
+    const behindProxy = (digest: string) => ({ ip: "10.0.0.2", requestSource: { address: null, digest, identifiesClient: true } });
 
     expect((await sendTurn(chain, { browserId: "relayed-a", ...behindProxy("visitor-a-digest") })).admitted).toBe(true);
     expect((await sendTurn(chain, { browserId: "relayed-b", ...behindProxy("visitor-b-digest") })).admitted).toBe(true);
 
     expect((await sendTurn(chain, { browserId: "relayed-c", ...behindProxy("visitor-a-digest") })).admitted).toBe(false);
+  });
+});
+
+describe("public chat turn budgets for a visitor without the rate-limit cookie", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  const turnLimiter = (env: Partial<Env>, repository = new InMemoryAbuseControlRepository()) =>
+    publicChatTurnRateLimiter(createTestDependencies({ envOverrides: env, abuseControlRepository: repository }).dependencies);
+
+  // The website embed runs in a cross-site frame, where the browser withholds the rate-limit
+  // cookie; what every one of its requests does carry is the signed public session.
+  const sendEmbedTurn = async (
+    limiter: RequestHandler,
+    input: { sessionId: string; ip?: string; requestSource?: { address: string | null; digest: string; identifiesClient: boolean } },
+  ) => {
+    const { req, res, next, wasNextCalled, getStatus, getHeader, getBody } = createMockReqRes({
+      workspaceId: "workspace-1",
+      chatSessionId: input.sessionId,
+      anonymousSessionId: input.sessionId,
+      anonymousRateLimitId: "minted-for-this-request",
+      anonymousRateLimitIdFromCookie: false,
+      ...(input.requestSource ? { requestSource: input.requestSource } : {}),
+    }, { ip: input.ip ?? "203.0.113.90" });
+    await limiter(req, res, next);
+    return { admitted: wasNextCalled(), status: wasNextCalled() ? 200 : getStatus(), getHeader, body: getBody() };
+  };
+
+  it("keys the visitor's own budget on its signed public session", async () => {
+    const limiter = turnLimiter({ PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 100 });
+
+    expect((await sendEmbedTurn(limiter, { sessionId: "embed-a" })).admitted).toBe(true);
+    expect((await sendEmbedTurn(limiter, { sessionId: "embed-a" })).admitted).toBe(true);
+
+    expect(await sendEmbedTurn(limiter, { sessionId: "embed-a" })).toMatchObject({ admitted: false, status: 429 });
+  });
+
+  it("keeps two embed visitors behind one address independent of each other", async () => {
+    const limiter = turnLimiter({ PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 100 });
+
+    for (let i = 0; i < 3; i++) {
+      await sendEmbedTurn(limiter, { sessionId: "classroom-a", ip: "198.51.100.30" });
+    }
+
+    expect((await sendEmbedTurn(limiter, { sessionId: "classroom-b", ip: "198.51.100.30" })).admitted).toBe(true);
+    expect((await sendEmbedTurn(limiter, { sessionId: "classroom-b", ip: "198.51.100.30" })).admitted).toBe(true);
+  });
+
+  it("still bounds a script that starts a fresh session for every message by the source budget", async () => {
+    const limiter = turnLimiter({ PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 5 });
+    const outcomes: boolean[] = [];
+    for (let i = 0; i < 8; i++) {
+      outcomes.push((await sendEmbedTurn(limiter, { sessionId: `rotated-${i}`, ip: "198.51.100.31" })).admitted);
+    }
+
+    expect(outcomes).toEqual([true, true, true, true, true, false, false, false]);
+  });
+
+  it("lets one browser's cookie hold its budget across the sessions its tabs open", async () => {
+    const limiter = turnLimiter({ PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2, PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 100 });
+    const sendFromTab = async (sessionId: string) => {
+      const { req, res, next, wasNextCalled } = createMockReqRes({
+        workspaceId: "workspace-1",
+        chatSessionId: sessionId,
+        anonymousRateLimitId: "browser-with-tabs",
+        anonymousRateLimitIdFromCookie: true,
+      });
+      await limiter(req, res, next);
+      return wasNextCalled();
+    };
+
+    expect(await sendFromTab("tab-1")).toBe(true);
+    expect(await sendFromTab("tab-2")).toBe(true);
+    expect(await sendFromTab("tab-3")).toBe(false);
+  });
+
+  it("skips the source budget when the address the backend sees belongs to the relay, not the visitor", async () => {
+    const limiter = turnLimiter({
+      PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2,
+      PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1,
+      PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 4,
+    });
+    const relay = { address: "10.0.0.2", digest: "relay-digest", identifiesClient: false };
+
+    expect((await sendEmbedTurn(limiter, { sessionId: "relayed-a", requestSource: relay })).admitted).toBe(true);
+    expect((await sendEmbedTurn(limiter, { sessionId: "relayed-b", requestSource: relay })).admitted).toBe(true);
+    expect((await sendEmbedTurn(limiter, { sessionId: "relayed-c", requestSource: relay })).admitted).toBe(true);
+    expect((await sendEmbedTurn(limiter, { sessionId: "relayed-d", requestSource: relay })).admitted).toBe(true);
+
+    // The workspace budget still holds.
+    expect(await sendEmbedTurn(limiter, { sessionId: "relayed-e", requestSource: relay })).toMatchObject({ admitted: false, status: 429 });
+  });
+
+  it("spends neither the visitor's nor the source's budget on a message the workspace budget refuses", async () => {
+    const repository = new InMemoryAbuseControlRepository();
+    const limiter = turnLimiter({ PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 1 }, repository);
+    const source = { address: "203.0.113.91", digest: "source-b", identifiesClient: true };
+    await sendEmbedTurn(limiter, { sessionId: "visitor-a", requestSource: { ...source, digest: "source-a" } });
+
+    expect(await sendEmbedTurn(limiter, { sessionId: "visitor-b", requestSource: source })).toMatchObject({ admitted: false, status: 429 });
+
+    expect(await repository.find("public.chat.session", "workspace-1:session:visitor-b")).toBeNull();
+    expect(await repository.find("public.chat.source", "workspace-1:source:source-b")).toBeNull();
+  });
+
+  it("tells the visitor about its own budgets and never the workspace's", async () => {
+    const limiter = turnLimiter({
+      PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
+      PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 120,
+      PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 2,
+    });
+
+    const admitted = await sendEmbedTurn(limiter, { sessionId: "visitor-a" });
+    expect(admitted.admitted).toBe(true);
+    expect(admitted.getHeader("RateLimit-Limit")).toBe("10");
+    expect(admitted.getHeader("RateLimit-Remaining")).toBe("9");
+    await sendEmbedTurn(limiter, { sessionId: "visitor-b" });
+
+    const refused = await sendEmbedTurn(limiter, { sessionId: "visitor-c" });
+    expect(refused).toMatchObject({ admitted: false, status: 429 });
+    expect(Number(refused.getHeader("Retry-After"))).toBeGreaterThan(0);
+    expect(refused.getHeader("RateLimit-Limit")).toBeUndefined();
+    expect(refused.getHeader("RateLimit-Remaining")).toBeUndefined();
+    expect(refused.body).toEqual({ code: "rate_limit_exceeded", retryAfterSeconds: expect.any(Number) });
   });
 });
 
@@ -405,6 +528,26 @@ describe("publicChatSessionReadRateLimiter", () => {
 
     expect(wasNextCalled()).toBe(false);
     expect(getStatus()).toBe(429);
+  });
+
+  it("keys a reader without the rate-limit cookie on its signed public session", async () => {
+    const rateLimiter = publicChatSessionReadRateLimiter(
+      createTestDependencies({ envOverrides: { PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: 2 } }).dependencies,
+    );
+    const read = async (sessionId: string) => {
+      const { req, res, next, wasNextCalled } = createMockReqRes(
+        { workspaceId: "workspace-read", chatSessionId: sessionId, anonymousRateLimitIdFromCookie: false },
+        { ip: "203.0.113.61" },
+      );
+      await rateLimiter(req, res, next);
+      return wasNextCalled();
+    };
+
+    expect(await read("embed-reader-a")).toBe(true);
+    expect(await read("embed-reader-a")).toBe(true);
+    expect(await read("embed-reader-a")).toBe(false);
+
+    expect(await read("embed-reader-b")).toBe(true);
   });
 
   it("passes through when no workspaceId is set", async () => {

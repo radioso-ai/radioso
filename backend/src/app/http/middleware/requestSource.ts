@@ -3,7 +3,7 @@ import type { Request, RequestHandler, Response } from "express";
 import { digestSourceAddress } from "@radioso/mcp-source-proof";
 
 import { readEdgeFactsEnvelope, type EdgeFactsEnvelopeReading } from "../../../shared/domain/edgeFactsEnvelope.js";
-import { resolveRequestSourceAddress } from "../../../shared/domain/requestSource.js";
+import { requestSourceIdentifiesClient, resolveRequestSourceAddress } from "../../../shared/domain/requestSource.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { Env } from "../../config/env.js";
 
@@ -13,11 +13,14 @@ import type { Env } from "../../config/env.js";
  * rate-limit subject keys, which persist and are echoed into audit metadata.
  * The digest keys an IPv6 caller on its /64, so rotating through one
  * allocation cannot mint fresh budgets. It is keyed with a deployment secret
- * and is opaque rather than anonymous.
+ * and is opaque rather than anonymous. `identifiesClient` is false when the
+ * address is the first-party edge's that relayed the request, shared by every
+ * visitor it relays, so a budget meant for one address can step aside.
  */
 interface RequestSource {
   address: string | null;
   digest: string;
+  identifiesClient: boolean;
 }
 
 interface RequestSourceLocals {
@@ -39,9 +42,10 @@ const sourceDigestSecret = (env: RequestSourceMiddlewareDependencies["env"]): st
 // middleware use non-reversible rather than restoring a public digest key.
 const unconfiguredRequestSourceSecret = randomBytes(32).toString("base64url");
 
-const requestSourceFor = (address: string | null, secret: string): RequestSource => ({
+const requestSourceFor = (address: string | null, secret: string, identifiesClient: boolean): RequestSource => ({
   address,
   digest: digestSourceAddress(address ?? "unknown", secret),
+  identifiesClient,
 });
 
 /**
@@ -80,7 +84,11 @@ export const createRequestSourceMiddleware = (
     socketAddress: req.socket.remoteAddress ?? null,
     trustedProxyHops: env.RADIOSO_TRUSTED_PROXY_HOPS,
     envelope,
-  }), sourceDigestSecret(env));
+  }), sourceDigestSecret(env), requestSourceIdentifiesClient({
+    envelope,
+    edgeProofConfigured: Boolean(env.RADIOSO_EDGE_PROOF_SECRET),
+    trustedProxyHops: env.RADIOSO_TRUSTED_PROXY_HOPS,
+  }));
   next();
 };
 
@@ -95,7 +103,7 @@ export const readRequestSource = (
   fallbackDigestSecret?: string,
 ): RequestSource =>
   (res.locals as Partial<RequestSourceLocals>).requestSource
-    ?? requestSourceFor(req.socket?.remoteAddress ?? null, fallbackDigestSecret ?? unconfiguredRequestSourceSecret);
+    ?? requestSourceFor(req.socket?.remoteAddress ?? null, fallbackDigestSecret ?? unconfiguredRequestSourceSecret, true);
 
 /**
  * The envelope reading the middleware took, so conversation request context

@@ -1379,6 +1379,62 @@ describe("public chat contract", () => {
     });
   });
 
+  // The website embed runs in a cross-site frame, where the browser withholds the rate-limit
+  // cookie, so its requests carry only the signed public session header.
+  describe("visitors whose browser never returns the rate-limit cookie", () => {
+    const setUp = async (envOverrides: Partial<Env>) => {
+      const { app } = createTestApp({
+        envOverrides: {
+          // Also the session-start budget, so two visitors can start behind one address.
+          PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2,
+          PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 100,
+          PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+          ...envOverrides,
+        },
+      });
+      const session = await issueTestSession(app, `public-chat-cookieless-${Math.random()}@example.com`);
+      const chatToken = await enableAnonymousChat(app, session);
+      const startVisitor = async () => {
+        const { publicSessionToken } = await createPublicSession(app, chatToken);
+        return () => request(app)
+          .post(`/api/v1/public/chat/${chatToken}`)
+          .set("x-radioso-public-session", publicSessionToken)
+          .send({ message: "hello", stream: false });
+      };
+      return { startVisitor };
+    };
+
+    it("gives each visitor behind one address a budget of its own", async () => {
+      const { startVisitor } = await setUp({});
+      const first = await startVisitor();
+      const second = await startVisitor();
+
+      expect((await first()).status).toBe(200);
+      expect((await first()).status).toBe(200);
+      expect((await first()).status).toBe(429);
+
+      expect((await second()).status).toBe(200);
+    });
+
+    it("refuses a message over the workspace budget without telling the visitor that budget's size", async () => {
+      const { startVisitor } = await setUp({ PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 5, PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 1 });
+
+      const admitted = await (await startVisitor())();
+      expect(admitted.status).toBe(200);
+      expect(admitted.headers["ratelimit-limit"]).toBe("5");
+
+      const refused = await (await startVisitor())();
+      expect(refused.status).toBe(429);
+      expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+      expect(refused.headers["ratelimit-limit"]).toBeUndefined();
+      expect(refused.body.error).toEqual({
+        code: "rate_limit_exceeded",
+        message: expect.any(String),
+        details: { retryAfterSeconds: expect.any(Number) },
+      });
+    });
+  });
+
   it("creates a public bootstrap greeting with request locale for a new session", async () => {
     const { app } = createTestApp({
       envOverrides: {

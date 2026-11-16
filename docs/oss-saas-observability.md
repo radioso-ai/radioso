@@ -333,9 +333,12 @@ not limited to the HTTP request path:
   marker says the client caused it (a dropped connection). Reporting never waits
   on the sink: it is fire-and-forget, so a slow exporter cannot hold up the
   turn's response. The report carries a bounded failure kind
-  (`model_unavailable`, `auth_rejected`, `rate_limited`, `provider_unavailable`,
-  or `provider_rejected`) plus the provider's HTTP status and machine code, only
-  once the failure is confirmed to be an actual LLM provider call — the OpenAI
+  (`model_unavailable`, `auth_rejected`, `rate_limited`, `quota_exhausted`,
+  `provider_unavailable`, or `provider_rejected`) plus the provider's HTTP status
+  and machine code. `quota_exhausted` means the provider account has no credit
+  left (`insufficient_quota`, `credit_balance_exhausted`): each turn fails until
+  someone adds credit. A `rate_limited` turn clears on retry. The kind is set
+  only once the failure is confirmed to be an actual LLM provider call — the OpenAI
   SDK's own error types, this backend's `ProviderHttpError` for the Gemini/Claude
   adapters, or one wrapped a hop or two down a routine activation failure's
   `.cause` chain — never a database or connector error that merely looks the

@@ -59,8 +59,6 @@ import {
   RevisionGreetingStarterPromptReader,
   ChatService,
   ChatTurnAssemblyFactory,
-  InMemoryConversationTurnRegistry,
-  LoggingConversationTurnInterruptionObserver,
   type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
@@ -156,6 +154,7 @@ import { DocumentImageRepository } from "../../../modules/documents/composition.
 import { createReplyBlocksComposition } from "../../composition/replyBlocks.js";
 import { composeReplyImageLookup, wireToolImages } from "../../composition/toolImages.js";
 import type { DocumentStorageLocator, DocumentStoragePort } from "../../../modules/documents/contracts/storage.js";
+import { createConversationTurnCoordination } from "../../composition/conversationTurnCoordination.js";
 
 export const buildChatServices = (input: {
   abuseControlService: AbuseControlService;
@@ -731,6 +730,12 @@ export const buildChatServices = (input: {
     visitorRepository,
     input.metricsRegistry,
   );
+  const conversationTurnCoordination = createConversationTurnCoordination({
+    env: input.env,
+    db: input.database.kysely,
+    logger: input.logger,
+    metricsRegistry: input.metricsRegistry,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -785,9 +790,7 @@ export const buildChatServices = (input: {
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
     errorReporter: input.errorReporter,
-    conversationTurnRegistry: new InMemoryConversationTurnRegistry(
-      new LoggingConversationTurnInterruptionObserver(input.logger, input.metricsRegistry),
-    ),
+    conversationTurnRegistry: conversationTurnCoordination.registry,
     conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
@@ -962,5 +965,6 @@ export const buildChatServices = (input: {
     actionDrainDispatcher,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: () => approvalResumeEffectJournalDatabase.close(),
+    conversationTurnCoordination,
   };
 };

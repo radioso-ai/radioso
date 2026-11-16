@@ -273,6 +273,17 @@ describeIntegration("conversation erasure (Postgres)", () => {
        VALUES ($1, $2, $3, '{}'::jsonb, '{"messages": [{"content": "My order 1182 never arrived"}]}'::jsonb, 'completed', 'pass')`,
       [randomUUID(), sideId, evalCaseId],
     );
+    // A turn whose instance stopped before ending it: its lease and the conversation's head stay
+    // until pruned.
+    await database.query(
+      `WITH head AS (
+         INSERT INTO conversation_turn_heads (conversation_id, turn_id) VALUES ($1, nextval('conversation_turn_id_seq'))
+         RETURNING turn_id
+       )
+       INSERT INTO conversation_turn_leases (turn_id, conversation_id, owner_instance_id, supersede_after_emission, lease_expires_at)
+       SELECT turn_id, $1, 'stopped-instance', false, now() + interval '30 seconds' FROM head`,
+      [conversationId],
+    );
     return {
       conversationId,
       userMessageId,
@@ -315,6 +326,8 @@ describeIntegration("conversation erasure (Postgres)", () => {
     eval_cases: await count("eval_cases WHERE id = $1", [seeded.evalCaseId]),
     eval_runs: await count("eval_runs WHERE case_id = $1", [seeded.evalCaseId]),
     revision_eval_run_cases: await count("revision_eval_run_cases WHERE case_id = $1", [seeded.evalCaseId]),
+    conversation_turn_leases: await count("conversation_turn_leases WHERE conversation_id = $1", [seeded.conversationId]),
+    conversation_turn_heads: await count("conversation_turn_heads WHERE conversation_id = $1", [seeded.conversationId]),
     chat_turn_audit_events: await count(
       "audit_events WHERE event_type IN ('chat.answer', 'chat.suspended') AND metadata_json->>'conversationId' = $1",
       [seeded.conversationId],
@@ -342,7 +355,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(receipt).toEqual({
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
     });
   });
 
@@ -417,7 +430,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
       conversationId: erased.conversationId,
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
     });
     expect(invalidation.enqueue).toHaveBeenCalledWith(tenant.workspaceId, ["conversation.deleted"]);
   });

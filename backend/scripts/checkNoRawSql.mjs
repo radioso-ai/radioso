@@ -21,6 +21,7 @@ import { isMainModule } from "./isMainModule.mjs";
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
   "shared/infra/database.ts", // the pg Pool wrapper the runner uses
+  "shared/infra/postgresNotificationListener.ts", // LISTEN needs a dedicated unpooled pg session; Kysely has no notification API
   "db/repositories/chunkEmbeddingRepository.ts", // canonical vector batch shares document publication's existing pg transaction
   "db/repositories/documentProcessingJobRepository.ts", // profile jobs are inserted inside canonical publication's existing pg transaction
   "db/repositories/vectorIndexWorkRepository.ts", // projection work/tombstones share canonical mutation transactions

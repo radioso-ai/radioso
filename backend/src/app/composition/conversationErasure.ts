@@ -6,6 +6,7 @@ import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepo
 import { ContextVariableValueEraser } from "../../db/repositories/contextVariableRepository.js";
 import { ConversationErasureRepository } from "../../db/repositories/conversationErasureRepository.js";
 import { EmailSkillActivityEraser } from "../../db/repositories/emailSkillActivityRepository.js";
+import { ConversationTurnLeaseEraser } from "../../modules/chat/composition.js";
 import { WhatsAppMessageLogEraser } from "../../modules/connectors/plugins/index.js";
 import { EmailInboundEraser } from "../../modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../modules/eval/composition.js";
@@ -49,6 +50,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new VisitorImageEraser(trx, new BackgroundJobRepository(trx)),
   // The copies of pictures a skill's cards showed: their objects go to the deletion job the same way.
   (trx) => new ToolImageEraser(trx, new BackgroundJobRepository(trx)),
+  // Turn coordination rows a stopped instance left behind; a running turn's owner loses its lease.
+  (trx) => new ConversationTurnLeaseEraser(trx),
 ];
 
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */

@@ -17,12 +17,20 @@ const composition = (closed: string[], failing: readonly string[] = []) => {
     closeApprovalResumeEffectJournal: step("approval journal"),
     closeAbuseControlRepository: step("abuse control"),
     connectorRegistry: { shutdownAll: step("connectors") },
+    conversationTurnCoordination: { shutdown: step("conversation turn coordination") },
     logger,
   } as unknown as ClosableDependencies;
   return { dependencies, logger };
 };
 
-const ORDER = ["realtime publisher", "application modules", "approval journal", "abuse control", "connectors"];
+const ORDER = [
+  "realtime publisher",
+  "application modules",
+  "approval journal",
+  "abuse control",
+  "connectors",
+  "conversation turn coordination",
+];
 
 describe("closeDependencies", () => {
   it("closes what the composition opened in the runtimes' order", async () => {

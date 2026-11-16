@@ -64,6 +64,8 @@ const coverage: Record<string, ExportCoverage> = {
   topic_memberships: excluded("Audience Pulse's grouping of a message into a topic: ids and a distance."),
   eval_snapshots: excluded("A teammate's copy of a conversation, kept as an evaluation case of the agent; its messages are the conversation's, which the export carries."),
   eval_message_case_associations: excluded("Links an answer to the evaluation case a teammate made of it."),
+  conversation_turn_leases: excluded("Which instance runs a turn in flight and until when its lease holds: ids and times, never content. The row lives only while the turn runs."),
+  conversation_turn_heads: excluded("The latest turn in flight in a conversation: ids and a time, never content. The row lives only while that turn runs."),
   usage_events: excluded("The billing ledger: models, tokens and costs per turn."),
   notification_delivery_outcomes: excluded("The daily email cap's ledger: counts and a recipient digest."),
   notification_deliveries: excluded("Which of the workspace's own recipient addresses a notice went to, and whether it was sent: the team's addresses, never the subject's, and no message content. It goes with its conversation."),

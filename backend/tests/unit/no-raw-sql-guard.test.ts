@@ -66,6 +66,7 @@ describe("no-raw-sql guard", () => {
         "modules/retrieval/infra/lexicalSearch.ts",
         "modules/retrieval/infra/pgVectorAdapter.ts",
         "shared/infra/database.ts",
+        "shared/infra/postgresNotificationListener.ts",
       ].sort(),
     );
   });

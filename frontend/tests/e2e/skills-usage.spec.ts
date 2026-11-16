@@ -107,7 +107,9 @@ test("the skills registry reports which directives and routines use each skill",
   const confirmation = page.getByRole("alertdialog", { name: "Delete skill?" });
   await expect(confirmation).toContainText("Deletes @issue_refund from this agent. Used by 2 directives.");
   await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "@issue_refund" })).toHaveCount(0);
   await page.getByRole("button", { name: "@unused_skill" }).click();
   await page.getByRole("dialog", { name: "@unused_skill" }).getByRole("button", { name: "Delete unused_skill" }).click();
   await expect(confirmation).toContainText("Deletes @unused_skill from this agent.");

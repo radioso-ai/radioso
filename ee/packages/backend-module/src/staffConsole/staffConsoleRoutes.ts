@@ -63,6 +63,8 @@ const tierProfileBodySchema = z.object({
   monthlyIndexedByteLimit: nullableByteLimitSchema,
   monthlyConversationLimit: nullableLimitSchema.optional(),
   repliesPerConversation: z.number().int().min(1).max(1000).optional(),
+  // Per workspace, across all of its visitors. Null hands the cap back to the deployment default.
+  publicChatMessagesPerMinute: z.number().int().min(1).max(1_000_000).nullable().optional(),
 });
 
 const staffIdParamsSchema = z.object({
@@ -435,6 +437,7 @@ export const createStaffConsoleRoutes = (
         const hasMonthlyIndexedByteLimit = Object.prototype.hasOwnProperty.call(body, "monthlyIndexedByteLimit");
         const hasMonthlyConversationLimit = Object.prototype.hasOwnProperty.call(body, "monthlyConversationLimit");
         const hasRepliesPerConversation = Object.prototype.hasOwnProperty.call(body, "repliesPerConversation");
+        const hasPublicChatMessagesPerMinute = Object.prototype.hasOwnProperty.call(body, "publicChatMessagesPerMinute");
         // The service treats a key's mere presence on this object as "the caller named this
         // field" (omitted = preserve, explicit null = clear). A key set to `undefined` still
         // counts as present in JS, so each optional field is spread in only when the request
@@ -448,6 +451,7 @@ export const createStaffConsoleRoutes = (
           ...(hasMonthlyIndexedByteLimit ? { monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null } : {}),
           ...(hasMonthlyConversationLimit ? { monthlyConversationLimit: body.monthlyConversationLimit } : {}),
           ...(hasRepliesPerConversation ? { repliesPerConversation: body.repliesPerConversation } : {}),
+          ...(hasPublicChatMessagesPerMinute ? { publicChatMessagesPerMinute: body.publicChatMessagesPerMinute ?? null } : {}),
         });
         const fields = [
           "monthlyAnswerLimit",
@@ -456,6 +460,7 @@ export const createStaffConsoleRoutes = (
           ...(hasMonthlyIndexedByteLimit ? ["monthlyIndexedByteLimit"] : []),
           ...(hasMonthlyConversationLimit ? ["monthlyConversationLimit"] : []),
           ...(hasRepliesPerConversation ? ["repliesPerConversation"] : []),
+          ...(hasPublicChatMessagesPerMinute ? ["publicChatMessagesPerMinute"] : []),
         ];
         await dependencies.auditService.record({
           accountId: null,

@@ -149,11 +149,11 @@ Each message a visitor sends spends three budgets at once. When any one of them 
 
 - `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` defaults to 10 messages per visitor. A browser that keeps the signed rate-limit cookie is one visitor across all of its tabs. The website embed runs in a frame on another site, where browsers withhold that cookie, so an embed visitor is known by its signed public session instead. Starting a session has a budget of the same size, per launch link and request source.
 - `PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 messages per request source and workspace, shared by every visitor behind that address. The backend hands a fresh cookie or session to anyone who asks, so this is the budget that holds for a caller that keeps discarding them. Raise it when many visitors reach one workspace through one address, such as a school or office network.
-- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors. Five addresses sending at the source budget's default reach it together.
+- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors. Five addresses sending at the source budget's default reach it together. On Enterprise Edition, a usage profile can set its own figure for the workspaces of the accounts on it; see [Public chat cap](/operators/enterprise-usage-limits#public-chat-cap).
 
 The `RateLimit-*` headers on a public chat response describe the visitor's own budgets. A message the workspace budget refuses gets `429` with `Retry-After`, and nothing that states the workspace budget's size.
 
-`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them. Every limit here is deployment-wide, so set them to values every workspace on this deployment can share.
+`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them. Apart from that profile figure, every limit here is deployment-wide, so set them to values every workspace on this deployment can share.
 
 ### What the source budget needs
 

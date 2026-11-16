@@ -62,7 +62,8 @@ interface RateLimitBatchPolicy {
 interface CreateRateLimitBatchMiddlewareInput {
   service: RateLimitBatchAbuseControlPort;
   auditService: RateLimitAuditPort;
-  resolvePolicies: (req: Request, res: Response) => RateLimitBatchPolicy[];
+  /** May resolve asynchronously where a budget's size is looked up per subject. */
+  resolvePolicies: (req: Request, res: Response) => RateLimitBatchPolicy[] | Promise<RateLimitBatchPolicy[]>;
   resolveAuditContext?: (req: Request, res: Response) => {
     accountId?: string | null;
     workspaceId?: string | null;
@@ -98,7 +99,7 @@ const withoutUnadvertisedFigures = (error: unknown, policies: readonly RateLimit
 /** Applies related durable limits as one consumption so a rejected global cap cannot spend a grant cap. */
 export const createRateLimitBatchMiddleware = (input: CreateRateLimitBatchMiddlewareInput): RequestHandler => {
   return async (req, res, next) => {
-    const policies = input.resolvePolicies(req, res);
+    const policies = await input.resolvePolicies(req, res);
     if (policies.length === 0) {
       next();
       return;

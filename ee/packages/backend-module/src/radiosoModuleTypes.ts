@@ -198,11 +198,11 @@ export interface DocumentCapacityReadPort {
   getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage>;
 }
 
+type PlanLimitLookup = { accountId?: string | null; workspaceId: string };
+
 export interface UsageLimitPolicy {
-  getNotificationEmailDailyLimit?(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<number | null>;
+  getNotificationEmailDailyLimit?(input: PlanLimitLookup): Promise<number | null>;
+  getPublicChatMessagesPerMinute?(input: PlanLimitLookup): Promise<number | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;

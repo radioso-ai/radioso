@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-11
+last_updated: 2026-11-16
 ---
 
 # Enterprise usage limits
@@ -43,8 +43,9 @@ Profiles are managed through the admin API. Each profile can set:
 - `monthlyIndexedByteLimit` (integer bytes, nullable)
 - `monthlyConversationLimit` (integer, nullable) — set this to meter the account in conversations instead of answers
 - `repliesPerConversation` (integer, 1–1000, defaults to 10) — how many replies in one customer conversation count as a single unit against `monthlyConversationLimit`
+- `publicChatMessagesPerMinute` (integer, 1–1,000,000, nullable) — how many public chat messages all visitors of one workspace may send per minute; see [Public chat cap](#public-chat-cap)
 
-A `null` value means unlimited for that meter. `displayName`, `monthlyAnswerLimit`, and `storedDocumentLimit` are required on every PUT. The other four fields are each independent: omit one and it keeps its stored value; send it explicitly (including `null`) and it takes the new value.
+A `null` value means unlimited for that meter, except `publicChatMessagesPerMinute`, where `null` keeps the deployment's own cap. `displayName`, `monthlyAnswerLimit`, and `storedDocumentLimit` are required on every PUT. The other five fields are each independent: omit one and it keeps its stored value; send it explicitly (including `null`) and it takes the new value.
 
 ```bash
 curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/profiles/growth \
@@ -258,6 +259,26 @@ Requests that exceed a cap receive a `429` response with `code: "usage_limit_exc
 In the dashboard, this response becomes a short notice naming the exhausted resource, with a **Review plan and usage** link to Plan & usage, where the operator can top up or upgrade.
 
 The public website chat and anonymous link, which talk to visitors who aren't the account holder, answer with the same `code` but no `details` — the resource, limit, used count, and billing period are account information the visitor has no reason to see. The widget shows a generic "assistant unavailable" message instead.
+
+## Public chat cap
+
+Every workspace has a ceiling on how many public chat messages all of its visitors may send together, so one busy or abusive embed cannot take the deployment's capacity from everyone else. The deployment sets it with `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`, 600 per minute by default (see [Public chat rate limits](/operators/deployment#public-chat-rate-limits)). A site that embeds the agent on every page can peak well above that. Give its account a profile with `publicChatMessagesPerMinute` and every workspace of that account gets that figure instead, higher or lower. In the Operator Console, it's the **Public chat messages per minute** field on a tier; leave it empty to keep the deployment default.
+
+```bash
+curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/profiles/large-host \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "displayName": "Large host",
+    "monthlyAnswerLimit": null,
+    "storedDocumentLimit": null,
+    "publicChatMessagesPerMinute": 3000
+  }'
+```
+
+The figure is per minute whatever `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` is; with a 30-second window, 3,000 per minute becomes 1,500 per window. Each backend instance reads a workspace's cap at most once a minute, so a profile edit or a reassignment takes up to a minute to apply. A read that takes longer than two seconds uses the deployment default instead and is tried again ten seconds later, so a slow usage-limit store holds a workspace's visitors for two seconds at most. The per-visitor and per-address budgets still apply underneath it.
+
+A visitor past the cap gets `429` with `code: "rate_limit_exceeded"` and `Retry-After`, like any other public chat rate limit; neither the headers nor the body state the cap. Each refusal writes a `security.rate_limit_enforced` audit event for the workspace with `scope: "public.chat.global"` and the `limit` that applied. A workspace that keeps showing up there with its profile's figure has outgrown it.
 
 ## Organization creation cap
 

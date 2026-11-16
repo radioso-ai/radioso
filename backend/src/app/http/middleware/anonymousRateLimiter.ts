@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type { Request, RequestHandler, Response } from "express";
 
 import type { Env } from "../../config/env.js";
+import type { UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import { createPublicChatWorkspaceRateLimit } from "./publicChatWorkspaceRateLimit.js";
 import { readRequestSource } from "./requestSource.js";
 import {
   createRateLimitBatchMiddleware,
@@ -37,9 +39,11 @@ interface PublicChatSessionReadRateLimiterDependencies extends RateLimiterAbuseC
   env: Pick<Env, "PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS" | "PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS">;
 }
 
-/** Turn creation spends its budgets in one consumption. */
+/** Turn creation spends its budgets in one consumption, and a workspace's plan can set its budget. */
 export interface PublicChatTurnRateLimiterDependencies extends Omit<AnonymousRateLimiterDependencies, "abuseControlService"> {
   abuseControlService: RateLimitBatchAbuseControlPort;
+  usageLimitPolicy: Pick<UsageLimitPolicy, "getPublicChatMessagesPerMinute">;
+  logger: { warn(fields: Record<string, unknown>, message: string): void };
 }
 
 const hashRateLimitPart = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32);
@@ -173,15 +177,22 @@ export const publicChatFeedbackRateLimiter = (dependencies: PublicChatSessionBud
  *   minting them. It applies only where the request source names the visitor; behind a relay the
  *   backend cannot see past, every visitor shares the relay's address, and the budget would act as
  *   a second, smaller workspace cap.
- * - The workspace's (`public.chat.global`), across all of its visitors. Its size is the
- *   workspace's business, so the response headers describe only the visitor's own budgets, and a
- *   refusal by the workspace's says only when to retry.
+ * - The workspace's (`public.chat.global`), across all of its visitors. The deployment sets the
+ *   default and the workspace's plan can set its own, higher or lower. Its size is the workspace's
+ *   business, so the response headers describe only the visitor's own budgets, and a refusal by
+ *   the workspace's says only when to retry.
  */
-export const publicChatTurnRateLimiter = (dependencies: PublicChatTurnRateLimiterDependencies): RequestHandler =>
-  createRateLimitBatchMiddleware({
+export const publicChatTurnRateLimiter = (dependencies: PublicChatTurnRateLimiterDependencies): RequestHandler => {
+  const workspaceRateLimit = createPublicChatWorkspaceRateLimit({
+    policy: dependencies.usageLimitPolicy,
+    defaultLimit: dependencies.env.PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
+    logger: dependencies.logger,
+  });
+  return createRateLimitBatchMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    resolvePolicies: (req, res) => {
+    resolvePolicies: async (req, res) => {
       const workspaceId = res.locals.workspaceId as string | undefined;
       const visitorKey = visitorSubjectKey(req, res);
       if (!workspaceId || !visitorKey) {
@@ -204,7 +215,7 @@ export const publicChatTurnRateLimiter = (dependencies: PublicChatTurnRateLimite
         {
           scope: "public.chat.global",
           subjectKey: `${workspaceId}:global`,
-          limit: env.PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
+          limit: await workspaceRateLimit.limitFor(workspaceId),
           windowMs,
           advertised: false,
         },
@@ -217,6 +228,7 @@ export const publicChatTurnRateLimiter = (dependencies: PublicChatTurnRateLimite
       },
     }),
   });
+};
 
 export const resetRateLimiterState = () => {
   // Durable abuse control state is reset by test repository setup, so this is now a no-op.

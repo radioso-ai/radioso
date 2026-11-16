@@ -44,6 +44,7 @@ interface EeUsageLimitProfilesTable {
   monthly_indexed_byte_limit: string | null;
   monthly_conversation_limit: number | null;
   replies_per_conversation: Generated<number>;
+  public_chat_messages_per_minute: number | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }

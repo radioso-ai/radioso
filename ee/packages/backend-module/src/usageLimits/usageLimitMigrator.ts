@@ -107,6 +107,14 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       CHECK (replies_per_conversation >= 1)
     `);
 
+    // Public chat messages per minute across all of one workspace's visitors. NULL keeps the
+    // deployment's PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS, so no seeded plan changes.
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS public_chat_messages_per_minute INTEGER
+      CHECK (public_chat_messages_per_minute IS NULL OR public_chat_messages_per_minute >= 1)
+    `);
+
     // Replies seen per conversation this period. Only the first reply of each
     // block of replies_per_conversation is charged.
     await database.query(`

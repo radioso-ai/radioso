@@ -19,6 +19,7 @@ const emptyForm = {
   storedDocumentLimit: "",
   storedIndexedByteLimit: "",
   monthlyIndexedByteLimit: "",
+  publicChatMessagesPerMinute: "",
 };
 
 export function TiersPage() {
@@ -50,6 +51,7 @@ export function TiersPage() {
       storedDocumentLimit: tier.storedDocumentLimit === null ? "" : String(tier.storedDocumentLimit),
       storedIndexedByteLimit: formatNullableByteInput(tier.storedIndexedByteLimit),
       monthlyIndexedByteLimit: formatNullableByteInput(tier.monthlyIndexedByteLimit),
+      publicChatMessagesPerMinute: typeof tier.publicChatMessagesPerMinute === "number" ? String(tier.publicChatMessagesPerMinute) : "",
     });
   };
 
@@ -67,6 +69,7 @@ export function TiersPage() {
         storedDocumentLimit: form.storedDocumentLimit.trim() === "" ? null : Number(form.storedDocumentLimit),
         storedIndexedByteLimit: parseNullableHumanBytes(form.storedIndexedByteLimit),
         monthlyIndexedByteLimit: parseNullableHumanBytes(form.monthlyIndexedByteLimit),
+        publicChatMessagesPerMinute: form.publicChatMessagesPerMinute.trim() === "" ? null : Number(form.publicChatMessagesPerMinute),
       });
       setForm(emptyForm);
       setEditingKey(null);
@@ -89,7 +92,7 @@ export function TiersPage() {
       {error ? <ErrorBanner message={error} /> : null}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
-          <table className="w-full min-w-[820px] border-collapse text-sm">
+          <table className="w-full min-w-[900px] border-collapse text-sm">
             <thead className="bg-zinc-900 text-left text-xs uppercase tracking-normal text-zinc-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Tier</th>
@@ -97,6 +100,7 @@ export function TiersPage() {
                 <th className="px-4 py-3 font-medium">Documents</th>
                 <th className="px-4 py-3 font-medium">Stored bytes</th>
                 <th className="px-4 py-3 font-medium">Monthly bytes</th>
+                <th className="px-4 py-3 font-medium">Chat/min</th>
                 <th className="px-4 py-3 font-medium">Edit</th>
               </tr>
             </thead>
@@ -115,6 +119,7 @@ export function TiersPage() {
                   <td className="px-4 py-3 text-zinc-300">{limitText(tier.storedDocumentLimit)}</td>
                   <td className="px-4 py-3 text-zinc-300">{formatHumanBytes(tier.storedIndexedByteLimit)}</td>
                   <td className="px-4 py-3 text-zinc-300">{formatHumanBytes(tier.monthlyIndexedByteLimit)}</td>
+                  <td className="px-4 py-3 text-zinc-300">{typeof tier.publicChatMessagesPerMinute === "number" ? tier.publicChatMessagesPerMinute.toLocaleString() : "default"}</td>
                   <td className="px-4 py-3">
                     {canWrite ? (
                       <Button variant="ghost" size="sm" onClick={() => edit(tier)} aria-label={`Edit ${tier.displayName}`}>
@@ -165,6 +170,11 @@ export function TiersPage() {
               <label className="block text-sm font-medium text-zinc-200">
                 Monthly indexed byte limit
                 <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" value={form.monthlyIndexedByteLimit} placeholder="unlimited or 1 GB" onChange={(event) => setForm({ ...form, monthlyIndexedByteLimit: event.target.value })} />
+              </label>
+              <label className="block text-sm font-medium text-zinc-200">
+                Public chat messages per minute
+                <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="number" min="1" value={form.publicChatMessagesPerMinute} placeholder="deployment default" onChange={(event) => setForm({ ...form, publicChatMessagesPerMinute: event.target.value })} />
+                <span className="mt-1 block text-xs font-normal text-zinc-500">Per workspace, all visitors together. Empty keeps the deployment default.</span>
               </label>
             </div>
             <div className="mt-5 flex gap-2">

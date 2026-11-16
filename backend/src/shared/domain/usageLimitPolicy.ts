@@ -60,6 +60,15 @@ export interface UsageLimitPolicy {
     accountId?: string | null;
     workspaceId: string;
   }): Promise<number | null>;
+  /**
+   * Public chat messages per minute the workspace's plan lets all of its visitors send together.
+   * Null, or a policy without this method, keeps the deployment's own workspace budget
+   * (`PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`).
+   */
+  getPublicChatMessagesPerMinute?(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<number | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;

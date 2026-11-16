@@ -107,9 +107,16 @@ composition calls them and assembles the result.
   subscriber/admission clients belong to the dedicated realtime composition and
   broker adapters remain outside mutation services.
 - Chat turn coordination: `conversationTurnCoordination.ts` assembles the
-  cross-instance turn registry from chat's Postgres lease store and notices and
-  the process's `PostgresNotificationListener`, and gives every runtime a
-  `shutdown` that stops lease renewal and closes the `LISTEN` connection.
+  cross-instance turn registry from chat's Postgres lease store and notices over
+  the process's shared `PostgresNotificationListener`, and gives every runtime a
+  `shutdown` that stops lease renewal.
+- Public conversation events: `publicConversationEvents.ts` assembles chat's
+  cross-instance event bus over a Postgres `NOTIFY` relay and the same
+  listener, so a visitor's event stream hears a message whichever instance
+  stored it. The listener is built with the database pool in
+  `server/builders/infra.ts`, one `LISTEN` session per process for every
+  channel, and closes as the last shutdown step in
+  `server/closeDependencies.ts`.
 
 ## Tests
 

@@ -8,6 +8,7 @@ import { appendRoutineLeadBack, renderSteeringBlock } from "../../../shared/infr
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
 import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
+import { attachedPhotoRules } from "./attachedPhotoRules.js";
 import type { ReusableInputBoundary } from "../../../shared/infra/llm/providerTypes.js";
 
 interface GroundedAnswerSystemPromptInput {
@@ -28,6 +29,8 @@ interface GroundedAnswerSystemPromptInput {
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
   /** The answer schema offers the `present` head, so the prompt says how to pick pictures. */
   presentHeadOffered?: boolean;
+  /** The visitor's message carries photos, so the prompt says how to answer about one. */
+  photosAttached?: boolean;
 }
 
 /**
@@ -92,10 +95,13 @@ export const composeGroundedAnswerSystemPrompt = (
     renderPromptTemplate("chat/answer-envelope.md", {}),
   ].reduce(joinBlocks, base);
 
-  // Turn-specific blocks follow. Answer steering stays ahead of the follow-up rules,
-  // which carry their own suggestion-scoped steering.
+  // Turn-specific blocks follow. A photo turn's rules come first, nearest the standing
+  // blocks they extend and outside the reusable prefix, so every other turn's prompt is
+  // unchanged. Answer steering stays ahead of the follow-up rules, which carry their own
+  // suggestion-scoped steering.
+  const withPhotoRules = input.photosAttached ? joinBlocks(standing, attachedPhotoRules("grounded")) : standing;
   const steeringBlock = renderSteeringBlock(input.steering ?? [], { includeRuleIds: true });
-  const withSteeringRules = steeringBlock ? joinBlocks(standing, steeringBlock) : standing;
+  const withSteeringRules = steeringBlock ? joinBlocks(withPhotoRules, steeringBlock) : withPhotoRules;
   // Offered only on a turn whose evidence carries pictures, so it stays out of the reusable prefix.
   const withSteering = input.presentHeadOffered
     ? joinBlocks(withSteeringRules, renderPromptTemplate("chat/answer-present-head.md", {}))

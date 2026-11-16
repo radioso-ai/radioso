@@ -21,6 +21,7 @@ export class RetrievalAnswerMetrics {
     summary: GroundingSummary,
     envelope: Pick<GroundedAnswerEnvelope, "outcome">,
     stream: boolean,
+    photoTurn: boolean,
   ): void {
     const protocol = summary.parseStatus === "valid_v2"
       ? "v2"
@@ -51,11 +52,13 @@ export class RetrievalAnswerMetrics {
         stream: String(stream),
         // Content-free: why the turn declined, or `none` when it did not decline.
         decline: summary.declineReason ?? "none",
+        // Whether the visitor's message carried a photo, so a photo miss shows apart.
+        photo_turn: String(photoTurn),
       },
     });
   }
 
-  groundingGateBound(declineReason: TurnDeclineReason): void {
+  groundingGateBound(declineReason: TurnDeclineReason, photoTurn: boolean): void {
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
       labels: {
@@ -64,6 +67,7 @@ export class RetrievalAnswerMetrics {
         reason: "gate_bound",
         stream: "true",
         decline: declineReason,
+        photo_turn: String(photoTurn),
       },
     });
   }
@@ -72,6 +76,7 @@ export class RetrievalAnswerMetrics {
     outcome: CommittedDeclineOutcome,
     declineReason: TurnDeclineReason,
     stream: boolean,
+    photoTurn: boolean,
   ): void {
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
@@ -82,11 +87,12 @@ export class RetrievalAnswerMetrics {
         stream: String(stream),
         decline: declineReason,
         outcome,
+        photo_turn: String(photoTurn),
       },
     });
   }
 
-  unsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
+  unsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean, photoTurn: boolean): void {
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
       labels: {
@@ -95,6 +101,7 @@ export class RetrievalAnswerMetrics {
         reason: "unsupported_answer",
         stream: String(stream),
         decline: declineReason,
+        photo_turn: String(photoTurn),
       },
     });
   }

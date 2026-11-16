@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderVisitorImageTurn } from "../../../src/modules/visitorImages/public.js";
+import { renderVisitorImageTurn, turnTextCarriesPhotos } from "../../../src/modules/visitorImages/public.js";
 
 describe("renderVisitorImageTurn", () => {
   it("appends one block per photo after the typed text, numbered from one", () => {
@@ -32,5 +32,17 @@ describe("renderVisitorImageTurn", () => {
 
   it("trims the typed text and leaves out an empty one", () => {
     expect(renderVisitorImageTurn("   ", [{ reading: "A red bicycle." }])).toBe("<attached_photo index=\"1\">A red bicycle.</attached_photo>");
+  });
+});
+
+describe("turnTextCarriesPhotos", () => {
+  it("finds the blocks renderVisitorImageTurn writes, read or unreadable", () => {
+    expect(turnTextCarriesPhotos(renderVisitorImageTurn("like this?", [{ reading: "A red bicycle." }]))).toBe(true);
+    expect(turnTextCarriesPhotos(renderVisitorImageTurn("", [{ reading: null }]))).toBe(true);
+  });
+
+  it("reads the tag's structure, not words about photos", () => {
+    expect(turnTextCarriesPhotos("Here is a photo of the attached_photo I mentioned")).toBe(false);
+    expect(turnTextCarriesPhotos("Are there any similar courses?")).toBe(false);
   });
 });

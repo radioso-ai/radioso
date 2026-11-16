@@ -1170,6 +1170,7 @@ Public surfaces and key files:
 - `backend/src/modules/visitorImages/` (module brief in its `README.md`; `public.ts`, `composition.ts`, `contracts/turnInput.ts`)
 - `backend/src/app/composition/visitorImages.ts` (object store over document storage, reading model, availability, audit, wiring)
 - `backend/src/modules/chat/services/visitorImageTurn.ts` (the door's claim, rendering, bind and release); `turnUserMessage.ts` (stores the user message, then calls `onUserMessageStored`)
+- `backend/src/modules/chat/services/attachedPhotoRules.ts` (one `photosAttached` flag per turn, from `imageInput` or `turnTextCarriesPhotos`, and the photo rules in `backend/prompts/chat/attached-photos*.md`, which only a photo turn's grounded answer, focused decline, and direct or skill-result reply carry; checked by `backend/tests/unit/chat/attached-photo-rules.test.ts`, `grounded-answer-prompt-contract.test.ts`, `assistant-reply-prompt-builder.test.ts` and the `photo-turn` conversation-quality cases)
 - `backend/src/app/http/routes/publicVisitorImageRoutes.ts` (`POST`/`GET /api/v1/public/chat/{token}/images[/{imageId}]`)
 - `backend/src/app/http/routes/assistantRoutes.ts` (`POST /api/v1/assistant/images`), `agentChannelImageRoute.ts` (`POST /api/v1/agents/{agentId}/images`)
 - `backend/src/app/http/routes/conversationImageRoutes.ts` (`GET /api/v1/conversations/{conversationId}/images/{imageId}`, audited); `testChatImageRoutes.ts` (`POST /api/v1/agents/{agentId}/test-executions/{executionId}/images`, an upload that follows the switch of the test's revisions; `GET …/images/{imageId}`, a photo bound to the test, one its transcript names, or the caller's unsent upload, each read narrowly; every view audited, `agent.test_execution.image_viewed` or `conversation.image_viewed`)
@@ -1725,9 +1726,10 @@ handoff. Two narrow ports: a **reader** that adapts the existing conversation ta
 into `{ id, author, createdAt, text }` — `author` comes from the message's `source`,
 because an operator's reply is stored with `role: "assistant"` — and a **waiter**
 that resolves when there is a reason to re-query. The waiter is a race, not a
-subscription: the conversation event bus is per-process, so it is raced against a
-jittered re-poll and the deadline, which is what makes a reply handled by another
-API instance reach a parked caller. The wait holds no database connection.
+subscription: the conversation event bus, which relays events between instances
+through Postgres, is raced against a jittered re-poll and the deadline. The bus
+wakes the caller on an event or when it may have missed one; the re-poll is the
+backstop. The wait holds no database connection.
 
 Public entry points:
 
@@ -1735,10 +1737,12 @@ Public entry points:
 - `backend/src/modules/chat/services/conversationUpdateReader.ts` (adapts `chatHistoryService.tailConversation`)
 - `backend/src/modules/chat/services/conversationUpdateWaiter.ts`
 - `backend/src/app/composition/conversationUpdates.ts` (default wiring over `publicConversationEventBus`)
+- `backend/src/app/composition/publicConversationEvents.ts` (the cross-instance bus: `modules/chat/services/crossInstancePublicConversationEventBus.ts` over `modules/chat/infra/postgresPublicConversationEventRelay.ts`)
 - `backend/src/app/http/routes/mcpConverseMessagesRoute.ts` (`GET /api/v1/mcp/converse/messages`)
 - `packages/radioso-mcp-server/src/tools/conversationUpdatesTools.ts` (`get_conversation_updates`)
 - `backend/tests/unit/chat/conversationUpdateReader.test.ts`, `conversationUpdateWaiter.test.ts`
 - `backend/tests/integration/converse-messages.integration.test.ts`
+- `backend/tests/integration/public-conversation-events.integration.test.ts` (two instances on one database)
 
 Related docs:
 

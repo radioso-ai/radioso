@@ -18,6 +18,7 @@ const composition = (closed: string[], failing: readonly string[] = []) => {
     closeAbuseControlRepository: step("abuse control"),
     connectorRegistry: { shutdownAll: step("connectors") },
     conversationTurnCoordination: { shutdown: step("conversation turn coordination") },
+    notificationListener: { close: step("notification listener") },
     logger,
   } as unknown as ClosableDependencies;
   return { dependencies, logger };
@@ -30,6 +31,7 @@ const ORDER = [
   "abuse control",
   "connectors",
   "conversation turn coordination",
+  "notification listener",
 ];
 
 describe("closeDependencies", () => {

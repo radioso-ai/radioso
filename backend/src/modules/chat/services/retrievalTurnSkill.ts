@@ -59,6 +59,7 @@ import {
   type EnvelopeAnswer,
   type PageContextAnswer,
 } from "./groundedAnswerDeclines.js";
+import { turnCarriesPhotos } from "./attachedPhotoRules.js";
 import {
   combineAbortSignals,
   CoverageVerdictYieldedError,
@@ -169,16 +170,12 @@ export class RetrievalAnswerComposer {
    * says; when the page envelope committed a decline without text, that commitment does,
    * exactly as on the grounded path.
    */
-  private zeroEvidenceDeclineReason(
-    pageAnswer: PageContextAnswer,
-    decline: ComposedDecline,
-    stream: boolean,
-  ): TurnDeclineReason {
+  private zeroEvidenceDeclineReason(pageAnswer: PageContextAnswer, decline: ComposedDecline, stream: boolean, photosAttached: boolean): TurnDeclineReason {
     if (pageAnswer.kind !== "blank_decline") {
       return decline.declineReason;
     }
     const declineReason = blankDeclineReason(pageAnswer.committed, decline);
-    this.answerMetrics.blankDecline(pageAnswer.committed, declineReason, stream);
+    this.answerMetrics.blankDecline(pageAnswer.committed, declineReason, stream, photosAttached);
     return declineReason;
   }
 
@@ -213,6 +210,7 @@ export class RetrievalAnswerComposer {
       noSupportHandsOff: session.agent.handoffOnRetrievalMiss === true,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
       presentHeadOffered,
+      photosAttached: turnCarriesPhotos(session.userMessage),
     });
     if (session.directiveSteering) {
       // Whether the follow-up question generator's block went into the prompt at all.
@@ -443,6 +441,7 @@ export class RetrievalAnswerComposer {
     signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
     const linkGuard = new AnswerLinkGuard();
+    const photosAttached = turnCarriesPhotos(session.userMessage);
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -483,7 +482,7 @@ export class RetrievalAnswerComposer {
           envelope: fallback,
           contextCount: 0,
         });
-        this.answerMetrics.groundingOutcome(grounding, fallback, false);
+        this.answerMetrics.groundingOutcome(grounding, fallback, false, photosAttached);
       } else {
         const decline = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
           query,
@@ -491,12 +490,13 @@ export class RetrievalAnswerComposer {
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           pendingRoutineStep: declinePendingRoutineStep(session),
+          photosAttached,
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
           ...(signal ? { signal } : {}),
         }));
         answer = decline.text;
-        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false, photosAttached);
       }
     } else {
       const replyTurn = await this.replyBlocks?.forTurn(session);
@@ -539,7 +539,7 @@ export class RetrievalAnswerComposer {
           signal,
         );
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.answerMetrics.blankDecline(blankDecline, declineReason, false);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, false, photosAttached);
         answer = decline.text;
         grounding = "no_support";
       } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
@@ -553,7 +553,7 @@ export class RetrievalAnswerComposer {
           linkGuard,
           signal,
         );
-        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false, photosAttached);
         answer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -563,7 +563,7 @@ export class RetrievalAnswerComposer {
         metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
         replyBlocks = replyTurn?.build(envelope);
         grounding = summary;
-        this.answerMetrics.groundingOutcome(summary, envelope, false);
+        this.answerMetrics.groundingOutcome(summary, envelope, false, photosAttached);
       }
     }
 
@@ -607,6 +607,7 @@ export class RetrievalAnswerComposer {
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
       pendingRoutineStep: declinePendingRoutineStep(session),
+      photosAttached: turnCarriesPhotos(session.userMessage),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -635,6 +636,7 @@ export class RetrievalAnswerComposer {
     coverageVerdict?: RetrievalCoverageVerdictSink,
   ): AsyncGenerator<string, TurnStreamResult> {
     const linkGuard = new AnswerLinkGuard();
+    const photosAttached = turnCarriesPhotos(session.userMessage);
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
@@ -686,19 +688,20 @@ export class RetrievalAnswerComposer {
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           pendingRoutineStep: declinePendingRoutineStep(session),
+          photosAttached,
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
         }));
         rawAnswer = decline.text;
-        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true, photosAttached);
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       // A decline composed without the envelope carried no plan or grades to resolve.
       if (fallbackEnvelope) {
         metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope.extras);
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
-        this.answerMetrics.groundingOutcome(grounding, fallbackEnvelope, true);
+        this.answerMetrics.groundingOutcome(grounding, fallbackEnvelope, true, photosAttached);
       }
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
@@ -846,7 +849,7 @@ export class RetrievalAnswerComposer {
         }
         // Recorded once the decline is composed so the counter carries the same
         // classification the persisted turn outcome does.
-        this.answerMetrics.groundingGateBound(decline.declineReason);
+        this.answerMetrics.groundingGateBound(decline.declineReason, photosAttached);
         const guardedDecline = this.guardLinks(
           linkGuard,
           this.chatAnswerPresenter.presentRetrievalDeclineAnswer(decline.text, decline.declineReason),
@@ -907,7 +910,7 @@ export class RetrievalAnswerComposer {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.answerMetrics.blankDecline(blankDecline, declineReason, true);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, true, photosAttached);
         rawAnswer = decline.text;
         grounding = "no_support";
         plannedSuggestions = [];
@@ -925,7 +928,7 @@ export class RetrievalAnswerComposer {
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
-        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, true);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, true, photosAttached);
         rawAnswer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -936,7 +939,7 @@ export class RetrievalAnswerComposer {
         metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
         replyBlocks = replyTurn?.build(finalized);
         grounding = summary;
-        this.answerMetrics.groundingOutcome(summary, finalized, true);
+        this.answerMetrics.groundingOutcome(summary, finalized, true, photosAttached);
       }
     }
 

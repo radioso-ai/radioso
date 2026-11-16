@@ -9,6 +9,7 @@ import type { TurnStreamResult } from "./turnOutcome.js";
 import { presentReplyResponseFormat, readPresentReplyEnvelope } from "./replyBlocks/presentReplyEnvelope.js";
 import type { ReplyPresentOffer } from "./replyBlocks/skillResultReplyBlocks.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
+import { turnCarriesPhotos } from "./attachedPhotoRules.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -74,6 +75,7 @@ export class AssistantReplyComposer {
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       pendingRoutineStep: session.routineYield?.pendingStep,
+      photosAttached: turnCarriesPhotos(session.userMessage),
     }, skillFindings);
   }
 
@@ -152,6 +154,7 @@ export class AssistantReplyComposer {
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
       pendingRoutineStep: session.routineYield?.pendingStep,
+      photosAttached: turnCarriesPhotos(session.userMessage),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
     });
@@ -212,6 +215,7 @@ export class AssistantReplyComposer {
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
       pendingRoutineStep: session.routineYield?.pendingStep,
+      photosAttached: turnCarriesPhotos(session.userMessage),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
       signal,

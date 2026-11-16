@@ -70,6 +70,7 @@ import { NoopManagedModelPolicy } from "../../../shared/domain/managedModelPolic
 import { DurableUsageEventRecorder } from "../../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { Database } from "../../../shared/infra/database.js";
+import { PostgresNotificationListener } from "../../../shared/infra/postgresNotificationListener.js";
 import { createMailService } from "../../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../../shared/observability/logger.js";
 import { buildOpsEventSinks } from "../../../shared/observability/opsEvents/buildOpsEventSinks.js";
@@ -98,6 +99,15 @@ export const buildInfrastructure = (input: {
     statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
     queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${env.NODE_ENV}`,
+    logger,
+  });
+  // The process's one LISTEN session, shared by every channel it hears (chat turns, visitor
+  // events). It opens with the first subscription and closes after the pool's idle timeout.
+  const notificationListener = new PostgresNotificationListener({
+    connectionString: env.DATABASE_URL,
+    applicationName: `radioso-${env.NODE_ENV}-listener`,
+    connectionTimeoutMs: env.DB_POOL_CONNECTION_TIMEOUT_MS,
+    idleCloseMs: env.DB_POOL_IDLE_TIMEOUT_MS,
     logger,
   });
   const auditEventRepository = new AuditEventRepository(database.kysely);
@@ -171,6 +181,7 @@ export const buildInfrastructure = (input: {
     errorReportingService,
     mailService,
     metricsRegistry,
+    notificationListener,
     productAnalyticsService,
     telemetryService,
     usageLimitPolicy,

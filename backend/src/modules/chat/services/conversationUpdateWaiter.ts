@@ -17,15 +17,15 @@ interface ConversationUpdateWaiterDependencies {
 }
 
 /**
- * Races three things and resolves on the first: a conversation event on the in-process
- * bus (the fast path, and the only one that is sub-millisecond), a jittered poll tick
- * that simply tells the caller to re-query, and the deadline.
+ * Races three things and resolves on the first: a conversation event on the bus (the fast
+ * path, which also covers the bus reporting that it may have missed events), a jittered
+ * poll tick that simply tells the caller to re-query, and the deadline.
  *
- * The tick is what makes this correct on a multi-instance deployment. The bus is
- * per-process and unbuffered, so an operator reply handled by another instance is never
- * published here; without the tick the caller would wait out its whole deadline while
- * the reply sat in the database. Nothing here holds a database connection — the caller's
- * re-query is a short keyset read that returns its connection immediately.
+ * The tick is the backstop. The bus is unbuffered, so an event sent while it could not hear
+ * the instance that sent it never arrives here; without the tick the caller would wait out
+ * its whole deadline while the reply sat in the database. Nothing here holds a database
+ * connection — the caller's re-query is a short keyset read that returns its connection
+ * immediately.
  */
 export const createConversationUpdateWaiter = (
   dependencies: ConversationUpdateWaiterDependencies,
@@ -61,11 +61,15 @@ export const createConversationUpdateWaiter = (
       // handler returns without writing. Clearing here is what keeps a closed connection
       // from leaving a timer and a bus listener behind.
       const onAbort = () => settle("deadline");
-      const unsubscribe = dependencies.bus.subscribe(conversationId, (event: PublicConversationEvent) => {
-        if (event.conversationId === conversationId) {
-          settle("woken");
-        }
-      });
+      const unsubscribe = dependencies.bus.subscribe(
+        conversationId,
+        (event: PublicConversationEvent) => {
+          if (event.conversationId === conversationId) {
+            settle("woken");
+          }
+        },
+        () => settle("woken"),
+      );
 
       signal.addEventListener("abort", onAbort, { once: true });
       timers.push(setTimeout(() => settle("deadline"), timeoutMs));

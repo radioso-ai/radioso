@@ -87,6 +87,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("heading", { name: "Contact requests" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Webhook exports" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Retrieval answers" })).toHaveCount(0);
+  // The built-ins wait in a collapsed group below the agent's own skills.
+  await expect(page.getByText("Retrieval answer", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Built-in skills · 3" }).click();
   await expect(page.getByText("Clarification answer", { exact: true })).toBeVisible();
   await expect(page.getByText("Retrieval answer", { exact: true })).toBeVisible();
   await expect(page.getByText("Direct answer", { exact: true })).toBeVisible();

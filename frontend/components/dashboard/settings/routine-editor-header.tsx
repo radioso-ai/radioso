@@ -132,7 +132,9 @@ function RoutineEditorHeaderActions({
     // competing buttons.
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
       {showActions ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-      {showActions ? (
+      {/* Delete stays reachable for a stored routine the editor could not open, since the
+          menu is the only place a routine is deleted from. */}
+      {showActions || isPersisted ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
@@ -140,7 +142,7 @@ function RoutineEditorHeaderActions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            {onOpenMap ? (
+            {showActions && onOpenMap ? (
               <>
                 <DropdownMenuItem onSelect={onOpenMap}>
                   <Waypoints className="mr-2 h-4 w-4" />
@@ -149,13 +151,15 @@ function RoutineEditorHeaderActions({
                 <DropdownMenuSeparator />
               </>
             ) : null}
-            <DropdownMenuItem disabled={isSaving || isDrafting} onSelect={onOpenDraftAssist}>
-              <WandSparkles className="mr-2 h-4 w-4" />
-              Draft from procedure
-            </DropdownMenuItem>
+            {showActions ? (
+              <DropdownMenuItem disabled={isSaving || isDrafting} onSelect={onOpenDraftAssist}>
+                <WandSparkles className="mr-2 h-4 w-4" />
+                Draft from procedure
+              </DropdownMenuItem>
+            ) : null}
             {isPersisted ? (
               <>
-                <DropdownMenuSeparator />
+                {showActions ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuItem
                   disabled={isSaving}
                   onSelect={onDelete}

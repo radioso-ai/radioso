@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-11-08
+last_updated: 2026-11-16
 ---
 
 # OSS And SaaS Observability
@@ -579,6 +579,16 @@ The browser posts sanitized error envelopes to
 `/api/v1/observability/frontend-errors`; the backend records them through the
 generic error reporting service and configured error sinks. React components do
 not import PostHog, Sentry, or any other vendor SDK.
+
+A page that stays open across a deploy asks the new build for chunks it no
+longer serves, and the browser raises `ChunkLoadError`. The boundary treats that
+as deploy skew: it reloads the page once and sends no report. The reload adds a
+`radioso_chunk_reload=<timestamp>` parameter to the address, so the guard keeps
+working in a website embed whose browser blocks Web Storage. A chunk failure on
+an address that carries a marker younger than a minute means the reload did not
+help, so the boundary shows its error fallback and reports the failure like any
+other. The decision lives in
+[`frontend/lib/chunk-load-recovery.ts`](../frontend/lib/chunk-load-recovery.ts).
 
 ## Rollout Plan
 

@@ -9,10 +9,13 @@ import {
   type FrontendErrorReporter,
 } from '@/lib/frontend-errors'
 import { API_BASE } from '@/lib/api-client'
+import { planChunkLoadRecovery } from '@/lib/chunk-load-recovery'
 
 interface FrontendErrorBoundaryProps {
   children: ReactNode
   reporter?: FrontendErrorReporter
+  /** Loads `url` in place of the current page. Defaults to `window.location.replace`. */
+  reloadFrame?: (url: string) => void
 }
 
 interface FrontendErrorBoundaryInnerProps extends FrontendErrorBoundaryProps {
@@ -21,6 +24,8 @@ interface FrontendErrorBoundaryInnerProps extends FrontendErrorBoundaryProps {
 
 interface FrontendErrorBoundaryState {
   hasError: boolean
+  /** Set when the failure was a missing chunk and a reload is the recovery: the fallback stays hidden. */
+  reloadUrl: string | null
 }
 
 let defaultReporter: FrontendErrorReporter | null = null
@@ -49,19 +54,44 @@ const currentSource = (): 'frontend' | 'embed' => (
   ) ? 'embed' : 'frontend'
 )
 
+const defaultReloadFrame = (url: string): void => {
+  window.location.replace(url)
+}
+
 export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryInnerProps, FrontendErrorBoundaryState> {
   state: FrontendErrorBoundaryState = {
     hasError: false,
+    reloadUrl: null,
   }
 
   private readonly reporter: FrontendErrorReporter
+
+  private reloadStarted = false
 
   constructor(props: FrontendErrorBoundaryInnerProps) {
     super(props)
     this.reporter = props.reporter ?? createDefaultReporter()
   }
 
+  // A deploy skew failure is expected and the reload fixes it, so a recovered failure is not
+  // reported. One that the guard refuses to recover is reported like any other.
+  private readonly recoverFromChunkFailure = (error: unknown): boolean => {
+    const plan = planChunkLoadRecovery({ error, href: window.location.href, now: Date.now() })
+    if (plan.kind !== 'reload') return false
+    this.startReload(plan.url)
+    return true
+  }
+
+  // The old page keeps raising chunk failures until the navigation lands; one reload is enough.
+  private readonly startReload = (url: string): void => {
+    if (this.reloadStarted) return
+    this.reloadStarted = true
+    const reloadFrame = this.props.reloadFrame ?? defaultReloadFrame
+    reloadFrame(url)
+  }
+
   private readonly handleWindowError = (event: ErrorEvent) => {
+    if (this.recoverFromChunkFailure(event.error)) return
     void this.reporter.report({
       errorType: 'frontend.runtime.unhandled',
       error: event.error,
@@ -73,6 +103,7 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
   }
 
   private readonly handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    if (this.recoverFromChunkFailure(event.reason)) return
     void this.reporter.report({
       errorType: 'frontend.promise.unhandled',
       error: event.reason,
@@ -81,8 +112,11 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
     })
   }
 
-  static getDerivedStateFromError(): FrontendErrorBoundaryState {
-    return { hasError: true }
+  static getDerivedStateFromError(error: unknown): FrontendErrorBoundaryState {
+    const plan = typeof window === 'undefined'
+      ? null
+      : planChunkLoadRecovery({ error, href: window.location.href, now: Date.now() })
+    return { hasError: true, reloadUrl: plan?.kind === 'reload' ? plan.url : null }
   }
 
   componentDidMount(): void {
@@ -92,11 +126,15 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
 
   componentDidUpdate(previousProps: FrontendErrorBoundaryInnerProps): void {
     if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false })
+      this.setState({ hasError: false, reloadUrl: null })
     }
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    if (this.state.reloadUrl !== null) {
+      this.startReload(this.state.reloadUrl)
+      return
+    }
     void this.reporter.report({
       errorType: 'frontend.react.unhandled',
       error,
@@ -113,6 +151,9 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
 
   render() {
     if (this.state.hasError) {
+      if (this.state.reloadUrl !== null) {
+        return null
+      }
       return (
         <main className="min-h-screen bg-background text-foreground">
           <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
@@ -121,7 +162,7 @@ export class FrontendErrorBoundaryInner extends Component<FrontendErrorBoundaryI
             <button
               className="mt-6 w-fit rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               type="button"
-              onClick={() => this.setState({ hasError: false })}
+              onClick={() => this.setState({ hasError: false, reloadUrl: null })}
             >
               Try again
             </button>

@@ -1,19 +1,17 @@
 'use client'
 
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 
 import { DirectiveConflicts } from '@/components/dashboard/settings/directive-conflicts'
 import { focusBuiltInRow, focusDirectiveRow } from '@/components/dashboard/settings/directive-list'
+import {
+  QuietDetailSheet,
+  QuietSheetDetails,
+  QuietSheetField,
+  QuietSheetFrame,
+} from '@/components/dashboard/settings/quiet-detail-sheet'
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import type { BuiltInDirective, Directive } from '@/lib/api'
 import type { BuiltInDefaultEntry, DirectiveRow } from '@/lib/directive-list-view-model'
@@ -40,49 +38,9 @@ export type DirectiveSheetActions = {
 
 type VersionInUse = 'default' | 'yours'
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="text-sm text-foreground">{children}</div>
-    </div>
-  )
-}
-
 // The instruction keeps the line breaks its author wrote, so it reads back as written.
 function InstructionText({ children }: { children: ReactNode }) {
   return <p className="whitespace-pre-wrap break-words">{children}</p>
-}
-
-function SheetFrame({
-  title,
-  subtitle,
-  headerEnd,
-  footer,
-  children,
-}: {
-  title: string
-  // Optional: the authored sheet's switch already says whether the rule is on.
-  subtitle?: string
-  headerEnd?: ReactNode
-  footer?: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <>
-      {/* The sheet's own close control sits in the top-right corner, so the header leaves it room. */}
-      <SheetHeader className="flex-row items-start justify-between gap-3 pr-12">
-        <div className="min-w-0 space-y-1">
-          <SheetTitle className="break-words font-display text-xl">{title}</SheetTitle>
-          {/* Radix wants a description; with nothing to add it stays for screen readers only. */}
-          <SheetDescription className={subtitle ? undefined : 'sr-only'}>{subtitle ?? title}</SheetDescription>
-        </div>
-        {headerEnd}
-      </SheetHeader>
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">{children}</div>
-      {footer ? <SheetFooter className="flex-row items-center gap-2 border-t border-border">{footer}</SheetFooter> : null}
-    </>
-  )
 }
 
 function WordDiffText({ segments }: { segments: WordDiff['segments'] }) {
@@ -117,16 +75,7 @@ function DirectiveDetails({ directive, replaces }: { directive: Directive; repla
     ...(replaces && replaces.length > 0 ? [['Replaces', replaces.join(', ')] as [string, string]] : []),
     ...(directive.description ? [['Note', directive.description] as [string, string]] : []),
   ]
-  return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 border-t border-border pt-4 text-sm">
-      {details.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd className="break-words text-foreground">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
+  return <QuietSheetDetails details={details} />
 }
 
 function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: DirectiveSheetActions }) {
@@ -135,7 +84,7 @@ function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: Directive
   // toggle; starting another from this copy would write a stale value back over it.
   const isBusy = actions.isRowPending(directive.id) || actions.isSaving
   return (
-    <SheetFrame
+    <QuietSheetFrame
       title={directive.name}
       headerEnd={(
         <Switch
@@ -164,12 +113,12 @@ function AuthoredSheet({ row, actions }: { row: DirectiveRow; actions: Directive
         isSaving={actions.isSaving}
         isRowPending={actions.isRowPending}
       />
-      <Field label="When">
+      <QuietSheetField label="When">
         {directive.condition.kind === 'contextual' ? directive.condition.description : 'Always'}
-      </Field>
-      <Field label="Instruction"><InstructionText>{directive.action}</InstructionText></Field>
+      </QuietSheetField>
+      <QuietSheetField label="Instruction"><InstructionText>{directive.action}</InstructionText></QuietSheetField>
       <DirectiveDetails directive={directive} replaces={row.replaces} />
-    </SheetFrame>
+    </QuietSheetFrame>
   )
 }
 
@@ -188,7 +137,7 @@ function CustomizedSheet({
   const diff = useMemo(() => diffWords(builtIn.action, directive.action), [builtIn.action, directive.action])
   const isComparable = diff.similarity >= WORD_DIFF_SIMILARITY_THRESHOLD
   return (
-    <SheetFrame
+    <QuietSheetFrame
       title={row.title}
       subtitle={row.title === row.defaultTitle ? 'Radioso default, customized · Always' : `Customizes ${row.defaultTitle} · Always`}
       footer={(
@@ -210,7 +159,7 @@ function CustomizedSheet({
         isSaving={actions.isSaving}
         isRowPending={actions.isRowPending}
       />
-      <Field label="In use">
+      <QuietSheetField label="In use">
         {/* Choosing a version flips the customization on or off; its text is kept either way. */}
         <SegmentedControl<VersionInUse>
           aria-label="Version in use"
@@ -224,19 +173,19 @@ function CustomizedSheet({
             { value: 'yours', label: 'Your version' },
           ]}
         />
-      </Field>
+      </QuietSheetField>
       {isComparable ? (
-        <Field label={diff.changes === 0 ? 'Your version · same as the default' : `Your version · ${diff.changes} ${diff.changes === 1 ? 'change' : 'changes'} from the default`}>
+        <QuietSheetField label={diff.changes === 0 ? 'Your version · same as the default' : `Your version · ${diff.changes} ${diff.changes === 1 ? 'change' : 'changes'} from the default`}>
           <WordDiffText segments={diff.segments} />
-        </Field>
+        </QuietSheetField>
       ) : (
         <>
-          <Field label="Your version"><InstructionText>{directive.action}</InstructionText></Field>
-          <Field label="Radioso default"><InstructionText>{builtIn.action}</InstructionText></Field>
+          <QuietSheetField label="Your version"><InstructionText>{directive.action}</InstructionText></QuietSheetField>
+          <QuietSheetField label="Radioso default"><InstructionText>{builtIn.action}</InstructionText></QuietSheetField>
         </>
       )}
       <DirectiveDetails directive={directive} />
-    </SheetFrame>
+    </QuietSheetFrame>
   )
 }
 
@@ -244,7 +193,7 @@ function DefaultSheet({ entry, actions }: { entry: BuiltInDefaultEntry; actions:
   const { builtIn, replacedBy } = entry
   const isFullyReplaced = replacedBy?.condition.kind === 'always'
   return (
-    <SheetFrame
+    <QuietSheetFrame
       title={entry.title}
       subtitle="Radioso default · Always"
       footer={
@@ -273,8 +222,8 @@ function DefaultSheet({ entry, actions }: { entry: BuiltInDefaultEntry; actions:
         </p>
       ) : null}
       {builtIn.description ? <p className="text-sm text-muted-foreground">{builtIn.description}</p> : null}
-      <Field label="Instruction"><InstructionText>{builtIn.action}</InstructionText></Field>
-    </SheetFrame>
+      <QuietSheetField label="Instruction"><InstructionText>{builtIn.action}</InstructionText></QuietSheetField>
+    </QuietSheetFrame>
   )
 }
 
@@ -295,41 +244,16 @@ export function DirectiveDetailSheet({
   actions: DirectiveSheetActions
   onClose: () => void
 }) {
-  // The sheet slides out after `target` clears. Keeping the last target mounted lets it leave with
-  // its content instead of emptying first.
-  const [lastTarget, setLastTarget] = useState(target)
-  if (target && target !== lastTarget) setLastTarget(target)
-  const shown = target ?? lastTarget
-  // The sheet has no trigger to hand focus back to, so a dismissal returns it to the row that
-  // opened the sheet. Closing to open an editor leaves focus alone: the editor owns it then.
-  const wasDismissed = useRef(false)
-
-  const returnFocus = () => {
-    if (!shown) return
-    if (shown.kind === 'default') focusBuiltInRow(shown.entry.builtIn.name)
-    else focusDirectiveRow(shown.row.id)
-  }
-
   return (
-    <Sheet
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (open) return
-        wasDismissed.current = true
-        onClose()
+    <QuietDetailSheet
+      target={target}
+      onClose={onClose}
+      returnFocus={(shown) => {
+        if (shown.kind === 'default') focusBuiltInRow(shown.entry.builtIn.name)
+        else focusDirectiveRow(shown.row.id)
       }}
     >
-      <SheetContent
-        side="right"
-        className="w-full gap-0 sm:max-w-lg"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          if (wasDismissed.current) returnFocus()
-          wasDismissed.current = false
-        }}
-      >
-        {shown ? <SheetBody target={shown} actions={actions} /> : null}
-      </SheetContent>
-    </Sheet>
+      {(shown) => <SheetBody target={shown} actions={actions} />}
+    </QuietDetailSheet>
   )
 }

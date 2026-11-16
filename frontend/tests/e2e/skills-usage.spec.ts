@@ -116,3 +116,31 @@ test("the skills registry still lists skills when the referencing surfaces canno
   await expect(page.locator("#assistant-skills-list")).not.toContainText("Not used by a directive or routine");
   await expect(page.locator("#assistant-skills-list").getByRole("alert")).toHaveCount(0);
 });
+
+test("a skill row opens its details, where the skill is edited or deleted", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    agentSkills: [
+      skill("66666666-6666-4666-8666-000000000001", "issue_refund"),
+      skill("66666666-6666-4666-8666-000000000002", "lookup_order"),
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+
+  await page.getByRole("button", { name: "@issue_refund" }).click();
+  const sheet = page.getByRole("dialog", { name: "@issue_refund" });
+  await expect(sheet).toContainText("Agent decides when to use it");
+  await expect(sheet).toContainText("Not used by a directive or routine");
+
+  await sheet.getByRole("button", { name: "Edit issue_refund" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit skill" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Edit skill" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "@issue_refund" }).click();
+  await page.getByRole("dialog", { name: "@issue_refund" }).getByRole("button", { name: "Delete issue_refund" }).click();
+  await expect(page.getByRole("dialog", { name: "@issue_refund" })).toHaveCount(0);
+  await expect(page.getByText("@issue_refund", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("@lookup_order", { exact: true })).toBeVisible();
+});

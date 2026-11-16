@@ -275,6 +275,49 @@ test("a visitor attaches a photo, sees it upload, sends it, and still sees it af
   await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 });
 
+test("the attach control sits inside the field beside Send, as big a target as Send", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  const field = page.getByPlaceholder("Ask a question...");
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  const send = page.getByRole("button", { name: "Send message" });
+  await field.fill("Do you open on Sundays?");
+  await expect(attach).toBeVisible();
+
+  // Tabbing from the message field reaches the attach control, then Send.
+  await field.focus();
+  await page.keyboard.press("Tab");
+  await expect(attach).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(send).toBeFocused();
+
+  // On screen it is right of the field, left of Send, and as large a target as Send.
+  const fieldBox = (await field.boundingBox())!;
+  const attachBox = (await attach.boundingBox())!;
+  const sendBox = (await send.boundingBox())!;
+  expect(attachBox.x).toBeGreaterThanOrEqual(fieldBox.x + fieldBox.width - 1);
+  expect(attachBox.x + attachBox.width).toBeLessThanOrEqual(sendBox.x);
+  expect(attachBox.width).toBeGreaterThanOrEqual(36);
+  expect(attachBox.height).toBe(sendBox.height);
+});
+
+test("Enter on the focused attach control opens the file picker", async ({ page }) => {
+  const photo = await makePhoto(page, 400, 300);
+  await mockPublicChat(page, { acceptsImages: true, photo });
+
+  await page.goto(`/chat/${publicToken}`);
+  await expect(page.getByPlaceholder("Ask a question...")).toBeVisible();
+  const attach = page.getByRole("button", { name: "Attach photo" });
+  await expect(attach).toBeVisible();
+
+  await attach.focus();
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Enter");
+  expect((await chooser).isMultiple()).toBe(true);
+});
+
 test("a visitor can remove a photo before sending, and is told when a file type is not accepted", async ({ page }) => {
   const photo = await makePhoto(page, 800, 600);
   await mockPublicChat(page, { acceptsImages: true, photo });
@@ -303,6 +346,8 @@ test("a visitor can drop a photo on the composer and paste another, up to three"
   await page.goto(`/chat/${publicToken}`);
   const field = page.getByPlaceholder("Ask a question...");
   await expect(field).toBeVisible();
+  // Drop and paste are bound once the chat knows the agent takes photos, which is when the paperclip shows.
+  await expect(page.getByRole("button", { name: "Attach photo" })).toBeVisible();
 
   const transferOf = (bytes: number[], name: string) =>
     page.evaluateHandle(
@@ -553,10 +598,10 @@ test("a photo is removed from the keyboard with focus moving on, each Remove nam
   await expect(page.locator("[data-attachment-status]")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Remove photo 1 of 1" })).toBeFocused();
 
-  // Removing the last moves focus to the attach control, and with the chips gone it is still there to use.
+  // Removing the last moves focus to the message field, where the visitor goes on typing.
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Attach photo" })).toBeFocused();
+  await expect(page.getByPlaceholder("Ask a question...")).toBeFocused();
 });
 
 test("a mouse removal leaves focus in the message field where the visitor was typing", async ({ page }) => {

@@ -1,10 +1,23 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { KeyRound, Pencil, Plus, RefreshCw, Trash2, Webhook } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, Webhook } from 'lucide-react'
 
+import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
+import { QuietList, QuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { useScopedRowMutations, type RowMutationOutcome } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import {
+  deliveryAttentionLabel,
+  webhookDestinationRowDomId,
+} from '@/components/dashboard/settings/webhook-destination-rows'
+import {
+  WebhookDestinationSheet,
+  type WebhookSheetAction,
+  type WebhookSheetActions,
+} from '@/components/dashboard/settings/webhook-destination-sheet'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Input } from '@/components/ui/input'
@@ -28,12 +41,28 @@ const emptyForm = (): DestinationForm => ({
   url: '',
 })
 
-const formatDeliveryStatus = (destination: WebhookDestination): string => {
-  if (!destination.lastDeliveryStatus || !destination.lastDeliveryAt) {
-    return 'No deliveries yet'
-  }
-  const status = destination.lastDeliveryStatus.replace(/_/gu, ' ')
-  return `${status} at ${new Date(destination.lastDeliveryAt).toLocaleString()}`
+// A signing secret is shown once, next to the destination it was issued for.
+type IssuedSecret = { destinationId: string; value: string }
+
+// The panel belongs to the workspace and has no id of its own to scope row locks by.
+const ROW_MUTATION_SCOPE = 'webhook-destinations'
+
+// The create and edit form is one more row of work, locked like the rest.
+const FORM_ROW = 'form'
+
+const rowMutationKey = (action: WebhookSheetAction, destinationId: string): string => `${action}:${destinationId}`
+
+function SigningSecretNotice({ secret }: { secret: string }) {
+  return (
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+      <CopyValueField
+        label="Signing secret"
+        value={secret}
+        ariaLabel="Copy webhook signing secret"
+        wrap
+      />
+    </div>
+  )
 }
 
 export function WebhookDestinationsPanel({
@@ -43,15 +72,32 @@ export function WebhookDestinationsPanel({
 }) {
   const [destinations, setDestinations] = useState<WebhookDestination[]>([])
   const [form, setForm] = useState<DestinationForm | null>(null)
-  const [secret, setSecret] = useState<string | null>(null)
+  const [secret, setSecret] = useState<IssuedSecret | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  // The sheet holds which destination it shows, not a copy, so a rotated one shows its current
+  // data and a deleted one closes the sheet.
+  const [sheetDestinationId, setSheetDestinationId] = useState<string | null>(null)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
+  const rowMutations = useScopedRowMutations(ROW_MUTATION_SCOPE)
+  const deletion = useDeleteConfirmation<WebhookDestination>()
+  // A form save and a delete are separate requests, so a save can land after its destination is
+  // gone. Ids are never reused, so remembering them is enough to drop that response.
+  const deletedDestinationIds = useRef(new Set<string>())
+  // The form takes the keyboard when it opens, and again when it switches to another destination.
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const shouldFocusForm = useRef(false)
+
+  const isSavingForm = rowMutations.isPending(FORM_ROW)
 
   const sortedDestinations = useMemo(
     () => [...destinations].sort((left, right) => left.name.localeCompare(right.name)),
     [destinations],
+  )
+  // Memoized: the sheet keeps the last target it showed, compared by identity.
+  const sheetDestination = useMemo(
+    () => destinations.find((destination) => destination.id === sheetDestinationId) ?? null,
+    [destinations, sheetDestinationId],
   )
 
   useEffect(() => {
@@ -85,20 +131,48 @@ export function WebhookDestinationsPanel({
     })
   }
 
+  // Runs once the form this open rendered is on screen; typing re-renders it without moving focus.
+  // Focusing the input also scrolls it into view.
+  useEffect(() => {
+    if (!form || !shouldFocusForm.current) return
+    shouldFocusForm.current = false
+    nameInputRef.current?.focus()
+  }, [form])
+
   const openCreate = () => {
     setSecret(null)
     setError(null)
+    shouldFocusForm.current = true
     setForm(emptyForm())
   }
 
   const openEdit = (destination: WebhookDestination) => {
     setSecret(null)
     setError(null)
+    shouldFocusForm.current = true
     setForm({
       id: destination.id,
       name: destination.name,
       url: destination.url,
     })
+  }
+
+  // beginSave already told the section it is saving, so every settled mutation answers it: a
+  // failure names itself, a stale one clears the announcement. Only the newest save may speak.
+  const settleOutcome = <T,>(
+    saveId: number,
+    outcome: RowMutationOutcome<T>,
+    failureMessage: string,
+  ): { value: T } | null => {
+    if (outcome.status === 'applied') return { value: outcome.value }
+    if (outcome.status === 'stale') {
+      if (isCurrentSave(saveId)) resetSaveState()
+      return null
+    }
+    const message = getApiErrorMessage(outcome.error, failureMessage)
+    setError(message)
+    if (isCurrentSave(saveId)) markError(message)
+    return null
   }
 
   const saveForm = async () => {
@@ -110,77 +184,87 @@ export function WebhookDestinationsPanel({
       return
     }
 
+    const editedId = form.id
     const saveId = beginSave()
-    setBusyId(form.id ?? 'create')
     setError(null)
-    try {
-      if (form.id) {
-        const response = await webhookDestinationsApi.updateDestination(form.id, { name, url })
-        if (!isCurrentSave(saveId)) return
-        upsertDestination(response.destination)
-        setForm(null)
-        markSaved()
-        return
+    const outcome = await rowMutations.run(FORM_ROW, async () => {
+      if (editedId) {
+        const response = await webhookDestinationsApi.updateDestination(editedId, { name, url })
+        return { destination: response.destination, secret: null }
       }
-      const response = await webhookDestinationsApi.createDestination({ name, url })
-      if (!isCurrentSave(saveId)) return
-      upsertDestination(response.destination)
-      setSecret(response.secret)
-      setForm(null)
-      markSaved()
-    } catch (saveError) {
-      if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(saveError, 'Failed to save webhook destination.')
-      setError(message)
-      markError(message)
-    } finally {
-      if (isCurrentSave(saveId)) setBusyId(null)
+      return webhookDestinationsApi.createDestination({ name, url })
+    })
+    const settled = settleOutcome(saveId, outcome, 'Failed to save webhook destination.')
+    if (!settled) return
+    // The destination was deleted while this save was in flight: its row must not come back.
+    if (editedId && deletedDestinationIds.current.has(editedId)) {
+      if (isCurrentSave(saveId)) resetSaveState()
+      return
     }
+    upsertDestination(settled.value.destination)
+    if (settled.value.secret) setSecret({ destinationId: settled.value.destination.id, value: settled.value.secret })
+    setForm(null)
+    if (isCurrentSave(saveId)) markSaved()
   }
 
+  // Each destination holds its own controls until its own request settles, so acting on a second
+  // one never releases the first one's while it is still in flight. A committed response is always
+  // applied; the section's save chip has one thing to say, so it stays last-write-wins.
   const rotateSecret = async (destination: WebhookDestination) => {
     const saveId = beginSave()
-    setBusyId(`rotate:${destination.id}`)
     setError(null)
-    try {
-      const response = await webhookDestinationsApi.rotateSecret(destination.id)
-      if (!isCurrentSave(saveId)) return
-      upsertDestination(response.destination)
-      setSecret(response.secret)
-      markSaved()
-    } catch (rotateError) {
-      if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(rotateError, 'Failed to rotate webhook destination secret.')
-      setError(message)
-      markError(message)
-    } finally {
-      if (isCurrentSave(saveId)) setBusyId(null)
-    }
+    const outcome = await rowMutations.run(
+      rowMutationKey('rotate', destination.id),
+      () => webhookDestinationsApi.rotateSecret(destination.id),
+    )
+    const settled = settleOutcome(saveId, outcome, 'Failed to rotate webhook destination secret.')
+    if (!settled) return
+    upsertDestination(settled.value.destination)
+    setSecret({ destinationId: destination.id, value: settled.value.secret })
+    if (isCurrentSave(saveId)) markSaved()
   }
 
   const deleteDestination = async (destination: WebhookDestination) => {
     const saveId = beginSave()
-    setBusyId(`delete:${destination.id}`)
     setError(null)
-    try {
-      await webhookDestinationsApi.deleteDestination(destination.id)
-      if (!isCurrentSave(saveId)) return
-      setDestinations((current) => current.filter((item) => item.id !== destination.id))
-      if (form?.id === destination.id) {
-        setForm(null)
-      }
-      markSaved()
-    } catch (deleteError) {
-      if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(deleteError, 'Failed to delete webhook destination.')
-      setError(message)
-      markError(message)
-    } finally {
-      if (isCurrentSave(saveId)) setBusyId(null)
-    }
+    const outcome = await rowMutations.run(
+      rowMutationKey('delete', destination.id),
+      () => webhookDestinationsApi.deleteDestination(destination.id),
+    )
+    if (!settleOutcome(saveId, outcome, 'Failed to delete webhook destination.')) return
+    deletedDestinationIds.current.add(destination.id)
+    setDestinations((current) => current.filter((item) => item.id !== destination.id))
+    // The operator may have opened another destination while this one was being deleted.
+    setSheetDestinationId((current) => (current === destination.id ? null : current))
+    setForm((current) => (current?.id === destination.id ? null : current))
+    if (isCurrentSave(saveId)) markSaved()
   }
 
-  const isBusy = Boolean(busyId)
+  // The dialog stays open while the request runs and closes when it settles either way, so a
+  // failure's message shows in the sheet underneath.
+  const confirmDeleteDestination = async () => {
+    if (!deletion.item) return
+    await deleteDestination(deletion.item)
+    deletion.dismiss()
+  }
+
+  const sheetActions: WebhookSheetActions = {
+    pendingAction: (destinationId) => {
+      if (rowMutations.isPending(rowMutationKey('rotate', destinationId))) return 'rotate'
+      if (rowMutations.isPending(rowMutationKey('delete', destinationId))) return 'delete'
+      return null
+    },
+    onEdit: (destination) => {
+      setSheetDestinationId(null)
+      openEdit(destination)
+    },
+    onRotateSecret: (destination) => void rotateSecret(destination),
+    onDelete: deletion.ask,
+  }
+
+  // A secret issued for the destination whose sheet is open shows in the sheet, which covers the
+  // section; otherwise it shows in the section.
+  const isSecretInSheet = secret !== null && secret.destinationId === sheetDestination?.id
 
   return (
     <SettingsCard
@@ -197,16 +281,7 @@ export function WebhookDestinationsPanel({
     >
       <div className="space-y-4">
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {secret ? (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-            <CopyValueField
-              label="Signing secret"
-              value={secret}
-              ariaLabel="Copy webhook signing secret"
-              wrap
-            />
-          </div>
-        ) : null}
+        {secret && !isSecretInSheet ? <SigningSecretNotice secret={secret.value} /> : null}
 
         {form ? (
           <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-[minmax(0,180px)_minmax(0,1fr)_auto] md:items-end">
@@ -214,6 +289,7 @@ export function WebhookDestinationsPanel({
               <Label htmlFor="webhookDestinationName">Destination name</Label>
               <Input
                 id="webhookDestinationName"
+                ref={nameInputRef}
                 value={form.name}
                 onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                 placeholder="crm-leads"
@@ -230,10 +306,10 @@ export function WebhookDestinationsPanel({
               />
             </div>
             <div className="flex flex-wrap gap-2 md:justify-end">
-              <Button type="button" variant="ghost" onClick={() => setForm(null)} disabled={isBusy}>
+              <Button type="button" variant="ghost" onClick={() => setForm(null)} disabled={isSavingForm}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => void saveForm()} disabled={isBusy} loading={busyId === (form.id ?? 'create')}>
+              <Button type="button" onClick={() => void saveForm()} loading={isSavingForm}>
                 {form.id ? 'Save destination' : 'Create destination'}
               </Button>
             </div>
@@ -250,49 +326,49 @@ export function WebhookDestinationsPanel({
             No webhook destinations yet.
           </p>
         ) : (
-          <ul className="space-y-3">
-            {sortedDestinations.map((destination) => (
-              <li key={destination.id} className="flex flex-col gap-3 rounded-lg border border-border p-4 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">{destination.name}</p>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      {formatDeliveryStatus(destination)}
-                    </span>
-                  </div>
-                  <p className="break-all text-sm text-muted-foreground">{destination.url}</p>
-                  <p className="font-mono text-xs text-muted-foreground">{destination.id}</p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-1">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(destination)} aria-label={`Edit ${destination.name}`}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void rotateSecret(destination)}
-                    aria-label={`Rotate secret for ${destination.name}`}
-                    disabled={busyId === `rotate:${destination.id}`}
-                  >
-                    {busyId === `rotate:${destination.id}` ? <Spinner className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void deleteDestination(destination)}
-                    aria-label={`Delete ${destination.name}`}
-                    disabled={busyId === `delete:${destination.id}`}
-                  >
-                    {busyId === `delete:${destination.id}` ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <QuietList>
+            {sortedDestinations.map((destination) => {
+              const attention = deliveryAttentionLabel(destination)
+              return (
+                <QuietListRow
+                  key={destination.id}
+                  domId={webhookDestinationRowDomId(destination.id)}
+                  title={destination.name}
+                  summary={destination.url}
+                  badge={attention ? (
+                    <Badge variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                      {attention}
+                    </Badge>
+                  ) : null}
+                  onOpen={() => {
+                    setError(null)
+                    setSheetDestinationId(destination.id)
+                  }}
+                />
+              )
+            })}
+          </QuietList>
         )}
       </div>
+
+      <WebhookDestinationSheet
+        destination={sheetDestination}
+        error={error}
+        secretNotice={secret && isSecretInSheet ? <SigningSecretNotice secret={secret.value} /> : null}
+        actions={sheetActions}
+        onClose={() => setSheetDestinationId(null)}
+      />
+      {deletion.item ? (
+        <ConfirmDeleteDialog
+          open={deletion.isOpen}
+          onOpenChange={(open) => { if (!open) deletion.dismiss() }}
+          title="Delete webhook destination?"
+          description={`Deletes "${deletion.item.name}".`}
+          confirmLabel="Delete destination"
+          busy={rowMutations.isPending(rowMutationKey('delete', deletion.item.id))}
+          onConfirm={() => void confirmDeleteDestination()}
+        />
+      ) : null}
     </SettingsCard>
   )
 }

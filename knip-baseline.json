@@ -127,7 +127,6 @@
   "exports|frontend/components/ui/sidebar.tsx|useSidebar",
   "exports|frontend/lib/agent-wizard/wizard-dialog.tsx|default",
   "exports|frontend/lib/color.ts|isLightHex",
-  "exports|frontend/lib/color.ts|parseHex",
   "exports|frontend/lib/color.ts|rgbToHex",
   "exports|frontend/lib/copilot-context.tsx|COPILOT_ENTITY_TYPES",
   "exports|frontend/lib/copilot-context.tsx|initialCopilotSessionState",

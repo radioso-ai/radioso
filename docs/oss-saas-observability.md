@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-11-08
+last_updated: 2026-11-16
 ---
 
 # OSS And SaaS Observability
@@ -333,9 +333,12 @@ not limited to the HTTP request path:
   marker says the client caused it (a dropped connection). Reporting never waits
   on the sink: it is fire-and-forget, so a slow exporter cannot hold up the
   turn's response. The report carries a bounded failure kind
-  (`model_unavailable`, `auth_rejected`, `rate_limited`, `provider_unavailable`,
-  or `provider_rejected`) plus the provider's HTTP status and machine code, only
-  once the failure is confirmed to be an actual LLM provider call — the OpenAI
+  (`model_unavailable`, `auth_rejected`, `rate_limited`, `quota_exhausted`,
+  `provider_unavailable`, or `provider_rejected`) plus the provider's HTTP status
+  and machine code. `quota_exhausted` means the provider account has no credit
+  left (`insufficient_quota`, `credit_balance_exhausted`): each turn fails until
+  someone adds credit. A `rate_limited` turn clears on retry. The kind is set
+  only once the failure is confirmed to be an actual LLM provider call — the OpenAI
   SDK's own error types, this backend's `ProviderHttpError` for the Gemini/Claude
   adapters, or one wrapped a hop or two down a routine activation failure's
   `.cause` chain — never a database or connector error that merely looks the
@@ -579,6 +582,29 @@ The browser posts sanitized error envelopes to
 `/api/v1/observability/frontend-errors`; the backend records them through the
 generic error reporting service and configured error sinks. React components do
 not import PostHog, Sentry, or any other vendor SDK.
+
+Each page paces its reports in
+[`frontend/lib/frontend-error-report-limiter.ts`](../frontend/lib/frontend-error-report-limiter.ts).
+An error with the same type, class, message and path as one the page reported
+in the last ten minutes is held back, and a page reports at most ten errors in
+any rolling minute. A script that rejects hundreds of promises at once
+therefore costs ten reports, well inside the relay's limit of 120 per client a
+minute, and an operator tab left open all day still reports an error that
+first appears in the afternoon. A repeating error shows up about once every ten
+minutes per tab. Errors held back in the browser are dropped and never counted.
+
+A page that stays open across a deploy asks the new build for chunks it no
+longer serves, and the browser raises `ChunkLoadError`. When that failure breaks
+a render, the boundary treats it as deploy skew: it reloads the page once and
+sends no report. The reload adds a `radioso_chunk_reload=<timestamp>` parameter
+to the address, so the guard keeps working in a website embed whose browser
+blocks Web Storage. A render failure on an address that carries a marker younger
+than a minute means the reload did not help, so the boundary shows its error
+fallback and reports the failure like any other. A chunk that fails in the
+background, as a window error or an unhandled rejection, leaves the page
+working, so it is reported and the page stays as the person left it. The
+decision lives in
+[`frontend/lib/chunk-load-recovery.ts`](../frontend/lib/chunk-load-recovery.ts).
 
 ## Rollout Plan
 

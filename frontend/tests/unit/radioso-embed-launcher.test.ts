@@ -86,6 +86,10 @@ class FakeElement {
     }
   }
 
+  contains(other: unknown): boolean {
+    return other === this || this.children.some((child) => child.contains(other))
+  }
+
   setPointerCapture() {
     // Pointer capture is not relevant to the fake DOM, but the launcher checks for it.
   }
@@ -575,8 +579,8 @@ describe('radioso embed launcher', () => {
     }
     button.dispatchEvent('click')
     // The bubble was dragged, so the click is suppressed and the widget stays
-    // closed. The iframe is pre-mounted now, so its presence no longer signals
-    // "opened" — assert the closed state directly.
+    // closed. Pressing the launcher loads the frame as intent, so its presence
+    // doesn't signal "opened" — assert the closed state directly.
     expect(button.getAttribute('aria-expanded')).toBe('false')
   })
 
@@ -685,12 +689,12 @@ describe('radioso embed launcher', () => {
     expect(button.style.transform).toBe('translate3d(0px, 0px, 0) rotate(0deg)')
     const removedWindowListeners = window.removeEventListener.mock.calls.map(([eventName]) => eventName)
     expect(removedWindowListeners).toEqual(expect.arrayContaining(['pointerup', 'pointercancel', 'blur']))
-    // Dragging never opens the widget. The iframe is pre-mounted now, so assert
-    // the closed state rather than the absence of an iframe.
+    // Dragging never opens the widget. Pressing the launcher loads the frame as
+    // intent, so assert the closed state rather than the absence of an iframe.
     expect(button.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('names the assistant and marks the greeting teaser as AI', async () => {
+  it('names the assistant, marks the greeting teaser as AI, and loads the frame only when the visitor points at it', async () => {
     const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
@@ -775,6 +779,19 @@ describe('radioso embed launcher', () => {
     const chips = collectElements(teasers[0], (element) => element.className === 'radioso-teaser-ai')
     expect(names[0]?.textContent).toBe('Marta')
     expect(chips[0]?.textContent).toBe('AI')
+
+    // Showing the teaser is not intent: it greets every visitor, so it must not
+    // load the chat frame. Neither is reaching for its close button. Pointing at
+    // the greeting itself is.
+    const iframes = () => collectElements(body, (element) => element.tagName === 'IFRAME')
+    expect(iframes()).toHaveLength(0)
+    const close = collectElements(teasers[0], (element) => element.className === 'radioso-teaser-close')[0]
+    for (const eventName of ['pointerover', 'pointerdown', 'focusin']) {
+      teasers[0].dispatchEvent(eventName, { target: close })
+    }
+    expect(iframes()).toHaveLength(0)
+    teasers[0].dispatchEvent('pointerover')
+    expect(iframes()).toHaveLength(1)
   })
 
   it('toggles the mounted embed fullscreen state on iframe request', async () => {
@@ -899,6 +916,7 @@ describe('radioso embed launcher', () => {
         mode: 'metadata',
         supportedOperations: ['metadata'],
       },
+      intent: 'pointerover',
       name: 'empty page body',
     },
     {
@@ -908,11 +926,13 @@ describe('radioso embed launcher', () => {
         mode: 'content',
         supportedOperations: ['metadata', 'lookup', 'summarize'],
       },
+      intent: 'focusin',
       name: 'non-empty page body',
     },
-  ])('pre-mounts the iframe and advertises the captured capability for $name', async ({
+  ])('loads the frame on $intent, not at page load, and advertises the captured capability for $name', async ({
     bodyText,
     expectedCapability,
+    intent,
   }) => {
     const launcherSource = await readEmbedLauncherScript()
     const script = new FakeElement('script')
@@ -998,10 +1018,19 @@ describe('radioso embed launcher', () => {
       await Promise.resolve()
     }
 
-    // The iframe is pre-mounted at load, before any interaction.
-    const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
-    expect(iframe).toBeDefined()
+    // A page view alone loads no chat frame: the host's page views would
+    // otherwise each render one.
+    const iframes = () => collectElements(body, (element) => element.tagName === 'IFRAME')
+    expect(iframes()).toHaveLength(0)
+
+    // Pointing at or focusing the launcher loads it, still without a session.
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+    button.dispatchEvent(intent)
+    button.dispatchEvent(intent)
+    expect(iframes()).toHaveLength(1)
+    const iframe = iframes()[0]
     expect(iframe.loading).toBe('eager')
+    expect(fetch.mock.calls.some(([url]) => sessionUrl(url))).toBe(false)
     const postMessage = vi.fn()
     iframe.contentWindow = { postMessage }
 
@@ -1024,7 +1053,6 @@ describe('radioso embed launcher', () => {
     expect(postMessage).not.toHaveBeenCalled()
 
     // Opening the widget triggers the deferred bootstrap: PREPARE, then session.
-    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
     button.dispatchEvent('click')
 
     expect(postMessage).toHaveBeenCalledWith(
@@ -1118,6 +1146,8 @@ describe('radioso embed launcher', () => {
       await Promise.resolve()
     }
 
+    // Pointing at the launcher loads the frame; a page view alone doesn't.
+    collectElements(body, (element) => element.tagName === 'BUTTON')[0].dispatchEvent('pointerover')
     const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
     expect(iframe.allow).toBe(allow)
     const postMessage = vi.fn()
@@ -1235,6 +1265,8 @@ describe('radioso embed launcher', () => {
         await Promise.resolve()
       }
 
+      // Pointing at the launcher loads the frame; a page view alone doesn't.
+      collectElements(body, (element) => element.tagName === 'BUTTON')[0].dispatchEvent('pointerover')
       const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
       const postMessage = vi.fn()
       iframe.contentWindow = { postMessage }
@@ -1265,8 +1297,32 @@ describe('radioso embed launcher', () => {
         postMessage,
         dispatchFromFrame,
         openWidget,
+        sessionRequestCount: () => fetch.mock.calls.filter(([url]) => sessionUrl(url)).length,
+        launcherButton: () => collectElements(body, (element) => element.tagName === 'BUTTON')[0],
       }
     }
+
+    it('asks for the session as the visitor opens, while the frame is still booting', async () => {
+      const { postMessage, dispatchFromFrame, sessionRequestCount, launcherButton } = await mountLauncher({})
+
+      // A tap loads the frame and opens at once, so the session request runs
+      // alongside the frame's boot instead of after it.
+      launcherButton().dispatchEvent('click')
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve()
+      }
+      expect(sessionRequestCount()).toBe(1)
+      expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'radioso:embed:session' }), expect.anything())
+
+      dispatchFromFrame({ type: 'radioso:embed:ready' })
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve()
+      }
+      expect(sessionRequestCount()).toBe(1)
+      const posted = postMessage.mock.calls.map(([message]) => message.type)
+      expect(posted.indexOf('radioso:embed:preparing')).toBeLessThan(posted.indexOf('radioso:embed:session'))
+      expect(posted).toContain('radioso:embed:session')
+    })
 
     it('tells the frame the API error code a launch was refused with, so the frame can say why', async () => {
       const { postMessage, openWidget } = await mountLauncher({

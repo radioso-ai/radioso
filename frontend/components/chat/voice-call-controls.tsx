@@ -2,12 +2,16 @@
 
 import { Mic, PhoneOff } from 'lucide-react'
 
+import { composerIconButtonClass, composerIconButtonStyle } from '@/components/chat/composer-icon-button'
 import { Button } from '@/components/ui/button'
 import type { WebsiteEmbedCopy, WebsiteEmbedTheme } from '@/lib/embed-widget'
 import type { VoiceSessionState } from '@/lib/voice-session'
 
 /** The colours a call's controls take: the website embed's theme, or the dashboard's tokens in Test Chat. */
-export type VoiceCallTheme = Pick<WebsiteEmbedTheme, 'accent' | 'accentForeground' | 'inputBackground' | 'inputBorder' | 'inputForeground' | 'mutedForeground'>
+export type VoiceCallTheme = Pick<
+  WebsiteEmbedTheme,
+  'accent' | 'accentForeground' | 'inputBackground' | 'inputBorder' | 'inputForeground' | 'mutedBackground' | 'mutedForeground'
+>
 
 /** The words a call's controls say, from the embed's copy, which Test Chat reads in English. */
 type VoiceCallCopy = Pick<
@@ -43,12 +47,12 @@ export function VoiceTalkButton({
       type="button"
       size="icon"
       variant="ghost"
-      className="h-9 w-9 shrink-0 rounded-full hover:opacity-80"
+      className={`h-9 w-9 ${composerIconButtonClass}`}
       onClick={onPress}
       disabled={disabled}
       aria-describedby={describedBy}
       title={copy.publicChatTalkLabel}
-      style={{ color: theme.inputForeground }}
+      style={composerIconButtonStyle(theme)}
     >
       <Mic className="h-4 w-4" aria-hidden="true" />
       <span className="sr-only">{copy.publicChatTalkLabel}</span>

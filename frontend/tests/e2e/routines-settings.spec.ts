@@ -58,8 +58,8 @@ const baseRoutine: Omit<RoutineFixture, "id" | "enabled" | "version"> = {
 
 const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?anchor=assistant-routines$`);
 
-// A routine row is one button carrying the name and its trigger; the row's own controls are
-// labelled by verb, so anchoring on the leading name keeps this off the delete button.
+// A routine row opens through one button named after the routine; its switch is labelled by
+// verb ("Enable …"), so anchoring on the leading name keeps this off the switch.
 const routineRow = (page: Page, name: string) =>
   page.getByRole("button", { name: new RegExp(`^${name}\\b`) });
 

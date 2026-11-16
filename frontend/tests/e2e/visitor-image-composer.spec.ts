@@ -580,10 +580,10 @@ test("a photo is removed from the keyboard with focus moving on, each Remove nam
   await expect(page.locator("[data-attachment-status]")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Remove photo 1 of 1" })).toBeFocused();
 
-  // Removing the last moves focus to the attach control, and with the chips gone it is still there to use.
+  // Removing the last moves focus to the message field, where the visitor goes on typing.
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-attachment-status]")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Attach photo" })).toBeFocused();
+  await expect(page.getByPlaceholder("Ask a question...")).toBeFocused();
 });
 
 test("a mouse removal leaves focus in the message field where the visitor was typing", async ({ page }) => {

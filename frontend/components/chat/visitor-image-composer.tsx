@@ -110,7 +110,6 @@ export function VisitorImageAttachButton({
         className={`${className} ${composerIconButtonClass}`}
         disabled={full || disabled}
         title={copy.publicChatAttachImageLabel}
-        data-visitor-image-attach
         style={composerIconButtonStyle(theme)}
         onClick={() => inputRef.current?.click()}
         // Keep focus in the message field, as Send does.
@@ -231,8 +230,8 @@ export function VisitorImageChips({
 
 /**
  * The composer's behaviour around photos: paste and drop where the agent takes photos, and where
- * focus goes when a photo is removed from the keyboard (the next photo's Remove, else the attach
- * control, else the message field) so it is never left on something that is gone.
+ * focus goes when a photo is removed from the keyboard (the next photo's Remove, else the message
+ * field) so it is never left on something that is gone.
  */
 export function useVisitorImageComposer(images: ComposerImages | undefined) {
   const [dragging, setDragging] = useState(false)
@@ -247,9 +246,8 @@ export function useVisitorImageComposer(images: ComposerImages | undefined) {
       return
     }
     const next = pending.nextKey ? form.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(pending.nextKey)}"] button`) : null
-    const attach = form.querySelector<HTMLElement>('[data-visitor-image-attach]:not(:disabled)')
     const field = form.querySelector<HTMLElement>('textarea')
-    ;(next ?? attach ?? field)?.focus()
+    ;(next ?? field)?.focus()
   }, [attachments])
 
   const removeChip = (key: string, viaKeyboard: boolean) => {

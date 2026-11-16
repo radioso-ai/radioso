@@ -69,6 +69,17 @@ describe('eval workbench seed', () => {
     expect(seed?.assistantTurn).toBeNull()
   })
 
+  it('carries the photos of a visitor message onto the seeded turn, so the workbench shows what they typed and not the readings', () => {
+    const imageInput = { typedText: 'Something like this', images: [{ id: '6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12', reading: 'A stone farmhouse.' }] }
+    const seed = buildEvalSeedTurn(snapshot({
+      replayTarget: { userMessageId: 'u1', assistantMessageId: 'a1' },
+      messages: [{ ...message('u1', 'user'), imageInput }, message('a1', 'assistant')],
+    }))
+
+    expect(seed?.userTurn.inputMetadata).toEqual({ method: 'typed', imageInput })
+    expect(seed?.assistantTurn?.inputMetadata).toBeUndefined()
+  })
+
   it('uses the snapshot ID as a stable local seed identity for private Test Chat evidence', () => {
     const seed = buildEvalSeedTurn(snapshot({
       id: 'snapshot-private',

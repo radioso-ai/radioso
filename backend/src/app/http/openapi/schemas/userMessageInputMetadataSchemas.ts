@@ -1,6 +1,20 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
+import { MAX_IMAGES_PER_MESSAGE } from "../../../../shared/domain/chatInputMetadata.js";
+
+/**
+ * The photos a message carries, as the conversation history and an Eval snapshot return them. The
+ * history registers it as `VisitorImageInput`; the snapshot's message holds the same shape inline.
+ */
+export const visitorImageInputSchema = z.object({
+  typedText: z.string().describe("What the visitor typed, without the photo readings. Empty when they sent photos alone."),
+  images: z.array(z.object({
+    id: z.string().uuid().describe("The image id; read the photo from the conversation's image route."),
+    reading: z.string().nullable().describe("What the agent's chat model read in the photo, in the visitor's language; null when it could not read it."),
+  })).min(1).max(MAX_IMAGES_PER_MESSAGE),
+}).describe("The photos a message carries. Render `typedText` and the photos in the visitor's bubble; the readings are the agent's, not the visitor's words.");
+
 /**
  * How a recorded user message was produced. `routine_invocation` is a calling agent's tool call:
  * `routine` carries its structured form for tool-call rendering while `content` holds the same
@@ -10,18 +24,7 @@ import { z } from "zod";
  * `typedText` is what the visitor typed and each image carries what the agent's model read in it.
  */
 export const registerUserMessageInputMetadataSchema = (registry: OpenAPIRegistry) => {
-  const VisitorImageInputSchema = registry.register(
-    "VisitorImageInput",
-    z.object({
-      typedText: z.string().openapi({ description: "What the visitor typed, without the photo readings. Empty when they sent photos alone." }),
-      images: z.array(z.object({
-        id: z.string().uuid().openapi({ description: "The image id; read the photo from the conversation's image route." }),
-        reading: z.string().nullable().openapi({ description: "What the agent's chat model read in the photo, in the visitor's language; null when it could not read it." }),
-      })).min(1).max(3),
-    }).openapi({
-      description: "The photos a message carries. Render `typedText` and the photos in the visitor's bubble; the readings are the agent's, not the visitor's words.",
-    }),
-  );
+  const VisitorImageInputSchema = registry.register("VisitorImageInput", visitorImageInputSchema);
 
   const ItemSelectionSchema = registry.register(
     "ItemSelection",

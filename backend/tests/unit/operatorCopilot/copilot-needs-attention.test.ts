@@ -36,6 +36,7 @@ const conversation = (overrides: Record<string, unknown> = {}) => ({
   agentId: "11111111-1111-4111-8111-111111111111",
   agentName: "Support",
   preview: "Where is my refund?",
+  previewPhotoCount: 0,
   createdAt: "2026-08-26T04:00:00.000Z",
   updatedAt: "2026-08-26T07:00:00.000Z",
   ownership: {
@@ -55,6 +56,7 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   agentId: "11111111-1111-4111-8111-111111111111",
   agentName: "Support",
   question: "Do you ship to Spain?",
+  questionPhotoCount: 0,
   answerPreview: "I could not find that.",
   createdAt: "2026-08-26T05:00:00.000Z",
   feedback: {
@@ -165,6 +167,24 @@ describe("needs_attention", () => {
       triageState: "open",
       triageVersion: 3,
     });
+  });
+
+  it("names the photos of a title that has no words, so a photo-only question is not a bare null to Ray", async () => {
+    const result = await list(populated({
+      chatHistoryService: {
+        getConversation: vi.fn(),
+        getConversationTurn: vi.fn(),
+        listConversations: vi.fn(async () => ({ conversations: [conversation({ preview: null, previewPhotoCount: 2 })], total: 1 })),
+      },
+      qualitySignalsService: {
+        getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
+        listLowQualityTurns: vi.fn(async () => ({ items: [qualityTurn({ question: null, questionPhotoCount: 1 })], total: 1 })),
+      },
+    }));
+
+    expect(result.items.find((item) => item.kind === "handoff")).toMatchObject({ title: null, titlePhotoCount: 2 });
+    expect(result.items.find((item) => item.kind === "negative_feedback")).toMatchObject({ title: null, titlePhotoCount: 1 });
+    expect(result.items.find((item) => item.kind === "approval")).toMatchObject({ titlePhotoCount: 0 });
   });
 
   it("reports a source the operator cannot read as unauthorized rather than as an empty queue", async () => {

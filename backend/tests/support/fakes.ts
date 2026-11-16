@@ -5220,6 +5220,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
         userMessageCount: messages.filter((message) => message.role === "user").length,
         assistantMessageCount: messages.filter((message) => message.role === "assistant").length,
         preview: normalized.length === 0 ? null : normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized,
+        previewPhotoCount: 0,
       });
     }
 

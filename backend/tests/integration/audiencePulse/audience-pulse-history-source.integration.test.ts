@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   PostgresAudiencePulseHistorySource,
@@ -26,6 +26,7 @@ interface MessageFixture {
   skillName?: string | null;
   skillOutcome?: string | null;
   grounding?: "grounded" | "degraded" | "no_support" | null;
+  metadata?: Record<string, unknown>;
 }
 
 describeIntegration("PostgresAudiencePulseHistorySource", () => {
@@ -51,8 +52,8 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
         id, conversation_id, role, content, created_at, workspace_id, source,
         skill_name, skill_outcome, grounding_verdict,
         grounding_claim_count, grounding_sourced_claim_count,
-        grounding_unsourced_claim_count, grounding_invalid_source_count
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        grounding_unsourced_claim_count, grounding_invalid_source_count, metadata_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)`,
       [
         id,
         fixture.conversationId,
@@ -68,6 +69,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
         completeGrounding ? 0 : null,
         completeGrounding ? 1 : null,
         completeGrounding ? 0 : null,
+        JSON.stringify(fixture.metadata ?? {}),
       ],
     );
     return id;
@@ -547,7 +549,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       conversationId,
       source: { id: targetId, created_at: new Date("2026-07-15T10:00:00.000Z") },
     }).compile().sql;
-    expect(targetSql).toContain("left(m.content");
+    expect(targetSql).toContain("left(");
     expect(targetSql).toMatch(/limit \$\d+/i);
     expect(nextAssistantSql).toContain('"m"."role" in');
     expect(nextAssistantSql).toContain("left(m.content");
@@ -566,6 +568,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
         role: "user",
         source: "customer",
         content: "q".repeat(1_200),
+        photoCount: 0,
         createdAt: "2026-07-15T10:00:00.000Z",
       },
       nextAssistant: {
@@ -586,6 +589,56 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       conversationId,
       messageId: targetId,
     })).resolves.toBeNull();
+  });
+
+  describe("a visitor question with photos", () => {
+    const READING = "A landscape photo of rolling countryside.";
+    const IMAGE_ID = "6c3e9f2a-1d4b-4b8e-9f0a-2a4c6e8b0d12";
+    const photoQuestion = (typedText: string, photos = 1) => ({
+      content: [typedText, ...Array.from({ length: photos }, (_, index) => `<attached_photo index="${index + 1}">${READING}</attached_photo>`)].filter(Boolean).join("\n"),
+      metadata: { method: "typed", imageInput: { typedText, images: Array.from({ length: photos }, () => ({ id: IMAGE_ID, reading: READING })) } },
+    });
+    const analysis = () => ({ workspaceId, analysisStart: new Date("2026-07-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-31T00:00:00.000Z") });
+
+    it("reads the full question for the census and a display question of the typed words, with the photo count", async () => {
+      const typed = photoQuestion("Something like this, please");
+      const photoOnly = photoQuestion("", 2);
+      const typedId = await createMessage({ conversationId: await createConversation(), role: "user", createdAt: "2026-07-15T10:00:00.000Z", source: "customer", ...typed });
+      const photoOnlyId = await createMessage({ conversationId: await createConversation(), role: "user", createdAt: "2026-07-15T11:00:00.000Z", source: "customer", ...photoOnly });
+      const plainId = await createMessage({ conversationId: await createConversation(), role: "user", content: "What are your hours?", createdAt: "2026-07-15T12:00:00.000Z", source: "customer" });
+
+      const snapshot = await source.read(analysis());
+      const byId = new Map(snapshot.evidence.map((item) => [item.id, item]));
+
+      expect(byId.get(typedId)).toMatchObject({ question: typed.content, displayQuestion: "Something like this, please", questionPhotoCount: 1 });
+      expect(byId.get(photoOnlyId)).toMatchObject({ question: photoOnly.content, displayQuestion: "", questionPhotoCount: 2 });
+      expect(byId.get(plainId)).toMatchObject({ question: "What are your hours?", displayQuestion: "What are your hours?", questionPhotoCount: 0 });
+    });
+
+    it("rehydrates a saved report's question as the typed words, with the photo count, never the readings", async () => {
+      const conversationId = await createConversation();
+      const typed = photoQuestion("Something like this, please");
+      const id = await createMessage({ conversationId, role: "user", createdAt: "2026-07-15T10:00:00.000Z", source: "customer", ...typed });
+
+      const hydrated = await source.rehydrate({
+        workspaceId,
+        references: [{ evidenceId: "evidence-1", messageId: id, conversationId }],
+      });
+
+      expect(hydrated.get("evidence-1")).toMatchObject({ question: "Something like this, please", questionPhotoCount: 1 });
+      expect(JSON.stringify([...hydrated.values()])).not.toContain("attached_photo");
+    });
+
+    it("reads an evidence anchor's visitor message as the typed words, with the photo count, never the readings", async () => {
+      const conversationId = await createConversation();
+      const photoOnly = photoQuestion("", 3);
+      const id = await createMessage({ conversationId, role: "user", createdAt: "2026-07-15T10:00:00.000Z", source: "customer", ...photoOnly });
+
+      const anchor = await source.readEvidenceAnchor({ workspaceId, conversationId, messageId: id });
+
+      expect(anchor?.source).toMatchObject({ content: "", photoCount: 3 });
+      expect(JSON.stringify(anchor)).not.toContain("attached_photo");
+    });
   });
 
   it("stops an anchor context at the next visitor turn", async () => {

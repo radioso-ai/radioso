@@ -292,6 +292,7 @@ describe('anonymous chat reply blocks', () => {
         userMessageCount: 0,
         assistantMessageCount: 1,
         preview: 'Here are the rooms.',
+        previewPhotoCount: 0,
       }],
     })
     publicChatApiMock.getConversationDetail.mockResolvedValue(historyDetail())

@@ -105,6 +105,7 @@ import {
 } from '@/components/providers/dashboard-query-provider'
 import { resolveQueueScope } from '@/lib/quality-signals'
 import { formatDuration } from '@/lib/quality-stats'
+import { questionLabel } from '@/lib/visitor-image-input'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 import { QualityVoiceSection } from '@/components/dashboard/quality/quality-voice-section'
 import {
@@ -1627,12 +1628,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         <button
                           type="button"
                           onClick={() => openConversation(turn)}
-                          title={turn.question ?? ''}
+                          title={questionLabel(turn)}
                           className="block max-w-full truncate text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
-                          {turn.question || (
-                            <span className="italic text-muted-foreground">(no preceding user message)</span>
-                          )}
+                          {questionLabel(turn) || <span className="italic text-muted-foreground">(no preceding user message)</span>}
                         </button>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}

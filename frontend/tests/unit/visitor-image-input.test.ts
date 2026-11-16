@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  photoCountLabel,
   readVisitorImageInput,
+  visibleMessageLabel,
+  visibleMessageText,
   visitorMessageBody,
   withVisitorImageInput,
 } from '@/lib/visitor-image-input'
@@ -79,6 +82,56 @@ describe('what a visitor message shows', () => {
     expect(visitorMessageBody({ content: 'When do you open?', inputMetadata: { method: 'typed' } }))
       .toEqual({ kind: 'text', text: 'When do you open?' })
     expect(visitorMessageBody({ content: 'Hello' })).toEqual({ kind: 'text', text: 'Hello' })
+  })
+})
+
+describe('what an operator surface shows of a visitor message outside the thread', () => {
+  const reading = 'A landscape photo of rolling countryside.'
+
+  it('is the typed text and the photo count, never the turn text with its readings', () => {
+    expect(visibleMessageText({
+      content: `Something like this, please\n<attached_photo index="1">${reading}</attached_photo>`,
+      inputMetadata: {
+        method: 'typed',
+        imageInput: { typedText: 'Something like this, please', images: [{ id: imageId(1), reading }] },
+      },
+    })).toEqual({ text: 'Something like this, please', photoCount: 1 })
+  })
+
+  it('is no text and the photo count for a message of photos alone', () => {
+    expect(visibleMessageText({
+      content: `<attached_photo index="1">${reading}</attached_photo>\n<attached_photo index="2" status="unreadable"/>`,
+      inputMetadata: {
+        method: 'typed',
+        imageInput: { typedText: '', images: [{ id: imageId(1), reading }, { id: imageId(2), reading: null }] },
+      },
+    })).toEqual({ text: '', photoCount: 2 })
+  })
+
+  it('is the content whole, with no photos, for a message without any', () => {
+    expect(visibleMessageText({ content: 'When do you open?', inputMetadata: { method: 'typed' } }))
+      .toEqual({ text: 'When do you open?', photoCount: 0 })
+    expect(visibleMessageText({ content: 'Hello' })).toEqual({ text: 'Hello', photoCount: 0 })
+  })
+
+  it('falls back to the content when the photo record is not what the API promises', () => {
+    expect(visibleMessageText({ content: 'hi', inputMetadata: { method: 'typed', imageInput: 'photo' } }))
+      .toEqual({ text: 'hi', photoCount: 0 })
+  })
+})
+
+describe('the photo marker', () => {
+  it('counts the photos in words', () => {
+    expect(photoCountLabel(1)).toBe('1 photo')
+    expect(photoCountLabel(3)).toBe('3 photos')
+  })
+
+  it('follows the words in a one-line label, and stands alone when there are none', () => {
+    expect(visibleMessageLabel({ text: 'Something like this', photoCount: 2 })).toBe('Something like this · 2 photos')
+    expect(visibleMessageLabel({ text: '', photoCount: 1 })).toBe('1 photo')
+    expect(visibleMessageLabel({ text: '  ', photoCount: 1 })).toBe('1 photo')
+    expect(visibleMessageLabel({ text: 'Hello', photoCount: 0 })).toBe('Hello')
+    expect(visibleMessageLabel({ text: '', photoCount: 0 })).toBe('')
   })
 })
 

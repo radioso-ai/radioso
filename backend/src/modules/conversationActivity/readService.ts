@@ -38,9 +38,15 @@ export interface ConversationActivityStore {
   ): Promise<ClosingConversationActivityRecord[]>;
 }
 
+/** A conversation's opening visitor message as a person reads it: its words, and the photos that came with it. */
+interface ConversationPreview {
+  readonly text: string | null;
+  readonly photoCount: number;
+}
+
 /** Each conversation's first-message preview, the fallback title while it has no generated one. */
 interface ConversationPreviewReader {
-  previewsByConversationIds(workspaceId: string, conversationIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
+  previewsByConversationIds(workspaceId: string, conversationIds: readonly string[]): Promise<ReadonlyMap<string, ConversationPreview>>;
 }
 
 const NO_LABELS: ReadonlyMap<string, string> = new Map();
@@ -104,7 +110,7 @@ export class ConversationActivityReadService implements ConversationActivityTime
       this.labelsFor(records),
       conversationIds.length > 0
         ? this.dependencies.previews.previewsByConversationIds(workspaceId, conversationIds)
-        : Promise.resolve(new Map<string, string | null>()),
+        : Promise.resolve(new Map<string, ConversationPreview>()),
     ]);
     return records.map((record) => {
       const entry = presentActivity(record, labels);
@@ -119,7 +125,8 @@ export class ConversationActivityReadService implements ConversationActivityTime
         resolution: entry.resolution,
         assistantMessageId: entry.assistantMessageId,
         title: record.conversationTitle,
-        preview: previews.get(record.conversationId) ?? null,
+        preview: previews.get(record.conversationId)?.text ?? null,
+        previewPhotoCount: previews.get(record.conversationId)?.photoCount ?? 0,
       };
     });
   }

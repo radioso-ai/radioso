@@ -54,7 +54,10 @@ export interface AudiencePulseThemeEvidence {
   reference: string
   conversationId: string
   messageId: string
+  /** The words the visitor typed, never the readings of photos the message carried. */
   question: string
+  /** The photos the message carried; absent from an API deploy that predates the field, and then read as none. */
+  questionPhotoCount?: number
   occurrenceCount: number
   answerCoverage?: ApiSchemas['AnswerCoverage']
   /** Absent only for an example from a report saved before answer coverage was recorded. */
@@ -129,7 +132,10 @@ export interface AudiencePulseEvidenceAnchorSource {
   messageId: string
   role: 'user'
   source: 'customer'
+  /** The words the visitor typed, never the readings of photos the message carried. */
   content: string
+  /** The photos the message carried; absent from an API deploy that predates the field, and then read as none. */
+  photoCount?: number
   createdAt: string
 }
 

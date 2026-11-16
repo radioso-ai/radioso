@@ -147,6 +147,53 @@ describeIfDatabase("quality turns integration", () => {
     ]);
   });
 
+  it("shows the question as what the visitor typed beside photos, with the photo count, never the readings", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const typedConversationId = randomUUID();
+    const photoOnlyConversationId = randomUUID();
+    const reading = "A landscape photo of rolling countryside.";
+    const photoMetadata = (typedText: string) => JSON.stringify({
+      method: "typed",
+      imageInput: { typedText, images: [{ id: randomUUID(), reading }] },
+    });
+
+    await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`, [accountId, "QA Photo Account", `qa-photo-${accountId}@example.com`, "hash"]);
+    await database.query(`INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`, [workspaceId, accountId, "QA Photo Workspace", `qa-photo-${workspaceId.slice(0, 8)}`]);
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`, [agentId, workspaceId, "Support Bot"]);
+    for (const conversationId of [typedConversationId, photoOnlyConversationId]) {
+      await database.query(`INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, 'embed')`, [conversationId, workspaceId, agentId]);
+    }
+    const answers = { typed: randomUUID(), photoOnly: randomUUID() };
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at)
+       VALUES
+         ($1, $2, $3, 'user', $4, $5::jsonb, NULL, NULL, NULL, '2026-05-22T09:00:00.000Z'),
+         ($6, $2, $3, 'assistant', 'I do not have information about that.', '{}'::jsonb, 'retrieval.answer', 'no_context', 'completed', '2026-05-22T09:00:01.000Z'),
+         ($7, $8, $3, 'user', $9, $10::jsonb, NULL, NULL, NULL, '2026-05-22T09:01:00.000Z'),
+         ($11, $8, $3, 'assistant', 'I do not have information about that.', '{}'::jsonb, 'retrieval.answer', 'no_context', 'completed', '2026-05-22T09:01:01.000Z')`,
+      [
+        randomUUID(), typedConversationId, workspaceId,
+        `Something like this, please\n<attached_photo index="1">${reading}</attached_photo>`, photoMetadata("Something like this, please"),
+        answers.typed,
+        randomUUID(), photoOnlyConversationId,
+        `<attached_photo index="1">${reading}</attached_photo>`, photoMetadata(""),
+        answers.photoOnly,
+      ],
+    );
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
+    const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+
+    const typed = page.items.find((item) => item.assistantMessageId === answers.typed);
+    expect(typed?.question).toBe("Something like this, please");
+    expect(typed?.questionPhotoCount).toBe(1);
+    const photoOnly = page.items.find((item) => item.assistantMessageId === answers.photoOnly);
+    expect(photoOnly?.question).toBeNull();
+    expect(photoOnly?.questionPhotoCount).toBe(1);
+  });
+
   it("excludes operator-test conversations (dashboard test chat + workbench replay)", async () => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();

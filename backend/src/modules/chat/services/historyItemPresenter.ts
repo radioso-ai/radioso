@@ -9,6 +9,15 @@ import type { ChatConversationSummary, HistoryItem } from "./chatHistoryService.
 
 const toIsoString = (value: Date): string => value.toISOString();
 
+/** The counts and the preview of a conversation's messages, as a conversation summary carries them. */
+export const messageSummaryFields = (messageSummary?: ConversationMessageSummary) => ({
+  messageCount: messageSummary?.messageCount ?? 0,
+  userMessageCount: messageSummary?.userMessageCount ?? 0,
+  assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
+  preview: messageSummary?.preview ?? null,
+  previewPhotoCount: messageSummary?.previewPhotoCount ?? 0,
+});
+
 export const buildChatConversationSummary = (
   conversation: ConversationRecord,
   messageSummary?: ConversationMessageSummary,
@@ -29,10 +38,7 @@ export const buildChatConversationSummary = (
   title: conversation.title ?? null,
   createdAt: toIsoString(conversation.createdAt),
   updatedAt: toIsoString(conversation.updatedAt),
-  messageCount: messageSummary?.messageCount ?? 0,
-  userMessageCount: messageSummary?.userMessageCount ?? 0,
-  assistantMessageCount: messageSummary?.assistantMessageCount ?? 0,
-  preview: messageSummary?.preview ?? null,
+  ...messageSummaryFields(messageSummary),
 });
 
 // Not exported: only buildHistoryItem below calls these, and nothing outside this file does.

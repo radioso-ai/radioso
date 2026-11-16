@@ -280,6 +280,115 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 };
 
 describe("AudiencePulseService", () => {
+  describe("a visitor question with photos", () => {
+    const READING = "A landscape photo of rolling countryside.";
+    const photoQuestions = (): AudiencePulseHistorySnapshot => {
+      const base = history();
+      return {
+        ...base,
+        evidence: [
+          {
+            ...base.evidence[0],
+            question: `Something like this, please\n<attached_photo index="1">${READING}</attached_photo>`,
+            displayQuestion: "Something like this, please",
+            questionPhotoCount: 1,
+          },
+          {
+            ...base.evidence[1],
+            question: `<attached_photo index="1">${READING}</attached_photo>`,
+            displayQuestion: "",
+            questionPhotoCount: 1,
+          },
+        ],
+      };
+    };
+
+    it("shows the typed words and the photo count in the report and keeps the readings for the model that names the topic", async () => {
+      const requests: string[] = [];
+      const { service } = createService({
+        historySource: {
+          async read() { return photoQuestions(); },
+          async listEligibleQuestionIds() { return []; },
+          async rehydrate() { return new Map(); },
+          async readEvidenceAnchor() { return null; },
+        },
+        inferenceFactory: {
+          async create() {
+            return {
+              metadata: { capability: "chat", provider: "openai", model: "test" },
+              async complete(request: ModelInferenceRequest) {
+                requests.push(JSON.stringify(request));
+                if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
+                return { text: modelResponse };
+              },
+              stream() { throw new Error("not used"); },
+            };
+          },
+        },
+      });
+
+      const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+      expect(result.kind).toBe("completed");
+      const evidence = result.kind === "completed" ? result.report.themes[0]?.evidence : [];
+      expect(evidence?.map(({ question, questionPhotoCount }) => ({ question, questionPhotoCount }))).toEqual([
+        { question: "Something like this, please", questionPhotoCount: 1 },
+        { question: "", questionPhotoCount: 1 },
+      ]);
+      expect(JSON.stringify(result)).not.toContain("attached_photo");
+      expect(JSON.stringify(result)).not.toContain(READING);
+      expect(requests.join("\n")).toContain(READING);
+    });
+
+    it("merges a repeated question only where it carried as many photos, and counts a question with no photos as zero", () => {
+      const stored = {
+        period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
+        generatedAt: "2026-08-01T00:00:00.000Z",
+        isFirstCensus: false,
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
+        narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+        coverage: { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 },
+        weeklyVolume: [],
+        summary: "Summary",
+        unclassifiedQuestionCount: 0,
+        dissolvedTopics: [],
+        themes: [{
+          id: "theme-1", title: "Plans", description: "Visitors ask about plans.", memberCount: 5,
+          previousMemberCount: null, previousShare: null, transition: null, share: 1, weeklyPulse: [],
+          grounding: { grounded: 1, degraded: 1, noSupport: 2, unknown: 1, contentGapEligible: 3 },
+          evidenceIds: ["e-1", "e-2", "e-3", "e-4", "e-5"],
+        }],
+        contentGaps: [],
+        recommendations: [],
+        caveats: [],
+      } as unknown as AudiencePulseStoredReport;
+      const source = (index: number, question: string, questionPhotoCount?: number) => [`e-${index}`, {
+        evidenceId: `e-${index}`,
+        conversationId: `aaaaaaaa-aaaa-aaaa-aaaa-00000000000${index}`,
+        messageId: `11111111-1111-1111-1111-00000000000${index}`,
+        question,
+        ...(questionPhotoCount === undefined ? {} : { questionPhotoCount }),
+      }] as const;
+
+      const hydrated = hydrateReport(stored, new Map([
+        source(1, "Do you have this in blue?", 1),
+        source(2, "do you have   this in blue?", 1),
+        source(3, "Do you have this in blue?", 2),
+        source(4, "", 1),
+        source(5, "Do you have this in blue?"),
+      ]));
+
+      expect(hydrated.themes[0]?.evidence.map(({ question, questionPhotoCount, occurrenceCount }) => ({ question, questionPhotoCount, occurrenceCount }))).toEqual([
+        { question: "Do you have this in blue?", questionPhotoCount: 1, occurrenceCount: 2 },
+        { question: "Do you have this in blue?", questionPhotoCount: 2, occurrenceCount: 1 },
+        { question: "", questionPhotoCount: 1, occurrenceCount: 1 },
+        { question: "Do you have this in blue?", questionPhotoCount: 0, occurrenceCount: 1 },
+      ]);
+      expect(hydrated.themes[0]?.distinctQuestionCount).toBe(4);
+    });
+  });
+
   it("releases the pre-census reservation when every label and the narrative are reused", async () => {
     const { service, calls } = createService({
       snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ narrativeReuseCount: 1 })),
@@ -1898,6 +2007,7 @@ describe("AudiencePulseService", () => {
         role: "user" as const,
         source: "customer" as const,
         content: "How do I change a plan?",
+        photoCount: 0,
         createdAt: "2026-07-01T00:00:00.000Z",
       },
       nextAssistant: null,

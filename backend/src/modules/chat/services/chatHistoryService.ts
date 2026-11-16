@@ -42,7 +42,7 @@ import {
 } from "./assistantTurnOutcomeTypes.js";
 import { skillOutcomeStatusSchema } from "../../skills/public.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
-import { buildChatConversationSummary, buildHistoryItem } from "./historyItemPresenter.js";
+import { buildChatConversationSummary, buildHistoryItem, messageSummaryFields } from "./historyItemPresenter.js";
 import { messageMetadataSuggestions, normalizeChatSuggestion, storedMessageFields, type StoredMessageFields } from "./historyMessageFields.js";
 import {
   LEGACY_TURN_TRACE_ENVELOPE_VERSION,
@@ -174,7 +174,10 @@ export interface ChatConversationSummary {
   messageCount: number;
   userMessageCount: number;
   assistantMessageCount: number;
+  /** The words of the opening visitor message, never the readings of its photos; null when none has words. */
   preview: string | null;
+  /** The photos of the message the preview is read from. */
+  previewPhotoCount: number;
   /**
    * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
    * summary. Null until the summary service's first successful regeneration; the
@@ -966,10 +969,7 @@ export class ChatHistoryService {
           ...item,
           conversation: {
             ...item.conversation,
-            messageCount: messageSummaries.get(item.conversation.id)?.messageCount ?? 0,
-            userMessageCount: messageSummaries.get(item.conversation.id)?.userMessageCount ?? 0,
-            assistantMessageCount: messageSummaries.get(item.conversation.id)?.assistantMessageCount ?? 0,
-            preview: messageSummaries.get(item.conversation.id)?.preview ?? null,
+            ...messageSummaryFields(messageSummaries.get(item.conversation.id)),
           },
         };
       }),

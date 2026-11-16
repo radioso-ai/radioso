@@ -12,6 +12,7 @@ const qualityTurn: CopilotQualityTurn = {
   agentId: "agent-1",
   agentName: "Support",
   question: "Where is my order?",
+  questionPhotoCount: 0,
   answerPreview: "I could not find it.",
   createdAt: "2026-08-20T09:00:00.000Z",
   feedback: { downCount: 1, latestDownUpdatedAt: "2026-08-20T09:05:00.000Z", comments: [] },

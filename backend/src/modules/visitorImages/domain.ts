@@ -1,3 +1,4 @@
+import { MAX_IMAGES_PER_MESSAGE } from "../../shared/domain/chatInputMetadata.js";
 import type { LlmCapabilityOverride } from "../../shared/infra/llm/workspaceContext.js";
 import type { VisitorImageRevisionSwitch } from "./contracts/revisionSwitch.js";
 import type { VisitorImageHolder, VisitorImageOwner } from "./contracts/turnInput.js";
@@ -14,8 +15,8 @@ export const VISITOR_IMAGE_LIMITS = {
   maxLongSidePx: 1_600,
   /** Decoding stops past this many pixels (about 8,660 by 5,770), so a crafted file cannot exhaust memory. */
   maxInputPixels: 50_000_000,
-  /** Photos one message carries. */
-  maxImagesPerMessage: 3,
+  /** Photos one message carries; the stored `imageInput` holds to the same number. */
+  maxImagesPerMessage: MAX_IMAGES_PER_MESSAGE,
   /** A photo no message carries is deleted this long after its upload. */
   unboundLifetimeMs: 24 * 60 * 60 * 1_000,
   /** The reading kept and rendered into the turn. */

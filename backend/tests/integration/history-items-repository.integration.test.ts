@@ -99,6 +99,8 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
   const titleMatchId = randomUUID();
   const firstMessageMatchId = randomUUID();
   const laterMentionOnlyId = randomUUID();
+  const photoTurnId = randomUUID();
+  const photoOnlyFirstId = randomUUID();
   const wildcardPercentId = randomUUID();
   const wildcardUnderscoreId = randomUUID();
   const agentAConversationId = randomUUID();
@@ -124,13 +126,25 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
     );
   };
 
-  const insertMessage = async (input: { conversationId: string; role: "user" | "assistant"; content: string; createdAt: string }) => {
+  const insertMessage = async (input: {
+    conversationId: string;
+    role: "user" | "assistant";
+    content: string;
+    createdAt: string;
+    metadata?: Record<string, unknown>;
+  }) => {
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6::timestamptz)`,
-      [randomUUID(), input.conversationId, workspaceId, input.role, input.content, input.createdAt],
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at, metadata_json)
+       VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::jsonb)`,
+      [randomUUID(), input.conversationId, workspaceId, input.role, input.content, input.createdAt, JSON.stringify(input.metadata ?? {})],
     );
   };
+
+  /** A visitor message with one photo: `content` is the turn text the agent ran on, the metadata the structured form. */
+  const photoTurn = (typedText: string, reading: string) => ({
+    content: [typedText, `<attached_photo index="1">${reading}</attached_photo>`].filter(Boolean).join("\n"),
+    metadata: { method: "typed", imageInput: { typedText, images: [{ id: randomUUID(), reading }] } },
+  });
 
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
@@ -174,6 +188,16 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
     await insertConversation({ id: laterMentionOnlyId, title: null, updatedAt: farPast });
     await insertMessage({ conversationId: laterMentionOnlyId, role: "user", content: "What are your opening hours", createdAt: farPast });
     await insertMessage({ conversationId: laterMentionOnlyId, role: "assistant", content: "Let me check on the refund for you", createdAt: "2026-01-01T00:01:00Z" });
+
+    // A message with photos: the row shows what was typed, so only that is searchable. The reading
+    // sits in the turn text the agent ran on, which no operator sees on the row.
+    await insertConversation({ id: photoTurnId, title: null, updatedAt: farPast });
+    await insertMessage({ conversationId: photoTurnId, role: "user", createdAt: farPast, ...photoTurn("Something like a farmhouse", "a gravel driveway") });
+
+    // A photo-only first message has no words, so the row shows the next message that has some.
+    await insertConversation({ id: photoOnlyFirstId, title: null, updatedAt: farPast });
+    await insertMessage({ conversationId: photoOnlyFirstId, role: "user", createdAt: farPast, ...photoTurn("", "a slate roof") });
+    await insertMessage({ conversationId: photoOnlyFirstId, role: "user", content: "Do you ship abroad?", createdAt: "2026-01-01T00:01:00Z" });
 
     // Wildcard escaping: a literal % or _ in the search text must not act as an ILIKE wildcard.
     await insertConversation({ id: wildcardPercentId, title: "50% off deal", updatedAt: farPast });
@@ -233,6 +257,25 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
   it("q does not match a term that appears only in a later assistant reply", async () => {
     const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "refund" });
     expect(chatIds(page)).not.toContain(laterMentionOnlyId);
+  });
+
+  it("q matches what the visitor typed beside photos, and never the readings the turn text carries", async () => {
+    const typed = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "like a farmhouse" });
+    expect(chatIds(typed)).toEqual(new Set([photoTurnId]));
+
+    const reading = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "gravel driveway" });
+    expect(chatIds(reading)).toEqual(new Set());
+
+    const markup = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "attached_photo" });
+    expect(chatIds(markup)).toEqual(new Set());
+  });
+
+  it("q matches the next message with words when the first message is photos only", async () => {
+    const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "ship abroad" });
+    expect(chatIds(page)).toEqual(new Set([photoOnlyFirstId]));
+
+    const reading = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "slate roof" });
+    expect(chatIds(reading)).toEqual(new Set());
   });
 
   it("escapes ILIKE wildcards so a literal % or _ matches only that literal text", async () => {

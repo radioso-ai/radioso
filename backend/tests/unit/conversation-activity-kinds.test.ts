@@ -83,7 +83,7 @@ const readServiceOver = (closing: readonly ClosingConversationActivityRecord[]) 
   const service = new ConversationActivityReadService({
     store,
     teammateLabels: { labelsByUserIds: () => Promise.resolve(new Map([[ACTOR_ID, "Ada"]])) },
-    previews: { previewsByConversationIds: () => Promise.resolve(new Map([[CONVERSATION_ID, "Where is my order?"]])) },
+    previews: { previewsByConversationIds: () => Promise.resolve(new Map([[CONVERSATION_ID, { text: "Where is my order?", photoCount: 2 }]])) },
   });
   return { service, requested };
 };
@@ -196,6 +196,7 @@ describe("recently closed Inbox items", () => {
         decision: null,
         resolution: null,
         preview: "Where is my order?",
+        previewPhotoCount: 2,
       });
     }
   });

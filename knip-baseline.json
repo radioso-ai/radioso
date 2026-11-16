@@ -396,7 +396,6 @@
   "types|frontend/lib/api-workbench.ts|WorkbenchOverride",
   "types|frontend/lib/api-workbench.ts|WorkbenchReplayInput",
   "types|frontend/lib/color.ts|Rgb",
-  "types|frontend/lib/conversation-title.ts|ConversationTitleSource",
   "types|frontend/lib/copilot-context.tsx|CopilotEntityType",
   "types|frontend/lib/copilot-context.tsx|CopilotSessionState",
   "types|frontend/lib/crawl-jobs.ts|CrawlJobMergeResult",

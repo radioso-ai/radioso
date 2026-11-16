@@ -10,7 +10,6 @@ import type {
   AudiencePulseEvidence,
   AudiencePulseModelOutput,
   AudiencePulseReportCoverage,
-  AudiencePulseStoredTheme,
   AudiencePulseStoredReport,
 } from "../domain/report.js";
 import {
@@ -22,10 +21,9 @@ import {
   evaluateTopicContentGap,
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
-import {
-  isShortfallStatus,
-  type AudiencePulseAnswerStatus,
-  type AudiencePulseAnswerSummary,
+import type {
+  AudiencePulseAnswerStatus,
+  AudiencePulseAnswerSummary,
 } from "../domain/answerStatus.js";
 import type {
   AudiencePulseAuditPort,
@@ -47,6 +45,7 @@ import type {
 import { AUDIENCE_PULSE_ANALYSIS_DAYS } from "../contracts.js";
 import type { CensusServiceFactory } from "../infra/censusServiceFactory.js";
 import type { CensusRunResult, CensusRunTopicResult } from "./censusService.js";
+import { createHydratedEvidence, hydrateThemeEvidence } from "./themeEvidence.js";
 import {
   AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
   AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
@@ -141,16 +140,6 @@ const unavailableReason = (error: unknown): "provider" | "validation" | "cancell
   return "provider";
 };
 
-const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, AudiencePulseHydratedEvidence> =>
-  new Map(evidence.map((item) => [item.id, {
-    evidenceId: item.id,
-    conversationId: item.reference.conversationId,
-    messageId: item.reference.messageId,
-    question: item.question,
-  }]));
-
-type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
-type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
 type LegacyAudiencePulseStoredTheme = Omit<
   AudiencePulseStoredReport["themes"][number],
   "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
@@ -233,54 +222,6 @@ const themeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
   if (!theme.answers) return legacyThemeAnswers(theme);
   const statuses = theme.answerStatusByEvidenceId;
   return { answers: theme.answers, statusOf: (evidenceId) => statuses?.[evidenceId] };
-};
-
-const normalizeQuestionForDisplay = (question: string): string => question
-  .trim()
-  .replace(/\s+/gu, " ");
-
-const questionDisplayKey = (question: string): string => normalizeQuestionForDisplay(question).toLowerCase();
-
-/**
- * Merges repeated occurrences of a question into one example, but only within one
- * answer status: a question answered twice and unanswered once shows as two examples.
- * Shortfalls lead, keeping the stored order otherwise.
- */
-const hydrateThemeEvidence = (
-  evidenceIds: string[],
-  resolve: (evidenceId: string) => AudiencePulseHydratedEvidence,
-  statusOf: ThemeAnswers["statusOf"],
-  coverageByEvidenceId?: AudiencePulseStoredTheme["coverageByEvidenceId"],
-): Pick<AudiencePulseThemeResponse, "distinctQuestionCount" | "evidence"> => {
-  const occurrences = new Map<string, AudiencePulseEvidenceResponse>();
-  const distinctQuestions = new Set<string>();
-  for (const evidenceId of evidenceIds) {
-    const source = resolve(evidenceId);
-    const question = normalizeQuestionForDisplay(source.question);
-    const status = statusOf(evidenceId);
-    distinctQuestions.add(questionDisplayKey(question));
-    const key = `${questionDisplayKey(question)}\u0000${status ?? ""}`;
-    const existing = occurrences.get(key);
-    if (existing) {
-      existing.occurrenceCount += 1;
-      continue;
-    }
-    occurrences.set(key, {
-      reference: source.evidenceId,
-      conversationId: source.conversationId,
-      messageId: source.messageId,
-      question,
-      occurrenceCount: 1,
-      ...(coverageByEvidenceId?.[source.evidenceId] ? { answerCoverage: coverageByEvidenceId[source.evidenceId] } : {}),
-      ...(status ? { answerStatus: status } : {}),
-    });
-  }
-  const shortfallsFirst = (example: AudiencePulseEvidenceResponse): number =>
-    example.answerStatus && isShortfallStatus(example.answerStatus) ? 0 : 1;
-  return {
-    distinctQuestionCount: distinctQuestions.size,
-    evidence: [...occurrences.values()].sort((left, right) => shortfallsFirst(left) - shortfallsFirst(right)),
-  };
 };
 
 const hydrateReport = (

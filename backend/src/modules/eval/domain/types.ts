@@ -9,6 +9,7 @@ import type {
   TurnTraceEnvelope,
 } from "../../chat/contracts/index.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
+import type { MessageImageInput } from "../../../shared/domain/chatInputMetadata.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
@@ -27,6 +28,13 @@ export interface EvalSnapshotMessage {
   answerSegments?: AnswerSegment[];
   groundingSummary?: GroundingSummary;
   directiveFirings?: string[];
+  /**
+   * The photos a visitor's message carried, kept beside `content` (the turn text the replay runs
+   * on, readings included) so a view shows the typed words and the photos. Absent on a snapshot
+   * captured before it was kept, on a message of a turn that held a sensitive value, and on any
+   * message without photos.
+   */
+  imageInput?: MessageImageInput;
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {

@@ -24,7 +24,7 @@ import {
 } from "../../modules/chat/contracts/voiceTurnFacts.js";
 import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
-import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb, visibleMessagePhotoCountSql, visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
@@ -61,7 +61,10 @@ export interface ConversationMessageSummary {
   messageCount: number;
   userMessageCount: number;
   assistantMessageCount: number;
+  /** The words of the conversation's opening visitor message; null when none has words. */
   preview: string | null;
+  /** The photos of the message the preview is read from; a conversation nobody wrote a word in previews as its first photo message. */
+  previewPhotoCount: number;
 }
 
 export interface TailReadInput {
@@ -372,6 +375,9 @@ const toPreview = (content: string): string => {
     ? `${normalized.slice(0, PREVIEW_MAX_LENGTH - 3)}...`
     : normalized;
 };
+
+/** A list preview from the text a person reads (see `visibleMessageTextSql`); null when there are no words. */
+const previewFromText = (text: string): string | null => toPreview(text) || null;
 
 export class MessageRepository
   implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims, VoiceTurnFactsRecorder {
@@ -703,25 +709,35 @@ export class MessageRepository
       .groupBy("conversation_id")
       .execute();
 
+    // The text and photo count of a user message are read in SQL, so a row is picked and shown by
+    // the same expression and no metadata (an agent reply's is large) leaves the database.
+    const visibleText = visibleMessageTextSql(sql.ref("content"), sql.ref("metadata_json"));
+    const photoCount = visibleMessagePhotoCountSql(sql.ref("metadata_json"));
+
+    // The conversation's first user message with words, or, when it has none, its first with photos.
     const firstUserMessageRows = await this.db
       .selectFrom("messages")
-      .select(["conversation_id", "content"])
+      .select(["conversation_id", visibleText.as("preview_text"), photoCount.as("photo_count")])
       .distinctOn("conversation_id")
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "in", conversationIds)
       .where("role", "=", "user")
-      // Skip whitespace-only user messages so a blank first turn doesn't overwrite the
-      // newest-message fallback below with an empty preview; DISTINCT ON then naturally
-      // lands on the earliest *non-blank* user message, or none at all.
-      .where(sql<boolean>`btrim(content) <> ''`)
+      // Skip a user message with neither words nor photos so a blank first turn doesn't overwrite
+      // the newest-message fallback below with an empty preview. Messages with words come first,
+      // then photo-only ones, each earliest first; a conversation nobody wrote a word in previews
+      // as its first photo message, never as the agent's reply to it.
+      .where(sql<boolean>`(btrim(${visibleText}) <> '' or ${photoCount} > 0)`)
       .orderBy("conversation_id")
+      .orderBy(sql`btrim(${visibleText}) = ''`)
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .execute();
 
+    // Only reached for a conversation with no user message that has words or photos, so a photo
+    // count would always be zero here.
     const newestMessageRows = await this.db
       .selectFrom("messages")
-      .select(["conversation_id", "content"])
+      .select(["conversation_id", sql<string>`(case when role = 'user' then ${visibleText} else content end)`.as("preview_text")])
       .distinctOn("conversation_id")
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "in", conversationIds)
@@ -730,19 +746,21 @@ export class MessageRepository
       .orderBy("id", "desc")
       .execute();
 
-    const previewByConversationId = new Map(
-      newestMessageRows.map((row) => [row.conversation_id, toPreview(row.content)]),
+    const previewByConversationId = new Map<string, { text: string | null; photoCount: number }>(
+      newestMessageRows.map((row) => [row.conversation_id, { text: previewFromText(row.preview_text), photoCount: 0 }]),
     );
     for (const row of firstUserMessageRows) {
-      previewByConversationId.set(row.conversation_id, toPreview(row.content));
+      previewByConversationId.set(row.conversation_id, { text: previewFromText(row.preview_text), photoCount: Number(row.photo_count) });
     }
 
     for (const row of countRows) {
+      const preview = previewByConversationId.get(row.conversation_id);
       summaries.set(row.conversation_id, {
         messageCount: Number(row.message_count),
         userMessageCount: Number(row.user_message_count),
         assistantMessageCount: Number(row.assistant_message_count),
-        preview: previewByConversationId.get(row.conversation_id) ?? null,
+        preview: preview?.text ?? null,
+        previewPhotoCount: preview?.photoCount ?? 0,
       });
     }
 

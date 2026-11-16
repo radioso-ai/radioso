@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import { pressKeyForFileChooser } from "./file-chooser";
+
 // The visitor image journey (#1754 follow-up): a visitor attaches a photo in the public chat, sees
 // its preview while it uploads, sends it with a line of text, sees it in their thread, and still
 // sees it after a reload. The backend is mocked; the photo is a real image made in the page, and the
@@ -313,9 +315,7 @@ test("Enter on the focused attach control opens the file picker", async ({ page 
   await expect(attach).toBeVisible();
 
   await attach.focus();
-  const chooser = page.waitForEvent("filechooser");
-  await page.keyboard.press("Enter");
-  expect((await chooser).isMultiple()).toBe(true);
+  expect((await pressKeyForFileChooser(page, "Enter")).isMultiple()).toBe(true);
 });
 
 test("a visitor can remove a photo before sending, and is told when a file type is not accepted", async ({ page }) => {

@@ -15,6 +15,7 @@ import { resolveChatLocale } from "./chatLocale.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 import { stripCitationAnchorSyntax } from "./citationAnchorSyntax.js";
+import { attachedPhotoRules } from "./attachedPhotoRules.js";
 
 export interface FallbackReplyInput {
   query: string;
@@ -23,6 +24,8 @@ export interface FallbackReplyInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the decline closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** The visitor's message carries photos, so the decline says what the photo shows before redirecting. */
+  photosAttached?: boolean;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   signal?: AbortSignal;
@@ -146,14 +149,19 @@ const readComposedDecline = (raw: string | undefined): ComposedDecline => {
   };
 };
 
+const renderGroundedMiss = (input: FallbackReplyInput): string => {
+  const prompt = renderPromptTemplate("chat/grounded-miss.md", {
+    decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
+    locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
+    answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
+  });
+  return input.photosAttached ? `${prompt}\n\n${attachedPhotoRules("decline")}` : prompt;
+};
+
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
   appendRoutineLeadBack(
     appendSteeringBlock(
-      renderPromptTemplate("chat/grounded-miss.md", {
-        decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
-        locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
-        answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
-      }),
+      renderGroundedMiss(input),
       input.steering,
     ),
     input.steering,

@@ -134,7 +134,13 @@ a test: a visitor's photo as `conversation.image_viewed`, any other as
    once the agent no longer takes photos), renders
    `<attached_photo index="n">reading</attached_photo>` (only `<` and `>`
    escaped) or `<attached_photo index="n" status="unreadable"/>` after the typed
-   text, and runs the turn. The tag names what it holds, so no prompt explains it.
+   text, and runs the turn. Routing, slots and retrieval read the blocks as text.
+   `turnTextCarriesPhotos` recognises the blocks by their tag, for text that
+   arrives without `imageInput`. Chat explains the blocks only on a turn that
+   carries them (`modules/chat/services/attachedPhotoRules.ts`): on a miss the reply
+   says what the photo shows, then offers the closest supported thing or asks one
+   question, and an unreadable photo gets a request to describe it or send
+   another.
 3. Bind: the chat-session preparer tells the door the moment it stores the user
    message (`onUserMessageStored`), and the door binds the claim to that
    conversation and message id in the same request, before the rest of the turn

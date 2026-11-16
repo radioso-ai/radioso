@@ -279,6 +279,22 @@ describe("retrieval answer decline classification", () => {
     expect(presented.groundingSummary).toMatchObject({ verdict: "no_support", declineReason: "out_of_scope" });
   });
 
+  // A photo turn's misses and declines are told apart from the rest on the same counter.
+  it("labels the outcome counter with whether the turn carried a photo", async () => {
+    const { composer, metricWrites } = buildComposer(outOfScopeV2Envelope());
+    const photoTurn: PreparedSession = {
+      ...baseSession(),
+      userMessage: { id: "message-1", content: 'Like this?\n<attached_photo index="1">A stone farmhouse.</attached_photo>' } as never,
+    };
+
+    await composer.composeAnswer(photoTurn, "Like this?", undefined, undefined);
+
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "complete", stream: "false", decline: "out_of_scope", photo_turn: "true" },
+    }]);
+  });
+
   it("labels the outcome counter with the decline reason", async () => {
     const { composer, metricWrites } = buildComposer(outOfScopeV2Envelope());
 
@@ -286,7 +302,7 @@ describe("retrieval answer decline classification", () => {
 
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "no_support", reason: "complete", stream: "false", decline: "out_of_scope" },
+      labels: { protocol: "v2", verdict: "no_support", reason: "complete", stream: "false", decline: "out_of_scope", photo_turn: "false" },
     }]);
   });
 
@@ -869,7 +885,7 @@ describe("retrieval answer envelope v2", () => {
     expect(fallbackWorkspaceContext()).toEqual({ workspaceId: "workspace-1" });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true", decline: "content_gap" },
+      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true", decline: "content_gap", photo_turn: "false" },
     }]);
   });
 
@@ -943,7 +959,7 @@ describe("retrieval answer envelope v2", () => {
 
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "degraded", reason: "unsourced", stream: "false", decline: "none" },
+      labels: { protocol: "v2", verdict: "degraded", reason: "unsourced", stream: "false", decline: "none", photo_turn: "false" },
     }]);
     expect(JSON.stringify(metricWrites)).not.toContain("workshop");
   });
@@ -966,7 +982,7 @@ describe("retrieval answer envelope v2", () => {
     expect(presented.skillOutcome).toBe("no_context");
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "no_support", reason: "unsupported_answer", stream: "false", decline: "content_gap" },
+      labels: { protocol: "v2", verdict: "no_support", reason: "unsupported_answer", stream: "false", decline: "content_gap", photo_turn: "false" },
     }]);
     expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
   });

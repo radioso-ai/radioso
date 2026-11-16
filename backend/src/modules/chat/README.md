@@ -366,6 +366,22 @@ imports from `services/`.
   `services/conversationProcessTurnInput.ts`: adapters from prepared chat turns
   into the reusable conversation-engine contracts.
 - `services/groundedAnswerPromptComposer.ts`: grounded answer prompt assembly.
+- `services/attachedPhotoRules.ts`: the photo rules. `turnCarriesPhotos` reads one
+  flag per turn from the user message: its `inputMetadata.imageInput`, or, for a
+  message that comes as text alone (an eval case, a replay), the structural
+  `turnTextCarriesPhotos` from `visitorImages`. `attachedPhotoRules` renders
+  `prompts/chat/attached-photos.md` with the second part of the reply each path
+  writes (`attached-photos-grounded.md`, `-decline.md`, `-reply.md`). Only a photo
+  turn gets them: the grounded answer after its standing blocks and before
+  steering, outside the reusable prefix; the focused decline
+  (`fallbackReplyComposer.ts`, `photosAttached` on `FallbackReplyInput`) after its
+  rules; the direct and skill-result replies (`assistantReplyPromptBuilder.ts`)
+  after the question. Every other turn's prompt is unchanged. A grounded photo miss
+  that names a Result commits `answer`; one that names none stays an uncited
+  `no_support` decline, so the hand-off on a miss still applies. Tests:
+  `tests/unit/chat/attached-photo-rules.test.ts`,
+  `tests/unit/grounded-answer-prompt-contract.test.ts`,
+  `tests/unit/eval-suite/photo-turn-cases.test.ts`.
 
 ## Common Change Paths
 
@@ -434,7 +450,8 @@ imports from `services/`.
   or `out_of_scope` but leaves `answer` empty or whitespace-only is answered with the
   focused decline that commitment promised (usage attempt `blank_decline` /
   `stream_blank_decline`, counted as
-  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on the
+  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`, whose `photo_turn`
+  label, like every count of that counter, says whether the turn carried a photo); on the
   page-context paths the no-page decline words it (usage attempt `grounded_miss` /
   `stream_grounded_miss`, counted the same way). Either decline keeps the reason the
   head committed (`out_of_scope` stays out of scope; `no_support` is a content gap):
@@ -1044,7 +1061,7 @@ imports from `services/`.
   Directive names stay a sorted enum of this turn's candidate names, the same set
   turn to turn for one agent configuration. The grounded answer composer
   (`groundedAnswerPromptComposer.ts`) follows the same rule: base instructions,
-  coverage, and envelope blocks form its reusable prefix, and turn steering,
+  coverage, and envelope blocks form its reusable prefix, and a photo turn's rules, turn steering,
   offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction.

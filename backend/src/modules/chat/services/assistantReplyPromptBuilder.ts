@@ -5,6 +5,7 @@ import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader
 import type { ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
+import { attachedPhotoRules } from "./attachedPhotoRules.js";
 import type { TurnRouting } from "./turnRouter.js";
 import {
   renderPageContextCondition,
@@ -25,6 +26,8 @@ export interface AssistantReplyPromptInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the reply closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** The visitor's message carries photos, so the reply follows the rules for answering about one. */
+  photosAttached?: boolean;
 }
 
 /** The answer instructions, visitor context, summary, history, and question every reply prompt carries. */
@@ -45,9 +48,16 @@ const turnSectionVariables = (input: AssistantReplyPromptInput): Record<string, 
   };
 };
 
-/** Closes a reply prompt with the turn's steering and, when a routine yielded the turn, the lead-back to its step. */
+/**
+ * Closes a reply prompt with a photo turn's photo rules, the turn's steering and, when a routine
+ * yielded the turn, the lead-back to its step.
+ */
 const withTurnSteering = (prompt: string, input: AssistantReplyPromptInput): string =>
-  appendRoutineLeadBack(appendSteeringBlock(prompt, input.steering), input.steering, input.pendingRoutineStep);
+  appendRoutineLeadBack(
+    appendSteeringBlock(input.photosAttached ? `${prompt}\n\n${attachedPhotoRules("reply")}` : prompt, input.steering),
+    input.steering,
+    input.pendingRoutineStep,
+  );
 
 export const buildAssistantReplyPrompt = (input: AssistantReplyPromptInput): string =>
   withTurnSteering(renderPromptTemplate("chat/non-retrieval-answer.md", {

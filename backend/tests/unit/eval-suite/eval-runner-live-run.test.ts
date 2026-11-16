@@ -27,7 +27,7 @@ import {
 } from "../../../scripts/evalRunnerSupport.js";
 
 /** The tags the nightly run and every evals script grade `llm_judge` assertions on. */
-const NIGHTLY_JUDGE_TAGS = ["quick-reply", "unavailable", "offer-scope"];
+const NIGHTLY_JUDGE_TAGS = ["quick-reply", "unavailable", "offer-scope", "photo-turn"];
 
 /** A voice case as a run reads it: parsed, so its assertions carry the scope their definitions give them. */
 const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase =>

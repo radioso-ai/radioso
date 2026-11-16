@@ -1,4 +1,5 @@
 import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
+import { renderVisitorImageTurn } from "../../../src/modules/visitorImages/public.js";
 import { seedDirectiveConfigWith } from "./agent.js";
 import { replyBlockCases } from "./replyBlockCases.js";
 import { routineCardCases } from "./routineCardCases.js";
@@ -181,6 +182,30 @@ const quickReplyCase = (input: {
     { type: "llm_judge", expectedAnswer: input.expectedAnswer, criteria: quickReplyCriteria(input.language) },
   ],
 });
+
+// The `photo-turn` cases: the visitor's message carries the photo's description as the chat door
+// renders it, so the turn needs no vision call. The instruction gives the contacts for what the
+// agent cannot answer, as a course centre's does, which is the pull toward a bare decline.
+const courseCentreInstruction =
+  "You are the assistant of a meditation and yoga centre. Help visitors find the right course. When you cannot answer a question, give our contacts: corsi@example.org, phone 0123 456 789, WhatsApp 0123 456 780.";
+const UNMATCHED_PHOTO_READING =
+  "Pixel-art illustration of a stepped stone pyramid with a stairway up its centre, under a dark blue night sky full of small stars. Above the pyramid floats a large glowing golden sun emblem with radiating rays. Flat colours in deep blue, ochre and gold, in a retro video-game style. No people and no visible text.";
+const MATCHING_PHOTO_READING =
+  "Photograph of about ten people practising yoga on mats on a green alpine meadow, seen from behind at a distance. Snow-capped mountain peaks rise behind them. Morning light, clear sky. No visible text.";
+/** A photo the visitor sends with a goodbye: nothing to answer about it. */
+const CLOSING_PHOTO_READING =
+  "Photograph of a sunset over a green mountain meadow, with three rolled-up yoga mats in the foreground. Warm orange light, a few clouds. No people and no visible text.";
+/**
+ * The visitor says up front they are only looking, so the seeded booking routine, which a
+ * course question about a retreat-like scene otherwise claims, leaves the turn to the answer.
+ */
+const browsingNotBooking: NonNullable<ConversationQualityCase["history"]> = [
+  { role: "user", content: "Hi, I'm only looking for ideas for now, not booking anything yet." },
+  { role: "assistant", content: "Of course! Tell me what you're curious about and I'll show you what we offer." },
+];
+/** What the judge of a `photo-turn` case knows about the corpus it grounds against. */
+const PHOTO_TURN_COURSES =
+  "The centre's courses are a breathwork meditation retreat in the countryside, a creative-arts weekend (music, dance, painting), online yoga classes, and a mountain yoga course.";
 
 const metadataPageReadCapabilities: ConversationQualityCase["clientContextCapabilities"] = {
   "page.read": {
@@ -1271,6 +1296,103 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     executionMode: "review",
     query: "Hello, we are a registered charity. Do you offer a nonprofit discount on your plans?",
     assertions: [{ type: "turn_persists_no_reply" }],
+  },
+  {
+    id: "photo-turn-unmatched-photo-says-what-it-saw",
+    name: "A photo no course matches gets a reply that says what it shows and offers the closest course or asks one question",
+    description:
+      "The visitor attaches a pixel-art pyramid and asks for similar courses. No course is about it, and the instruction gives the contacts for questions the agent cannot answer. The reply must not invent a match, and must not jump straight to the contacts either: it says what the photo shows, then offers the closest course or asks one question about what the visitor is after.",
+    tags: ["photo-turn", "retrieval", "coverage"],
+    agentConfigOverride: { customInstruction: courseCentreInstruction },
+    query: renderVisitorImageTurn("are there any similar courses?", [{ reading: UNMATCHED_PHOTO_READING }]),
+    assertions: [
+      { type: "answer_contains", pattern: "(?i)pyramid", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Says briefly that the photo shows a pixel-art stepped pyramid under a night sky with a glowing sun, does not claim any course matches it, and either offers the closest courses the centre runs without calling them a match or asks one short question about what the visitor means by similar (a theme, a place, a style of practice). It may then give the contacts.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} ${PHOTO_TURN_COURSES} Fail if the reply does not say, at least briefly, what the photo shows; if it states or implies that any course matches, resembles, or is themed on the image; if it asks more than one question; or if all it does is decline and point to the contacts. Otherwise pass: offering one or more of those courses as the closest options and asking one short question about what the visitor is after both pass, and closing with the contacts is allowed.`,
+      },
+    ],
+  },
+  {
+    id: "photo-turn-matching-photo-answers",
+    name: "A photo one course matches gets a grounded answer naming that course",
+    description:
+      "The visitor, who said they are only looking, attaches a photo of yoga on a mountain meadow and asks which course is like it. The mountain yoga course fits, so the reply answers as any grounded answer does: it names and cites that course.",
+    tags: ["photo-turn", "retrieval", "grounding"],
+    agentConfigOverride: { customInstruction: courseCentreInstruction },
+    history: browsingNotBooking,
+    query: renderVisitorImageTurn("Which of your courses is like this one?", [{ reading: MATCHING_PHOTO_READING }]),
+    assertions: [
+      { type: "retrieval_includes_document", documentId: MOUNTAIN_COURSE_DOC_ID },
+      { type: "answer_cites_document", documentId: MOUNTAIN_COURSE_DOC_ID },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Offers the mountain yoga course (Corso di yoga in montagna) as a course like the one in the photo.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} ${PHOTO_TURN_COURSES} Fail if the reply does not name the mountain yoga course, or if it says the centre runs no course like the photo. Otherwise pass.`,
+      },
+    ],
+  },
+  {
+    id: "photo-turn-unreadable-photo-asks-again",
+    name: "A photo that could not be read gets a reply that says so and asks for a description or another photo",
+    description:
+      "The visitor's photo could not be read, so the turn carries only that fact. The reply says the photo could not be read and asks the visitor to describe what they are after or send another photo; it never guesses at what the photo shows.",
+    tags: ["photo-turn"],
+    agentConfigOverride: { customInstruction: courseCentreInstruction },
+    query: renderVisitorImageTurn("something like this?", [{ reading: null }]),
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Says the photo could not be read and asks the visitor to describe what they are looking for or to send another photo.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} The visitor's photo could not be read, so nothing is known about what it shows. Fail if the reply does not say the photo could not be read or seen; if it asks neither for a description nor for another photo; if it describes or guesses at what the photo shows; or if it presents any course as matching the photo. Otherwise pass: asking what they are looking for in their own words counts as asking for a description, and saying what the centre helps with, naming courses as general options, or giving the contacts is no guess about the photo.`,
+      },
+    ],
+  },
+  {
+    id: "photo-turn-guard-text-only-similar-course",
+    name: "A text question for courses like a named course still gets the related courses, with nothing about a photo",
+    description:
+      "No photo comes with this turn, so the prompt carries no photo rules. Asking for anything like the breathwork course still gets the related courses the Results support, as before, and the reply says nothing about a photo or an image.",
+    tags: ["photo-turn", "retrieval"],
+    agentConfigOverride: { customInstruction: courseCentreInstruction },
+    query: "Is there anything similar to Il respiro Superconsapevole?",
+    assertions: [
+      { type: "answer_does_not_contain", pattern: "(?i)\\b(photo|image|picture)s?\\b", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Offers one or more of the centre's other courses as related to the breathwork retreat, such as the mountain yoga course with its meditation, and may describe them.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} ${PHOTO_TURN_COURSES} The visitor asks for anything similar to the breathwork retreat, "Il respiro Superconsapevole", and sent no photo. Fail if the reply offers no other course, or if it mentions a photo or an image. Otherwise pass.`,
+      },
+    ],
+  },
+  {
+    id: "photo-turn-guard-closing-with-photo",
+    name: "A goodbye sent with a photo gets a short natural closing",
+    description:
+      "The visitor thanks the centre for a lovely week and attaches a sunset photo. Nothing is asked, so the reply is a short, warm closing, not a description of the photo followed by courses or a question.",
+    tags: ["photo-turn", "direct"],
+    agentConfigOverride: { customInstruction: courseCentreInstruction },
+    history: [
+      { role: "user", content: "Is the mountain yoga course on this weekend?" },
+      { role: "assistant", content: "It runs from Friday evening to Sunday afternoon, with practice, meditation and vegetarian meals." },
+    ],
+    query: renderVisitorImageTurn("thanks, lovely week", [{ reading: CLOSING_PHOTO_READING }]),
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer: "A short, warm closing that thanks the visitor; it may say the photo is lovely.",
+        criteria:
+          `${DESCRIBED_REFERENCE_RUBRIC} The visitor thanks the centre for a lovely week and sends a sunset photo, asking nothing. Fail if the reply is longer than three short sentences, offers or recommends any course, asks what they are looking for, or gives the contacts. Otherwise pass: a brief friendly remark about the photo is fine.`,
+      },
+    ],
   },
   ...replyBlockCases,
   ...toolCardCases,

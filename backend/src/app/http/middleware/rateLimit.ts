@@ -99,12 +99,15 @@ const withoutUnadvertisedFigures = (error: unknown, policies: readonly RateLimit
 /** Applies related durable limits as one consumption so a rejected global cap cannot spend a grant cap. */
 export const createRateLimitBatchMiddleware = (input: CreateRateLimitBatchMiddlewareInput): RequestHandler => {
   return async (req, res, next) => {
-    const policies = await input.resolvePolicies(req, res);
-    if (policies.length === 0) {
-      next();
-      return;
-    }
+    // Resolved inside the try: Express 4 does not catch a rejected async middleware, so a resolver
+    // that rejects must still reach the error handler rather than become an unhandled rejection.
+    let policies: RateLimitBatchPolicy[] = [];
     try {
+      policies = await input.resolvePolicies(req, res);
+      if (policies.length === 0) {
+        next();
+        return;
+      }
       const decisions = await input.service.enforceBatch(policies.map(({ advertised: _advertised, ...policy }) => policy));
       const decision = tightest(decisions.filter((_decision, index) => isAdvertised(policies[index])));
       if (decision) {

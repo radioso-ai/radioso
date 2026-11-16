@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-11-10
+last_updated: 2026-11-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -143,14 +143,17 @@ The backend refuses to start when a sink list names `ops_webhook` without both a
 
 ## Public chat rate limits
 
-Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.
+Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults. The counters live in Postgres, or in Redis when `ABUSE_CONTROL_REDIS_URL` is set, so every backend instance spends the same budgets.
 
-- `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`
-- `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`
-- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`
-- `PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS`
+Each message a visitor sends spends three budgets in turn, and the first one that is used up answers `429`:
 
-The session limit applies to a visitor session, and covers starting one and sending a message. The global limit applies across public chat traffic for the process. The read limit covers the same visitor session polling for history, tail, and live updates, which happens far more often than sending a message, so it carries a higher default. All three are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
+- `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` defaults to 10 messages per browser. A browser is known by a signed rate-limit cookie; a request without one counts against its request source instead. Starting a session has a budget of the same size, per launch link and request source.
+- `PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 messages per request source and workspace, shared by every browser behind that address. The backend signs a fresh cookie for anyone who arrives without one, so this is the budget that holds for a caller that throws its cookie away. Raise it when many visitors reach one workspace through one address, such as a school or office network.
+- `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors.
+
+`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them.
+
+A request source is the client address the backend resolves with `RADIOSO_TRUSTED_PROXY_HOPS` (see [Visitor request facts](/operators/self-hosting-operations#visitor-request-facts)), and an IPv6 address counts as its /64. Every limit here is deployment-wide, so set them to values every workspace on this deployment can share.
 
 ## Voice session start rate limits
 

@@ -19,6 +19,7 @@ export interface AnonymousRateLimiterDependencies extends RateLimiterAbuseContro
     | "PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS"
     | "PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS"
     | "PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS"
+    | "PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
   >;
 }
 
@@ -158,6 +159,30 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
       }
 
       return `${workspaceId}:source:${readRequestSource(req, res).digest}`;
+    },
+    resolveAuditContext: (_req, res) => ({
+      workspaceId: res.locals.workspaceId as string | undefined,
+      metadata: {
+        chatSessionId: res.locals.chatSessionId as string | undefined,
+      },
+    }),
+  }),
+  // The browser budget above trusts the rate-limit cookie, and the public session check signs a
+  // fresh one for every request that arrives without it, so discarding the cookie buys a new
+  // browser budget. This one is keyed on the request source alone and spent by every message, so
+  // every browser behind one address (a classroom, an office, a carrier NAT, or one script holding
+  // many cookies) shares it. It runs after the browser budget, so a browser refused for its own
+  // pace spends none of its neighbours' share, and before the workspace budget, so a refused
+  // source spends none of what the workspace's other visitors need.
+  createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "public.chat.source",
+    limit: dependencies.env.PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: (req, res) => {
+      const workspaceId = res.locals.workspaceId as string | undefined;
+      return workspaceId ? `${workspaceId}:source:${readRequestSource(req, res).digest}` : null;
     },
     resolveAuditContext: (_req, res) => ({
       workspaceId: res.locals.workspaceId as string | undefined,

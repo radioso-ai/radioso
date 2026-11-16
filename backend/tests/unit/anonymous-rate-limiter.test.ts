@@ -7,6 +7,7 @@ import {
   publicChatSessionReadRateLimiter,
   resetRateLimiterState,
 } from "../../src/app/http/middleware/anonymousRateLimiter.js";
+import type { Env } from "../../src/app/config/env.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 import { createTestDependencies } from "../support/testApp.js";
 
@@ -211,6 +212,119 @@ describe("anonymousRateLimiter", () => {
     await rateLimiter(req, res, next);
 
     expect(wasNextCalled()).toBe(true);
+  });
+});
+
+describe("public chat turn budgets for one request source", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  type ChainOutcome = { admitted: boolean; status: number };
+
+  const turnLimiters = (env: Partial<Env>) => anonymousRateLimiters(createTestDependencies({ envOverrides: env }).dependencies);
+
+  // Runs the whole turn-creation chain the way Express would: stop at the first refusal.
+  const sendTurn = async (
+    chain: ReturnType<typeof anonymousRateLimiters>,
+    input: { workspaceId?: string; browserId?: string; ip?: string; requestSource?: { address: string | null; digest: string } },
+  ): Promise<ChainOutcome> => {
+    const locals: Record<string, unknown> = {
+      workspaceId: input.workspaceId ?? "workspace-1",
+      anonymousSessionId: "session-1",
+      anonymousRateLimitId: input.browserId ?? "minted-for-this-request",
+      anonymousRateLimitIdFromCookie: input.browserId !== undefined,
+      ...(input.requestSource ? { requestSource: input.requestSource } : {}),
+    };
+    for (const middleware of chain) {
+      const { req, res, next, wasNextCalled, getStatus } = createMockReqRes(locals, { ip: input.ip ?? "203.0.113.70" });
+      await middleware(req, res, next);
+      if (!wasNextCalled()) {
+        return { admitted: false, status: getStatus() };
+      }
+    }
+    return { admitted: true, status: 200 };
+  };
+
+  it("runs out for a caller that presents a fresh rate-limit cookie on every message", async () => {
+    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
+
+    for (let i = 0; i < 3; i++) {
+      expect(await sendTurn(chain, { browserId: `rotated-${i}` })).toEqual({ admitted: true, status: 200 });
+    }
+
+    expect(await sendTurn(chain, { browserId: "rotated-3" })).toEqual({ admitted: false, status: 429 });
+  });
+
+  it("counts messages sent without a rate-limit cookie against the same source budget", async () => {
+    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3 });
+
+    expect((await sendTurn(chain, {})).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "browser-a" })).admitted).toBe(true);
+    expect((await sendTurn(chain, {})).admitted).toBe(true);
+
+    expect(await sendTurn(chain, { browserId: "browser-b" })).toEqual({ admitted: false, status: 429 });
+  });
+
+  it("gives browsers behind one shared address their own budgets until the source budget runs out", async () => {
+    const chain = turnLimiters({
+      PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2,
+      PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 5,
+    });
+
+    expect((await sendTurn(chain, { browserId: "classroom-a" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "classroom-a" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "classroom-a" })).admitted).toBe(false);
+    expect((await sendTurn(chain, { browserId: "classroom-b" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "classroom-b" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "classroom-c" })).admitted).toBe(true);
+
+    expect((await sendTurn(chain, { browserId: "classroom-d" })).admitted).toBe(false);
+  });
+
+  it("leaves the workspace budget to other visitors once one source is refused", async () => {
+    const chain = turnLimiters({
+      PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 2,
+      PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 4,
+    });
+
+    for (let i = 0; i < 12; i++) {
+      await sendTurn(chain, { browserId: `script-${i}`, ip: "198.51.100.7" });
+    }
+
+    expect((await sendTurn(chain, { browserId: "visitor-a", ip: "203.0.113.81" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "visitor-b", ip: "203.0.113.82" })).admitted).toBe(true);
+    expect(await sendTurn(chain, { browserId: "visitor-c", ip: "203.0.113.83" })).toEqual({ admitted: false, status: 429 });
+  });
+
+  it("keeps the source budget per workspace", async () => {
+    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
+
+    expect((await sendTurn(chain, { workspaceId: "workspace-a", browserId: "browser-a" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { workspaceId: "workspace-a", browserId: "browser-b" })).admitted).toBe(false);
+
+    expect((await sendTurn(chain, { workspaceId: "workspace-b", browserId: "browser-c" })).admitted).toBe(true);
+  });
+
+  it("keys an IPv6 caller's source budget on its /64", async () => {
+    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 2 });
+
+    expect((await sendTurn(chain, { browserId: "v6-a", ip: "2001:db8:1:2::a" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "v6-b", ip: "2001:db8:1:2:ffff::b" })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "v6-c", ip: "2001:db8:1:2::c" })).admitted).toBe(false);
+
+    expect((await sendTurn(chain, { browserId: "v6-d", ip: "2001:db8:1:3::a" })).admitted).toBe(true);
+  });
+
+  it("keys the source budget on the request source the app resolved, not the socket peer", async () => {
+    const chain = turnLimiters({ PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 1 });
+    const behindProxy = (digest: string) => ({ ip: "10.0.0.2", requestSource: { address: null, digest } });
+
+    expect((await sendTurn(chain, { browserId: "relayed-a", ...behindProxy("visitor-a-digest") })).admitted).toBe(true);
+    expect((await sendTurn(chain, { browserId: "relayed-b", ...behindProxy("visitor-b-digest") })).admitted).toBe(true);
+
+    expect((await sendTurn(chain, { browserId: "relayed-c", ...behindProxy("visitor-a-digest") })).admitted).toBe(false);
   });
 });
 

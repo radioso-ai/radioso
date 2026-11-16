@@ -2190,7 +2190,7 @@
       "title": "Deployment",
       "description": "Production deployment expectations for Radioso and the standalone docs portal.",
       "section": "Operator guides",
-      "lastUpdated": "2026-11-10",
+      "lastUpdated": "2026-11-16",
       "intro": "Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units. Deployments that enable live dashboard updates add a dedicated realtime runtime and Redis or Valkey. The docs portal stays separate as well.",
       "sections": [
         {
@@ -2236,7 +2236,7 @@
         {
           "id": "public-chat-rate-limits",
           "heading": "Public chat rate limits",
-          "body": "Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.\n\n* `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`\n* `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`\n* `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`\n* `PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS`\n\nThe session limit applies to a visitor session, and covers starting one and sending a message. The global limit applies across public chat traffic for the process. The read limit covers the same visitor session polling for history, tail, and live updates, which happens far more often than sending a message, so it carries a higher default. All three are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share."
+          "body": "Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults. The counters live in Postgres, or in Redis when `ABUSE_CONTROL_REDIS_URL` is set, so every backend instance spends the same budgets.\n\nEach message a visitor sends spends three budgets in turn, and the first one that is used up answers `429`:\n\n* `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS` defaults to 10 messages per browser. A browser is known by a signed rate-limit cookie; a request without one counts against its request source instead. Starting a session has a budget of the same size, per launch link and request source.\n* `PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 messages per request source and workspace, shared by every browser behind that address. The backend signs a fresh cookie for anyone who arrives without one, so this is the budget that holds for a caller that throws its cookie away. Raise it when many visitors reach one workspace through one address, such as a school or office network.\n* `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` defaults to 600 messages per workspace, across all of its visitors.\n\n`PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS` defaults to 120 and covers the same visitor polling for history, tail, and live updates, which happens far more often than sending a message. `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds and is the window for all of them.\n\nA request source is the client address the backend resolves with `RADIOSO_TRUSTED_PROXY_HOPS` (see [Visitor request facts](https://docs.radioso.ai/operators/self-hosting-operations#visitor-request-facts)), and an IPv6 address counts as its /64. Every limit here is deployment-wide, so set them to values every workspace on this deployment can share."
         },
         {
           "id": "voice-session-start-rate-limits",

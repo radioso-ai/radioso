@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
+import type { Env } from "../../src/app/config/env.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken, publishTestAgentBaseline } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -1312,6 +1313,69 @@ describe("public chat contract", () => {
       details: {
         retryAfterSeconds: expect.any(Number),
       },
+    });
+  });
+
+  describe("a caller that discards its rate-limit cookie", () => {
+    const findRateLimitCookie = (cookies: string[] | string | undefined) =>
+      (Array.isArray(cookies) ? cookies : [cookies])
+        .find((cookie: string | undefined) => typeof cookie === "string" && cookie.startsWith("anon_rate_limit_"))
+        ?.split(";")[0];
+
+    const setUp = async (envOverrides: Partial<Env>) => {
+      const { app } = createTestApp({
+        envOverrides: {
+          PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+          PUBLIC_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3,
+          PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+          ...envOverrides,
+        },
+      });
+      const session = await issueTestSession(app, `public-chat-cookie-rotation-${Math.random()}@example.com`);
+      const chatToken = await enableAnonymousChat(app, session);
+      const publicSession = await createPublicSession(app, chatToken);
+      // Every public-session request without the cookie is answered with a freshly signed one.
+      const harvestFreshCookie = async () => {
+        const response = await request(app)
+          .get(`/api/v1/public/chat/${chatToken}`)
+          .set("x-radioso-public-session", publicSession.publicSessionToken);
+        const cookie = findRateLimitCookie(response.headers["set-cookie"]);
+        if (!cookie) throw new Error("Expected a rate-limit cookie");
+        return cookie;
+      };
+      const send = async (forwardedFor?: string) => {
+        const cookie = await harvestFreshCookie();
+        const message = request(app)
+          .post(`/api/v1/public/chat/${chatToken}`)
+          .set("x-radioso-public-session", publicSession.publicSessionToken)
+          .set("Cookie", cookie);
+        return (forwardedFor ? message.set("X-Forwarded-For", forwardedFor) : message)
+          .send({ message: "hello", stream: false });
+      };
+      return { send };
+    };
+
+    it("runs out of its source budget even with a fresh cookie on every message", async () => {
+      const { send } = await setUp({});
+
+      expect((await send()).status).toBe(200);
+      expect((await send()).status).toBe(200);
+      expect((await send()).status).toBe(200);
+
+      const refused = await send();
+      expect(refused.status).toBe(429);
+      expect(refused.body.error).toMatchObject({ code: "rate_limit_exceeded" });
+    });
+
+    it("keeps one budget for a client behind a trusted proxy that forges a new X-Forwarded-For prefix each time", async () => {
+      const { send } = await setUp({ RADIOSO_TRUSTED_PROXY_HOPS: 1 });
+
+      expect((await send("198.51.100.1, 203.0.113.10")).status).toBe(200);
+      expect((await send("198.51.100.2, 203.0.113.10")).status).toBe(200);
+      expect((await send("198.51.100.3, 203.0.113.10")).status).toBe(200);
+      expect((await send("198.51.100.4, 203.0.113.10")).status).toBe(429);
+
+      expect((await send("198.51.100.5, 203.0.113.11")).status).toBe(200);
     });
   });
 

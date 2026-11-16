@@ -41,13 +41,18 @@ const candidate = (input: {
   similarity: number;
   /** Cosine similarity to the query; defaults to `similarity` for fixtures that predate fused scoring. */
   semanticScore?: number;
+  /** What found the chunk; defaults to a semantic hit. */
+  retrievalSources?: RetrievedCandidate["retrievalSources"];
+  /** How much of the query a lexical hit holds; unset reads as every term. */
+  lexicalTermCoverage?: RetrievedCandidate["lexicalTermCoverage"];
 }): RetrievedCandidate => ({
   chunkId: input.chunkId,
   documentId: input.documentId,
   title: input.title,
   content: `Fixture content for ${input.title}`,
   similarity: input.similarity,
-  retrievalSources: ["semantic_rewritten"],
+  retrievalSources: input.retrievalSources ?? ["semantic_rewritten"],
+  ...(input.lexicalTermCoverage ? { lexicalTermCoverage: input.lexicalTermCoverage } : {}),
   retrievalText: `${input.title} fixture retrieval text`,
   semanticScore: input.semanticScore ?? input.similarity,
   lexicalScore: 0,
@@ -464,6 +469,79 @@ describe("SenseGroupingService", () => {
         scored("right-1", "doc-right", "Product range", 0.787, 0.4),
         scored("left-2", "doc-left", "AX-200 sheet", 0.775, 0),
         scored("right-2", "doc-right", "Product range", 0.764, 0.38),
+      ],
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(2);
+    expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 }).kind).not.toBe("auto_pick");
+  });
+
+  it("does not read a document that only part of the question's words reached as a competing reading", async () => {
+    // "How long do I have to get a refund?" reaches the refund page by meaning and by its
+    // words, and a getting-started page only through the word "get". A some-terms keyword
+    // hit corroborates other evidence and never leads, so it is no second reading of the
+    // question and must not turn into a "which one do you mean?".
+    const labelGateway = { label: vi.fn<(input: LabelInput) => LabelOutput>(async () => []) };
+    const embeddingReader = { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) };
+    const service = new SenseGroupingService({ policy, embeddingReader, labelGateway });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "How long do I have to get a refund?",
+      rankedCandidates: [
+        candidate({
+          chunkId: "left-1",
+          documentId: "doc-left",
+          title: "Refund Policy",
+          similarity: 0.997,
+          semanticScore: 0.49,
+          retrievalSources: ["semantic_original", "lexical"],
+        }),
+        candidate({
+          chunkId: "right-1",
+          documentId: "doc-right",
+          title: "Getting Started",
+          similarity: 0.2,
+          semanticScore: 0,
+          retrievalSources: ["lexical"],
+          lexicalTermCoverage: "some_terms",
+        }),
+      ],
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toEqual([]);
+    expect(labelGateway.label).not.toHaveBeenCalled();
+  });
+
+  it("still reads a document whose keyword match holds every word of the question as a competing reading", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "The exact model code" : "Similar products",
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Do you stock the AX-200?",
+      rankedCandidates: [
+        candidate({
+          chunkId: "left-1",
+          documentId: "doc-left",
+          title: "AX-200 sheet",
+          similarity: 0.8,
+          semanticScore: 0,
+          retrievalSources: ["lexical"],
+          lexicalTermCoverage: "all_terms",
+        }),
+        candidate({ chunkId: "right-1", documentId: "doc-right", title: "Product range", similarity: 0.787, semanticScore: 0.4 }),
       ],
       conversationLanguage: "en",
     });

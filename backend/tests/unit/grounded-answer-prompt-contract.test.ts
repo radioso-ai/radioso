@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
+import { groundedMissPrompt } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import { attachedPhotoRules } from "../../src/modules/chat/services/attachedPhotoRules.js";
 import { appendRoutineLeadBack } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import { DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { Routine } from "@radioso/conversation-contract";
@@ -411,6 +413,68 @@ describe("grounded answer prompt contract", () => {
     expect(guidance).toMatch(/directive may withhold part of an `answered` request/i);
     expect(guidance).toMatch(/breaks no directive asking you to state supported facts directly/i);
     expect(steering).toMatch(/one limits what the answer says and another how it says it/i);
+  });
+
+  // A turn's text carries one block per photo the visitor attached. The rules for answering
+  // one go only into a turn that carries photos, after the standing blocks and outside the
+  // reusable prefix, so every other turn's prompt stays exactly as it was.
+  it("adds the attached-photo rules to a photo turn's grounded answer, after the standing blocks and before steering", () => {
+    const steering = [{ id: "d1", action: "Mention the spring retreat.", source: "directive" as const, lifespan: "response" as const }];
+    const base = {
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      steering,
+    };
+    const plain = composeGroundedAnswerSystemPrompt(base);
+    const photo = composeGroundedAnswerSystemPrompt({ ...base, photosAttached: true });
+    const rules = attachedPhotoRules("grounded");
+
+    expect(plain.systemPrompt).not.toContain("attached_photo");
+    expect(composeGroundedAnswerSystemPrompt({ ...base, photosAttached: false }).systemPrompt).toBe(plain.systemPrompt);
+    expect(photo.systemPrompt).toContain(rules);
+    expect(photo.reusableInputBoundary?.stableSystemPrefix).toBe(plain.reusableInputBoundary?.stableSystemPrefix);
+    expect(photo.reusableInputBoundary?.stableSystemPrefix).not.toContain("attached_photo");
+    expect(photo.systemPrompt.indexOf("Output envelope")).toBeLessThan(photo.systemPrompt.indexOf(rules));
+    expect(photo.systemPrompt.indexOf(rules)).toBeLessThan(photo.systemPrompt.indexOf("Mention the spring retreat."));
+  });
+
+  it("adds the attached-photo rules to a photo turn's focused decline only", () => {
+    const query = 'are there any similar courses?\n<attached_photo index="1">A stepped stone pyramid under a night sky.</attached_photo>';
+    const usageContext = { workspaceId: "ws", surface: "assistant", operation: "answer", attemptKey: "grounded_miss" };
+    const rules = attachedPhotoRules("decline");
+
+    expect(groundedMissPrompt({ query, usageContext }).systemPrompt).not.toContain("attached_photo");
+    expect(groundedMissPrompt({ query, usageContext, photosAttached: true }).systemPrompt.endsWith(rules)).toBe(true);
+  });
+
+  // A committed decline stays a decline: a `no_support` reply that cited a Result would count
+  // as degraded, drop its decline reason, and skip the hand-off on a miss.
+  it("keeps a photo turn's decline uncited, and names a Result only in an answer", () => {
+    const rules = attachedPhotoRules("grounded");
+
+    expect(rules).toMatch(/`no_support`[^.]*cites? nothing/i);
+    expect(rules).toMatch(/Result[^.]*`answer`|`answer`[^.]*Result/);
+    expect(rules).not.toMatch(/in an answer or a decline alike/i);
+  });
+
+  it("puts the agent's instructions and directives ahead of the photo rules' order, and lets a closing stay a closing", () => {
+    for (const reply of ["grounded", "decline", "reply"] as const) {
+      const rules = attachedPhotoRules(reply);
+      expect(rules).toMatch(/instructions and directives take precedence/i);
+      expect(rules).toMatch(/closing/i);
+    }
+    // In the focused decline, the redirect its own rules require is the second part, not a question.
+    expect(attachedPhotoRules("decline")).toMatch(/redirect[^.]*not a question/i);
+  });
+
+  it("keeps the attached-photo rules within their own word budget", () => {
+    const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
+    for (const reply of ["grounded", "decline", "reply"] as const) {
+      expect(countWords(attachedPhotoRules(reply))).toBeLessThanOrEqual(410);
+    }
   });
 
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {

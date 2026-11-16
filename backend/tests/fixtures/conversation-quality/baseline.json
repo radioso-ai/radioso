@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T00:20:11.250Z",
+  "generatedAt": "2026-11-16T19:17:35.994Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -360,6 +360,31 @@
     "routine-property-flow": {
       "status": "pass",
       "passRate": 1,
+      "samples": 5
+    },
+    "photo-turn-matching-photo-answers": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "photo-turn-unmatched-photo-says-what-it-saw": {
+      "status": "fail",
+      "passRate": 0.4,
+      "samples": 5
+    },
+    "photo-turn-unreadable-photo-asks-again": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "photo-turn-guard-closing-with-photo": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "photo-turn-guard-text-only-similar-course": {
+      "status": "fail",
+      "passRate": 0.8,
       "samples": 5
     }
   }

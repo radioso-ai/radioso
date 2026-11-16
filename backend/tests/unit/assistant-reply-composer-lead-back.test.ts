@@ -4,6 +4,7 @@ import { AssistantReplyComposer } from "../../src/modules/chat/services/assistan
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { FallbackReplyComposer, FallbackReplyInput } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import { attachedPhotoRules } from "../../src/modules/chat/services/attachedPhotoRules.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 
 const pendingStep = {
@@ -15,6 +16,7 @@ const pendingStep = {
 const session = (overrides: Partial<PreparedSession> = {}): PreparedSession => ({
   agent: { id: "agent-1", workspaceId: "workspace-1", name: "Agent" },
   conversation: { id: "conversation-1", workspaceId: "workspace-1" },
+  userMessage: { id: "message-1", content: "Are you a real person?" },
   history: [],
   turnRoute: "direct",
   turnFraming: { intentTopic: "assistant identity", isIdentityQuestion: true },
@@ -100,5 +102,22 @@ describe("AssistantReplyComposer lead-back to a parked routine (#1377)", () => {
 
     expect(declines).toHaveLength(1);
     expect(declines[0]?.pendingRoutineStep).toEqual(pendingStep);
+  });
+
+  // A photo turn the planner answers directly reads the photo rules, and so does the decline
+  // composed when that reply comes back blank.
+  it("gives a photo turn's direct reply and its blank-reply decline the photo rules", async () => {
+    const { composer: direct, answer, declines } = composer("");
+    const photoTurn = session({
+      userMessage: { id: "message-1", content: 'thanks, lovely week\n<attached_photo index="1">A sunset over a meadow.</attached_photo>' } as PreparedSession["userMessage"],
+    });
+
+    await direct.composeAnswer(photoTurn, "thanks, lovely week", undefined, undefined);
+    await direct.composeAnswer(session(), "Are you a real person?", undefined, undefined);
+
+    const prompts = (answer.mock.calls as unknown as Array<[{ prompt: string }]>).map(([call]) => call.prompt);
+    expect(prompts[0]).toContain(attachedPhotoRules("reply"));
+    expect(prompts[1]).not.toContain("attached_photo");
+    expect(declines.map((decline) => decline.photosAttached)).toEqual([true, false]);
   });
 });

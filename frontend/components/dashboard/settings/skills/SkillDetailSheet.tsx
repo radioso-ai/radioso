@@ -10,6 +10,7 @@ import { focusQuietListRow } from '@/components/dashboard/settings/quiet-list'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import type { AgentSkill, PlatformAnswerSkill, SkillCapabilityDescriptor } from '@/lib/api-skills'
+import { isRetrievalAnswerSkill, RetrievalAnswersSwitch, type RetrievalAnswersControl } from './RetrievalAnswersSwitch'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
 import { builtInSkillRowDomId, skillRowDomId, skillTargetLabel } from './skill-list-rows'
 import { describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
@@ -18,13 +19,6 @@ export type SkillSheetTarget =
   | { kind: 'authored'; skill: AgentSkill }
   | { kind: 'built-in'; skill: PlatformAnswerSkill }
 
-// Built-in retrieval answers are the one built-in skill an operator can switch off.
-export type RetrievalAnswersControl = {
-  enabled: boolean
-  disabled: boolean
-  onChange: (enabled: boolean) => void
-}
-
 export type SkillSheetActions = {
   isRowPending: (skillId: string) => boolean
   onToggleEnabled: (skill: AgentSkill, enabled: boolean) => void
@@ -32,28 +26,17 @@ export type SkillSheetActions = {
   onDelete: (skill: AgentSkill) => void
 }
 
-export const isRetrievalAnswerSkill = (skill: PlatformAnswerSkill): boolean => skill.name === 'retrieval.answer'
-
-export function RetrievalAnswersSwitch({ control }: { control: RetrievalAnswersControl }) {
-  return (
-    <Switch
-      checked={control.enabled}
-      onCheckedChange={control.onChange}
-      disabled={control.disabled}
-      aria-label="Enable retrieval answers"
-    />
-  )
-}
-
 function AuthoredSkillSheet({
   skill,
   capabilities,
   usage,
+  error,
   actions,
 }: {
   skill: AgentSkill
   capabilities: readonly SkillCapabilityDescriptor[]
   usage: Map<string, SkillUsage> | null
+  error: string | null
   actions: SkillSheetActions
 }) {
   const isBusy = actions.isRowPending(skill.id)
@@ -88,6 +71,8 @@ function AuthoredSkillSheet({
         </>
       )}
     >
+      {/* The sheet covers the section, so a failed toggle or delete started here says so here. */}
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
       <QuietSheetField label="When it runs">{formatInvocationMode(skill.invocationMode)}</QuietSheetField>
       <QuietSheetDetails
         details={[
@@ -112,7 +97,7 @@ function BuiltInSkillSheet({
   return (
     <QuietSheetFrame
       title={skill.displayName}
-      subtitle={isRetrieval ? 'Built in' : 'Built in · always on'}
+      subtitle={!isRetrieval ? 'Built in · always on' : retrievalAnswers.isOff ? 'Built in · off' : 'Built in'}
       headerEnd={isRetrieval ? <RetrievalAnswersSwitch control={retrievalAnswers} /> : undefined}
     >
       <QuietSheetField label="What it does">{skill.description}</QuietSheetField>
@@ -124,6 +109,7 @@ export function SkillDetailSheet({
   target,
   capabilities,
   usage,
+  error,
   retrievalAnswers,
   actions,
   onClose,
@@ -131,6 +117,7 @@ export function SkillDetailSheet({
   target: SkillSheetTarget | null
   capabilities: readonly SkillCapabilityDescriptor[]
   usage: Map<string, SkillUsage> | null
+  error: string | null
   retrievalAnswers: RetrievalAnswersControl
   actions: SkillSheetActions
   onClose: () => void
@@ -144,7 +131,7 @@ export function SkillDetailSheet({
       )}
     >
       {(shown) => shown.kind === 'authored'
-        ? <AuthoredSkillSheet skill={shown.skill} capabilities={capabilities} usage={usage} actions={actions} />
+        ? <AuthoredSkillSheet skill={shown.skill} capabilities={capabilities} usage={usage} error={error} actions={actions} />
         : <BuiltInSkillSheet skill={shown.skill} retrievalAnswers={retrievalAnswers} />}
     </QuietDetailSheet>
   )

@@ -26,28 +26,24 @@ import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retr
 import { CapabilityPicker } from './CapabilityPicker'
 import { McpServersPanel } from './McpServersPanel'
 import { RecentNotifications } from './RecentNotifications'
-import {
-  isRetrievalAnswerSkill,
-  RetrievalAnswersSwitch,
-  SkillDetailSheet,
-  type RetrievalAnswersControl,
-  type SkillSheetActions,
-  type SkillSheetTarget,
-} from './SkillDetailSheet'
+import { isRetrievalAnswerSkill, RetrievalAnswersSwitch, type RetrievalAnswersControl } from './RetrievalAnswersSwitch'
+import { SkillDetailSheet, type SkillSheetActions, type SkillSheetTarget } from './SkillDetailSheet'
 import { SkillForm } from './SkillForm'
 import { builtInSkillRowDomId, skillRowDomId, skillRowSummary } from './skill-list-rows'
 import { countSkillUsage, type SkillUsage } from './skill-usage'
 
 // The sheet holds which skill it shows, not a copy of it, so a toggle or reload shows the current
-// skill and a deleted one closes the sheet.
-type SheetSelection = { kind: 'authored'; id: string } | { kind: 'built-in'; name: string }
+// skill and a deleted one closes the sheet. The selection belongs to one agent: switching agents
+// closes it rather than carrying a built-in's sheet over to another agent.
+type SheetSelection = { agentId: string } & ({ kind: 'authored'; id: string } | { kind: 'built-in'; name: string })
 
 const resolveSheetTarget = (
   selection: SheetSelection | null,
+  agentId: string,
   skills: readonly AgentSkill[],
   platformSkills: readonly PlatformAnswerSkill[],
 ): SkillSheetTarget | null => {
-  if (!selection) return null
+  if (!selection || selection.agentId !== agentId) return null
   if (selection.kind === 'authored') {
     const skill = skills.find((candidate) => candidate.id === selection.id)
     return skill ? { kind: 'authored', skill } : null
@@ -91,14 +87,15 @@ export function SkillList({
   })
   const retrievalAnswers: RetrievalAnswersControl = {
     enabled: retrievalSettingsViewState === 'controls',
+    isOff: retrievalSettingsViewState === 'disabled',
     disabled: retrievalSettingsViewState === 'loading' || retrievalSettingsViewState === 'unavailable',
     onChange: (retrievalEnabled) => onAssistantBehaviorDraft((current) => ({ ...current, retrievalEnabled })),
   }
 
   // Memoized: the sheet keeps the last target it showed, compared by identity.
   const sheetTarget = useMemo(
-    () => resolveSheetTarget(sheetSelection, skills, platformSkills),
-    [sheetSelection, skills, platformSkills],
+    () => resolveSheetTarget(sheetSelection, agentId, skills, platformSkills),
+    [sheetSelection, agentId, skills, platformSkills],
   )
 
   const loadUsage = useCallback(async (version: number) => {
@@ -200,6 +197,7 @@ export function SkillList({
     const outcome = await rowMutations.run(skill.id, () => agentSkillsApi.deleteSkill(agentId, skill.id))
     if (outcome.status === 'applied') {
       setSkills((current) => current.filter((item) => item.id !== skill.id))
+      setSheetSelection(null)
     } else if (outcome.status === 'failed') {
       setError(getApiErrorMessage(outcome.error, 'Failed to delete skill.'))
     }
@@ -209,6 +207,7 @@ export function SkillList({
     isRowPending: rowMutations.isPending,
     onToggleEnabled: (skill, enabled) => void toggleSkill(skill, enabled),
     onEdit: (skill) => {
+      setError(null)
       setSheetSelection(null)
       setEditingSkill(skill)
       setSelectedCapabilityId(null)
@@ -230,13 +229,14 @@ export function SkillList({
       </div>
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
-      {/* A reload after a save keeps the rows on screen; only a first load shows the spinner. */}
-      {isLoading && skills.length === 0 ? (
+      {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4" />
           Loading skills...
         </div>
-      ) : skills.length > 0 ? (
+      ) : null}
+      {/* A reload after a save keeps the rows on screen under the spinner instead of emptying them. */}
+      {skills.length > 0 ? (
         <QuietList>
           {skills.map((skill) => (
             <QuietListRow
@@ -245,7 +245,7 @@ export function SkillList({
               title={`@${skill.name}`}
               summary={skillRowSummary(skill, capabilities, usage)}
               isDimmed={!skill.enabled}
-              onOpen={() => setSheetSelection({ kind: 'authored', id: skill.id })}
+              onOpen={() => setSheetSelection({ agentId, kind: 'authored', id: skill.id })}
               lead={(
                 <Switch
                   checked={skill.enabled}
@@ -257,21 +257,27 @@ export function SkillList({
             />
           ))}
         </QuietList>
-      ) : (
+      ) : !isLoading ? (
         <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
           This agent always answers directly, from documents, or with a clarification. Add a named skill to extend it.
         </p>
-      )}
+      ) : null}
 
       {platformSkills.length > 0 ? (
-        <QuietListGroup label={`Built-in skills · ${platformSkills.length}`} isOpen={builtInsOpen} onOpenChange={setBuiltInsOpen}>
+        // Retrieval answers being off changes how the agent answers, so the closed group says so.
+        <QuietListGroup
+          label={`Built-in skills · ${platformSkills.length}${retrievalAnswers.isOff ? ' · retrieval answers off' : ''}`}
+          isOpen={builtInsOpen}
+          onOpenChange={setBuiltInsOpen}
+        >
           {platformSkills.map((skill) => (
             <QuietListRow
               key={skill.name}
               domId={builtInSkillRowDomId(skill.name)}
               title={skill.displayName}
               summary={skill.description}
-              onOpen={() => setSheetSelection({ kind: 'built-in', name: skill.name })}
+              isDimmed={isRetrievalAnswerSkill(skill) && retrievalAnswers.isOff}
+              onOpen={() => setSheetSelection({ agentId, kind: 'built-in', name: skill.name })}
               lead={isRetrievalAnswerSkill(skill) ? <RetrievalAnswersSwitch control={retrievalAnswers} /> : null}
             />
           ))}
@@ -284,6 +290,7 @@ export function SkillList({
         target={sheetTarget}
         capabilities={capabilities}
         usage={usage}
+        error={error}
         retrievalAnswers={retrievalAnswers}
         actions={sheetActions}
         onClose={() => setSheetSelection(null)}

@@ -170,12 +170,12 @@ export class RetrievalAnswerComposer {
    * says; when the page envelope committed a decline without text, that commitment does,
    * exactly as on the grounded path.
    */
-  private zeroEvidenceDeclineReason(pageAnswer: PageContextAnswer, decline: ComposedDecline, stream: boolean): TurnDeclineReason {
+  private zeroEvidenceDeclineReason(pageAnswer: PageContextAnswer, decline: ComposedDecline, stream: boolean, photosAttached: boolean): TurnDeclineReason {
     if (pageAnswer.kind !== "blank_decline") {
       return decline.declineReason;
     }
     const declineReason = blankDeclineReason(pageAnswer.committed, decline);
-    this.answerMetrics.blankDecline(pageAnswer.committed, declineReason, stream);
+    this.answerMetrics.blankDecline(pageAnswer.committed, declineReason, stream, photosAttached);
     return declineReason;
   }
 
@@ -482,7 +482,7 @@ export class RetrievalAnswerComposer {
           envelope: fallback,
           contextCount: 0,
         });
-        this.answerMetrics.groundingOutcome(grounding, fallback, false);
+        this.answerMetrics.groundingOutcome(grounding, fallback, false, photosAttached);
       } else {
         const decline = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
           query,
@@ -496,7 +496,7 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         }));
         answer = decline.text;
-        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false, photosAttached);
       }
     } else {
       const replyTurn = await this.replyBlocks?.forTurn(session);
@@ -539,7 +539,7 @@ export class RetrievalAnswerComposer {
           signal,
         );
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.answerMetrics.blankDecline(blankDecline, declineReason, false);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, false, photosAttached);
         answer = decline.text;
         grounding = "no_support";
       } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
@@ -553,7 +553,7 @@ export class RetrievalAnswerComposer {
           linkGuard,
           signal,
         );
-        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, false, photosAttached);
         answer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -563,7 +563,7 @@ export class RetrievalAnswerComposer {
         metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
         replyBlocks = replyTurn?.build(envelope);
         grounding = summary;
-        this.answerMetrics.groundingOutcome(summary, envelope, false);
+        this.answerMetrics.groundingOutcome(summary, envelope, false, photosAttached);
       }
     }
 
@@ -694,14 +694,14 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         }));
         rawAnswer = decline.text;
-        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true, photosAttached);
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       // A decline composed without the envelope carried no plan or grades to resolve.
       if (fallbackEnvelope) {
         metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope.extras);
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
-        this.answerMetrics.groundingOutcome(grounding, fallbackEnvelope, true);
+        this.answerMetrics.groundingOutcome(grounding, fallbackEnvelope, true, photosAttached);
       }
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
@@ -849,7 +849,7 @@ export class RetrievalAnswerComposer {
         }
         // Recorded once the decline is composed so the counter carries the same
         // classification the persisted turn outcome does.
-        this.answerMetrics.groundingGateBound(decline.declineReason);
+        this.answerMetrics.groundingGateBound(decline.declineReason, photosAttached);
         const guardedDecline = this.guardLinks(
           linkGuard,
           this.chatAnswerPresenter.presentRetrievalDeclineAnswer(decline.text, decline.declineReason),
@@ -910,7 +910,7 @@ export class RetrievalAnswerComposer {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
         declineReason = blankDeclineReason(blankDecline, decline);
-        this.answerMetrics.blankDecline(blankDecline, declineReason, true);
+        this.answerMetrics.blankDecline(blankDecline, declineReason, true, photosAttached);
         rawAnswer = decline.text;
         grounding = "no_support";
         plannedSuggestions = [];
@@ -928,7 +928,7 @@ export class RetrievalAnswerComposer {
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
-        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, true);
+        this.answerMetrics.unsupportedAnswerDecline(decline.declineReason, true, photosAttached);
         rawAnswer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -939,7 +939,7 @@ export class RetrievalAnswerComposer {
         metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
         replyBlocks = replyTurn?.build(finalized);
         grounding = summary;
-        this.answerMetrics.groundingOutcome(summary, finalized, true);
+        this.answerMetrics.groundingOutcome(summary, finalized, true, photosAttached);
       }
     }
 

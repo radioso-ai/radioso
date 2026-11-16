@@ -445,7 +445,8 @@ imports from `services/`.
   or `out_of_scope` but leaves `answer` empty or whitespace-only is answered with the
   focused decline that commitment promised (usage attempt `blank_decline` /
   `stream_blank_decline`, counted as
-  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on the
+  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`, whose `photo_turn`
+  label, like every count of that counter, says whether the turn carried a photo); on the
   page-context paths the no-page decline words it (usage attempt `grounded_miss` /
   `stream_grounded_miss`, counted the same way). Either decline keeps the reason the
   head committed (`out_of_scope` stays out of scope; `no_support` is a content gap):

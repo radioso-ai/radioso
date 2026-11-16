@@ -9,6 +9,60 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.31.0] - 2026-11-16
+
+### Added
+
+- **whatsapp:** send reply cards as carousels and read taps as picks ([#1787](https://github.com/radioso-ai/radioso/pull/1787))
+- **routines:** author a step's cards in the Document tab and document picking in a routine ([#1785](https://github.com/radioso-ai/radioso/pull/1785))
+- **routines:** show a tool step's results as cards and fill an item slot with the pick ([#1784](https://github.com/radioso-ai/radioso/pull/1784))
+- **chat:** let a visitor pick a card ([#1783](https://github.com/radioso-ai/radioso/pull/1783))
+- **chat:** show cards from a skill's results ([#1780](https://github.com/radioso-ai/radioso/pull/1780))
+- **agents:** turn reply cards on from the dashboard and list a document's pictures ([#1782](https://github.com/radioso-ai/radioso/pull/1782))
+- **documents:** capture images from crawled pages and WordPress ([#1781](https://github.com/radioso-ai/radioso/pull/1781))
+- **privacy:** withdraw a visitor's consent and erase what it covered ([#1779](https://github.com/radioso-ai/radioso/pull/1779))
+- **chat:** attach photos in Test Chat ([#1777](https://github.com/radioso-ai/radioso/pull/1777))
+- **chat:** show reply blocks as image cards in the chat ([#1775](https://github.com/radioso-ai/radioso/pull/1775))
+- **routines:** author consents in the routine editor and Ray, and require one for every sensitive field ([#1774](https://github.com/radioso-ai/radioso/pull/1774))
+- **chat:** present images from an answer's evidence as reply blocks ([#1772](https://github.com/radioso-ai/radioso/pull/1772))
+- **chat:** send a consent button click as a structured decision ([#1759](https://github.com/radioso-ai/radioso/pull/1759))
+- **routines:** ask for consent in conversations and record each decision ([#1758](https://github.com/radioso-ai/radioso/pull/1758))
+- **routines:** ask for explicit consent before a sensitive slot in the routine engine ([#1740](https://github.com/radioso-ai/radioso/pull/1740))
+- **chat:** attach images from the chat composer ([#1771](https://github.com/radioso-ai/radioso/pull/1771))
+- **whatsapp:** read the images visitors send ([#1769](https://github.com/radioso-ai/radioso/pull/1769))
+- **chat:** let visitors and API callers attach images the agent reads ([#1762](https://github.com/radioso-ai/radioso/pull/1762))
+- **llm:** pass images to the chat models that can read them ([#1754](https://github.com/radioso-ai/radioso/pull/1754))
+- **copilot:** open Ray's empty state on the workspace's next setup steps ([#1756](https://github.com/radioso-ai/radioso/pull/1756))
+- **test-chat:** talk to the draft agent by voice from Test Chat ([#1757](https://github.com/radioso-ai/radioso/pull/1757))
+- **copilot:** let an application module contribute a Ray proposal target type ([#1755](https://github.com/radioso-ai/radioso/pull/1755))
+
+### Fixed
+
+- **chat:** forward the privacy notice version and signed identity through the public chat relay ([#1786](https://github.com/radioso-ai/radioso/pull/1786))
+- **embed:** keep operator session code off the visitor chat, and chat on where storage is blocked ([#1773](https://github.com/radioso-ai/radioso/pull/1773))
+
+### Internal
+
+- **images:** share the image codec and bound public fetches ([#1778](https://github.com/radioso-ai/radioso/pull/1778))
+- **routines:** carry routine host effects in one envelope and split files at their size limit (#1544) ([#1739](https://github.com/radioso-ai/radioso/pull/1739))
+- **chat:** split large chat files ahead of reply blocks ([#1764](https://github.com/radioso-ai/radioso/pull/1764))
+
+### Database migrations
+
+This release adds 9 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `254_copilot_proposal_target_type_identifier.sql`
+- `255_voice_sessions_test_chat.sql`
+- `256_visitor_images.sql`
+- `257_document_images.sql`
+- `257_routine_consents.sql`
+- `258_visitor_images_test_chat.sql`
+- `259_document_image_capture.sql`
+- `260_conversation_tool_images.sql`
+- `261_routine_slot_item_type.sql`
+
+[1.31.0]: https://github.com/radioso-ai/radioso/compare/v1.30.0...v1.31.0
+
 ## [1.30.0] - 2026-11-11
 
 ### Added

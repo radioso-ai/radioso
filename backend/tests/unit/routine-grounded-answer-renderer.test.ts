@@ -293,7 +293,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     describe("an ending on the turn a retrieval ran", () => {
       const ending: RoutineStep = { id: "done", kind: "terminal", action: "Tell them a scout will check the shortlisted properties." };
       const endingRun = { requestPassedOn: false, skillOutcomes: [{ skillName: "search_listings", status: "empty" }] };
-      const emptyRetrieval = (): RetrievalPipelineResult => ({ ...retrievalResult(), contexts: [] } as RetrievalPipelineResult);
+      const emptyRetrieval = (): RetrievalPipelineResult => ({ ...retrievalResult(), contexts: [] });
       const renderer = () => createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [], chatAnswerPresenter: chatAnswerPresenter() });
 
       it("leaves an ending to the step reply when the retrieval found nothing", () => {

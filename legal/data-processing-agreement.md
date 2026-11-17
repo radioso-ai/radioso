@@ -1,6 +1,6 @@
 # Data Processing Agreement
 
-**Last updated:** 2026-10-26
+**Last updated:** 2026-11-18
 
 > **Draft for counsel review.** Bracketed items are decisions for counsel or the
 > owner. Do not send before they are resolved.
@@ -146,6 +146,11 @@ Terms of Service.]
   issue #1601 is live on both stacks.]
 - **Access control.** Workspace data is visible only to that workspace's team,
   by role. Radioso's staff console has no access to workspace conversations.
+  When a Radioso engineer needs to read or correct data in the database, they
+  do so through a dedicated identity that signs in with Google Cloud IAM.
+  Google Cloud records who started each session, and the database records
+  every statement the identity runs. Those records are kept for 12 months in
+  the workspace's region and cannot be shortened or deleted.
 - **Logs and telemetry.** Application log lines, and the copy exported to
   Radioso's log tooling, carry ids, counts and coded outcomes, never message
   content. Google Cloud Run's own request log records each request's URL, which

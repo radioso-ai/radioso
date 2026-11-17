@@ -94,6 +94,54 @@ describe("boundary-aware fixed-window chunking", () => {
     }
   });
 
+  it("repeats whole table rows, list items and code lines as overlap, never part of one", async () => {
+    const tableOf = (cell: string) => [
+      "| Room | Floor | Light |",
+      "| --- | --- | --- |",
+      ...Array.from({ length: 30 }, (_, index) => `| Room ${index + 1} with beams | ${cell} | north window |`),
+    ].join("\n");
+    const codeOf = (argument: string) => [
+      "```ts",
+      ...Array.from({ length: 30 }, (_, index) => `const room${index} = loadRoom("room-${index}", { floor: "${argument}" });`),
+      "```",
+    ].join("\n");
+    const longCell = "terracotta tiles laid in a herringbone pattern across the whole floor, worn smooth by a century of use";
+
+    for (const [text, overlaps] of [
+      [tableOf("terracotta tiles"), true],
+      [codeOf("terracotta"), true],
+      [tableOf(longCell), false],
+      [codeOf(longCell), false],
+    ] as const) {
+      const chunks = await chunkFixedWindow(text, 500, 120);
+      expect(chunks.length).toBeGreaterThan(3);
+      expect(chunks.slice(1).some((chunk, index) => chunk.startOffset < chunks[index].endOffset)).toBe(overlaps);
+      for (const chunk of chunks.slice(1)) {
+        expect(text[chunk.startOffset - 1]).toBe("\n");
+        expect(chunk.endOffset === text.length || text[chunk.endOffset] === "\n").toBe(true);
+      }
+    }
+  });
+
+  it("does not leave a short word as a chunk of its own before an unbroken string", async () => {
+    const text = `a ${"x".repeat(500)} done`;
+    const chunks = await chunkFixedWindow(text, 100, 0);
+
+    expect(chunks.slice(0, -1).every((chunk) => chunk.content.length >= 25)).toBe(true);
+    expect(chunks[0].content.startsWith("a x")).toBe(true);
+  });
+
+  it("never ends or starts a chunk at a no-break space", async () => {
+    const text = Array.from({ length: 60 }, (_, index) => `walk ${index}\u00A0km\u00A0north`).join(" ");
+    const chunks = await chunkFixedWindow(text, 50, 10);
+
+    expect(chunks.length).toBeGreaterThan(5);
+    for (const chunk of chunks) {
+      expect(text[chunk.endOffset]).not.toBe("\u00A0");
+      expect(text[chunk.startOffset - 1]).not.toBe("\u00A0");
+    }
+  });
+
   it("starts each chunk where the previous one ended when overlap is zero", async () => {
     const text = propertyCorpus[1].markdown;
     const chunks = await chunkFixedWindow(text, 500, 0);

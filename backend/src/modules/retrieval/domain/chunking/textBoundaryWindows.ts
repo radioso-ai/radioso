@@ -23,8 +23,20 @@ const MIN_FILL_RATIO = 0.5;
  */
 const WORD_CONTEXT_CHARS = 32;
 
+/**
+ * Below this share of the window, a boundary would leave a scrap of a chunk (a short word
+ * before a long unbroken string): the window takes the words and cuts the string instead.
+ */
+const MIN_BOUNDARY_FILL_RATIO = 0.25;
+
 const WHITESPACE = /\s/;
+// Whitespace a line may break at: a no-break space holds "10 km" or "Mr. Rossi" together.
+const BREAKING_WHITESPACE = /[^\S\u00A0\u2007\u202F]/;
+const NO_BREAK_SPACE = /[\u00A0\u2007\u202F]/;
 const MARKDOWN_HEADING_LINE = /^ {0,3}#{1,6}\s/;
+// Lines that stand as units: a table row, a list item, an indented code line.
+const LINE_UNIT = /^\s*\|.*\|\s*$|^\s*(?:[-*+]|\d{1,3}[.)])\s|^(?: {4}|\t)/;
+const CODE_FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/;
 
 /**
  * Splits text into windows of at most `maxChars` that start and end at
@@ -38,8 +50,11 @@ const MARKDOWN_HEADING_LINE = /^ {0,3}#{1,6}\s/;
  * - a window that would end just after a Markdown heading ends before it, so
  *   the heading opens the next window with its section;
  * - the next window repeats up to `overlapChars` of the previous one, starting
- *   at a sentence start inside that tail, else at a word start. An overlap is
- *   never more than half the window it repeats, so every window moves forward.
+ *   at a sentence start inside that tail, else at a word start. After a table
+ *   row, list item or code line it repeats whole lines only, or nothing. An
+ *   overlap is never more than half the window it repeats, so every window
+ *   moves forward;
+ * - a no-break space is never a boundary.
  */
 export const splitIntoBoundedWindows = (text: string, options: BoundedWindowOptions): TextSpan[] => {
   const maxChars = Math.max(1, Math.floor(options.maxChars));
@@ -70,6 +85,8 @@ class TextBoundaries {
    * breaks reaches the start of the document on every call.
    */
   private readonly sentenceStarts: number[];
+  /** [start, end) offsets of fenced code blocks, ascending. */
+  private readonly fencedCode: Array<readonly [number, number]>;
   private readonly wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
   constructor(private readonly text: string) {
@@ -77,6 +94,7 @@ class TextBoundaries {
       new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(text),
       (segment) => segment.index,
     );
+    this.fencedCode = findFencedCode(text);
   }
 
   /** The end of the window that starts at `start` and may run to `limit` (exclusive of the text past it). */
@@ -86,7 +104,7 @@ class TextBoundaries {
       return this.beforeTrailingHeading(sentenceEnd, minimumEnd);
     }
 
-    for (const floor of [minimumEnd, start + 1]) {
+    for (const floor of [minimumEnd, start + Math.max(1, Math.ceil((limit - start) * MIN_BOUNDARY_FILL_RATIO))]) {
       const end = this.lastSpaceAtOrBefore(limit, floor) ?? this.wordStartAtOrBefore(limit, floor);
       if (end !== null) {
         return end;
@@ -103,6 +121,10 @@ class TextBoundaries {
     }
 
     const earliest = Math.max(end - overlapChars, start + Math.ceil((end - start) / 2));
+    if (this.endsOnLineUnit(start, end)) {
+      const lineStart = skipWhitespace(this.text, this.lineStartAtOrAfter(earliest, end));
+      return lineStart > start && lineStart < end ? lineStart : end;
+    }
     const finders = [
       () => this.sentenceStartAtOrAfter(earliest),
       () => this.wordStartAfterSpace(earliest, end),
@@ -162,7 +184,7 @@ class TextBoundaries {
     for (const segment of this.wordSegmenter.segment(this.text.slice(sliceStart, sliceEnd))) {
       const boundary = sliceStart + segment.index;
       // The slice's first character starts a segment wherever the slice was cut.
-      if ((segment.index > 0 || sliceStart === 0) && boundary >= from && boundary <= to) {
+      if ((segment.index > 0 || sliceStart === 0) && boundary >= from && boundary <= to && !this.touchesNoBreakSpace(boundary)) {
         boundaries.push(boundary);
       }
     }
@@ -175,7 +197,7 @@ class TextBoundaries {
   /** The offset of the last whitespace character in [floor, offset], where the window may end. */
   private lastSpaceAtOrBefore(offset: number, floor: number): number | null {
     for (let index = offset; index >= floor; index -= 1) {
-      if (WHITESPACE.test(this.text[index] ?? "")) {
+      if (BREAKING_WHITESPACE.test(this.text[index] ?? "")) {
         return index;
       }
     }
@@ -185,8 +207,35 @@ class TextBoundaries {
   /** The first word after a whitespace run that begins in [offset, end). */
   private wordStartAfterSpace(offset: number, end: number): number {
     for (let index = offset; index < end; index += 1) {
-      if (WHITESPACE.test(this.text[index] ?? "")) {
+      if (BREAKING_WHITESPACE.test(this.text[index] ?? "")) {
         return skipWhitespace(this.text, index);
+      }
+    }
+    return end;
+  }
+
+  private touchesNoBreakSpace(offset: number): boolean {
+    return NO_BREAK_SPACE.test(this.text[offset] ?? "") || NO_BREAK_SPACE.test(this.text[offset - 1] ?? "");
+  }
+
+  /**
+   * Whether the window's last line stands as a unit — a table row, a list item, or a line
+   * of code — so the next window repeats whole lines of it or none.
+   */
+  private endsOnLineUnit(start: number, end: number): boolean {
+    const lineStart = this.lastNonBlankLineStartAtOrAfter(end, start);
+    if (lineStart === null) {
+      return false;
+    }
+    const line = this.text.slice(lineStart, end).split("\n", 1)[0] ?? "";
+    return LINE_UNIT.test(line) || this.fencedCode.some(([from, to]) => lineStart >= from && lineStart < to);
+  }
+
+  /** The first line start in [offset, end), else `end`. */
+  private lineStartAtOrAfter(offset: number, end: number): number {
+    for (let index = offset; index < end; index += 1) {
+      if (index === 0 || this.text[index - 1] === "\n") {
+        return index;
       }
     }
     return end;
@@ -225,6 +274,33 @@ class TextBoundaries {
     return floor > 0 && this.text[floor - 1] === "\n" && floor < lineEnd ? floor : null;
   }
 }
+
+/** [start, end) offsets of the fenced code blocks in `text`; an unclosed fence runs to the end. */
+const findFencedCode = (text: string): Array<readonly [number, number]> => {
+  const blocks: Array<readonly [number, number]> = [];
+  let openedAt: number | null = null;
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    const newline = text.indexOf("\n", lineStart);
+    const lineEnd = newline < 0 ? text.length : newline;
+    if (CODE_FENCE_LINE.test(text.slice(lineStart, Math.min(lineEnd, lineStart + 8)))) {
+      if (openedAt === null) {
+        openedAt = lineStart;
+      } else {
+        blocks.push([openedAt, lineEnd]);
+        openedAt = null;
+      }
+    }
+    if (newline < 0) {
+      break;
+    }
+    lineStart = newline + 1;
+  }
+  if (openedAt !== null) {
+    blocks.push([openedAt, text.length]);
+  }
+  return blocks;
+};
 
 const skipWhitespace = (text: string, offset: number): number => {
   let index = offset;

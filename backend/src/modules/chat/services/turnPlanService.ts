@@ -300,12 +300,13 @@ const turnPlanOutputShapeBlock = (input: {
     "Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason. turnKind belongs only on the enclosing rewrite object.\n" +
     "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
     "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
-    "resolutionNote is optional prose scratch space: write it before the other rewrite fields, naming the concrete item this turn resolves to and how, or use null on a fresh, self-contained request.\n" +
+    "subjectMentions comes first: when the latest message refers back to something instead of naming it, up to the five most recent concrete subjects the user named, oldest first, as the user wrote them; otherwise an empty array.\n" +
+    "resolutionNote is optional prose scratch space: write it after subjectMentions and before the other rewrite fields, naming the concrete item this turn resolves to and how, or use null on a fresh, self-contained request.\n" +
     (input.hasQuickReplyLane
       ? "requestPresent, openQuestion, and quickReply are always present and always last, in that order; quickReply is kind none with an empty text unless the Quick Reply Rules allow a reply.\n"
       : "") +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null","responseLanguageTag":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"subjectMentions":["string"],"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null","responseLanguageTag":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /**
@@ -443,11 +444,12 @@ const TURN_KIND_VALUES = [
 
 const confidenceSchema = z.number().finite().min(0).max(1);
 
-// `resolutionNote` is optional (not just nullable) so the schema-less fallback
-// contract — providers without structured output, which follow the prompt's
-// prose Output Shape Rules rather than this zod shape — still parses when the
-// field is omitted entirely, not just when it is null.
+// `subjectMentions` and `resolutionNote` are optional (not just nullable) so the
+// schema-less fallback contract — providers without structured output, which follow
+// the prompt's prose Output Shape Rules rather than this zod shape — still parses
+// when either field is omitted entirely, not just when it is null.
 const rewriteSchema = z.object({
+  subjectMentions: z.array(z.string()).optional(),
   resolutionNote: z.string().nullable().optional(),
   turnKind: z.enum(TURN_KIND_VALUES),
   proposedActiveSubject: z.string().nullable(),
@@ -561,8 +563,10 @@ const pageReadJsonSchema = {
 // collapse at low reasoning effort, not reasoning effort itself: reordering
 // derivation-first plus adding the leading `resolutionNote` scratch field
 // matches "low"'s accuracy at "none" with fewer output tokens. See
-// CHAT_BEHAVIOR.turnPlanning.reasoningEffort in behaviorConfig.ts. The same rule
-// puts `quickReply` last in the plan: the model writes a reply only after it has
+// CHAT_BEHAVIOR.turnPlanning.reasoningEffort in behaviorConfig.ts. For the same
+// reason `subjectMentions` leads: a reference back to a course the user named a few
+// turns earlier resolved to the broader category they gave before it, until the model
+// listed the user's mentions before choosing one (#1744). The same rule puts `quickReply` last in the plan: the model writes a reply only after it has
 // committed the route and every classification that decides whether one is allowed,
 // and only after `requestPresent` and `openQuestion` have said whether the message asks
 // for anything and whether the conversation is waiting on the user.
@@ -570,6 +574,7 @@ const rewriteJsonSchema = {
   type: ["object", "null"],
   additionalProperties: false,
   required: [
+    "subjectMentions",
     "resolutionNote",
     "turnKind",
     "proposedActiveSubject",
@@ -585,6 +590,12 @@ const rewriteJsonSchema = {
     "confidence",
   ],
   properties: {
+    subjectMentions: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "When the latest user message refers back to something instead of naming it: up to the five most recent concrete subjects the user named in the conversation, oldest first, each as the user wrote it: a proper name or title, a category, an edition, a date or date range. A user message counts even when it does not answer what the assistant asked. Otherwise, or when the user named none, an empty array.",
+    },
     resolutionNote: {
       type: ["string", "null"],
       description:

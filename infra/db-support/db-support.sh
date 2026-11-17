@@ -40,6 +40,43 @@ random_suffix() {
   od -An -N4 -tx1 /dev/urandom | tr -d ' \n'
 }
 
+# Starts the db-support job with the run id and mode as its arguments, and waits for it. This calls
+# the Cloud Run Admin API directly: some gcloud releases send an override field the API rejects.
+execute_job() {
+  local run="$1" mode="$2" token operation name done_flag
+  token="$(gcloud auth print-access-token)"
+  operation="$(curl -sS -X POST \
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+    -d "{\"overrides\":{\"containerOverrides\":[{\"args\":[\"$run\",\"$mode\"]}]}}" \
+    "https://run.googleapis.com/v2/projects/$project/locations/$region/jobs/$prefix-db-support:run")"
+  name="$(json_field name <<<"$operation")"
+  if [ -z "$name" ]; then
+    echo "db-support: the job did not start: $operation" >&2
+    return 1
+  fi
+  echo "db-support: run $run started" >&2
+  for _ in $(seq 1 180); do
+    sleep 5
+    operation="$(curl -sS -H "Authorization: Bearer $token" "https://run.googleapis.com/v2/$name")"
+    done_flag="$(json_field done <<<"$operation")"
+    [ "$done_flag" = "True" ] || continue
+    if [ -n "$(json_field error <<<"$operation")" ]; then
+      echo "db-support: run $run failed: $(json_field error <<<"$operation")" >&2
+      return 1
+    fi
+    return 0
+  done
+  echo "db-support: gave up waiting for run $run after 15 minutes" >&2
+  return 1
+}
+
+# Prints one top-level field of the JSON object on stdin, or nothing when it is absent.
+json_field() {
+  python3 -c 'import json, sys
+value = json.load(sys.stdin).get(sys.argv[1])
+print("" if value is None else value)' "$1"
+}
+
 query() {
   local file="$1" mode="read"
   [ -f "$file" ] || { echo "no such file: $file" >&2; exit 2; }
@@ -55,8 +92,7 @@ query() {
 
   gcloud storage cp --quiet "$file" "gs://$bucket/$run.query.sql" --project="$project"
   local status=0
-  gcloud run jobs execute "$prefix-db-support" --project="$project" --region="$region" \
-    --args="$run,$mode" --wait --quiet || status=$?
+  execute_job "$run" "$mode" || status=$?
   gcloud storage cat "gs://$bucket/$run.result.txt" --project="$project" ||
     echo "db-support: run $run wrote no result" >&2
   gcloud storage rm --quiet "gs://$bucket/$run.*" --project="$project" || true

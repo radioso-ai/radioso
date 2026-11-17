@@ -70,6 +70,12 @@ variable "db_point_in_time_recovery_enabled" {
   default     = false
 }
 
+variable "db_support_access_enabled" {
+  description = "Whether engineers reach this stack's database through the audited db-support job. Turning it on restarts the instance; apply the foundation root first."
+  type        = bool
+  default     = true
+}
+
 variable "db_tier" {
   description = "Cloud SQL tier for staging. This is the main cost lever because Cloud SQL does not auto-scale to zero."
   type        = string

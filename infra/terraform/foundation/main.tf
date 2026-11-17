@@ -35,6 +35,11 @@ locals {
       account_id   = "${local.resource_name_prefix}-worker-task"
       display_name = "Radioso ${var.environment} worker task invoker"
     }
+    # The identity engineers' database queries run as (db_access_audit.tf).
+    db_support = {
+      account_id   = "${local.resource_name_prefix}-db-support"
+      display_name = "Radioso ${var.environment} engineer database access"
+    }
   }
 
   # The routine Terraform root manages these and nothing above resource-level IAM, so this

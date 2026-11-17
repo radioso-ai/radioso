@@ -54,6 +54,20 @@ resource "google_sql_database_instance" "postgres" {
       }
     }
 
+    # Engineer database access (db_support_access.tf) signs in with IAM and is recorded by pgAudit.
+    # Turning pgAudit on restarts the instance, so the switch defaults to off and is turned on per
+    # stack in a quiet window.
+    dynamic "database_flags" {
+      for_each = var.db_support_access_enabled ? {
+        "cloudsql.iam_authentication" = "on"
+        "cloudsql.enable_pgaudit"     = "on"
+      } : {}
+      content {
+        name  = database_flags.key
+        value = database_flags.value
+      }
+    }
+
     # Pinned rather than left to the provider's defaults, because deleted conversation data lives on
     # in backups until they age out: seven daily backups, and seven days of point-in-time recovery
     # logs where recovery is on. The data retention docs state the same windows.

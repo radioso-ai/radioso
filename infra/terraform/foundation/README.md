@@ -6,6 +6,8 @@ exclusions that route logs.
 
 - the CI identities GitHub Actions impersonates, one per workflow, with their project roles;
 - the four application service accounts and the IAM the runtime services need between them;
+- the engineer database access identity, its Cloud SQL sign-in role, and the bucket that keeps
+  the record of what it ran (see [Engineer database access](#engineer-database-access));
 - the GitHub OIDC workload identity pool and provider, and which workflow may impersonate which
   identity;
 - the Terraform identity's access to the routine Terraform state bucket; and
@@ -154,6 +156,25 @@ terraform apply
 
 The second apply deletes the bucket and the entries it holds. Google keeps a deleted bucket's id
 reserved for 7 days, so turning the routing back on inside that window fails until it frees.
+
+## Engineer database access
+
+Engineers query a stack's database through its db-support job, which runs as the
+`radioso-<env>-db-support` account (`../../db-support/README.md`). This root creates that
+account and grants it `roles/cloudsql.instanceUser`, the role that lets it sign in to Cloud SQL
+with IAM. The grant is project-wide, but the account can only sign in where it has a database
+user, and only its own environment's instance gives it one. The Terraform identity may attach the
+account to the job, as it may every account in `runtime_service_accounts`.
+
+`db_access_audit.tf` also adds a `radioso-<env>-db-access` bucket in the environment's region,
+with 12-month retention, and a sink that routes the instance's Cloud SQL Data Access audit
+entries there. Those entries are the pgAudit records of each statement and each IAM sign-in.
+Cloud SQL writes them only when the project's Data Access audit logs for
+`cloudsql.googleapis.com` are on. That setting is project-wide, so the environment with
+`manage_project_services` owns it: `live` turns it on for the project it shares with `live-eu`.
+
+The sink copies entries rather than moving them. On `live-eu` the regional sink also stores them
+for 30 days, and on the other environments `_Default` does.
 
 ## Changing a role
 

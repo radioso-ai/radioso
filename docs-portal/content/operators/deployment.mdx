@@ -339,6 +339,12 @@ Set it per stack as `{ day = 7, hour = 2 }`. `day` runs from 1 (Monday) to 7 (Su
 
 Changing the window updates the instance in place without a restart, so it can go out with any apply. The window governs planned maintenance; Cloud SQL can still restart an instance outside it for an urgent fix.
 
+## Engineer database access
+
+The Cloud SQL instance has no public address, so an engineer who needs to read or fix data runs SQL from inside the stack's network. With `db_support_access_enabled` on, the bundled Terraform gives each stack a `<prefix>-db-support` Cloud Run job for that. The job signs in to Postgres as its own service account with IAM database authentication, and pgAudit records each statement it runs. Cloud Run records who started each run, and the foundation root keeps the statement records for 12 months in a log bucket in the stack's region. The job reads its query from a results bucket and writes its result back there, so result rows stay out of the log buckets. The bucket deletes them after a day.
+
+The switch starts off, because turning pgAudit on restarts the instance. Apply the foundation root first, which creates the service account. Then turn the switch on in the maintenance window and run the one-time setup, which grants the job's user table access and turns auditing on for every role except the application's own. `infra/db-support/README.md` in the repository has the commands, the audit queries and the rollout.
+
 ## Conversation erasure keys
 
 The `228_conversation_erasure_*` migrations give each table that names a conversation a cascading key, one table per migration, and add the indexes the cascade and the erasers look rows up by. Each one waits at most three seconds for its table's lock; a deploy that hits that rolls back whole, and running it again is safe. `229_conversation_erasure_links_validate` then removes rows whose conversation is already gone and validates the keys without blocking reads or writes.

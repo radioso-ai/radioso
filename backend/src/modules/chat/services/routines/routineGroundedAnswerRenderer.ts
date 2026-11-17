@@ -318,7 +318,9 @@ export const createRoutineGroundedAnswerRenderer = (
   // Which reply the step gets is read off the staged context alone; the answer is generated
   // only when the reply is rendered or streamed. A step that shows a skill step's results
   // (#1763) is written from them on the turn they are staged; otherwise a step grounds on a
-  // staged retrieval.
+  // staged retrieval. An ending on a retrieval that found nothing has nothing to ground: a
+  // decline is the wrong reply for the message that ends the flow, so the step reply writes it
+  // from the ending and what the run did (#1820).
   const prepare = (input: RoutineGroundedAnswerInput): PendingRenderableTurn | null => {
     const presenting = routinePresentingStepReply(options, input);
     if (presenting) {
@@ -331,7 +333,7 @@ export const createRoutineGroundedAnswerRenderer = (
       });
     }
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
-    if (!retrieval) {
+    if (!retrieval || (input.ending && retrieval.contexts.length === 0)) {
       return null;
     }
     return reply(() => grounded(input, retrieval), finish);

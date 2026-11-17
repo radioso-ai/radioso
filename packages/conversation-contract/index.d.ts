@@ -1791,7 +1791,8 @@ export interface RoutineGroundedAnswerRenderer {
   prepare?(input: RoutineGroundedAnswerInput): PendingRenderableTurn | null;
 }
 
-export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn">;
+/** `ending` marks a step the run ends on (#1820): with nothing retrieved, an ending is not groundable. */
+export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn" | "ending">;
 
 /**
  * Tool-backed skills. A host that exposes tools (MCP, OpenAPI, local functions) implements

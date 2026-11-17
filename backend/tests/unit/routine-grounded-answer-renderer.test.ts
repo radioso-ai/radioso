@@ -287,6 +287,28 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       })).toBeNull();
     });
 
+    // An ending ends the flow: on a retrieval that found nothing a decline is the wrong reply, so the
+    // step reply writes it from the ending and what the run did (#1820). A chat step still declines
+    // and leads back, and an ending with evidence still grounds on it.
+    describe("an ending on the turn a retrieval ran", () => {
+      const ending: RoutineStep = { id: "done", kind: "terminal", action: "Tell them a scout will check the shortlisted properties." };
+      const endingRun = { requestPassedOn: false, skillOutcomes: [{ skillName: "search_listings", status: "empty" }] };
+      const emptyRetrieval = (): RetrievalPipelineResult => ({ ...retrievalResult(), contexts: [] } as RetrievalPipelineResult);
+      const renderer = () => createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [], chatAnswerPresenter: chatAnswerPresenter() });
+
+      it("leaves an ending to the step reply when the retrieval found nothing", () => {
+        expect(renderer().prepare!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()), ending: endingRun })).toBeNull();
+      });
+
+      it("grounds an ending on the evidence the retrieval found", () => {
+        expect(renderer().prepare!({ step: ending, steering: [], turn: turnWithRetrieval(retrievalResult()), ending: endingRun })).not.toBeNull();
+      });
+
+      it("still grounds a chat step on a retrieval that found nothing, so it declines and leads back", () => {
+        expect(renderer().prepare!({ step, steering: [], turn: turnWithRetrieval(emptyRetrieval()) })).not.toBeNull();
+      });
+    });
+
     it("generates nothing until asked, then renders what render() renders", async () => {
       const render = vi.fn(async (): Promise<ChatPresentedAnswer> => presented());
       const options = {

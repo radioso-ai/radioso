@@ -188,8 +188,8 @@ describe("RoutineRegistry ranked activation", () => {
     ]));
     const withSlots = registration("match");
     withSlots.routine.slots = [
-      { key: "region", type: "string" },
-      { key: "budget", type: "number" },
+      { id: "s1", key: "region", type: "text", required: false },
+      { id: "s2", key: "budget", type: "number", required: false },
     ];
 
     const registry = new RoutineRegistry([withSlots], { policy });

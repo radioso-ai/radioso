@@ -79,7 +79,7 @@ variable "db_point_in_time_recovery_enabled" {
 variable "db_support_access_enabled" {
   description = "Whether engineers reach this stack's database through the audited db-support job. Turning it on restarts the instance; apply the foundation root first."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_tier" {

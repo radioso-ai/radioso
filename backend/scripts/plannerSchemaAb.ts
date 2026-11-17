@@ -45,6 +45,8 @@ interface Expectation {
   anyOf?: string[];
   /** No entry may appear — catches vague placeholders like "the second option". */
   noneOf?: string[];
+  /** proposedActiveSubject (lowercased) must contain this — the subject itself, not just the query text. */
+  subject?: string;
 }
 
 interface AbCase {
@@ -53,6 +55,19 @@ interface AbCase {
   query: string;
   expect: Expectation;
 }
+
+/**
+ * The visitor answers "which course?" with a category, then names the course in a message the
+ * assistant does not acknowledge, and two turns later asks about "the event" (#1744).
+ */
+const courseNamedBehindContactForm = (course: string): AbCase["history"] => [
+  { role: "user", content: "Vorrei partecipare all'evento dal 3/10/2031 al 5/10/2031" },
+  { role: "assistant", content: "Che bello! A quale corso vorresti partecipare?" },
+  { role: "user", content: "Corso residenziale" },
+  { role: "assistant", content: "Perfetto. Per procedere mi servono il tuo nome e il tuo indirizzo email." },
+  { role: "user", content: course },
+  { role: "assistant", content: "Grazie. Per completare la richiesta mi servono il tuo nome e il tuo indirizzo email." },
+];
 
 const CASES: AbCase[] = [
   {
@@ -175,6 +190,18 @@ const CASES: AbCase[] = [
     expect: { route: "retrieval", anyOf: ["okta"] },
   },
   {
+    id: "referent-named-behind-category-it",
+    history: courseNamedBehindContactForm("Il silenzio del cuore"),
+    query: "Mi mandi un preventivo completo compreso di pernottamento per l'evento?",
+    expect: { route: "retrieval", subject: "silenzio del cuore" },
+  },
+  {
+    id: "referent-named-behind-category-split-it",
+    history: courseNamedBehindContactForm("Il respiro super consapevole"),
+    query: "Mi mandi un preventivo completo compreso di pernottamento per l'evento?",
+    expect: { route: "retrieval", subject: "respiro super consapevole" },
+  },
+  {
     id: "direct-thanks",
     history: [
       { role: "user", content: "How do refunds work?" },
@@ -263,6 +290,10 @@ const score = (plan: TurnPlan | null, expectation: Expectation): { ok: boolean; 
   }
   for (const needle of expectation.noneOf ?? []) {
     if (text.includes(needle)) return { ok: false, why: `placeholder "${needle}"` };
+  }
+  const subject = plan.rewriteProposal?.proposedActiveSubject?.toLowerCase() ?? "";
+  if (expectation.subject && !subject.includes(expectation.subject)) {
+    return { ok: false, why: `subject="${subject}"` };
   }
   return { ok: true, why: "" };
 };

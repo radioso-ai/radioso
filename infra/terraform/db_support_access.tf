@@ -1,9 +1,9 @@
 # Engineer access to the stack's database. Engineers never connect as the application's own user:
 # they run the `<prefix>-db-support` job, which signs in to Postgres as the db-support service
-# account through IAM database authentication. pgAudit records every statement any role but the
-# application's runs (infra/db-support/setup.sql), and the foundation root keeps those records for
-# 12 months. The job reads its query from, and writes its result to, a bucket that keeps objects
-# for a day, so query results never reach the log buckets.
+# account through IAM database authentication. pgAudit records every statement it runs
+# (infra/db-support/setup.sql), and the foundation root keeps those records for 12 months. The job
+# reads its query from, and writes its result to, a bucket that keeps objects for a day, so result
+# rows stay out of the job's log.
 #
 # The foundation root creates the service account and its Cloud SQL login grant, so apply it
 # before turning `db_support_access_enabled` on. infra/db-support/README.md has the rollout.
@@ -64,14 +64,16 @@ resource "google_storage_bucket_iam_member" "db_support_results_access" {
   member = "serviceAccount:${data.google_service_account.db_support[0].email}"
 }
 
-# Cloud Storage volumes on a job need the google-beta provider at the pinned provider version.
+# Cloud Storage volumes on a job need the google-beta provider and the BETA launch stage at the
+# pinned provider version.
 resource "google_cloud_run_v2_job" "db_support" {
   count    = var.db_support_access_enabled ? 1 : 0
   provider = google-beta
 
-  name     = "${local.resource_name_prefix}-db-support"
-  location = var.region
-  project  = var.project_id
+  name         = "${local.resource_name_prefix}-db-support"
+  location     = var.region
+  project      = var.project_id
+  launch_stage = "BETA"
 
   template {
     task_count = 1
@@ -91,7 +93,9 @@ resource "google_cloud_run_v2_job" "db_support" {
       }
 
       containers {
-        image   = "docker.io/library/postgres:16-alpine"
+        # Pinned by digest, because the job holds write access to every table. db-support.sh
+        # pins the same image for setup; bump both together.
+        image   = "docker.io/library/postgres:16-alpine@sha256:81e77a4833487b8132fe4b00bedd39dc3f74b8641e387f19312a48f7de218c2e"
         command = ["/bin/sh", "-c", file("${path.module}/../db-support/run-query.sh"), "db-support"]
 
         env {

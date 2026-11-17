@@ -2,11 +2,11 @@
 # Engineer access to a hosted stack's database. See README.md in this directory.
 #
 #   db-support.sh query <staging|live|live-eu> <file.sql> [--write]
-#   db-support.sh setup <staging|live|live-eu>
+#   db-support.sh setup|teardown <staging|live|live-eu>
 #
 # `query` runs the file through the stack's audited db-support job and prints the result.
 # `setup` runs setup.sql once per stack, as the application's own user, after Terraform has turned
-# on `db_support_access_enabled`.
+# on `db_support_access_enabled`; `teardown` runs teardown.sql before Terraform turns it off.
 set -euo pipefail
 
 usage() {
@@ -33,6 +33,9 @@ esac
 prefix="radioso-$stack"
 support_user="$prefix-db-support@$project.iam"
 
+# Pinned like the db-support job's image in ../terraform/db_support_access.tf; bump both together.
+image="docker.io/library/postgres:16-alpine@sha256:81e77a4833487b8132fe4b00bedd39dc3f74b8641e387f19312a48f7de218c2e"
+
 random_suffix() {
   od -An -N4 -tx1 /dev/urandom | tr -d ' \n'
 }
@@ -50,31 +53,33 @@ query() {
   local run
   run="$(date -u +%Y%m%d-%H%M%S)-$(random_suffix)"
 
-  gcloud storage cp --quiet "$file" "gs://$bucket/$run/query.sql" --project="$project"
+  gcloud storage cp --quiet "$file" "gs://$bucket/$run.query.sql" --project="$project"
   local status=0
   gcloud run jobs execute "$prefix-db-support" --project="$project" --region="$region" \
     --args="$run,$mode" --wait --quiet || status=$?
-  gcloud storage cat "gs://$bucket/$run/result.txt" --project="$project" ||
+  gcloud storage cat "gs://$bucket/$run.result.txt" --project="$project" ||
     echo "db-support: run $run wrote no result" >&2
-  gcloud storage rm --recursive --quiet "gs://$bucket/$run" --project="$project" || true
+  gcloud storage rm --quiet "gs://$bucket/$run.*" --project="$project" || true
   exit "$status"
 }
 
-setup() {
-  local here job env_file status=0
+# Runs one of this directory's SQL files as the application's own user, from a throwaway job on the
+# backend's service account. Only setup and teardown use this path.
+run_as_app() {
+  local sql_file="$1" here job status=0
   here="$(cd "$(dirname "$0")" && pwd)"
-  job="$prefix-db-support-setup-$(random_suffix)"
+  job="$prefix-db-support-app-$(random_suffix)"
   env_file="$(mktemp)"
-  trap 'rm -f "$env_file"' RETURN
+  trap 'rm -f "$env_file"' EXIT
 
   {
     echo "SUPPORT_USER: \"$support_user\""
     echo "SQL: |"
-    sed 's/^/  /' "$here/setup.sql"
+    sed 's/^/  /' "$here/$sql_file"
   } >"$env_file"
 
   gcloud run jobs create "$job" --project="$project" --region="$region" \
-    --image=docker.io/library/postgres:16-alpine \
+    --image="$image" \
     --service-account="$prefix-backend@$project.iam.gserviceaccount.com" \
     --network="$prefix-vpc" --subnet="$prefix-subnet" --vpc-egress=private-ranges-only \
     --set-secrets="DATABASE_URL=$prefix-database-url:latest" \
@@ -103,6 +108,7 @@ case "$command" in
     [ $# -ge 3 ] || usage
     query "$3" "${4:-}"
     ;;
-  setup) setup ;;
+  setup) run_as_app setup.sql ;;
+  teardown) run_as_app teardown.sql ;;
   *) usage ;;
 esac

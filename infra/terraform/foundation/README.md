@@ -36,7 +36,7 @@ terraform apply
 
 Applying needs a project owner, or a principal holding Project IAM Admin, Role Administrator,
 Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, Storage Admin on the
-state bucket, and Logs Configuration Writer where `regional_log_bucket_enabled` is on.
+state bucket, and Logs Configuration Writer.
 
 Every plan also reads the live project and service-account policies. Two `check` blocks warn when
 a CI identity holds a project role, or trusts a workload identity principal, that this module
@@ -83,7 +83,7 @@ The `ci_service_account_emails` output lists the accounts for an environment.
 | `roles/storage.admin` | The documents bucket and its bindings |
 | `roles/serviceusage.serviceUsageAdmin` | Project API enablement, where `manage_project_services` is on |
 | Custom `radioso_<env>_terraform_logging` | Log-based metrics, plus `_Default` log bucket settings where `manage_project_services` is on. Not `roles/logging.configWriter`, whose sink permissions could route every log line out of the project |
-| `roles/iam.serviceAccountUser` on the four runtime accounts | Attaching them to Cloud Run services and scheduler jobs |
+| `roles/iam.serviceAccountUser` on the runtime accounts | Attaching them to Cloud Run services, scheduler jobs and the db-support job |
 | `roles/storage.objectAdmin` on the state bucket | Routine Terraform state |
 
 The routine roots can also put a load balancer and CDN in front of the frontend
@@ -168,7 +168,7 @@ account to the job, as it may every account in `runtime_service_accounts`.
 
 `db_access_audit.tf` also adds a `radioso-<env>-db-access` bucket in the environment's region,
 with 12-month retention, and a sink that routes the instance's Cloud SQL Data Access audit
-entries there. Those entries are the pgAudit records of each statement and each IAM sign-in.
+entries there. pgAudit's record of each statement arrives as one of those entries.
 Cloud SQL writes them only when the project's Data Access audit logs for
 `cloudsql.googleapis.com` are on. That setting is project-wide, so the environment with
 `manage_project_services` owns it: `live` turns it on for the project it shares with `live-eu`.

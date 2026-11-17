@@ -7,8 +7,8 @@
 locals {
   db_access_audit_bucket_id = "${local.resource_name_prefix}-db-access"
 
-  # pgAudit records arrive as Cloud SQL Data Access audit entries, as do IAM sign-ins to the
-  # instance. The instance is matched as in the regional log filter (logging.tf).
+  # pgAudit records arrive as Cloud SQL Data Access audit entries. The instance is matched as in the
+  # regional log filter (logging.tf).
   db_access_audit_filter = join(" AND ", [
     "LOG_ID(\"cloudaudit.googleapis.com/data_access\")",
     "resource.type=\"cloudsql_database\"",
@@ -51,7 +51,7 @@ resource "google_logging_project_bucket_config" "db_access_audit" {
 resource "google_logging_project_sink" "db_access_audit" {
   project     = var.project_id
   name        = local.db_access_audit_bucket_id
-  description = "Routes the ${var.environment} database's pgAudit records and IAM sign-ins to their 12-month bucket."
+  description = "Routes the ${var.environment} database's Data Access audit entries, pgAudit records among them, to their 12-month bucket."
   filter      = local.db_access_audit_filter
 
   # A sink writing to a bucket in its own project is authorized without an IAM grant.

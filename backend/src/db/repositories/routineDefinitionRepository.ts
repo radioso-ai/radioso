@@ -4,6 +4,7 @@ import { sql, type Transaction } from "kysely";
 
 import {
   routineDefinitionDraftInputSchema,
+  routineMatchesDraft,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDeleteDraftResult,
@@ -189,6 +190,11 @@ const definitionColumns = (draft: RoutineDefinitionDraftInput) => ({
   consents: toJsonb(draft.consents ?? []),
 });
 
+/** An operation's result when it wrote nothing: the agent draft is left as it was. */
+class UnchangedWrite<T> {
+  constructor(readonly value: T) {}
+}
+
 export class RoutineDefinitionRepository {
   constructor(private readonly db: Db) {}
 
@@ -273,6 +279,12 @@ export class RoutineDefinitionRepository {
       // before the collapse stays editable through the id its lineage is addressed by.
       const current = await this.findByIdOn(trx, agentId, id);
       if (!current) throw new Error(`routine_definition_update_conflict:${id}`);
+      // A save that restates the stored routine changes nothing an operator could publish, so it
+      // must not bump updatedAt, which the draft-versus-release comparison reads. A stale
+      // write guard still conflicts: the caller's view of the routine is out of date either way.
+      const guardMatches = options.expectedUpdatedAt === undefined
+        || current.updatedAt.getTime() === options.expectedUpdatedAt.getTime();
+      if (guardMatches && routineMatchesDraft(current, draft)) return new UnchangedWrite(current);
       const updated = await trx.updateTable("routine_definition")
         .set({
           name: draft.name,
@@ -685,10 +697,11 @@ export class RoutineDefinitionRepository {
   private async mutateAgentDraft<T>(
     workspaceId: string,
     agentId: string,
-    operation: (trx: Transaction<DB>) => Promise<T>,
+    operation: (trx: Transaction<DB>) => Promise<T | UnchangedWrite<T>>,
   ): Promise<T> {
     return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
       const result = await operation(trx);
+      if (result instanceof UnchangedWrite) return { result: result.value, unchanged: true };
       if (result === null ||
         (typeof result === "object" && result !== null && "outcome" in result && result.outcome !== "deleted")) {
         return { result, unchanged: true };

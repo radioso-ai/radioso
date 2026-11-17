@@ -543,6 +543,26 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     )).rejects.toMatchObject({ code: "23514" });
   });
 
+  it("leaves the routine and the agent draft untouched when a save writes the stored definition (#1819)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("equal-write");
+    const created = await repository.createDraftWithAgentDraft(workspaceId, agentId, base);
+    const generationOf = async () => (await database.query<{ generation: number }>(
+      `SELECT generation FROM agent_drafts WHERE agent_id = $1`,
+      [agentId],
+    ))[0]?.generation;
+    const before = await generationOf();
+
+    const rewritten = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, base);
+
+    expect(rewritten.updatedAt.getTime()).toBe(created.updatedAt.getTime());
+    expect(await generationOf()).toBe(before);
+
+    const renamed = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, { ...base, name: "equal-write renamed" });
+    expect(renamed.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
+    expect(await generationOf()).toBe((before ?? 0) + 1);
+  });
+
   it("round-trips a routine's consents into its agent draft, and reads a routine without them back without the field (#1544)", async () => {
     const repository = new RoutineDefinitionRepository(database.kysely);
     const base = draftInput("consent-roundtrip");

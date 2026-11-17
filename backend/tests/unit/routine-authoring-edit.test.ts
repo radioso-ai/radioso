@@ -5,6 +5,7 @@ import {
   describeRoutineFieldPatch,
   draftInputFromRoutine,
   projectRoutineForReview,
+  routineMatchesDraft,
   routineFieldPatchSchema,
   RoutineFieldPatchError,
 } from "../../src/modules/routines/authoringEdit.js";
@@ -36,6 +37,19 @@ const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefinition 
 });
 
 describe("routine authoring edits", () => {
+  it("matches a draft that restates the stored routine, however absence is spelled (#1819)", () => {
+    const stored = routine();
+    const restated = {
+      ...draftInputFromRoutine(stored),
+      completionExport: { enabled: false, triggerKinds: [], destinationRef: "" },
+      steps: stored.steps.map((step) => ({ ...step, actionType: undefined })),
+    };
+
+    expect(routineMatchesDraft(stored, restated)).toBe(true);
+    expect(routineMatchesDraft(stored, { ...restated, name: "renamed" })).toBe(false);
+    expect(routineMatchesDraft(stored, { ...restated, enabled: !stored.enabled })).toBe(false);
+  });
+
   it("drops persistence identity so a stored routine re-enters the authoring schema unchanged", () => {
     const draft = draftInputFromRoutine(routine());
 

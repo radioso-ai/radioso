@@ -32,7 +32,7 @@ quote the failing value, as it does for the application's errors. Treat a printe
 customer data. Keep it out of issues, chats and shared notes, and delete local copies once you're
 done.
 
-Running a query needs two grants: `run.jobs.runWithOverrides` on the job, and object access to the
+The script needs `gcloud`, `curl` and `python3`. Running a query needs two grants: `run.jobs.runWithOverrides` on the job, and object access to the
 results bucket. Project owners hold both. To give a named engineer access, grant both on the
 stack's job and results bucket:
 

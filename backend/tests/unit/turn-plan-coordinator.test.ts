@@ -63,7 +63,7 @@ const preparedRank: RankableRoutineCandidates = {
   registrations: [
     { routine: { id: "r1", rootStepId: "s", steps: [], transitions: [] }, trigger: { description: "d", priority: 0 } },
   ],
-  candidates: [{ routineId: "r1", title: "R1", triggerSummary: "d", priority: 0 }],
+  candidates: [{ routineId: "r1", title: "R1", triggerSummary: "d", priority: 0, slotKeys: [] }],
 };
 
 const handleFor = (outcome: TurnPlanOutcome | undefined) => () =>
@@ -123,7 +123,7 @@ describe("TurnPlanCoordinator.plan", () => {
     const many: RankableRoutineCandidates = {
       kind: "rank",
       registrations: [],
-      candidates: Array.from({ length: 9 }, (_v, index) => ({ routineId: `r${index}`, title: "t", triggerSummary: "s", priority: 0 })),
+      candidates: Array.from({ length: 9 }, (_v, index) => ({ routineId: `r${index}`, title: "t", triggerSummary: "s", priority: 0, slotKeys: [] })),
     };
     const service = serviceReturning(plan());
     const outcome = await new TurnPlanCoordinator(service).plan(inputs({ routinePreparation: many }));

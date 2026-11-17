@@ -182,6 +182,28 @@ describe("RoutineRegistry ranked activation", () => {
     });
   });
 
+  it("keeps only declared slot keys from a ranking's activation variables, and lists them for the model", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "match", confidence: 0.9, variables: { region: "north", budget: "100", look: "modern", style: "loft" } },
+    ]));
+    const withSlots = registration("match");
+    withSlots.routine.slots = [
+      { key: "region", type: "string" },
+      { key: "budget", type: "number" },
+    ];
+
+    const registry = new RoutineRegistry([withSlots], { policy });
+    expect(await registry.prepareCandidates(turn)).toMatchObject({
+      kind: "rank",
+      candidates: [{ routineId: "match", slotKeys: ["region", "budget"] }],
+    });
+    const result = await registry.activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({ kind: "activate", routineId: "match", variables: { region: "north", budget: "100" } });
+    expect(Object.keys((result as { variables: Record<string, unknown> }).variables)).toEqual(["region", "budget"]);
+    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toContain("region, budget");
+  });
+
   it("delegates floor, margin, and priority decision order to clarification policy semantics", async () => {
     const gw = gateway(rankedJson([
       { routineId: "lower-confidence-priority", confidence: 0.78 },

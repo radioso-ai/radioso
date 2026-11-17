@@ -61,12 +61,36 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   { role: "user", content: turn.inputEvent.content },
 ];
 
+const declaredSlotKeys = (routine: Routine): string[] => (routine.slots ?? []).map((slot) => slot.key);
+
+const slotKeysLine = (keys: readonly string[]): string =>
+  keys.length > 0 ? `\nVariable keys: ${keys.join(", ")}` : "";
+
+/**
+ * A ranking's activation variables a routine can hold: when it declares slots, only those
+ * keys. The model returns free-form field names, and the runner would drop the rest as
+ * undeclared; dropping them here keeps them out of the run's state and its trace. A routine
+ * with no slot schema takes every key, as it always has.
+ */
+const declaredActivationVariables = (
+  routine: Routine,
+  variables: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined => {
+  const keys = declaredSlotKeys(routine);
+  if (!variables || keys.length === 0) {
+    return variables;
+  }
+  const declared = Object.fromEntries(Object.entries(variables).filter(([key]) => keys.includes(key)));
+  return Object.keys(declared).length > 0 ? declared : undefined;
+};
+
 const routinesBlock = (registrations: readonly RoutineRegistration[]): string =>
   registrations
     .map((registration, index) =>
       `${index + 1}. id: ${registration.routine.id}\n` +
       `Priority: ${registration.trigger.priority}\n` +
-      `Trigger: ${registration.trigger.description}`
+      `Trigger: ${registration.trigger.description}` +
+      slotKeysLine(declaredSlotKeys(registration.routine))
     )
     .join("\n\n");
 
@@ -249,6 +273,7 @@ export class RoutineRegistry {
         title: routineLabel(registration.routine),
         triggerSummary: registration.trigger.description,
         priority: registration.trigger.priority,
+        slotKeys: declaredSlotKeys(registration.routine),
       })),
     };
   }
@@ -272,6 +297,7 @@ export class RoutineRegistry {
     const byId = new Map(prepared.registrations.map((registration) => [registration.routine.id, registration]));
     const candidates: ClarificationCandidate[] = rankings.map((match) => {
       const registration = byId.get(match.routineId)!;
+      const variables = declaredActivationVariables(registration.routine, match.variables);
       return {
         id: registration.routine.id,
         label: routineLabel(registration.routine),
@@ -279,7 +305,7 @@ export class RoutineRegistry {
         confidence: match.confidence,
         payload: {
           routineId: registration.routine.id,
-          ...(match.variables ? { variables: match.variables } : {}),
+          ...(variables ? { variables } : {}),
         },
       };
     });

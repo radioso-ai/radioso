@@ -80,7 +80,7 @@ const history: MessageRecord[] = [];
 const request = (overrides: Partial<TurnPlanRequest> = {}): TurnPlanRequest => ({
   query: "How long is the refund window?",
   history,
-  routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+  routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] }],
   directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
   workspaceContext: { workspaceId: "w1" },
   usageContext: {
@@ -720,7 +720,7 @@ describe("buildTurnPlanningPrompt", () => {
 
   it("splits the request into standing rules, turn-specific rules, and the visitor's request", () => {
     const prompt = buildTurnPlanningPrompt(promptInput({
-      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] }],
       directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
     }));
 
@@ -750,7 +750,7 @@ describe("buildTurnPlanningPrompt", () => {
         { role: "assistant", content: "Yes, within five days." } as MessageRecord,
       ],
       conversationSummary: "The buyer asked about shipping.",
-      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] }],
       directiveCandidates: [
         { name: "refund-tone", condition: "when the customer asks for a refund" },
         { name: "concierge", condition: "the visitor's cart is worth more than 100" },
@@ -841,7 +841,7 @@ describe("buildTurnPlanningPrompt", () => {
 
   it("renders routine, directive, and decision-independence sections only with candidates", () => {
     const withBoth = rendered(promptInput({
-      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] }],
       directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
     }));
     expect(withBoth).toContain("Routine Ranking Rules");
@@ -857,11 +857,22 @@ describe("buildTurnPlanningPrompt", () => {
     }
   });
 
+  it("lists a candidate's declared slot keys, and omits the line for one that declares none", () => {
+    const text = rendered(promptInput({
+      routineCandidates: [
+        { routineId: "match", title: "Match", triggerSummary: "wants a match", priority: 0, slotKeys: ["region", "budget"] },
+        { routineId: "plain", title: "Plain", triggerSummary: "wants plain", priority: 0, slotKeys: [] },
+      ],
+    }));
+    expect(text.match(/Variable keys: region, budget/g)).toHaveLength(1);
+    expect(text.match(/Variable keys:/g)).toHaveLength(1);
+  });
+
   it("renders routine candidates with positional aliases, in prefilter score order, never the real id", () => {
     const prompt = rendered(promptInput({
       routineCandidates: [
-        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
-        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0, slotKeys: [] },
       ],
     }));
 
@@ -875,13 +886,13 @@ describe("buildTurnPlanningPrompt", () => {
   it("gives the same alias to the same candidate position whatever this turn's candidate subset", () => {
     const first = buildTurnPlanningPrompt(promptInput({
       routineCandidates: [
-        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
-        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0, slotKeys: [] },
       ],
     }));
     const second = buildTurnPlanningPrompt(promptInput({
       routineCandidates: [
-        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0 },
+        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0, slotKeys: [] },
       ],
     }));
 
@@ -938,7 +949,7 @@ describe("buildTurnPlanningPrompt", () => {
 
   it("renders a compact output shape so schema-less compatible providers still have a JSON contract", () => {
     const prompt = rendered(promptInput({
-      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotKeys: [] }],
       directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
     }));
     expect(prompt).toContain("Output Shape Rules");

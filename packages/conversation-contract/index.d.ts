@@ -1757,6 +1757,8 @@ export interface RoutineCandidateSummary {
   title: string;
   triggerSummary: string;
   priority: number;
+  /** The slot keys the routine declares, in declared order; empty when it declares none. */
+  slotKeys: readonly string[];
 }
 
 /** The activator's non-null outcome (activate or clarify). */

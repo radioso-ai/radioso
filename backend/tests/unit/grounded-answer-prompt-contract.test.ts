@@ -583,7 +583,9 @@ describe("grounded answer prompt contract", () => {
       + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))
       + countWords(loadPromptTemplate("retrieval/answer-layout-written.md"));
     expect(groundedBase).toBeGreaterThanOrEqual(770);
-    expect(groundedBase).toBeLessThanOrEqual(880);
+    // Widened in #1815: a finding may carry its document's attributes as quoted data,
+    // and the answer is told to read them as data, never as instructions.
+    expect(groundedBase).toBeLessThanOrEqual(920);
     expect(countWords(loadPromptTemplate("retrieval/answer-layout-spoken.md")))
       .toBeLessThanOrEqual(countWords(loadPromptTemplate("retrieval/answer-layout-written.md")));
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(300);
@@ -619,8 +621,9 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
-    // Widened with the layout rule above (three or more items become a Markdown list).
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2330);
+    // Widened with the layout rule above (three or more items become a Markdown list),
+    // and in #1815 with the attributes-as-data rule.
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2370);
 
     // Grounded answer, suggestions disabled. Widened in #1575 with the sheet above.
     const groundedNoSuggestions = stack(
@@ -632,7 +635,8 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-coverage-response-guidance.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1700);
+    // Widened in #1815 with the attributes-as-data rule.
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1740);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

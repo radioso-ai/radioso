@@ -1,7 +1,7 @@
 ---
 title: "Reprocess Existing Documents"
 description: "How to requeue documents to apply updated ingestion and metadata extraction settings to already-indexed content."
-last_updated: 2026-07-02
+last_updated: 2026-11-17
 ---
 
 # Reprocess Existing Documents
@@ -18,7 +18,9 @@ Reprocessing can also apply metadata extraction changes. A reprocess request may
 
 ### Operational Behavior
 
-Until reprocessing runs, previously indexed documents continue using their existing chunk layout, embeddings, and extracted metadata.
+Until reprocessing runs, previously indexed documents continue using their existing chunk layout, embeddings, and extracted metadata. A chunk also keeps the boundaries and the document facts it was built with: reprocessing rebuilds every document's chunks with the current boundary rules, and copies the facts each document states at its top, such as `Region: Umbria`, onto all of its chunks.
+
+Reprocessing re-embeds every chunk of every document it queues, which counts against embedding usage. A document can come back with a few more chunks than before, because a chunk ends at the last sentence that fits rather than at the exact chunk size.
 
 If metadata extraction is disabled for a reprocess run, Radioso rebuilds the document without keeping stale extracted dates on the new chunks.
 

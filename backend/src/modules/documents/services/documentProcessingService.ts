@@ -13,12 +13,15 @@ import type {
 import {
   deriveChunkSection,
   deriveDocumentSubject,
+  documentAttributeCharsForChunk,
+  extractLeadingDocumentAttributes,
   normalizeMarkdown,
   renderMetadataSearchText,
   renderSearchText,
   type ChunkingStrategy,
   type ChunkingStrategyId,
   type WorkspaceTimeZoneReader,
+  withDocumentAttributes,
 } from "../../retrieval/public.js";
 import { formatIsoDate } from "../../../shared/domain/clock.js";
 import { resolveReferenceTimeZone, type ReferenceTimeZoneSource } from "../../../shared/domain/referenceTimeZone.js";
@@ -322,9 +325,12 @@ export class DocumentProcessingService {
       // Source-level tags are a chunk-projection concern only: they are merged
       // into the chunk metadata below and never written back to
       // documents.metadata, so a source retag never rewrites its documents.
-      const chunkMetadata = mergeDocumentMetadataForChunks(
-        parseSourceDocumentMetadata(source?.config),
-        revisionTags.projectedMetadata,
+      // The attributes the document states at its top ride on every chunk, so
+      // a chunk cut from deep in the text still names them.
+      const attributeExtraction = extractLeadingDocumentAttributes(normalizeMarkdown(documentWithContent.markdownContent));
+      const chunkMetadata = withDocumentAttributes(
+        mergeDocumentMetadataForChunks(parseSourceDocumentMetadata(source?.config), revisionTags.projectedMetadata),
+        attributeExtraction.attributes,
       );
       if (revisionTags.clearedDocument) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
@@ -339,7 +345,11 @@ export class DocumentProcessingService {
         }
       }
       const enrichedChunks = chunks.map((chunk) => {
-        const metadataSearchText = renderMetadataSearchText(chunkMetadata);
+        // Every chunk stores the document's full set; its embedded text carries only a
+        // share of the chunk's own length, so a short chunk still reads as itself.
+        const metadataSearchText = renderMetadataSearchText(chunkMetadata, {
+          documentAttributeChars: documentAttributeCharsForChunk(chunk.content),
+        });
         return {
           ...chunk,
           metadata: chunkMetadata,
@@ -388,6 +398,9 @@ export class DocumentProcessingService {
           chunkingStrategy: settings.chunkingStrategy,
           embeddingModel,
           chunkCount: enrichedChunks.length,
+          documentAttributeCount: attributeExtraction.attributes.length,
+          // Bounded outcome, so openings mistaken for (or missed as) attribute blocks show up.
+          documentAttributesExtracted: attributeExtraction.outcome,
           chunkingDurationMs,
           storageEmbeddingDurationMs,
         },

@@ -1,6 +1,9 @@
 import { answerDocumentKey } from "../domain/answerCandidatePool.js";
 import type { FinalPromptContext, RerankedCandidate } from "../domain/retrievalPipelineTypes.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { renderPromptAttributeLine } from "./searchTextRenderer.js";
+
+const ELLIPSIS = "...";
 
 const DEFAULT_CONTEXT_TOKEN_BUDGET = RETRIEVAL_BEHAVIOR.promptContextTokenBudget;
 const DEFAULT_MAX_CONTEXTS_PER_DOCUMENT = RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument;
@@ -57,8 +60,12 @@ export class PromptContextSelectorService {
         return false;
       }
 
-      const packedContent = this.packContent(context.content);
-      const estimatedTokenCost = this.estimateTokenCost(packedContent);
+      // The passage's `Attributes:` line rides into the prompt with it, so it shares the
+      // passage's characters and its cost.
+      const attributeLine = renderPromptAttributeLine(context.metadata);
+      const attributeLineChars = attributeLine.length > 0 ? attributeLine.length + 1 : 0;
+      const packedContent = this.packContent(context.content, DEFAULT_MAX_CHARS_PER_CONTEXT - attributeLineChars);
+      const estimatedTokenCost = this.estimateTokenCost(packedContent.length + attributeLineChars);
       if (estimatedTokenCost > this.tokenBudget) {
         return false;
       }
@@ -101,8 +108,8 @@ export class PromptContextSelectorService {
     return selected;
   }
 
-  private estimateTokenCost(content: string): number {
-    return Math.max(1, Math.ceil(content.length / 4));
+  private estimateTokenCost(chars: number): number {
+    return Math.max(1, Math.ceil(chars / 4));
   }
 
   private buildDuplicateKey(content: string): string {
@@ -112,18 +119,19 @@ export class PromptContextSelectorService {
       .toLowerCase();
   }
 
-  private packContent(content: string): string {
+  /** The content cut to `maxChars`, its ellipsis included, at a space near the end when there is one. */
+  private packContent(content: string, maxChars: number): string {
     const normalized = content.trim();
-    if (normalized.length <= DEFAULT_MAX_CHARS_PER_CONTEXT) {
+    if (normalized.length <= maxChars) {
       return normalized;
     }
 
-    const candidate = normalized.slice(0, DEFAULT_MAX_CHARS_PER_CONTEXT);
+    const candidate = normalized.slice(0, maxChars - ELLIPSIS.length);
     const lastWhitespace = candidate.lastIndexOf(" ");
-    const excerpt = lastWhitespace > DEFAULT_MAX_CHARS_PER_CONTEXT * 0.75
+    const excerpt = lastWhitespace > maxChars * 0.75
       ? candidate.slice(0, lastWhitespace)
       : candidate;
-    return `${excerpt.trimEnd()}...`;
+    return `${excerpt.trimEnd()}${ELLIPSIS}`;
   }
 
   private isLowInformationContext(content: string): boolean {

@@ -547,7 +547,7 @@ export const createDefaultChunkingStrategyRegistry = (
   chunkingProvider: TextChunkingProviderPort = new ChonkieChunkingProvider(clusteringEmbeddings),
 ): ChunkingStrategyRegistry =>
   new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(chunkingProvider),
+    new FixedWindowChunkingStrategy(),
     new StructuredSemanticChunkingStrategy(chunkingProvider),
     new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);

@@ -20,6 +20,8 @@ export interface SupportedEmbeddingModelDescriptor {
     readonly maxBatch: number;
     readonly maxInputBytes: number;
     readonly maxResponseBytes: number;
+    /** The provider's per-input token limit; longer input is cut or refused by the provider. */
+    readonly maxInputTokens: number;
   };
 }
 

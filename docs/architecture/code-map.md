@@ -2014,6 +2014,15 @@ Primary internals:
   HNSW index rule, shared by the index DDL and the query's `ORDER BY`)
 - `backend/src/modules/retrieval/infra/lexicalSearch.ts` (all-terms search, then
   the some-terms pass planned by `domain/lexicalSomeTermsMatch.ts`)
+- Chunking, run by the documents worker: `domain/chunking/` (the fixed-window
+  strategy splits at sentence and word boundaries itself, in
+  `textBoundaryWindows.ts`; recursive and semantic go through
+  `infra/chonkieChunkingProvider.ts`) and `domain/documentAttributes.ts` (the
+  front matter or leading `Label: value` block a document opens with, stamped on
+  every chunk's metadata as `documentAttributes` and rendered by
+  `services/searchTextRenderer.ts` after the chunk's text in search text and on
+  the answer prompt's bounded `Attributes:` line, which
+  `services/promptContextSelectorService.ts` charges to the passage)
 
 Operator scripts:
 
@@ -2047,6 +2056,7 @@ Focused checks:
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
 - `cd backend && pnpm test -- tests/unit/sense-grouping-service.test.ts tests/unit/retrieval-sense-clarification.test.ts`
 - `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-context-stage-override.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/text-boundary-windows.test.ts tests/unit/document-attributes.test.ts tests/unit/document-attributes-retrieval-text.test.ts tests/unit/chunking-provider.test.ts` for chunk boundaries and per-chunk document attributes; `tests/integration/document-attributes-retrieval.integration.test.ts` runs them through the worker and lexical search on Postgres
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:

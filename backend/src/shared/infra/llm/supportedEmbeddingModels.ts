@@ -10,7 +10,7 @@ export const supportedEmbeddingModelIds = [
   "gemini-embedding-001",
 ] as const;
 
-export type SupportedEmbeddingModelId =
+type SupportedEmbeddingModelId =
   (typeof supportedEmbeddingModelIds)[number];
 
 const OPENAI_TASKS = {
@@ -29,6 +29,14 @@ const COMMON_LIMITS = {
   maxBatch: 256,
   maxInputBytes: 1_048_576,
   maxResponseBytes: 8_388_608,
+  maxInputTokens: 8_191,
+} as const;
+
+// Gemini embeds at most 2,048 tokens of one input.
+const GEMINI_LIMITS = {
+  ...COMMON_LIMITS,
+  maxBatch: 1,
+  maxInputTokens: 2_048,
 } as const;
 
 const descriptors = {
@@ -62,10 +70,7 @@ const descriptors = {
     dimensions: 3072,
     normalization: "provider_unit",
     taskMapping: GEMINI_TASKS,
-    limits: {
-      ...COMMON_LIMITS,
-      maxBatch: 1,
-    },
+    limits: GEMINI_LIMITS,
   },
 } as const satisfies Record<
   SupportedEmbeddingModelId,
@@ -78,10 +83,7 @@ const EXISTING_GEMINI_1536_DESCRIPTOR: SupportedEmbeddingModelDescriptor = {
   dimensions: 1536,
   normalization: "application_unit",
   taskMapping: OPENAI_TASKS,
-  limits: {
-    ...COMMON_LIMITS,
-    maxBatch: 1,
-  },
+  limits: GEMINI_LIMITS,
 };
 
 export const isSupportedEmbeddingModel = (

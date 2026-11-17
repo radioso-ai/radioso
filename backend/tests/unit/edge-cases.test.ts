@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { normalizeMarkdown } from "../../src/modules/retrieval/domain/chunkingService.js";
-import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
@@ -58,7 +57,7 @@ describe("edge cases", () => {
   it("normalizes short content into a single provider-backed chunk", async () => {
     const content = "   short content   ";
     const normalized = normalizeMarkdown(content);
-    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const strategy = new FixedWindowChunkingStrategy();
     const chunks = await strategy.chunk({
       title: "Short content",
       content,

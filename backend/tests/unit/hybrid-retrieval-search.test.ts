@@ -96,7 +96,7 @@ describe("hybrid retrieval search", () => {
         attributeText: " date: 2026-03-14 ",
         content: " Used   for   login. ",
       }),
-    ).toBe("Title: Session Cookie\n\nSection: Auth > Tokens\n\nAttributes: date: 2026-03-14\n\nUsed for login.");
+    ).toBe("Title: Session Cookie\n\nSection: Auth > Tokens\n\nUsed for login.\n\nAttributes: date: 2026-03-14");
   });
 
   it("merges semantic and lexical candidates by chunk id while retaining provenance", () => {

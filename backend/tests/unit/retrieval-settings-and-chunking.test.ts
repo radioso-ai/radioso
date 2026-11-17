@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import {
   defaultIngestionSettings,
   validateIngestionSettings,
@@ -86,7 +85,7 @@ describe("settings and chunking", () => {
 
   it("creates overlapping fixed-window chunks through the provider", async () => {
     const longText = "word ".repeat(400);
-    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const strategy = new FixedWindowChunkingStrategy();
     const chunks = await strategy.chunk({
       title: "Long content",
       content: longText,
@@ -313,7 +312,7 @@ describe("settings and chunking", () => {
 
   it("uses configurable provider-backed fixed-window chunk sizes", async () => {
     const longText = "word ".repeat(300);
-    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+    const strategy = new FixedWindowChunkingStrategy();
     const chunks = await strategy.chunk({
       title: "Long content",
       content: longText,

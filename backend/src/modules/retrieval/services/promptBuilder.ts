@@ -5,7 +5,7 @@ import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.j
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import { resolveContextSourceUrl } from "../domain/contextSourceUrl.js";
-import { renderMetadataPromptText } from "./searchTextRenderer.js";
+import { renderPromptAttributeLine } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 
 export interface PromptBuildResult {
@@ -46,13 +46,11 @@ export class PromptBuilder {
         // Sanitize to prevent prompt injection via newlines or control characters.
         const rawSourceUrl = resolveContextSourceUrl(context.metadata) ?? "";
         const sanitizedSourceUrl = rawSourceUrl.replace(/[\n\r\t\x00-\x1f]/g, "").slice(0, 2048);
-        const rawMetadataText = renderMetadataPromptText(context.metadata ?? {});
-        const sanitizedMetadataText = rawMetadataText
-          .replace(/[\n\r\t\x00-\x1f]/g, " ")
-          .slice(0, 2048);
+        // Bounded and folded onto one line; context selection already charged it to the passage.
+        const attributeLine = renderPromptAttributeLine(context.metadata);
         const metadataLines = [
           sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}` : "",
-          sanitizedMetadataText ? `Attributes: ${sanitizedMetadataText}` : "",
+          attributeLine,
         ].filter((line) => line.length > 0);
         const metadataSection = metadataLines.length > 0 ? `${metadataLines.join("\n")}\n` : "";
         return `Result ${index + 1} (${context.title}): ${metadataSection}${context.content}`;

@@ -1,4 +1,12 @@
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { readDocumentAttributes, renderDocumentAttributes } from "../domain/documentAttributes.js";
+
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
+// Prompt lines also fold control characters, so metadata cannot open a line of its own.
+const toPromptLineText = (value: string): string => value.replace(/[\s\p{Cc}]+/gu, " ").trim();
+
+const METADATA_SEPARATOR = " | ";
+const PROMPT_ATTRIBUTE_PREFIX = "Attributes: ";
 
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_LABEL_FORMATTERS = [
@@ -17,8 +25,11 @@ export const renderSearchText = (input: {
     input.title ? `Title: ${normalizeWhitespace(input.title)}` : "",
     input.subjectLabel ? `Subject: ${normalizeWhitespace(input.subjectLabel)}` : "",
     input.sectionPath ? `Section: ${normalizeWhitespace(input.sectionPath)}` : "",
-    input.attributeText ? `Attributes: ${normalizeWhitespace(input.attributeText)}` : "",
+    // The chunk's own text comes before its attributes: a reader of the first characters
+    // (the reranker) sees what sets this chunk apart, and an input cut short loses
+    // attributes rather than text.
     normalizeWhitespace(input.content),
+    input.attributeText ? `Attributes: ${normalizeWhitespace(input.attributeText)}` : "",
   ].filter((part) => part.length > 0);
 
   return parts.join("\n\n");
@@ -29,10 +40,10 @@ export const buildRetrievalText = (input: {
   content: string;
 }): string => renderSearchText(input);
 
-const renderMetadataText = (
+const renderMetadataParts = (
   metadata: Record<string, unknown>,
   options: { includeUrl: boolean; includeMonthAliases: boolean },
-): string => {
+): string[] => {
   const dateFrom = normalizeIsoDay(metadata.dateFrom);
   const dateTo = normalizeIsoDay(metadata.dateTo);
   const url = pickMetadataUrl(metadata);
@@ -53,14 +64,38 @@ const renderMetadataText = (
     author ? `Author: ${author}` : "",
   ].filter((part) => part.length > 0);
 
-  return parts.join(" | ");
+  return parts;
 };
 
-export const renderMetadataSearchText = (metadata: Record<string, unknown>): string =>
-  renderMetadataText(metadata, { includeUrl: true, includeMonthAliases: true });
+/**
+ * The metadata a chunk's embedded search text carries. The facts its document states
+ * about itself follow, within `documentAttributeChars`, so they never outweigh a
+ * short chunk's own text.
+ */
+export const renderMetadataSearchText = (
+  metadata: Record<string, unknown>,
+  options: { documentAttributeChars?: number } = {},
+): string => {
+  const parts = renderMetadataParts(metadata, { includeUrl: true, includeMonthAliases: true });
+  const attributeChars = options.documentAttributeChars ?? Number.POSITIVE_INFINITY;
+  return [...parts, ...renderDocumentAttributes(readDocumentAttributes(metadata), attributeChars)].join(METADATA_SEPARATOR);
+};
 
-export const renderMetadataPromptText = (metadata: Record<string, unknown>): string =>
-  renderMetadataText(metadata, { includeUrl: false, includeMonthAliases: false });
+/**
+ * The `Attributes:` line a retrieved chunk carries into the answer prompt, or "" when it
+ * has none: dates and author, then the document's own attributes as quoted data, at most
+ * `promptContextMaxAttributeChars` characters in all. Context selection charges this line
+ * against the passage's budget, so both read it from here.
+ */
+export const renderPromptAttributeLine = (metadata: Record<string, unknown> | undefined): string => {
+  const maxChars = RETRIEVAL_BEHAVIOR.promptContextMaxAttributeChars;
+  const parts = renderMetadataParts(metadata ?? {}, { includeUrl: false, includeMonthAliases: false }).map(toPromptLineText);
+  const usedChars = PROMPT_ATTRIBUTE_PREFIX.length + parts.join(METADATA_SEPARATOR).length;
+  const attributeChars = maxChars - usedChars - (parts.length > 0 ? METADATA_SEPARATOR.length : 0);
+  const entries = renderDocumentAttributes(readDocumentAttributes(metadata), Math.max(0, attributeChars));
+  const all = [...parts, ...entries];
+  return all.length > 0 ? `${PROMPT_ATTRIBUTE_PREFIX}${all.join(METADATA_SEPARATOR)}`.slice(0, maxChars) : "";
+};
 
 const pickMetadataUrl = (metadata: Record<string, unknown>): string => {
   const sourceUrl = typeof metadata.sourceUrl === "string" ? normalizeWhitespace(metadata.sourceUrl) : "";

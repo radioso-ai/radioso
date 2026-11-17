@@ -1,6 +1,6 @@
 export type AgentCreationActionKind = 'route' | 'wizard-dialog'
 
-export interface AgentCreationAction {
+interface AgentCreationAction {
   id: string
   label: string
   href: string | null
@@ -16,7 +16,7 @@ export interface AgentCreationActionDefinition {
   kind?: AgentCreationActionKind
 }
 
-export interface AgentCreationActionContext {
+interface AgentCreationActionContext {
   accountId: string
   workspacePublicRouteKey?: string | null
 }

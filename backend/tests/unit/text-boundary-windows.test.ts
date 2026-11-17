@@ -197,6 +197,20 @@ describe("boundary-aware fixed-window chunking", () => {
     }
   });
 
+  it("splits a large document with no line breaks, or one huge token, without rescanning from its start", async () => {
+    const sentence = "The hall has cast-iron columns and wooden floors worn by decades of looms. ";
+    const singleLine = sentence.repeat(Math.ceil(2_000_000 / sentence.length));
+    const token = "x".repeat(500_000);
+
+    for (const text of [singleLine, token]) {
+      const started = performance.now();
+      const chunks = await chunkFixedWindow(text, 800, 120);
+      // Linear work takes well under a second here; rescanning the text per window took about ten.
+      expect(performance.now() - started).toBeLessThan(3_000);
+      expect(chunks.length).toBeGreaterThan(600);
+    }
+  });
+
   it("returns one chunk for content shorter than the window", async () => {
     const chunks = await chunkFixedWindow("  A single short line.  ", 800, 120);
 

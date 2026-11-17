@@ -17,6 +17,12 @@ interface BoundedWindowOptions {
  */
 const MIN_FILL_RATIO = 0.5;
 
+/**
+ * Text the word segmenter reads on each side of the stretch it is asked about, so the
+ * stretch's own edges are not taken for word boundaries.
+ */
+const WORD_CONTEXT_CHARS = 32;
+
 const WHITESPACE = /\s/;
 const MARKDOWN_HEADING_LINE = /^ {0,3}#{1,6}\s/;
 
@@ -58,12 +64,19 @@ export const splitIntoBoundedWindows = (text: string, options: BoundedWindowOpti
 };
 
 class TextBoundaries {
-  private readonly sentences: Intl.Segments;
-  private readonly words: Intl.Segments;
+  /**
+   * Every sentence start, ascending. Read once, front to back: looking a sentence up by
+   * offset makes the segmenter scan back for a safe point, which on text without line
+   * breaks reaches the start of the document on every call.
+   */
+  private readonly sentenceStarts: number[];
+  private readonly wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
   constructor(private readonly text: string) {
-    this.sentences = new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(text);
-    this.words = new Intl.Segmenter(undefined, { granularity: "word" }).segment(text);
+    this.sentenceStarts = Array.from(
+      new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(text),
+      (segment) => segment.index,
+    );
   }
 
   /** The end of the window that starts at `start` and may run to `limit` (exclusive of the text past it). */
@@ -90,39 +103,73 @@ class TextBoundaries {
     }
 
     const earliest = Math.max(end - overlapChars, start + Math.ceil((end - start) / 2));
-    // A blank line is a sentence of its own to the segmenter; the window starts at the text after it.
-    const candidates = [
-      this.sentenceStartAtOrAfter(earliest),
-      this.wordStartAfterSpace(earliest, end),
-      this.wordStartAtOrAfter(earliest),
-    ].map((candidate) => skipWhitespace(this.text, candidate));
-
-    return candidates.find((candidate) => candidate > start && candidate < end) ?? end;
+    const finders = [
+      () => this.sentenceStartAtOrAfter(earliest),
+      () => this.wordStartAfterSpace(earliest, end),
+      () => this.wordStartAtOrAfter(earliest, end),
+    ];
+    for (const find of finders) {
+      // A blank line is a sentence of its own to the segmenter; the window starts at the text after it.
+      const candidate = skipWhitespace(this.text, find());
+      if (candidate > start && candidate < end) {
+        return candidate;
+      }
+    }
+    return end;
   }
 
   private sentenceStartAtOrBefore(offset: number): number {
-    return this.sentences.containing(offset)?.index ?? offset;
+    const index = this.firstSentenceStartAfter(offset) - 1;
+    return index >= 0 ? this.sentenceStarts[index] ?? offset : offset;
   }
 
   private sentenceStartAtOrAfter(offset: number): number {
-    const segment = this.sentences.containing(offset);
-    if (!segment) {
-      return this.text.length;
+    const index = this.firstSentenceStartAfter(offset - 1);
+    return this.sentenceStarts[index] ?? this.text.length;
+  }
+
+  /** The position in `sentenceStarts` of the first start greater than `offset`. */
+  private firstSentenceStartAfter(offset: number): number {
+    let low = 0;
+    let high = this.sentenceStarts.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if ((this.sentenceStarts[middle] ?? Number.POSITIVE_INFINITY) <= offset) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
     }
-    return segment.index === offset ? offset : segment.index + segment.segment.length;
+    return low;
   }
 
   private wordStartAtOrBefore(offset: number, floor: number): number | null {
-    const index = this.words.containing(offset)?.index ?? offset;
-    return index >= floor ? index : null;
+    return this.wordBoundariesBetween(floor, offset).at(-1) ?? null;
   }
 
-  private wordStartAtOrAfter(offset: number): number {
-    const segment = this.words.containing(offset);
-    if (!segment) {
-      return this.text.length;
+  private wordStartAtOrAfter(offset: number, end: number): number {
+    return this.wordBoundariesBetween(offset, end)[0] ?? end;
+  }
+
+  /**
+   * Word boundaries in [from, to], read from that stretch and a little context rather than
+   * the whole text, so a token longer than many windows costs each window only its own length.
+   */
+  private wordBoundariesBetween(from: number, to: number): number[] {
+    const sliceStart = Math.max(0, from - WORD_CONTEXT_CHARS);
+    const sliceEnd = Math.min(this.text.length, to + WORD_CONTEXT_CHARS);
+    const boundaries: number[] = [];
+    for (const segment of this.wordSegmenter.segment(this.text.slice(sliceStart, sliceEnd))) {
+      const boundary = sliceStart + segment.index;
+      // The slice's first character starts a segment wherever the slice was cut.
+      if ((segment.index > 0 || sliceStart === 0) && boundary >= from && boundary <= to) {
+        boundaries.push(boundary);
+      }
     }
-    return segment.index === offset ? offset : segment.index + segment.segment.length;
+    if (sliceEnd === this.text.length && sliceEnd >= from && sliceEnd <= to) {
+      boundaries.push(sliceEnd);
+    }
+    return boundaries;
   }
 
   /** The offset of the last whitespace character in [floor, offset], where the window may end. */
@@ -155,27 +202,27 @@ class TextBoundaries {
   private beforeTrailingHeading(end: number, minimumEnd: number): number {
     let adjustedEnd = end;
     for (;;) {
-      const lastLineStart = this.lastNonBlankLineStart(adjustedEnd);
-      if (
-        lastLineStart === null
-        || lastLineStart < minimumEnd
-        || !MARKDOWN_HEADING_LINE.test(this.text.slice(lastLineStart, adjustedEnd))
-      ) {
+      const lastLineStart = this.lastNonBlankLineStartAtOrAfter(adjustedEnd, minimumEnd);
+      if (lastLineStart === null || !MARKDOWN_HEADING_LINE.test(this.text.slice(lastLineStart, adjustedEnd))) {
         return adjustedEnd;
       }
       adjustedEnd = lastLineStart;
     }
   }
 
-  private lastNonBlankLineStart(end: number): number | null {
+  /** The start of the last non-blank line before `end`, when that line starts at or after `floor`. */
+  private lastNonBlankLineStartAtOrAfter(end: number, floor: number): number | null {
     let lineEnd = end;
-    while (lineEnd > 0 && WHITESPACE.test(this.text[lineEnd - 1] ?? "")) {
+    while (lineEnd > floor && WHITESPACE.test(this.text[lineEnd - 1] ?? "")) {
       lineEnd -= 1;
     }
-    if (lineEnd === 0) {
-      return null;
+    // Scanning stops at the floor, so a long line costs no more than the window it sits in.
+    for (let index = lineEnd - 1; index >= floor; index -= 1) {
+      if (this.text[index] === "\n") {
+        return index + 1 < lineEnd ? index + 1 : null;
+      }
     }
-    return this.text.lastIndexOf("\n", lineEnd - 1) + 1;
+    return floor > 0 && this.text[floor - 1] === "\n" && floor < lineEnd ? floor : null;
   }
 }
 

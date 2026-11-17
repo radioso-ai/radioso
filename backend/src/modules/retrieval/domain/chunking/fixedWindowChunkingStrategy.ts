@@ -4,13 +4,11 @@ import {
   type ChunkingStrategy,
   normalizeMarkdown,
 } from "./chunkingStrategy.js";
-import type { TextChunkingProviderPort } from "./chunkingProvider.js";
 import { normalizeProviderChunks } from "./providerChunkAdapter.js";
+import { splitIntoBoundedWindows } from "./textBoundaryWindows.js";
 
 export class FixedWindowChunkingStrategy implements ChunkingStrategy {
   readonly id = "fixed_window" as const;
-
-  constructor(private readonly provider: TextChunkingProviderPort) {}
 
   async chunk(request: ChunkingRequest): Promise<ChunkOutput[]> {
     const normalized = normalizeMarkdown(request.content);
@@ -19,14 +17,14 @@ export class FixedWindowChunkingStrategy implements ChunkingStrategy {
       return [];
     }
 
-    const chunks = await this.provider.chunkText({
-      method: "fixed_window",
-      title: request.title,
-      content: normalized,
-      chunkSize: request.config.fixedWindowChunkSize,
-      chunkOverlap: request.config.fixedWindowChunkOverlap,
+    const windows = splitIntoBoundedWindows(normalized, {
+      maxChars: request.config.fixedWindowChunkSize,
+      overlapChars: request.config.fixedWindowChunkOverlap,
     });
 
-    return normalizeProviderChunks(normalized, chunks);
+    return normalizeProviderChunks(
+      normalized,
+      windows.map((window) => ({ ...window, content: normalized.slice(window.startOffset, window.endOffset) })),
+    );
   }
 }

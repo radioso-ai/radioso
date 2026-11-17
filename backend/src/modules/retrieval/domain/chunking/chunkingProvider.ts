@@ -1,13 +1,13 @@
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 
-export type TextChunkingMethod = "fixed_window" | "recursive" | "semantic";
+/** Fixed-window chunking needs no provider: it splits at text boundaries itself (`textBoundaryWindows.ts`). */
+export type TextChunkingMethod = "recursive" | "semantic";
 
 export interface TextChunkingProviderRequest {
   method: TextChunkingMethod;
   title?: string;
   content: string;
   chunkSize: number;
-  chunkOverlap?: number;
   minCharactersPerChunk?: number;
   embeddingUsageContext?: ModelCallUsageContext;
 }

@@ -64,7 +64,6 @@ type ChunkerInstance = {
   chunk(text: string): Promise<ChunkLike[]> | ChunkLike[];
 };
 
-type TokenChunkerInstance = ChunkerInstance;
 type RecursiveChunkerInstance = ChunkerInstance;
 type SemanticChunkerInstance = ChunkerInstance;
 type TableChunkerInstance = ChunkerInstance;
@@ -97,7 +96,6 @@ interface TreeSitterLanguagePack {
 export class ChonkieChunkingProvider implements TextChunkingProviderPort {
   readonly name = PROVIDER_NAME;
 
-  private readonly tokenChunkersByConfig = new Map<string, Promise<TokenChunkerInstance>>();
   private readonly recursiveChunkersByConfig = new Map<string, Promise<RecursiveChunkerInstance>>();
   private readonly tableChunkersByConfig = new Map<string, Promise<TableChunkerInstance>>();
   private readonly codeChunkersByConfig = new Map<string, Promise<CodeChunkerInstance>>();
@@ -105,10 +103,6 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
   constructor(private readonly semanticEmbeddings?: ClusteringEmbeddingPort) {}
 
   async chunkText(request: TextChunkingProviderRequest): Promise<TextChunkingProviderChunk[]> {
-    if (request.method === "fixed_window") {
-      return this.chunkBaseText(request, request.content, 0);
-    }
-
     const regions = findSpecializedRegions(request);
 
     if (regions.length === 0) {
@@ -235,13 +229,7 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
     return pack.hasLanguage(detected) ? detected : "auto";
   }
 
-  private getChunker(
-    request: TextChunkingProviderRequest,
-  ): Promise<TokenChunkerInstance    > {
-    if (request.method === "fixed_window") {
-      return this.getTokenChunker(request);
-    }
-
+  private getChunker(request: TextChunkingProviderRequest): Promise<ChunkerInstance> {
     if (request.method === "recursive") {
       return this.getRecursiveChunker(request);
     }
@@ -251,23 +239,6 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
     }
 
     throw new Error(`Unsupported ChonkieJS chunking method: ${String(request.method satisfies never)}`);
-  }
-
-  private getTokenChunker(request: TextChunkingProviderRequest): Promise<TokenChunkerInstance> {
-    const cacheKey = [
-      "fixed_window",
-      request.chunkSize,
-      request.chunkOverlap ?? 0,
-    ].join(":");
-    const cached = this.tokenChunkersByConfig.get(cacheKey);
-
-    if (cached) {
-      return cached;
-    }
-
-    const created = createTokenChunker(request);
-    this.tokenChunkersByConfig.set(cacheKey, created);
-    return created;
   }
 
   private getRecursiveChunker(request: TextChunkingProviderRequest): Promise<RecursiveChunkerInstance> {
@@ -337,15 +308,6 @@ const offsetChunks = (chunks: ChunkLike[], offset: number): TextChunkingProvider
     startOffset: offset + chunk.startIndex,
     endOffset: offset + chunk.endIndex,
   }));
-
-const createTokenChunker = async (request: TextChunkingProviderRequest): Promise<TokenChunkerInstance> => {
-  const { TokenChunker } = await import("@chonkiejs/core");
-
-  return TokenChunker.create({
-    chunkSize: request.chunkSize,
-    chunkOverlap: request.chunkOverlap ?? 0,
-  });
-};
 
 const createRecursiveChunker = async (request: TextChunkingProviderRequest): Promise<RecursiveChunkerInstance> => {
   const { RecursiveChunker } = await import("@chonkiejs/core");

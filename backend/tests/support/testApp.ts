@@ -1334,7 +1334,7 @@ export const createTestDependencies = (overrides: {
     bindClusteringEmbeddingPort(embeddingService),
   );
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
-    new FixedWindowChunkingStrategy(chunkingProvider),
+    new FixedWindowChunkingStrategy(),
     new StructuredSemanticChunkingStrategy(chunkingProvider),
     new RecursiveTextChunkingStrategy(chunkingProvider),
   ]);

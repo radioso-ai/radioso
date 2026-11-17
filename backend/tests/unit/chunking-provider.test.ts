@@ -14,18 +14,8 @@ const defaultChunkingConfig = {
 };
 
 describe("provider-backed chunking", () => {
-  it("delegates fixed-window chunking through the configured provider", async () => {
-    const provider: TextChunkingProviderPort = {
-      name: "test-provider",
-      chunkText: vi.fn().mockResolvedValue([
-        {
-          content: "Alpha bravo",
-          startOffset: 0,
-          endOffset: 11,
-        },
-      ]),
-    };
-    const strategy = new FixedWindowChunkingStrategy(provider);
+  it("splits fixed windows without a chunking provider", async () => {
+    const strategy = new FixedWindowChunkingStrategy();
 
     const chunks = await strategy.chunk({
       title: "Provider backed",
@@ -33,13 +23,6 @@ describe("provider-backed chunking", () => {
       config: defaultChunkingConfig,
     });
 
-    expect(provider.chunkText).toHaveBeenCalledWith({
-      method: "fixed_window",
-      title: "Provider backed",
-      content: "Alpha bravo",
-      chunkSize: 40,
-      chunkOverlap: 8,
-    });
     expect(chunks).toEqual([
       {
         chunkIndex: 0,
@@ -158,45 +141,29 @@ describe("provider-backed chunking", () => {
     }
   });
 
-  it("uses ChonkieJS token chunking for fixed windows", async () => {
-    const provider = new ChonkieChunkingProvider();
-    const chunks = await provider.chunkText({
-      method: "fixed_window",
-      content: "abcdefghijklmnopqrstuvwxyz",
-      chunkSize: 10,
-      chunkOverlap: 2,
-    });
-
-    expect(chunks.map((chunk) => chunk.content)).toEqual([
-      "abcdefghij",
-      "ijklmnopqr",
-      "qrstuvwxyz",
-      "yz",
-    ]);
-    expect(chunks[1]?.startOffset).toBe((chunks[0]?.endOffset ?? 0) - 2);
-  });
-
   it("keeps fixed-window chunking independent from code and table specialized chunkers", async () => {
-    const provider = new ChonkieChunkingProvider();
-    const chunks = await provider.chunkText({
-      method: "fixed_window",
+    const strategy = new FixedWindowChunkingStrategy();
+    const content = "const alpha = 1;\nconst bravo = 2;\nconst charlie = 3;";
+
+    const chunks = await strategy.chunk({
       title: "math.ts",
-      content: "abcdefghijklmnopqrstuvwxyz",
-      chunkSize: 10,
-      chunkOverlap: 2,
+      content,
+      config: {
+        ...defaultChunkingConfig,
+        fixedWindowChunkSize: 20,
+        fixedWindowChunkOverlap: 0,
+      },
     });
 
     expect(chunks.map((chunk) => chunk.content)).toEqual([
-      "abcdefghij",
-      "ijklmnopqr",
-      "qrstuvwxyz",
-      "yz",
+      "const alpha = 1;",
+      "const bravo = 2;",
+      "const charlie = 3;",
     ]);
-    expect(chunks[1]?.startOffset).toBe(8);
   });
 
-  it("drops fixed-window tail chunks that are fully contained in the previous chunk", async () => {
-    const strategy = new FixedWindowChunkingStrategy(new ChonkieChunkingProvider());
+  it("hard-cuts a token longer than the window and leaves no tail chunk inside the previous one", async () => {
+    const strategy = new FixedWindowChunkingStrategy();
 
     const chunks = await strategy.chunk({
       title: "Alphabet",
@@ -210,8 +177,8 @@ describe("provider-backed chunking", () => {
 
     expect(chunks.map((chunk) => chunk.content)).toEqual([
       "abcdefghij",
-      "ijklmnopqr",
-      "qrstuvwxyz",
+      "klmnopqrst",
+      "uvwxyz",
     ]);
   });
 

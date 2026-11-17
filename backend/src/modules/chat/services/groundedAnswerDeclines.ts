@@ -4,11 +4,11 @@ import type { GroundedAnswerEnvelope } from "./groundedAnswerEnvelope.js";
 import type { ComposedDecline } from "./fallbackReplyComposer.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import {
+  committedDeclineOutcome,
   declineReasonForCommittedOutcome,
   type CommittedDeclineOutcome,
   type GroundingSummary,
 } from "./groundingAssertions.js";
-import { headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
 import type { RoutinePendingStep } from "../../../shared/domain/steeringRule.js";
 
 /**
@@ -48,13 +48,7 @@ export const declinePendingRoutineStep = (session: PreparedSession): RoutinePend
 export const blankDeclineCommitment = (
   envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
   answer: string,
-): CommittedDeclineOutcome | null => {
-  if (answer.trim()) {
-    return null;
-  }
-  const outcome = headOfCompletedEnvelope(envelope)?.outcome;
-  return outcome === "no_support" || outcome === "out_of_scope" ? outcome : null;
-};
+): CommittedDeclineOutcome | null => (answer.trim() ? null : committedDeclineOutcome(envelope));
 
 /**
  * The reason a blank decline is presented with. The composed decline only words the

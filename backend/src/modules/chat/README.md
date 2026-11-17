@@ -398,8 +398,10 @@ imports from `services/`.
   (`fallbackReplyComposer.ts`, `photosAttached` on `FallbackReplyInput`) after its
   rules; the direct and skill-result replies (`assistantReplyPromptBuilder.ts`)
   after the question. Every other turn's prompt is unchanged. A grounded photo miss
-  that names a Result commits `answer`; one that names none stays an uncited
-  `no_support` decline, so the hand-off on a miss still applies. Tests:
+  that names a Result commits `answer`; one that names none commits an uncited
+  `no_support` decline, so the hand-off on a miss applies. A decline whose body cites
+  a Result anyway is still that decline, shown without the citation (see Grounded
+  retrieval answers). Tests:
   `tests/unit/chat/attached-photo-rules.test.ts`,
   `tests/unit/grounded-answer-prompt-contract.test.ts`,
   `tests/unit/eval-suite/photo-turn-cases.test.ts`.
@@ -449,7 +451,22 @@ imports from `services/`.
   `unmet_directives` signal reads.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
-  semantic answer generation on compliant paths.
+  semantic answer generation on compliant paths. The body's assertions earn
+  `grounded`; `no_support` is the decline the head committed
+  (`committedDeclineOutcome`, the head reading `blankDeclineCommitment` and the
+  coverage report share), whatever the body adds after it. A decline is presented as
+  one: `ChatAnswerPresenter.presentRetrievalDeclineAnswer` strips its anchors and
+  gives it no citations or suggestions, so a decline that cites a Result anyway keeps
+  its decline reason and the hand-off on a miss. Nothing is re-asked: a committed
+  decline streams live, past the citation gate. On the streamed path the head the turn
+  acted on stands even when the tail after it does not parse (a reply cut off at the
+  token limit): `GroundedAnswerHeadReader.completedWithHead` gives the finished
+  envelope that head. A decline whose text cites a Result in range is counted as
+  `chat_grounding_assertion_outcomes_total{verdict="no_support",reason="cited_decline"}`
+  ahead of any protocol fault (`protocol` still says how the envelope parsed), and one
+  that planned suggestions as `reason="invalid_no_support"`. The eval replay
+  runner (`modules/eval/services/retrievalPipelineEvalRunner.ts`) presents a decline
+  the same way.
 - Decline classification: a declined turn also carries *why* it declined
   (`TurnDeclineReason` in `assistantTurnOutcomeTypes.ts`). `content_gap` keeps the
   turn on `retrieval.answer:no_context`; `out_of_scope` moves it to

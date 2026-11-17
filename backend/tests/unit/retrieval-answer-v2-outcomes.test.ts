@@ -1524,3 +1524,153 @@ describe("a decline the grounded answer commits without text", () => {
     expect(streaming.counts().fallbackCalls).toBe(0);
   });
 });
+
+/**
+ * #1823: the grounded answer can commit a decline in its head and still cite a Result in
+ * the body. The head is the verdict: the turn is the decline it committed, presented with
+ * no citation, so the agent's retrieval-miss hand-off still applies. Nothing is re-asked:
+ * a committed decline streams live, so its text has already reached the visitor.
+ */
+describe("a decline the grounded answer commits while citing a Result", () => {
+  const CITED_DECLINE_BODY = "That looks like a stone farmhouse. The closest we have is Guide 1[[1]].";
+  const CITED_DECLINE_VISIBLE = "That looks like a stone farmhouse. The closest we have is Guide 1.";
+  const citedDecline = (
+    outcome: "no_support" | "out_of_scope" = "no_support",
+    overrides: Record<string, unknown> = {},
+  ): string =>
+    JSON.stringify({
+      coverage: outcome === "out_of_scope" ? "unanswered_intentional_scope_boundary" : "unanswered_insufficient_evidence",
+      requestFocus: "courses like the photo",
+      outcome,
+      answer: CITED_DECLINE_BODY,
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      ...overrides,
+    });
+  const photoTurn = (): PreparedSession => ({
+    ...baseSession(),
+    userMessage: { id: "message-1", content: 'Like this?\n<attached_photo index="1">A stone farmhouse.</attached_photo>' } as never,
+  });
+
+  it("presents a cited no_support decline as the decline, with no citation and nothing re-asked", async () => {
+    const { composer, counts } = buildComposer(citedDecline());
+
+    const presented = await composer.composeAnswer(baseSession(), "Like this?", undefined, undefined);
+
+    expect(presented.answer).toBe(CITED_DECLINE_VISIBLE);
+    expect(presented.citations).toBeUndefined();
+    expect(presented.answerSegments).toBeUndefined();
+    expect(presented.suggestions).toBeUndefined();
+    expect(presented.grounding).toBe("no_support");
+    expect(presented.skillOutcome).toBe("no_context");
+    expect(presented.groundingSummary).toMatchObject({ verdict: "no_support", declineReason: "content_gap", sourcedClaimCount: 1 });
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+  });
+
+  it("keeps a cited out-of-scope decline out of scope", async () => {
+    const { composer } = buildComposer(citedDecline("out_of_scope"));
+
+    const presented = await composer.composeAnswer(baseSession(), "Like this?", undefined, undefined);
+
+    expect(presented.citations).toBeUndefined();
+    expect(presented.skillOutcome).toBe("out_of_scope");
+  });
+
+  it("drops the suggestions a committed decline planned", async () => {
+    const { composer, metricWrites } = buildComposer(citedDecline("no_support", {
+      answer: NO_SUPPORT_V2_BODY,
+      claims: [],
+      suggestions: [{ text: "What does registration require?", kind: "deeper", contextIndex: 1 }],
+    }));
+
+    const presented = await composer.composeAnswer(baseSession(), "Like this?", undefined, undefined);
+
+    expect(presented.suggestions).toBeUndefined();
+    expect(presented.skillOutcome).toBe("no_context");
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "invalid_no_support", stream: "false", decline: "content_gap", photo_turn: "false" },
+    }]);
+  });
+
+  it("counts the reconciled decline as a cited decline, apart on a photo turn", async () => {
+    const { composer, metricWrites } = buildComposer(citedDecline());
+
+    await composer.composeAnswer(photoTurn(), "Like this?", undefined, undefined);
+
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "cited_decline", stream: "false", decline: "content_gap", photo_turn: "true" },
+    }]);
+  });
+
+  it("settles a streamed cited decline as the decline it already streamed", async () => {
+    const { composer, counts, metricWrites } = buildComposer(citedDecline());
+
+    const { chunks, result } = await drain(composer.streamAnswer(photoTurn(), "Like this?", undefined, undefined));
+
+    expect(chunks.join("")).toBe(CITED_DECLINE_VISIBLE);
+    expect(result.deliveryMode).toBe("live");
+    expect(result.finalPresentation.answer).toBe(CITED_DECLINE_VISIBLE);
+    expect(getUnstreamedFinalAnswerRemainder(result)).toBe("");
+    expect(result.finalPresentation.citations).toBeUndefined();
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(result.finalPresentation.grounding).toBe("no_support");
+    expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 0 });
+    expect(metricWrites).toContainEqual({
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "cited_decline", stream: "true", decline: "content_gap", photo_turn: "true" },
+    });
+  });
+
+  // A cited decline is counted as one whatever else its envelope got wrong, so the count
+  // sizes every decline that named a Result.
+  it.each([
+    ["leaves the citation out of its manifest", citedDecline("no_support", { claims: [] }), "v2"],
+    ["carries a manifest that does not parse", citedDecline("no_support", { claims: "[[1]]" }), "malformed"],
+  ])("counts a cited decline that %s as a cited decline", async (_name, raw, protocol) => {
+    const { composer, metricWrites } = buildComposer(raw);
+
+    const presented = await composer.composeAnswer(baseSession(), "Like this?", undefined, undefined);
+
+    expect(presented.skillOutcome).toBe("no_context");
+    expect(presented.citations).toBeUndefined();
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol, verdict: "no_support", reason: "cited_decline", stream: "false", decline: "content_gap", photo_turn: "false" },
+    }]);
+  });
+
+  // A reply cut off after its head (at the token limit, say) leaves a tail that does not
+  // parse. The stream already committed the head's decline and released its text, so the
+  // decline still decides the turn.
+  it("settles a streamed decline whose tail is cut off as the decline its head committed", async () => {
+    const cutOff = citedDecline().replace(/"claims":.*$/, "\"claims\":[[1");
+    const { composer, metricWrites } = buildComposer(cutOff);
+
+    const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Like this?", undefined, undefined));
+
+    expect(chunks.join("")).toBe(CITED_DECLINE_VISIBLE);
+    expect(result.finalPresentation.answer).toBe(CITED_DECLINE_VISIBLE);
+    expect(result.finalPresentation.citations).toBeUndefined();
+    expect(result.finalPresentation.grounding).toBe("no_support");
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(metricWrites).toContainEqual({
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "malformed", verdict: "no_support", reason: "cited_decline", stream: "true", decline: "content_gap", photo_turn: "false" },
+    });
+  });
+
+  it("composes the decline a streamed blank decline committed when its tail is cut off", async () => {
+    const cutOff = citedDecline("no_support", { answer: "" }).replace(/"claims":.*$/, "\"claims\":[");
+    const { composer, counts } = buildComposer(cutOff);
+
+    const { result } = await drain(composer.streamAnswer(baseSession(), "Like this?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(counts().fallbackCalls).toBe(1);
+  });
+});

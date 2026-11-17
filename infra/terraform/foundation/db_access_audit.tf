@@ -46,6 +46,11 @@ resource "google_logging_project_bucket_config" "db_access_audit" {
   bucket_id      = local.db_access_audit_bucket_id
   description    = "Audit records of engineer access to the ${var.environment} environment's database, kept 12 months."
   retention_days = 365
+
+  # Locked so no one can shorten the retention or delete the bucket while it holds records,
+  # including the Terraform workflow's identity on an environment that owns the project's log
+  # bucket settings. Locking can't be undone: the bucket can only be deleted once it is empty.
+  locked = true
 }
 
 resource "google_logging_project_sink" "db_access_audit" {

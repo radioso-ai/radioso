@@ -186,6 +186,7 @@ const runner = (cards: boolean, content: string) => new DefaultRoutineRunner(
     reaskExhaustedPromptTemplate: loadPromptTemplate("chat/routine-step-reask-exhausted.md"),
     stuckHandoffPromptTemplate: loadPromptTemplate("chat/routine-step-stuck-handoff.md"),
     stepProgressPromptTemplate: loadPromptTemplate("chat/routine-step-progress.md"),
+    stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
     contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
     stepSourcesPromptTemplate: loadPromptTemplate("chat/routine-step-sources.md"),
     stepSourcesNonePromptTemplate: loadPromptTemplate("chat/routine-step-sources-none.md"),

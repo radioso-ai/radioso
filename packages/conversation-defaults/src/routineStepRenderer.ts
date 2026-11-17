@@ -6,6 +6,7 @@ import type {
   ConversationModelRequest,
   ConversationRoutineStepRenderer,
   PendingRenderableTurn,
+  RoutineEndingRun,
   RoutineGroundedAnswerRenderer,
   RenderableTurn,
   RoutineStep,
@@ -17,6 +18,7 @@ import type {
 
 import {
   DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT,
+  DEFAULT_ROUTINE_STEP_ENDING_PROMPT,
   DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_GAP_PROMPT,
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
@@ -130,6 +132,30 @@ const unresolvedRequestBlock = (turn: TurnContext): string => {
  */
 const stepProgressInstruction = (step: RoutineStep, template: string): string =>
   step.kind === "chat" ? renderPromptTemplate("chat/routine-step-progress.md", template, {}) : "";
+
+/** A skill name or outcome status the facts carry as it is: an identifier, never free text. */
+const IDENTIFIER_TOKEN = /^[\w.:-]{1,128}$/u;
+
+/**
+ * What the run did before the ending this reply is written for (#1820). An ending's text is
+ * written for the path its author meant the run to take: told only that text, a property search
+ * that found nothing ended on "a scout will check the shortlisted properties". The reply hears
+ * whether anyone outside the conversation gets the request, and the outcome each tool step on the
+ * ending's turn reported, as the skill names it (`empty`, `failed`); the prompt tells it what
+ * neither allows it to claim. Empty for a step that is no ending, or a host that reports none.
+ */
+const endingRunBlock = (ending: RoutineEndingRun | undefined, template: string): string => {
+  if (!ending) {
+    return "";
+  }
+  const outcomes = ending.skillOutcomes
+    .filter(({ skillName, status }) => IDENTIFIER_TOKEN.test(skillName) && IDENTIFIER_TOKEN.test(status))
+    .map(({ skillName, status }) => `\`${skillName}\` → \`${status}\``);
+  return renderPromptTemplate("chat/routine-step-ending.md", template, {
+    request_passed_on: ending.requestPassedOn ? "yes" : "no",
+    skill_outcomes: outcomes.length > 0 ? outcomes.join("; ") : "none",
+  });
+};
 
 /** The templates a re-ask is written from (`chat/routine-step-reask*.md`). */
 interface ReaskTemplates {
@@ -385,6 +411,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly reaskTemplates: ReaskTemplates;
   private readonly stuckHandoffPromptTemplate: string;
   private readonly stepProgressPromptTemplate: string;
+  private readonly stepEndingPromptTemplate: string;
   private readonly contextEvidencePromptTemplate: string;
   private readonly stepSourcesTemplates: StepSourcesTemplates;
 
@@ -412,6 +439,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       stuckHandoffPromptTemplate?: string;
       /** The rule a chat step's reply ends on: the flow waits for the user's answer (#1369). */
       stepProgressPromptTemplate?: string;
+      /** What an ending's reply hears the run did (`{{request_passed_on}}`: `yes` or `no`; `{{skill_outcomes}}`: the tool outcomes or `none`; #1820). */
+      stepEndingPromptTemplate?: string;
       /** Frames the evidence a step's context variables carry (`{{evidence}}`). */
       contextEvidencePromptTemplate?: string;
       /** Which quoted sources the reply has (`{{retrieved_excerpts}}`, `{{context_evidence}}`: `provided` or `none`; #1717). */
@@ -441,6 +470,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     };
     this.stuckHandoffPromptTemplate = options.stuckHandoffPromptTemplate ?? DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT;
     this.stepProgressPromptTemplate = options.stepProgressPromptTemplate ?? DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT;
+    this.stepEndingPromptTemplate = options.stepEndingPromptTemplate ?? DEFAULT_ROUTINE_STEP_ENDING_PROMPT;
     this.contextEvidencePromptTemplate =
       options.contextEvidencePromptTemplate ?? DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT;
     this.stepSourcesTemplates = {
@@ -480,6 +510,9 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
         render: async () => {
           const responseLanguage = await this.options.responseLanguage;
           const message = terminalMessage(input.step, input.steering);
+          // The authored message can promise what the run did not do (#1820); the default promises
+          // only that a person connects, which a hand-off always does.
+          const endingRun = message ? endingRunBlock(input.ending, this.stepEndingPromptTemplate) : "";
           return this.handoffMessage(
             input.turn,
             responseLanguage,
@@ -488,7 +521,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
               message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
               {
                 language: terminalPromptLanguage(responseLanguage),
-                ...(message ? { message } : {}),
+                ...(message ? { message, ending_run: endingRun ? `\n${endingRun}\n` : "" } : {}),
               },
             ),
           );
@@ -538,6 +571,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
       step_progress_instruction: stepProgressInstruction(input.step, this.stepProgressPromptTemplate),
+      ending_run: endingRunBlock(input.ending, this.stepEndingPromptTemplate),
       response_language_instruction: responseLanguageInstruction(responseLanguage),
       unresolved_request_context: unresolvedRequestBlock(input.turn),
       subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),

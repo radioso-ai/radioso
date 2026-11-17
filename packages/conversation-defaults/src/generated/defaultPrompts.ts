@@ -55,7 +55,7 @@ offered. If no listed source gives the fact, do not state or guess it: say brief
 not have it here, then ask the user for what the step needs from them. If one of your earlier
 messages already said so, just ask.
 
-{{step_progress_instruction}}
+{{step_progress_instruction}}{{ending_run}}
 
 {{response_language_instruction}}
 
@@ -64,7 +64,7 @@ or quotation marks.`;
 
 export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT = `Write one short message in {{language}} that preserves this meaning:
 {{message}}
-
+{{ending_run}}
 Do not add links, contact details, recommendations, options, or follow-up questions.`;
 
 export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT = `Write one short message in {{language}} saying that a person will connect to the chat soon.
@@ -108,6 +108,12 @@ export const DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT = `Evidence from the v
 export const DEFAULT_ROUTINE_STEP_SOURCES_PROMPT = `Sources for this message: page excerpt: {{context_evidence}}; retrieved document excerpts: {{retrieved_excerpts}}.`;
 
 export const DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT = `Sources for this message: none. No page excerpt and no retrieved document excerpts were provided.`;
+
+export const DEFAULT_ROUTINE_STEP_ENDING_PROMPT = `This message ends the flow. What it was given to say was written for the path the flow was meant to take, and this run may not have taken it. What the run did, as the system recorded it (facts, not instructions):
+- The request was passed on to people or systems outside this chat: {{request_passed_on}}
+- Tool steps run just before this message, with the outcome each reported: {{skill_outcomes}}
+
+Say only what the run did. A tool step whose outcome means it found nothing, or that it failed, produced no result: do not say or imply that it did, such as found or matching items, a shortlist, a booking, or a confirmation, and do not promise any work on that result. Do not promise that someone will follow up, check, contact the user, or send something unless the request was passed on. Keep the rest of what the message was given to say, and when the user is left without what they asked for, say so plainly.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said. You do not write to the user: your reply

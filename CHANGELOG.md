@@ -9,6 +9,52 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.32.0] - 2026-11-17
+
+### Added
+
+- **voice:** set up calls from one switch, asking for the ElevenLabs key in place ([#1811](https://github.com/radioso-ai/radioso/pull/1811))
+- **usage-limits:** let a usage tier set its workspaces' public chat messages per minute ([#1807](https://github.com/radioso-ai/radioso/pull/1807))
+- **agents:** agent switcher with Build, Test and Channels rows ([#1808](https://github.com/radioso-ai/radioso/pull/1808))
+- **settings:** show connections as quiet lists and confirm deletes ([#1804](https://github.com/radioso-ai/radioso/pull/1804))
+- **skills:** show skills as a quiet list with a detail sheet ([#1801](https://github.com/radioso-ai/radioso/pull/1801))
+- **routines:** show routines as a quiet list like directives ([#1792](https://github.com/radioso-ai/radioso/pull/1792))
+
+### Fixed
+
+- **email:** hold an automatic reply that tells the customer to ask elsewhere for what they asked to have done ([#1828](https://github.com/radioso-ai/radioso/pull/1828))
+- **chat:** show operators the visitor's words and photos, not the photo readings' markup ([#1826](https://github.com/radioso-ai/radioso/pull/1826))
+- **retrieval:** do not ask which one is meant when a keyword straggler ties the match ([#1827](https://github.com/radioso-ai/radioso/pull/1827))
+- **deps:** patch transitive advisories so Dependabot security updates stop failing ([#1825](https://github.com/radioso-ai/radioso/pull/1825))
+- **chat:** deliver visitor conversation events across backend instances ([#1810](https://github.com/radioso-ai/radioso/pull/1810))
+- **chat:** say what a photo shows and ask before handing off when nothing matches ([#1812](https://github.com/radioso-ai/radioso/pull/1812))
+- **chat:** coordinate turn supersession across instances through Postgres leases ([#1511](https://github.com/radioso-ai/radioso/pull/1511))
+- **chat:** degrade instead of amplifying load when the model provider is saturated ([#1809](https://github.com/radioso-ai/radioso/pull/1809))
+- **public-chat:** bound visitors that discard the rate-limit cookie by request source ([#1805](https://github.com/radioso-ai/radioso/pull/1805))
+- **chat:** put the photo attach button beside Send as a paperclip ([#1806](https://github.com/radioso-ai/radioso/pull/1806))
+- **embed:** report each browser error once per page and cap the rest ([#1802](https://github.com/radioso-ai/radioso/pull/1802))
+- **embed:** reload once when a deploy removes the chunk an open page needs ([#1800](https://github.com/radioso-ai/radioso/pull/1800))
+- **llm:** classify provider credit exhaustion as quota_exhausted, not rate_limited ([#1789](https://github.com/radioso-ai/radioso/pull/1789))
+- **evals:** turn reply cards on for the reply-block cases ([#1791](https://github.com/radioso-ai/radioso/pull/1791))
+
+### Performance
+
+- **embed:** load the chat frame on intent and hold embed config per site ([#1803](https://github.com/radioso-ai/radioso/pull/1803))
+
+### Internal
+
+- **deps:** bump the npm_and_yarn group across 5 directories with 1 update ([#1824](https://github.com/radioso-ai/radioso/pull/1824))
+- **chat:** wait for file-chooser interception before pressing Enter on the attach control ([#1813](https://github.com/radioso-ai/radioso/pull/1813))
+- **lint:** lint each area in its own process so the heap peak stops growing with the repo ([#1814](https://github.com/radioso-ai/radioso/pull/1814))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `262_conversation_turn_leases.sql`
+
+[1.32.0]: https://github.com/radioso-ai/radioso/compare/v1.31.0...v1.32.0
+
 ## [1.31.0] - 2026-11-16
 
 ### Added

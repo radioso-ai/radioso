@@ -13,12 +13,14 @@ import type {
 import {
   deriveChunkSection,
   deriveDocumentSubject,
+  extractLeadingDocumentAttributes,
   normalizeMarkdown,
   renderMetadataSearchText,
   renderSearchText,
   type ChunkingStrategy,
   type ChunkingStrategyId,
   type WorkspaceTimeZoneReader,
+  withDocumentAttributes,
 } from "../../retrieval/public.js";
 import { formatIsoDate } from "../../../shared/domain/clock.js";
 import { resolveReferenceTimeZone, type ReferenceTimeZoneSource } from "../../../shared/domain/referenceTimeZone.js";
@@ -322,9 +324,12 @@ export class DocumentProcessingService {
       // Source-level tags are a chunk-projection concern only: they are merged
       // into the chunk metadata below and never written back to
       // documents.metadata, so a source retag never rewrites its documents.
-      const chunkMetadata = mergeDocumentMetadataForChunks(
-        parseSourceDocumentMetadata(source?.config),
-        revisionTags.projectedMetadata,
+      // The attributes the document states at its top ride on every chunk, so
+      // a chunk cut from deep in the text still names them.
+      const documentAttributes = extractLeadingDocumentAttributes(normalizeMarkdown(documentWithContent.markdownContent));
+      const chunkMetadata = withDocumentAttributes(
+        mergeDocumentMetadataForChunks(parseSourceDocumentMetadata(source?.config), revisionTags.projectedMetadata),
+        documentAttributes,
       );
       if (revisionTags.clearedDocument) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
@@ -388,6 +393,7 @@ export class DocumentProcessingService {
           chunkingStrategy: settings.chunkingStrategy,
           embeddingModel,
           chunkCount: enrichedChunks.length,
+          documentAttributeCount: documentAttributes.length,
           chunkingDurationMs,
           storageEmbeddingDurationMs,
         },

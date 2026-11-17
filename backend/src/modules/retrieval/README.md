@@ -152,6 +152,17 @@ imports from `services/` or `infra/`.
   returns one group per chunk (`range`, `reserved`, `outside`), and
   `PromptContextSelectorService.selectInStages` applies the quotas. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
   `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
+- Chunk boundaries and what every chunk carries: `domain/chunking/` holds the
+  strategies the documents worker runs. Fixed window splits through
+  `domain/chunking/textBoundaryWindows.ts` (sentence, then space, then word
+  boundaries from `Intl.Segmenter`, overlap starting on a sentence or word);
+  recursive and semantic go through `infra/chonkieChunkingProvider.ts`.
+  `domain/documentAttributes.ts` reads the front matter or leading
+  `Label: value` block a document opens with, by structure only; the worker
+  stamps it on every chunk's metadata as `documentAttributes`, and
+  `services/searchTextRenderer.ts` renders it into the embedded search text and
+  the answer prompt's `Attributes:` line. Integration coverage lives in
+  `tests/integration/document-attributes-retrieval.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.

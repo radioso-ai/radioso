@@ -1,7 +1,7 @@
 ---
 title: "Document processing"
 description: "Operating the document worker and understanding the implications for user-visible behavior."
-last_updated: 2026-10-17
+last_updated: 2026-11-17
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -37,6 +37,8 @@ In local mode, the worker can poll the durable queue directly. In cloud mode, th
 
 The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
 
+Chunks start and end at sentence or word boundaries. Each one carries the facts its document states at the top — front matter, or a block of `Label: value` lines under the title — so a passage from the end of a long document is searched with, and answered beside, the region or type the document opens with.
+
 If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags — the built-in `dateFrom` and `dateTo`, plus whatever fields the matched document type declares — onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 
 When the content names pictures (a crawled page's `og:image` and the images in its main content, a WordPress featured image), the worker also queues an `images` job at the same low priority. It fetches each picture from its public address, keeps a WebP copy at 320 and 640 pixels wide in document storage, and ties each picture in the text to the chunk it sits in. A picture under 200 pixels on its short side, an SVG, or one at an address that is not public is not kept, a document keeps at most 12, and a picture that cannot be fetched never fails the document. One that timed out is tried again on the next sync. [Show picture cards in replies](/guides/reply-cards) lists what is kept.
@@ -55,6 +57,7 @@ When the content names pictures (a crawled page's `og:image` and the images in i
 - `DOCUMENT_STORAGE_DRIVER` selects local filesystem or GCS storage for uploaded source files.
 - `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
 - workspace ingestion settings control chunking strategy and chunk sizes.
+- **Reprocess Existing Documents** in **Knowledge → Ingestion** rebuilds every document's chunks with the current settings and boundary rules. A chunk keeps the boundaries and document facts it was built with until its document processes again.
 - `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
 - The document type catalog in **Knowledge → Ingestion** decides what extraction classifies against and which fields it pulls. Edits apply to processing that happens after the save; **Reprocess source** applies them to documents a source already ingested. [Extract document metadata](/guides/document-metadata) walks through authoring a type and using its fields.
 - `documentMetadata` on a document source holds the tags stamped onto every chunk that source produces. A document's own metadata wins on any key the two share, and the tags land on existing chunks the next time those documents process — which is what a source reprocess is for.

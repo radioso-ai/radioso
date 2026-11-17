@@ -1,7 +1,7 @@
 ---
 title: "Chunking Strategy"
 description: "Overview of chunking methods (fixed window, semantic, recursive text) and when to use each for document splitting before retrieval."
-last_updated: 2026-05-17
+last_updated: 2026-11-17
 ---
 
 # Chunking Strategy
@@ -36,12 +36,12 @@ If chunking is good:
 
 #### Fixed window
 
-This cuts text into evenly sized slices.
+This cuts text into slices of at most the chunk size. Each slice ends at the last sentence or line end that keeps it at least half full; when a single sentence runs past that, the slice ends between two words instead. Only one unbroken string longer than a whole chunk, such as a very long URL, is cut where the chunk runs out. The boundaries come from Unicode text segmentation, so they hold for languages written without spaces, such as Chinese or Japanese, and a Markdown heading stays with the section below it.
 
 Use it when:
 
 - documents are mostly plain text
-- you want predictable behavior
+- you want predictable chunk sizes
 - formatting is weak or unreliable
 
 #### Semantic
@@ -68,9 +68,8 @@ This uses text boundaries before falling back to smaller splits:
 
 Use it when:
 
-- fixed window chunks are cutting words or sentences awkwardly
-- documents are mostly prose
-- you want a simple strategy that still respects natural text boundaries
+- documents are mostly prose with clear paragraphs
+- you want each chunk to hold whole paragraphs where they fit
 
 ### Tradeoffs
 
@@ -78,7 +77,7 @@ Fixed window is simpler and more predictable.
 
 Semantic chunking is often more natural for prose, but it depends on embeddings during ingestion.
 
-Recursive text is a practical middle option. It does not use embeddings, and it avoids many fixed-window boundary problems.
+Recursive text is a practical middle option. It does not use embeddings, and it keeps paragraphs together before it splits them.
 
 ### Tables And Code
 
@@ -86,7 +85,7 @@ Recursive text and semantic chunking handle tables and code before the selected 
 
 Markdown and HTML tables are split with repeated table headers so each chunk keeps column context. Fenced code blocks and source-code documents are routed through code-aware chunking when the runtime has parser support for the detected language. If a code parser is unavailable, ingestion falls back to the selected text strategy.
 
-Fixed window chunking stays fixed window for every input type. It does not use table-aware or code-aware chunking.
+Fixed window chunking reads tables and code as text. Its chunks end at line ends, so a table row or a line of code stays whole, but a chunk does not repeat the table's header row.
 
 Code-aware chunking is attempted for source documents and fenced code blocks with these language hints or file extensions:
 
@@ -107,6 +106,12 @@ Code-aware chunking is attempted for source documents and fenced code blocks wit
 - TOML
 - XML
 - YAML and YML
+
+### Facts At The Top Of A Document
+
+Whichever strategy you choose, every chunk carries the facts its document states at the top: YAML front matter, or two or more `Label: value` lines right under the title, such as `Region: Umbria` and `Type: Farmhouse`. List markers and bold labels are fine. Each chunk is searched with those facts, and the agent sees them beside the chunk, so a passage from the end of a long description still answers "which region is it in?".
+
+The block ends at the first line that is not a `Label: value` line. Up to 24 facts and 1,200 characters travel with each chunk, and a value longer than 240 characters stays in the text only.
 
 ### When To Revisit
 

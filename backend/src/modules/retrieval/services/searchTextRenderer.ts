@@ -1,3 +1,5 @@
+import { readDocumentAttributes, renderDocumentAttributes } from "../domain/documentAttributes.js";
+
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,6 +53,8 @@ const renderMetadataText = (
       : []),
     options.includeUrl && url ? `URL: ${url}` : "",
     author ? `Author: ${author}` : "",
+    // Facts the document states about itself, carried on every chunk of it.
+    ...renderDocumentAttributes(readDocumentAttributes(metadata)),
   ].filter((part) => part.length > 0);
 
   return parts.join(" | ");

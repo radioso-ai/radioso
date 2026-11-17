@@ -115,6 +115,10 @@ export {
   deriveChunkSection,
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
+export {
+  extractLeadingDocumentAttributes,
+  withDocumentAttributes,
+} from "./domain/documentAttributes.js";
 export { documentScopeFromClarificationCandidate } from "./services/senseGroupingService.js";
 export {
   evaluateRetrievalSenseClarification,

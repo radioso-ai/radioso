@@ -5,12 +5,18 @@ import type {
   GroundingEnvelopeParseStatus,
 } from "./groundedAnswerEnvelope.js";
 import type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
+import { headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
 import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 
 /**
  * How well evidence supported the answer. Scope is deliberately *not* a verdict here:
  * an out-of-scope decline is as unsupported as any other decline, so it computes to
  * `no_support` and carries its reason on {@link GroundingSummary.declineReason}.
+ *
+ * `grounded` is earned by the body's assertions. A decline is committed by the head,
+ * before the body is written, so whatever the body adds (a cited Result, planned
+ * suggestions, a broken anchor) never turns it back into an answer: the presenter drops
+ * what a decline cannot carry, and the counts below still record what the body did.
  */
 export type { GroundingVerdict };
 
@@ -33,6 +39,18 @@ export type CommittedDeclineOutcome = Exclude<GroundingEnvelopeOutcome, "answer"
 /** Why the turn declined, read off the decline outcome the grounded answer committed. */
 export const declineReasonForCommittedOutcome = (outcome: CommittedDeclineOutcome): TurnDeclineReason =>
   outcome === "out_of_scope" ? "out_of_scope" : "content_gap";
+
+/**
+ * The decline (`no_support` or `out_of_scope`) a completed envelope's head committed, or
+ * `null` when its head is incomplete or commits `answer`. The head is written before
+ * `answer`, so a tail that failed to parse after it does not take the commitment back.
+ */
+export const committedDeclineOutcome = (
+  envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
+): CommittedDeclineOutcome | null => {
+  const outcome = headOfCompletedEnvelope(envelope)?.outcome;
+  return outcome === "no_support" || outcome === "out_of_scope" ? outcome : null;
+};
 
 interface ParsedInlineAssertions {
   groups: number[][];
@@ -146,7 +164,7 @@ export const computeGroundingSummary = (input: {
   body: string;
   envelope: Pick<
     GroundedAnswerEnvelope,
-    "protocolVersion" | "parseStatus" | "outcome" | "claims" | "suggestions"
+    "protocolVersion" | "parseStatus" | "coverage" | "requestFocus" | "outcome" | "claims"
   >;
   contextCount: number;
 }): GroundingSummary => {
@@ -162,22 +180,20 @@ export const computeGroundingSummary = (input: {
 
   let verdict: GroundingVerdict = "degraded";
   let declineReason: TurnDeclineReason | undefined;
-  if (input.envelope.parseStatus === "valid_v2" && !assertionMismatch && invalidSourceCount === 0) {
-    if (
-      (input.envelope.outcome === "no_support" || input.envelope.outcome === "out_of_scope")
-      && sourcedClaimCount === 0
-      && input.envelope.suggestions.length === 0
-    ) {
-      verdict = "no_support";
-      declineReason = declineReasonForCommittedOutcome(input.envelope.outcome);
-    } else if (
-      input.envelope.outcome === "answer"
-      && claimCount > 0
-      && sourcedClaimCount === claimCount
-      && unsourcedClaimCount === 0
-    ) {
-      verdict = "grounded";
-    }
+  const committedDecline = committedDeclineOutcome(input.envelope);
+  if (committedDecline) {
+    verdict = "no_support";
+    declineReason = declineReasonForCommittedOutcome(committedDecline);
+  } else if (
+    input.envelope.parseStatus === "valid_v2"
+    && !assertionMismatch
+    && invalidSourceCount === 0
+    && input.envelope.outcome === "answer"
+    && claimCount > 0
+    && sourcedClaimCount === claimCount
+    && unsourcedClaimCount === 0
+  ) {
+    verdict = "grounded";
   }
 
   return {

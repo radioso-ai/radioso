@@ -222,15 +222,15 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     if (!envelope.answer.trim()) {
       throw new BlankChatAnswerError();
     }
-    const citationEvidence = toCitationEvidence(pipelineResult.contexts);
-    const presented = this.answerPresentation.present({
-      answer: envelope.answer,
-      citations: citationEvidence,
-    });
     const groundingSummary = computeGroundingSummary({
       body: envelope.answer,
       envelope,
       contextCount: pipelineResult.contexts.length,
+    });
+    // A decline names no Result, as in chat, even when the body that declined cited one.
+    const presented = this.answerPresentation.present({
+      answer: envelope.answer,
+      citations: groundingSummary.verdict === "no_support" ? [] : toCitationEvidence(pipelineResult.contexts),
     });
 
     return {

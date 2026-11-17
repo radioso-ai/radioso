@@ -6,9 +6,6 @@ import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import type { GroundedAnswerEnvelope } from "./groundedAnswerEnvelope.js";
 import type { CommittedDeclineOutcome, GroundingSummary } from "./groundingAssertions.js";
 
-const isEnvelopeDecline = (outcome: GroundedAnswerEnvelope["outcome"]): boolean =>
-  outcome === "no_support" || outcome === "out_of_scope";
-
 /**
  * The retrieval answer's content-free counters: how its grounding assertions came out, how
  * its coverage head parsed and what the host decided, and every way a draft became a
@@ -17,9 +14,14 @@ const isEnvelopeDecline = (outcome: GroundedAnswerEnvelope["outcome"]): boolean 
 export class RetrievalAnswerMetrics {
   constructor(private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null) {}
 
+  /**
+   * A decline its head committed stays a decline whatever its body adds, and is presented
+   * without what a decline cannot carry. Two reasons count that: `cited_decline` when the
+   * body cited a Result, `invalid_no_support` when the envelope planned suggestions.
+   */
   groundingOutcome(
     summary: GroundingSummary,
-    envelope: Pick<GroundedAnswerEnvelope, "outcome">,
+    envelope: Pick<GroundedAnswerEnvelope, "suggestions">,
     stream: boolean,
     photoTurn: boolean,
   ): void {
@@ -30,19 +32,22 @@ export class RetrievalAnswerMetrics {
         : summary.parseStatus === "missing"
           ? "missing"
           : "malformed";
+    const declined = summary.verdict === "no_support";
     const reason = summary.parseStatus !== "valid_v2"
       ? "parse_failure"
       : summary.invalidSourceCount > 0
         ? "invalid_index"
         : summary.assertionMismatch
           ? "mismatch"
-          : isEnvelopeDecline(envelope.outcome) && summary.verdict !== "no_support"
-            ? "invalid_no_support"
-            : summary.claimCount === 0 && summary.verdict !== "no_support"
-              ? "anchor_free"
-              : summary.unsourcedClaimCount > 0
-                ? "unsourced"
-                : "complete";
+          : declined && summary.sourcedClaimCount > 0
+            ? "cited_decline"
+            : declined && envelope.suggestions.length > 0
+              ? "invalid_no_support"
+              : summary.claimCount === 0 && !declined
+                ? "anchor_free"
+                : summary.unsourcedClaimCount > 0
+                  ? "unsourced"
+                  : "complete";
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
       labels: {

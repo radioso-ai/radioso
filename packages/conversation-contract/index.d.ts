@@ -1748,10 +1748,7 @@ export interface RankedRoutineMatch {
   variables?: Record<string, unknown>;
 }
 
-/**
- * Planner-consumable summary of one prepared candidate: enough to build a ranking
- * prompt (title, trigger, priority) without exposing any activation policy.
- */
+/** One prepared candidate as a planner reads it: title, trigger, priority, declared slot keys; no activation policy. */
 export interface RoutineCandidateSummary {
   routineId: string;
   title: string;

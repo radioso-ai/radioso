@@ -79,7 +79,8 @@ describe("grounding assertions", () => {
     expect(summarize(degradedV2Envelope()).declineReason).toBeUndefined();
   });
 
-  it("holds an out-of-scope decline to the same strict gate as no_support", () => {
+  // Without `coverage` and `requestFocus` the head is incomplete, so nothing committed a decline.
+  it("degrades a decline outcome whose head is incomplete", () => {
     const cases = [
       formatV2Envelope("Fact[[1]].", { v: 2, outcome: "out_of_scope", claims: [[1]], suggestions: [] }),
       formatV2Envelope(OUT_OF_SCOPE_V2_BODY, {
@@ -95,6 +96,62 @@ describe("grounding assertions", () => {
       expect(summary.verdict).toBe("degraded");
       expect(summary.declineReason).toBeUndefined();
     }
+  });
+
+  // #1823: the head commits the outcome before the body is written, so a body that cites a
+  // Result, plans suggestions, or breaks its anchors cannot turn the decline into an answer.
+  it.each([
+    ["cites a Result", "The closest we have is the arts weekend[[1]].", [[1]], []],
+    ["cites two Results", "The arts weekend[[1]] and the mountain course[[2]][[3]] are the closest.", [[1], [2, 3]], []],
+    ["plans a suggestion", NO_SUPPORT_V2_BODY, [], [{ text: "Why?", kind: "deeper", contextIndex: 1 }]],
+    ["names an index out of range", "Limit[[999]].", [[999]], []],
+    ["disagrees with its manifest", "The closest we have is the arts weekend[[1]].", [], []],
+    ["writes an unsourced marker its manifest omits", "Limit[[?]].", [], []],
+  ])("keeps a committed no_support decline a decline when its body %s", (_name, body, claims, suggestions) => {
+    const raw = formatV2Envelope(body, {
+      v: 2,
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "courses like the photo",
+      outcome: "no_support",
+      claims,
+      suggestions,
+      grounding: "degraded",
+    });
+
+    expect(summarize(raw)).toMatchObject({ verdict: "no_support", declineReason: "content_gap" });
+  });
+
+  it("keeps a committed out-of-scope decline out of scope when its body cites a Result", () => {
+    const raw = formatV2Envelope("That's outside our remit, though the arts weekend[[1]] is ours.", {
+      v: 2,
+      coverage: "unanswered_intentional_scope_boundary",
+      requestFocus: "the unrelated request",
+      outcome: "out_of_scope",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+    });
+
+    expect(summarize(raw)).toMatchObject({
+      verdict: "no_support",
+      declineReason: "out_of_scope",
+      sourcedClaimCount: 1,
+    });
+  });
+
+  // A tail that failed after a valid head does not take the decline back, as with a blank decline.
+  it("keeps a committed decline a decline when the tail after its head fails to parse", () => {
+    const raw = formatV2Envelope("The closest we have is the arts weekend[[1]].", {
+      v: 2,
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "courses like the photo",
+      outcome: "no_support",
+      claims: "[[1]]",
+      suggestions: [],
+      grounding: "degraded",
+    });
+
+    expect(summarize(raw)).toMatchObject({ parseStatus: "invalid_v2", verdict: "no_support", declineReason: "content_gap" });
   });
 
   it("allows matching unsourced assertions on no-support copy", () => {
@@ -171,7 +228,7 @@ describe("grounding assertions", () => {
     },
   );
 
-  it("invalidates no_support when it has sources, suggestions, invalid indices, or mismatches", () => {
+  it("degrades a no_support outcome whose head is incomplete, whatever its body", () => {
     const cases = [
       formatV2Envelope("Fact[[1]].", { v: 2, outcome: "no_support", claims: [[1]], suggestions: [] }),
       formatV2Envelope(NO_SUPPORT_V2_BODY, { v: 2, outcome: "no_support", claims: [], suggestions: [{ text: "Why?", contextIndex: 1 }] }),

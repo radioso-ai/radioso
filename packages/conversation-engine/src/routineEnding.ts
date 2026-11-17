@@ -11,6 +11,8 @@ import type {
   RoutineOperatorNoticeTemplate,
   RoutineState,
   RoutineStep,
+  RoutineStepReplyInput,
+  RoutineTraceStepEntry,
 } from "@radioso/conversation-contract";
 
 import { declaredSlotVariables, hasVariable, sensitiveSlotKeys } from "./routineSlotValues.js";
@@ -129,6 +131,9 @@ export const firingCompletionExport = (
 /** Steps that hand the run's values to someone outside the conversation the moment they run. */
 const STEPS_THAT_SEND: ReadonlySet<RoutineStep["kind"]> = new Set(["skill", "action", "await"]);
 
+/** Whether a step a run's `path` names may have sent its values out; one the routine lacks reads as sent. */
+const sentOnEntry = (step: RoutineStep | undefined): boolean => step === undefined || STEPS_THAT_SEND.has(step.kind);
+
 /** Whether the terminal a run ended on told someone outside the conversation what it held. */
 const endingSends = (routine: Routine, terminal: RoutineStep): boolean => {
   const kind = terminalKindFor(terminal);
@@ -154,10 +159,48 @@ export const completedRunSentValues = (routine: Routine, state: RoutineState): b
   const stepsById = new Map(routine.steps.map((step) => [step.id, step]));
   const visited = state.path.map((stepId) => stepsById.get(stepId));
   const landed = visited.at(-1);
-  if (!landed || visited.some((step) => step === undefined || STEPS_THAT_SEND.has(step.kind))) {
+  if (!landed || visited.some(sentOnEntry)) {
     return true;
   }
   return landed.kind !== "terminal" || endingSends(routine, landed);
+};
+
+/** What the turn that reaches an ending did on its way there, as the runner holds it. */
+interface EndingTurnWalk {
+  traceSteps: readonly RoutineTraceStepEntry[];
+  /** The actions the turn's action steps emitted; the ending's own completion export is not one yet. */
+  actions?: readonly RoutineActionRequest[];
+  /** The turn's tool steps whose skill may have acted outside the conversation. */
+  skillsWithExternalEffects?: readonly string[];
+}
+
+/**
+ * What the run did before the ending `step` is, for the ending's reply (#1820); nothing for any
+ * other step. The request is passed on when the ending sends it (a hand-off, an operator notice,
+ * or the completion export), when the turn emitted an action or ran a tool step that may have
+ * acted outside the conversation, or when an earlier turn passed a tool, action, or approval step,
+ * read from the path the turn started on as {@link completedRunSentValues} reads it, since the run
+ * keeps no earlier outcome. The tool outcomes are this turn's, as its trace recorded them.
+ */
+export const endingReplyField = (
+  routine: Routine,
+  step: RoutineStep,
+  earlierPath: readonly string[],
+  walk: EndingTurnWalk,
+): Pick<RoutineStepReplyInput, "ending"> => {
+  if (step.kind !== "terminal") {
+    return {};
+  }
+  const stepsById = new Map(routine.steps.map((candidate) => [candidate.id, candidate]));
+  const requestPassedOn = endingSends(routine, step) ||
+    (walk.actions?.length ?? 0) > 0 ||
+    (walk.skillsWithExternalEffects?.length ?? 0) > 0 ||
+    earlierPath.some((stepId) => sentOnEntry(stepsById.get(stepId)));
+  const skillOutcomes = walk.traceSteps.flatMap((entry) =>
+    entry.event === "skill_dispatched" && entry.skillName && entry.skillStatus
+      ? [{ skillName: entry.skillName, status: entry.skillStatus }]
+      : []);
+  return { ending: { requestPassedOn, skillOutcomes } };
 };
 
 /**

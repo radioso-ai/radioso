@@ -670,7 +670,7 @@ function RoutineEditorScreen({
       window.clearTimeout(timeoutId)
       if (pendingAutosaveTimeoutRef.current === timeoutId) pendingAutosaveTimeoutRef.current = null
     }
-  }, [activeRoutineDraftError, hasUnsavedChange, isLoading])
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, hasUnsavedChange, isLoading])
 
   // Test draft navigates away, which unmounts this section and cancels the debounce above.
   // Flush any unsaved edit into the same saveDraft the timer would have called so the draft

@@ -323,6 +323,23 @@ test("an existing routine opens in the Document view", async ({ page }) => {
   await expect(editor).not.toContainText("{{slot.email}}");
 });
 
+test("opening a routine without editing it never saves it (#1819)", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000303", enabled: true, version: 1 }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await routineRow(page, "Collect pricing intake").click();
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("so the team can follow up");
+
+  // The autosave debounce is 1.5 s; a save from merely opening would have landed by now.
+  await page.waitForTimeout(3_500);
+  expect(routineUpdates.filter((update) => update.method === "PATCH")).toEqual([]);
+});
+
 test("a routine with custom completion copy opens in Document with terminal copy preserved", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

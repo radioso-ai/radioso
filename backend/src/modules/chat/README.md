@@ -458,9 +458,13 @@ imports from `services/`.
   one: `ChatAnswerPresenter.presentRetrievalDeclineAnswer` strips its anchors and
   gives it no citations or suggestions, so a decline that cites a Result anyway keeps
   its decline reason and the hand-off on a miss. Nothing is re-asked: a committed
-  decline streams live, past the citation gate. It is counted as
-  `chat_grounding_assertion_outcomes_total{verdict="no_support",reason="cited_decline"}`,
-  and one that planned suggestions as `reason="invalid_no_support"`. The eval replay
+  decline streams live, past the citation gate. On the streamed path the head the turn
+  acted on stands even when the tail after it does not parse (a reply cut off at the
+  token limit): `GroundedAnswerHeadReader.completedWithHead` gives the finished
+  envelope that head. A decline whose text cites a Result in range is counted as
+  `chat_grounding_assertion_outcomes_total{verdict="no_support",reason="cited_decline"}`
+  ahead of any protocol fault (`protocol` still says how the envelope parsed), and one
+  that planned suggestions as `reason="invalid_no_support"`. The eval replay
   runner (`modules/eval/services/retrievalPipelineEvalRunner.ts`) presents a decline
   the same way.
 - Decline classification: a declined turn also carries *why* it declined

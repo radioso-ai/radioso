@@ -16,8 +16,11 @@ export class RetrievalAnswerMetrics {
 
   /**
    * A decline its head committed stays a decline whatever its body adds, and is presented
-   * without what a decline cannot carry. Two reasons count that: `cited_decline` when the
-   * body cited a Result, `invalid_no_support` when the envelope planned suggestions.
+   * without what a decline cannot carry. Two reasons count that. `cited_decline` comes
+   * first, ahead of any protocol fault, so it counts every decline whose text cited a
+   * Result in range (one its manifest left out, or whose tail did not parse, included);
+   * `protocol` still says how the envelope parsed. `invalid_no_support` counts a decline
+   * whose envelope planned suggestions.
    */
   groundingOutcome(
     summary: GroundingSummary,
@@ -33,14 +36,14 @@ export class RetrievalAnswerMetrics {
           ? "missing"
           : "malformed";
     const declined = summary.verdict === "no_support";
-    const reason = summary.parseStatus !== "valid_v2"
-      ? "parse_failure"
-      : summary.invalidSourceCount > 0
-        ? "invalid_index"
-        : summary.assertionMismatch
-          ? "mismatch"
-          : declined && summary.sourcedClaimCount > 0
-            ? "cited_decline"
+    const reason = declined && summary.sourcedClaimCount > 0
+      ? "cited_decline"
+      : summary.parseStatus !== "valid_v2"
+        ? "parse_failure"
+        : summary.invalidSourceCount > 0
+          ? "invalid_index"
+          : summary.assertionMismatch
+            ? "mismatch"
             : declined && envelope.suggestions.length > 0
               ? "invalid_no_support"
               : summary.claimCount === 0 && !declined

@@ -878,7 +878,8 @@ export class RetrievalAnswerComposer {
         yield heldTail;
         hasStreamedAnswer = true;
       }
-      const finalized = reader.finalize();
+      // The head this turn acted on stands even when the tail after it did not parse.
+      const finalized = headReader.completedWithHead(reader.finalize());
       // The cap governs in-flight streaming only. On natural completion without
       // opening or bounding, the computed #860 verdict and draft suppression below
       // remain final authority, preserving pre-#859 delivery behavior.

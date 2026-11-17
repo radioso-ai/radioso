@@ -15,6 +15,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { decideClarification } from "@radioso/conversation-engine";
 
+import { slotLine } from "./routineNextStepSelector.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 /**
@@ -41,6 +42,8 @@ export type {
 
 export const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
 
+When a routine lists "Variable keys", "variables" may use only those keys.
+
 Return only JSON:
 {"matches":[{"routineId":"<id>","confidence":0.0,"variables":{}}]}
 
@@ -61,28 +64,45 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   { role: "user", content: turn.inputEvent.content },
 ];
 
-const declaredSlotKeys = (routine: Routine): string[] => (routine.slots ?? []).map((slot) => slot.key);
+/**
+ * The slots activation may fill from the opening message: the declared ones, minus any a
+ * consent covers, which take no value before the visitor grants it (#1544).
+ */
+const activationSlots = (routine: Routine): NonNullable<Routine["slots"]> => {
+  const consented = new Set((routine.consents ?? []).flatMap((consent) => consent.slotKeys));
+  return (routine.slots ?? []).filter((slot) => !consented.has(slot.key));
+};
 
-const slotKeysLine = (keys: readonly string[]): string =>
-  keys.length > 0 ? `\nVariable keys: ${keys.join(", ")}` : "";
+/** The slots as the selector words them, one line each, under the routine's block. */
+const activationSlotLines = (routine: Routine): string[] => activationSlots(routine).map(slotLine);
+
+const slotLinesBlock = (lines: readonly string[]): string =>
+  lines.length > 0 ? `\nVariable keys:\n${lines.join("\n")}` : "";
 
 /**
- * A ranking's activation variables a routine can hold: when it declares slots, only those
- * keys. The model returns free-form field names, and the runner would drop the rest as
- * undeclared; dropping them here keeps them out of the run's state and its trace. A routine
- * with no slot schema takes every key, as it always has.
+ * A ranking's activation variables a routine can hold: when it declares slots, only the ones
+ * activation may fill. The model returns free-form field names; the rest are dropped here so they
+ * never enter the run's state, and counted so a model that invents keys stays visible
+ * (`undeclaredKeyCount`, as on the selector). A routine with no slot schema takes every key.
  */
 const declaredActivationVariables = (
   routine: Routine,
   variables: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined => {
-  const keys = declaredSlotKeys(routine);
-  if (!variables || keys.length === 0) {
-    return variables;
+): { variables: Record<string, unknown> | undefined; undeclaredKeyCount: number } => {
+  if (!variables || (routine.slots ?? []).length === 0) {
+    return { variables, undeclaredKeyCount: 0 };
   }
-  const declared = Object.fromEntries(Object.entries(variables).filter(([key]) => keys.includes(key)));
-  return Object.keys(declared).length > 0 ? declared : undefined;
+  const offered = new Set(activationSlots(routine).map((slot) => slot.key));
+  const declared = Object.fromEntries(Object.entries(variables).filter(([key]) => offered.has(key)));
+  const kept = Object.keys(declared).length;
+  return {
+    variables: kept > 0 ? declared : undefined,
+    undeclaredKeyCount: Object.keys(variables).length - kept,
+  };
 };
+
+const undeclaredKeyCountField = (count: number | undefined): { undeclaredKeyCount?: number } =>
+  count ? { undeclaredKeyCount: count } : {};
 
 const routinesBlock = (registrations: readonly RoutineRegistration[]): string =>
   registrations
@@ -90,7 +110,7 @@ const routinesBlock = (registrations: readonly RoutineRegistration[]): string =>
       `${index + 1}. id: ${registration.routine.id}\n` +
       `Priority: ${registration.trigger.priority}\n` +
       `Trigger: ${registration.trigger.description}` +
-      slotKeysLine(declaredSlotKeys(registration.routine))
+      slotLinesBlock(activationSlotLines(registration.routine))
     )
     .join("\n\n");
 
@@ -273,7 +293,7 @@ export class RoutineRegistry {
         title: routineLabel(registration.routine),
         triggerSummary: registration.trigger.description,
         priority: registration.trigger.priority,
-        slotKeys: declaredSlotKeys(registration.routine),
+        slotLines: activationSlotLines(registration.routine),
       })),
     };
   }
@@ -295,9 +315,11 @@ export class RoutineRegistry {
     },
   ): Promise<RoutineActivationResult | null> {
     const byId = new Map(prepared.registrations.map((registration) => [registration.routine.id, registration]));
+    const undeclaredKeyCounts = new Map<string, number>();
     const candidates: ClarificationCandidate[] = rankings.map((match) => {
       const registration = byId.get(match.routineId)!;
-      const variables = declaredActivationVariables(registration.routine, match.variables);
+      const { variables, undeclaredKeyCount } = declaredActivationVariables(registration.routine, match.variables);
+      undeclaredKeyCounts.set(registration.routine.id, undeclaredKeyCount);
       return {
         id: registration.routine.id,
         label: routineLabel(registration.routine),
@@ -332,6 +354,7 @@ export class RoutineRegistry {
         decisionMetadata: {
           consideredCandidates: candidates,
           decision,
+          ...undeclaredKeyCountField(undeclaredKeyCounts.get(activation.routineId)),
         },
       };
     }
@@ -342,6 +365,7 @@ export class RoutineRegistry {
         consideredCandidates: candidates,
         decision,
         reason: decision.reason,
+        ...undeclaredKeyCountField(undeclaredKeyCounts.get(activation.routineId)),
       },
     };
   }

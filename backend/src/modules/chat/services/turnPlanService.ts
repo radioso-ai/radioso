@@ -191,7 +191,7 @@ const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[])
       `Title: ${candidate.title}\n` +
       `Priority: ${candidate.priority}\n` +
       `Trigger: ${candidate.triggerSummary}` +
-      (candidate.slotKeys.length > 0 ? `\nVariable keys: ${candidate.slotKeys.join(", ")}` : ""),
+      (candidate.slotLines.length > 0 ? `\nVariable keys:\n${candidate.slotLines.join("\n")}` : ""),
     )
     .join("\n\n");
 

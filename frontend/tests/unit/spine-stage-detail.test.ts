@@ -344,6 +344,7 @@ describe('buildRoutineRunTrace', () => {
             { key: 'look', reason: 'undeclared' },
             { key: 'phone', reason: 'consent' },
             { key: 'mood', reason: 'something_new' },
+            { key: 'tone' },
           ],
         }],
       }),
@@ -352,6 +353,8 @@ describe('buildRoutineRunTrace', () => {
       { key: 'email', reason: 'type_mismatch' },
       { key: 'look', reason: 'undeclared' },
       { key: 'phone', reason: 'consent' },
+      { key: 'mood', reason: 'unknown' },
+      { key: 'tone', reason: 'unknown' },
     ])
     expect(JSON.stringify(view)).not.toContain('<script>')
   })

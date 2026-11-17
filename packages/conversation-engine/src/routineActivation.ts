@@ -377,6 +377,7 @@ const claimRoutineWithMode = async (
         consideredCandidates: activation.decisionMetadata.consideredCandidates,
         reason: activation.decisionMetadata.reason,
         margin: activation.decisionMetadata.margin,
+        undeclaredKeyCount: activation.decisionMetadata.undeclaredKeyCount,
       });
     }
     if (activation.kind === "clarify") {

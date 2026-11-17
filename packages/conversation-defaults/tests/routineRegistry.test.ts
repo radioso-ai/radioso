@@ -182,26 +182,50 @@ describe("RoutineRegistry ranked activation", () => {
     });
   });
 
-  it("keeps only declared slot keys from a ranking's activation variables, and lists them for the model", async () => {
-    const gw = gateway(rankedJson([
-      { routineId: "match", confidence: 0.9, variables: { region: "north", budget: "100", look: "modern", style: "loft" } },
-    ]));
+  const slotted = (): RoutineRegistration => {
     const withSlots = registration("match");
     withSlots.routine.slots = [
-      { id: "s1", key: "region", type: "text", required: false },
+      { id: "s1", key: "region", type: "text", required: false, description: "where the visitor looks" },
       { id: "s2", key: "budget", type: "number", required: false },
+      { id: "s3", key: "phone", type: "text", required: false, sensitivity: "sensitive" },
     ];
+    withSlots.routine.consents = [{ key: "contact", slotKeys: ["phone"], onDecline: "continue" }];
+    return withSlots;
+  };
 
-    const registry = new RoutineRegistry([withSlots], { policy });
+  it("offers activation each fillable slot with its type and description, never a consent-covered one", async () => {
+    const gw = gateway(rankedJson([{ routineId: "match", confidence: 0.9 }]));
+    const registry = new RoutineRegistry([slotted()], { policy });
+
     expect(await registry.prepareCandidates(turn)).toMatchObject({
       kind: "rank",
-      candidates: [{ routineId: "match", slotKeys: ["region", "budget"] }],
+      candidates: [{ routineId: "match", slotLines: ["- region (text): where the visitor looks", "- budget (number)"] }],
     });
-    const result = await registry.activator(gw).activate({ turn });
+    await registry.activator(gw).activate({ turn });
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+    expect(prompt).toContain("- region (text): where the visitor looks");
+    expect(prompt).not.toContain("phone");
+  });
 
-    expect(result).toMatchObject({ kind: "activate", routineId: "match", variables: { region: "north", budget: "100" } });
+  it("keeps only fillable slots from a ranking's variables and counts the rest on the decision", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "match", confidence: 0.9, variables: { region: "north", budget: "100", look: "modern", phone: "555" } },
+    ]));
+    const result = await new RoutineRegistry([slotted()], { policy }).activator(gw).activate({ turn });
+
+    expect(result).toMatchObject({
+      kind: "activate",
+      routineId: "match",
+      variables: { region: "north", budget: "100" },
+      decisionMetadata: { undeclaredKeyCount: 2 },
+    });
     expect(Object.keys((result as { variables: Record<string, unknown> }).variables)).toEqual(["region", "budget"]);
-    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toContain("region, budget");
+  });
+
+  it("reports no undeclared count when the ranking invented nothing", async () => {
+    const gw = gateway(rankedJson([{ routineId: "match", confidence: 0.9, variables: { region: "north" } }]));
+    const result = await new RoutineRegistry([slotted()], { policy }).activator(gw).activate({ turn });
+    expect((result as { decisionMetadata: object }).decisionMetadata).not.toHaveProperty("undeclaredKeyCount");
   });
 
   it("delegates floor, margin, and priority decision order to clarification policy semantics", async () => {

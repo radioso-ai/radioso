@@ -753,6 +753,7 @@ export interface RoutineActivationDecisionMetadata {
   decision: ClarificationDecision;
   reason?: string;
   margin?: number;
+  undeclaredKeyCount?: number;
 }
 
 export type PendingClarificationStatus = "pending" | "resolved" | "declined" | "expired";
@@ -1748,14 +1749,13 @@ export interface RankedRoutineMatch {
   variables?: Record<string, unknown>;
 }
 
-/** One prepared candidate as a planner reads it: title, trigger, priority, declared slot keys; no activation policy. */
+/** One prepared candidate as a planner reads it: title, trigger, priority, and a "- key (type): description" line per slot activation may fill. */
 export interface RoutineCandidateSummary {
   routineId: string;
   title: string;
   triggerSummary: string;
   priority: number;
-  /** The slot keys the routine declares, in declared order; empty when it declares none. */
-  slotKeys: readonly string[];
+  slotLines: readonly string[];
 }
 
 /** The activator's non-null outcome (activate or clarify). */

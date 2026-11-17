@@ -19,6 +19,11 @@ const REJECTED_SLOT_LABELS: Record<RejectedSlotReason, { label: string; hint: st
     hint: "The value did not fit the slot's type.",
     tone: 'bg-amber-500/10 text-amber-600',
   },
+  unknown: {
+    label: 'not stored',
+    hint: 'The runner did not store this value.',
+    tone: 'bg-amber-500/10 text-amber-600',
+  },
   not_scalar: {
     label: 'not stored, not a single value',
     hint: 'The slot takes one value; the model returned a list or an object.',
@@ -30,7 +35,7 @@ const REJECTED_SLOT_LABELS: Record<RejectedSlotReason, { label: string; hint: st
 export function RejectedSlotChips({ slots }: { slots: RoutineRejectedSlotView[] }) {
   return (
     <>
-      {REJECTED_SLOT_REASONS.map((reason) => {
+      {[...REJECTED_SLOT_REASONS, 'unknown' as const].map((reason) => {
         const keys = slots.filter((slot) => slot.reason === reason).map((slot) => slot.key)
         if (keys.length === 0) {
           return null

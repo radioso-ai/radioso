@@ -103,23 +103,24 @@ export interface RoutineTraceStepView {
 }
 
 export const REJECTED_SLOT_REASONS = ['undeclared', 'consent', 'type_mismatch', 'not_scalar'] as const
-export type RejectedSlotReason = (typeof REJECTED_SLOT_REASONS)[number]
+const KNOWN_REJECTED_SLOT_REASONS: readonly unknown[] = REJECTED_SLOT_REASONS
+export type RejectedSlotReason = (typeof REJECTED_SLOT_REASONS)[number] | 'unknown'
 
 export interface RoutineRejectedSlotView {
   key: string
   reason: RejectedSlotReason
 }
 
-const isRejectedSlotReason = (value: unknown): value is RejectedSlotReason =>
-  REJECTED_SLOT_REASONS.some((reason) => reason === value)
+const isKnownRejectedSlotReason = (value: unknown): value is Exclude<RejectedSlotReason, 'unknown'> =>
+  KNOWN_REJECTED_SLOT_REASONS.includes(value)
 
 // Key and reason only: the runner never puts a rejected value on the trace, and this ignores one
-// if present. An entry without a known reason is not shown.
+// if present. A reason this view does not know reads as `unknown`, so the key still shows.
 const rejectedSlotsOf = (value: unknown): RoutineRejectedSlotView[] =>
   asArray(value).flatMap((entry) => {
     const key = isRecord(entry) ? asString(entry.key) : undefined
     const reason = isRecord(entry) ? entry.reason : undefined
-    return key && isRejectedSlotReason(reason) ? [{ key, reason }] : []
+    return key ? [{ key, reason: isKnownRejectedSlotReason(reason) ? reason : 'unknown' }] : []
   })
 
 export interface RoutineRunTraceView {

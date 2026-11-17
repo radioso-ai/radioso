@@ -126,6 +126,12 @@ variable "db_require_encrypted_connections" {
   default     = false
 }
 
+variable "db_support_access_enabled" {
+  description = "Whether engineers reach this stack's database through the audited support job: an IAM-authenticated identity whose statements pgAudit records. Turning it on restarts the instance, and the foundation root must have created the db-support service account first."
+  type        = bool
+  default     = false
+}
+
 variable "db_maintenance_window" {
   description = "Weekly hour in which Cloud SQL may restart the instance for planned maintenance. day is 1 (Monday) to 7 (Sunday) and hour is 0 to 23, both in UTC; update_track is \"stable\", \"canary\" or \"week5\". Null leaves the timing to Google, which can then restart the instance at any hour."
   type = object({

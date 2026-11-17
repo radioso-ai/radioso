@@ -23,7 +23,6 @@ import { renderPromptTemplate } from "./promptTemplate.js";
  * the single source of truth both this registry and the reentry gate read. Re-exported
  * here so existing importers of this module keep resolving it.
  */
-export type { RoutineReentryMode } from "@radioso/conversation-contract";
 
 // Ranked-activation contracts now live in @radioso/conversation-contract so a host planner
 // can conform to them without depending on this default registry; re-exported here because
@@ -40,7 +39,7 @@ export type {
   RoutineRegistration,
 } from "@radioso/conversation-contract";
 
-export const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
+const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
 
 When a routine lists "Variable keys", "variables" may use only those keys.
 
@@ -50,7 +49,7 @@ Return only JSON:
 Routines:
 {{routines}}`;
 
-export interface RoutineRegistryOptions {
+interface RoutineRegistryOptions {
   policy: ClarificationPolicy;
   promptTemplate?: string;
   activationPrefilter?: RoutineActivationPrefilter;

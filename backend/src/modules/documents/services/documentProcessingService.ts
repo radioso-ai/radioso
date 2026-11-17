@@ -13,6 +13,7 @@ import type {
 import {
   deriveChunkSection,
   deriveDocumentSubject,
+  documentAttributeCharsForChunk,
   extractLeadingDocumentAttributes,
   normalizeMarkdown,
   renderMetadataSearchText,
@@ -326,10 +327,10 @@ export class DocumentProcessingService {
       // documents.metadata, so a source retag never rewrites its documents.
       // The attributes the document states at its top ride on every chunk, so
       // a chunk cut from deep in the text still names them.
-      const documentAttributes = extractLeadingDocumentAttributes(normalizeMarkdown(documentWithContent.markdownContent));
+      const attributeExtraction = extractLeadingDocumentAttributes(normalizeMarkdown(documentWithContent.markdownContent));
       const chunkMetadata = withDocumentAttributes(
         mergeDocumentMetadataForChunks(parseSourceDocumentMetadata(source?.config), revisionTags.projectedMetadata),
-        documentAttributes,
+        attributeExtraction.attributes,
       );
       if (revisionTags.clearedDocument) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
@@ -344,7 +345,11 @@ export class DocumentProcessingService {
         }
       }
       const enrichedChunks = chunks.map((chunk) => {
-        const metadataSearchText = renderMetadataSearchText(chunkMetadata);
+        // Every chunk stores the document's full set; its embedded text carries only a
+        // share of the chunk's own length, so a short chunk still reads as itself.
+        const metadataSearchText = renderMetadataSearchText(chunkMetadata, {
+          documentAttributeChars: documentAttributeCharsForChunk(chunk.content),
+        });
         return {
           ...chunk,
           metadata: chunkMetadata,
@@ -393,7 +398,9 @@ export class DocumentProcessingService {
           chunkingStrategy: settings.chunkingStrategy,
           embeddingModel,
           chunkCount: enrichedChunks.length,
-          documentAttributeCount: documentAttributes.length,
+          documentAttributeCount: attributeExtraction.attributes.length,
+          // Bounded outcome, so openings mistaken for (or missed as) attribute blocks show up.
+          documentAttributesExtracted: attributeExtraction.outcome,
           chunkingDurationMs,
           storageEmbeddingDurationMs,
         },

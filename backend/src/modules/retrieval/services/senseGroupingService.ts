@@ -6,6 +6,7 @@ import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInfe
 import { pgVectorText } from "../../../shared/infra/kysely/pgVectorSql.js";
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
+import { withoutDocumentAttributes } from "../domain/documentAttributes.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 import { holdsPrimaryEvidence } from "./candidateScoring.js";
 
@@ -237,7 +238,9 @@ export class SenseGroupingService {
       documents: [{
         documentId: group.documentId,
         title: group.title,
-        metadata: group.metadata,
+        // The label prompt reads metadata as facts about the document; text the document
+        // wrote about itself stays out of it.
+        metadata: group.metadata && withoutDocumentAttributes(group.metadata),
       }],
       excerpts: group.chunks
         .slice(0, EXCERPTS_PER_GROUP)

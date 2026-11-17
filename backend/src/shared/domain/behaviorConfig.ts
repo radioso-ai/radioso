@@ -267,7 +267,12 @@ export const RETRIEVAL_BEHAVIOR = {
   defaultSimilarityThreshold: 0.2,
   promptContextTokenBudget: 4800,
   finalContextTopK: 12,
+  // A passage's whole share of the answer prompt: its text and its `Attributes:` line
+  // together, which context selection charges as one.
   promptContextMaxCharsPerContext: 900,
+  // The longest `Attributes:` line one passage carries (dates, author, and the facts its
+  // document states about itself), so its text keeps at least 700 of the 900 characters.
+  promptContextMaxAttributeChars: 200,
   // Caps how many of the final prompt contexts may come from the same document, so one
   // long document cannot crowd out every other source in the answer.
   promptContextMaxPerDocument: 2,
@@ -300,8 +305,8 @@ export const RETRIEVAL_BEHAVIOR = {
     requestedDateRangeMaxDays: 366,
     // Passages an answer may hold when it lists the events in a requested date range,
     // in place of `finalContextTopK`, so a busy week reaches the answer. At most
-    // `promptContextMaxCharsPerContext` characters each, 20 passages stay inside
-    // `promptContextTokenBudget`.
+    // `promptContextMaxCharsPerContext` characters each, `Attributes:` line included,
+    // 20 passages stay inside `promptContextTokenBudget`.
     dateRangeListingContextTopK: 20,
     // Passages a requested-range lookup fetches, most similar to the question first. A busy
     // week runs to about 30 dated passages in one language, and a corpus with a twin per

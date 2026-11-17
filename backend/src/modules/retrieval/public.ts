@@ -116,6 +116,7 @@ export {
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
 export {
+  documentAttributeCharsForChunk,
   extractLeadingDocumentAttributes,
   withDocumentAttributes,
 } from "./domain/documentAttributes.js";

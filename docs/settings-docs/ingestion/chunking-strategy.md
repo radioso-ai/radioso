@@ -85,7 +85,7 @@ Recursive text and semantic chunking handle tables and code before the selected 
 
 Markdown and HTML tables are split with repeated table headers so each chunk keeps column context. Fenced code blocks and source-code documents are routed through code-aware chunking when the runtime has parser support for the detected language. If a code parser is unavailable, ingestion falls back to the selected text strategy.
 
-Fixed window chunking reads tables and code as text. Its chunks end at line ends, so a table row or a line of code stays whole, but a chunk does not repeat the table's header row.
+Fixed window chunking reads tables and code as text. Its chunks end at line ends, and the overlap repeats whole rows and lines or none, so a table row or a line of code stays whole. A chunk does not repeat the table's header row.
 
 Code-aware chunking is attempted for source documents and fenced code blocks with these language hints or file extensions:
 
@@ -109,9 +109,11 @@ Code-aware chunking is attempted for source documents and fenced code blocks wit
 
 ### Facts At The Top Of A Document
 
-Whichever strategy you choose, every chunk carries the facts its document states at the top: YAML front matter, or two or more `Label: value` lines right under the title, such as `Region: Umbria` and `Type: Farmhouse`. List markers and bold labels are fine. Each chunk is searched with those facts, and the agent sees them beside the chunk, so a passage from the end of a long description still answers "which region is it in?".
+Whichever strategy you choose, every chunk carries the facts its document states at the top: YAML front matter, or two or more `Label: value` lines right under the title, such as `Region: Umbria` and `Type: Farmhouse`. Bullets and bold labels are fine. Each chunk is searched with those facts, and the agent sees them beside the chunk, so a passage from the end of a long description still answers "which region is it in?".
 
-The block ends at the first line that is not a `Label: value` line. Up to 24 facts and 1,200 characters travel with each chunk, and a value longer than 240 characters stays in the text only.
+A block counts when each label appears once, each value is a short field rather than a sentence, and a blank line or a heading separates it from the text below. An FAQ, a transcript, email headers, a glossary of definitions, numbered steps, and indented code don't count. The block ends at the first line that is not a field, and the fields before that line still count.
+
+A chunk stores up to 24 facts. Its search text gives them at most 30% of the chunk's own length, short fields first, after the chunk's text. The agent sees up to 200 characters of them per passage.
 
 ### When To Revisit
 

@@ -82,9 +82,11 @@ A long document is cut into chunks, and a question usually lands on one from the
 Podere Selvalunga is a stone farmhouse on a low ridge above a valley of olive groves...
 ```
 
-Every chunk of this document is searched with `Region: Umbria` and `Type: Farmhouse`, and the agent sees them beside the chunk, so "Which farmhouses are in Umbria?" finds the passage about the lavender loft at the end even though it never names the region. YAML front matter works the same way, as do plain `Label: value` lines, two or more of them, right under the title. The block ends at the first line that is not a labelled line, so a label later in the text stays where it is. Up to 24 facts and 1,200 characters travel with each chunk; a value longer than 240 characters stays in the text only.
+Every chunk of this document is searched with `Region: Umbria` and `Type: Farmhouse`, and the agent sees them beside the chunk, so "Which farmhouses are in Umbria?" finds the passage about the lavender loft at the end even though it never names the region. YAML front matter works the same way, as do plain `Label: value` lines, two or more of them, right under the title.
 
-These facts sit beside the document's tags. Tags drive metadata rules and filters; the facts at the top help retrieval find the passage and the agent answer about it. A chunk keeps the facts it was built with, so after editing the top of a document, save it to process it again — or choose **Reprocess Existing Documents** in **Knowledge → Ingestion** to rebuild every document's chunks.
+Keep the block to short fields, each label once, with a blank line or a heading before the text starts. A value that is a whole sentence ends the block, and the fields above it still count. An opening that repeats a label, such as an FAQ or a transcript, or that reads as email headers, numbered steps, or code, is not taken for facts. A chunk stores up to 24 facts. Its search gives them at most 30% of the chunk's length, short fields first, and the agent sees up to 200 characters of them per passage.
+
+These facts sit beside the document's tags. Tags drive metadata rules and filters; the facts at the top help retrieval find the passage and the agent answer about it. A chunk keeps the facts it was built with, so after editing the top of a document, save it to process it again — or choose **Reprocess Existing Documents** in **Knowledge → Ingestion** to rebuild and re-embed every document's chunks.
 
 ## Common failure pattern
 

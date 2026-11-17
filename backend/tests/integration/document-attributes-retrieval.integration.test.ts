@@ -4,19 +4,20 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
-import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
-import { readDocumentAttributes } from "../../src/modules/retrieval/domain/documentAttributes.js";
+import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
+import { documentAttributeCharsForChunk, readDocumentAttributes } from "../../src/modules/retrieval/domain/documentAttributes.js";
 import type { FinalPromptContext } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
+import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
-import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
+import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { propertyCorpus } from "../fixtures/document-attributes/propertyCorpus.js";
@@ -39,21 +40,31 @@ const toPromptContext = (chunk: RetrievedChunk): FinalPromptContext => ({
   estimatedTokenCost: 1,
 });
 
+/** Splits sentences into topics by what they describe, so semantic chunking cuts deterministically. */
+const semanticChunking = new StructuredSemanticChunkingStrategy(new ChonkieChunkingProvider({
+  embedForClustering: async ({ texts }) => ({
+    vectors: texts.map((text) => (/barn|loft|lavender|boathouse|slipway|dye|vats/i.test(text) ? [0, 1] : [1, 0])),
+  }),
+}));
+
 describeIntegration("document attributes through the worker and retrieval (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const accountId = randomUUID();
-  const workspaceId = randomUUID();
+  const workspaces = { fixed_window: randomUUID(), structured_semantic: randomUUID() } as const;
   const embeddingSpaceId = randomUUID();
+  const search = new PgLexicalSearch(database);
 
   beforeAll(async () => {
     await database.query(
       `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
       [accountId, "Location Catalogue Co", `catalogue-${accountId}@example.com`, "hash"],
     );
-    await database.query(
-      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
-      [workspaceId, accountId, "Location Catalogue", `catalogue-${workspaceId}`],
-    );
+    for (const [strategy, workspaceId] of Object.entries(workspaces)) {
+      await database.query(
+        `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+        [workspaceId, accountId, `Location Catalogue ${strategy}`, `catalogue-${workspaceId}`],
+      );
+    }
     await database.query(
       `INSERT INTO embedding_spaces (
          id, identity_fingerprint, provider, endpoint_scope_fingerprint, model,
@@ -85,8 +96,13 @@ describeIntegration("document attributes through the worker and retrieval (Postg
         },
       },
       auditService,
-      new IngestionSettingsService(new IngestionSettingsRepository(database.kysely), auditService),
-      new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy()]),
+      {
+        getForWorkspace: async (workspaceId: string) => ({
+          ...defaultIngestionSettings(workspaceId),
+          chunkingStrategy: workspaceId === workspaces.structured_semantic ? "structured_semantic" : "fixed_window",
+        }),
+      },
+      new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy(), semanticChunking]),
     );
     const worker = new DocumentProcessingWorker(
       documentRepository,
@@ -97,78 +113,77 @@ describeIntegration("document attributes through the worker and retrieval (Postg
     );
     const ingestion = new DocumentIngestionService(documentRepository, auditService);
 
-    for (const property of propertyCorpus) {
-      await ingestion.ingest({ workspaceId, title: property.title, content: property.markdown });
+    for (const workspaceId of Object.values(workspaces)) {
+      for (const property of propertyCorpus) {
+        await ingestion.ingest({ workspaceId, title: property.title, content: property.markdown });
+      }
     }
-    for (const _property of propertyCorpus) {
+    for (let job = 0; job < propertyCorpus.length * 2; job += 1) {
       await worker.runOnce();
     }
   });
 
   afterAll(async () => {
-    await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
-    await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
-    await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
-    await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
-    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+    for (const workspaceId of Object.values(workspaces)) {
+      await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]).catch(() => undefined);
+    }
     await database.query("DELETE FROM embedding_spaces WHERE id = $1", [embeddingSpaceId]).catch(() => undefined);
-    await database.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]).catch(() => undefined);
     await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     await database.close();
   });
 
-  it("stores every chunk of every document with that document's region", async () => {
-    const rows = await database.query<{ title: string; chunk_index: number; metadata: Record<string, unknown>; search_text: string }>(
-      `SELECT d.title, c.chunk_index, c.metadata, c.search_text
-         FROM chunks c JOIN documents d ON d.id = c.document_id
-        WHERE c.workspace_id = $1`,
-      [workspaceId],
-    );
+  for (const [strategy, workspaceId] of Object.entries(workspaces)) {
+    it(`stores the region on every ${strategy} chunk and embeds only a share of the chunk's length`, async () => {
+      const rows = await database.query<{ title: string; content: string; metadata: Record<string, unknown>; search_text: string }>(
+        `SELECT d.title, c.content, c.metadata, c.search_text
+           FROM chunks c JOIN documents d ON d.id = c.document_id
+          WHERE c.workspace_id = $1`,
+        [workspaceId],
+      );
 
-    for (const property of propertyCorpus) {
-      const chunks = rows.filter((row) => row.title === property.title);
-      expect(chunks.length).toBeGreaterThan(2);
-      for (const chunk of chunks) {
-        expect(readDocumentAttributes(chunk.metadata)).toContainEqual({ label: "Region", value: property.region });
-        expect(chunk.search_text).toContain(`Region: ${property.region}`);
+      for (const property of propertyCorpus) {
+        const chunks = rows.filter((row) => row.title === property.title);
+        expect(chunks.length).toBeGreaterThan(2);
+        for (const chunk of chunks) {
+          expect(readDocumentAttributes(chunk.metadata)).toContainEqual({ label: "Region", value: property.region });
+          const embeddedAttributes = /Attributes: (.*)$/s.exec(chunk.search_text)?.[1] ?? "";
+          expect(embeddedAttributes.length).toBeLessThanOrEqual(documentAttributeCharsForChunk(chunk.content));
+        }
       }
-    }
-  });
+    });
 
-  it("retrieves a chunk from deep in a document with its region in the answer prompt", async () => {
-    const search = new PgLexicalSearch(database);
+    it(`answers a passage question with that passage first, and its region on the prompt (${strategy})`, async () => {
+      for (const property of propertyCorpus) {
+        const { matches } = await search.search({ workspaceId, query: property.deepPhrase, topK: 5, matchMode: "all_terms" });
+        const [first] = matches;
 
-    for (const property of propertyCorpus) {
-      const { matches } = await search.search({ workspaceId, query: property.deepPhrase, topK: 5, matchMode: "all_terms" });
-      const deepChunk = matches.find((match) => match.title === property.title && (match.chunkIndex ?? 0) > 0);
+        expect(first?.title, property.title).toBe(property.title);
+        expect(first?.content).toContain(property.deepPhrase);
+        expect(first?.content).not.toContain(property.region);
 
-      expect(deepChunk, property.title).toBeDefined();
-      expect(deepChunk!.content).toContain(property.deepPhrase);
-      expect(deepChunk!.content).not.toContain(property.region);
+        const { prompt } = new PromptBuilder().build({
+          query: `Where is the ${property.deepPhrase}?`,
+          history: [],
+          contexts: [toPromptContext(first)],
+          timeZone: "UTC",
+          settings: {},
+        });
+        expect(prompt).toContain(`Region: "${property.region}"`);
+      }
+    });
 
-      const { prompt } = new PromptBuilder().build({
-        query: `Where is the ${property.deepPhrase}?`,
-        history: [],
-        contexts: [toPromptContext(deepChunk!)],
-        timeZone: "UTC",
-        settings: {},
-      });
-      expect(prompt).toContain(`Result 1 (${property.title}): Attributes: Property id:`);
-      expect(prompt).toContain(`Region: ${property.region}`);
-    }
-  });
+    it(`finds the right document for a region question (${strategy})`, async () => {
+      for (const property of propertyCorpus) {
+        const { matches } = await search.search({ workspaceId, query: property.region, topK: 20, matchMode: "all_terms" });
 
-  it("finds every chunk of a document by its region", async () => {
-    const search = new PgLexicalSearch(database);
-    const umbria = propertyCorpus.find((property) => property.region === "Umbria")!;
-    const { matches } = await search.search({ workspaceId, query: "Umbria", topK: 20, matchMode: "all_terms" });
-    const [{ count }] = await database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM chunks c JOIN documents d ON d.id = c.document_id
-        WHERE c.workspace_id = $1 AND d.title = $2`,
-      [workspaceId, umbria.title],
-    );
-
-    expect(matches.length).toBe(Number(count));
-    expect(matches.every((match) => match.title === umbria.title)).toBe(true);
-  });
+        expect(matches.length).toBeGreaterThan(0);
+        expect(matches.every((match) => match.title === property.title)).toBe(true);
+      }
+    });
+  }
 });

@@ -326,7 +326,6 @@
   "types|backend/src/shared/infra/http/publicUrlFetch.ts|PublicLookupAddress",
   "types|backend/src/shared/infra/http/publicUrlFetch.ts|PublicUrlFetch",
   "types|backend/src/shared/infra/http/signedWebhook.ts|WebhookUrlGuard",
-  "types|backend/src/shared/infra/llm/supportedEmbeddingModels.ts|SupportedEmbeddingModelId",
   "types|backend/src/shared/observability/logging/cloudSeverity.ts|CloudLoggingSeverity",
   "types|backend/src/shared/observability/opsEvents/buildOpsEventSinks.ts|OpsEventEnv",
   "types|backend/src/shared/observability/opsEvents/buildOpsEventSinks.ts|OpsEventSinks",

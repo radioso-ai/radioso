@@ -68,7 +68,7 @@ describe("embedding vector validation", () => {
         retrieval_query: null,
         clustering: null,
       },
-      limits: { maxBatch: 2, maxInputBytes: 4, maxResponseBytes: 100 },
+      limits: { maxBatch: 2, maxInputBytes: 4, maxResponseBytes: 100, maxInputTokens: 8_191 },
     }));
 
     const result = await adapter.generate({

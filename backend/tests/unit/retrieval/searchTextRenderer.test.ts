@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  renderMetadataPromptText,
   renderMetadataSearchText,
+  renderPromptAttributeLine,
 } from "../../../src/modules/retrieval/services/searchTextRenderer.js";
 
 describe("renderMetadataSearchText", () => {
@@ -21,7 +21,7 @@ describe("renderMetadataSearchText", () => {
   });
 
   it("renders searchable attributes for the answer prompt without duplicating the source URL", () => {
-    const text = renderMetadataPromptText({
+    const text = renderPromptAttributeLine({
       author: "Mario Liguori",
       dateFrom: "2026-07-25",
       sourceUrl: "https://example.com/article",

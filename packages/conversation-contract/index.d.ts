@@ -11,7 +11,6 @@ import type {
   RoutineInputBinding,
   RoutineItemSelection,
   RoutineShownItems,
-  RoutineStepReask,
   RoutineOperatorNoticeTemplate,
   RoutineSlotSchema,
   RoutineStep,
@@ -19,6 +18,7 @@ import type {
   RoutineTransition,
 } from "./routineGraph.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
+import type { RoutineStepReplyInput } from "./routineStepReply.js";
 import type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -1114,22 +1114,7 @@ export interface ConversationRoutineStepRenderer {
   prepare?(input: RoutineStepReplyInput): PendingRenderableTurn;
 }
 
-/** What a routine step's reply is written from. */
-export interface RoutineStepReplyInput {
-  step: RoutineStep;
-  steering: SteeringRule[];
-  turn: TurnContext;
-  reask?: RoutineStepReask;
-  /**
-   * True when the runner ends the routine on `step` because the visitor stayed stuck on it
-   * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
-   * the visitor a person continues from here; it neither asks the step's question nor
-   * follows its instruction, so `steering` is empty and `reask` absent.
-   */
-  stuckHandoff?: boolean;
-  /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
-  contextEvidence?: readonly string[];
-}
+export type * from "./routineStepReply.js";
 
 /**
  * Which directives steered one routine step's reply, recorded as

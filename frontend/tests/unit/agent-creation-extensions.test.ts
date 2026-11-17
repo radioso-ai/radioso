@@ -109,6 +109,33 @@ describe('agent creation extensions', () => {
     }
   })
 
+  it('remembers a missing config across page loads for the browser session', async () => {
+    const store = new Map<string, string>()
+    const sessionStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => { store.set(key, value) },
+    }
+    vi.stubGlobal('document', { querySelector: () => null })
+    vi.stubGlobal('window', { location: { href: 'http://localhost:3000/account/test' }, sessionStorage })
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      vi.resetModules()
+      const firstLoad = await import('@/lib/agent-creation-extensions')
+      await firstLoad.loadAgentCreationActionDefinitions()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      // A full page load resets module state; the session marker keeps the probe away.
+      vi.resetModules()
+      const secondLoad = await import('@/lib/agent-creation-extensions')
+      await secondLoad.loadAgentCreationActionDefinitions()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('caches a missing generated action config after the first browser probe', async () => {
     const browserGlobal = globalThis as typeof globalThis & {
       document?: { querySelector: () => null }

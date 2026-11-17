@@ -22,7 +22,26 @@ export interface AgentCreationActionContext {
 }
 
 const agentCreationActionsConfigFilename = 'agent-creation-actions.json'
+const missingConfigSessionKey = 'radioso:agent-creation-actions-missing'
 let generatedAgentCreationActionsMissing = false
+
+// The file only exists in builds that generate it, so a 404 is remembered for
+// the browser session; otherwise every full page load re-probes it.
+const readMissingMarker = (): boolean => {
+  try {
+    return window.sessionStorage?.getItem(missingConfigSessionKey) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeMissingMarker = (): void => {
+  try {
+    window.sessionStorage?.setItem(missingConfigSessionKey, '1')
+  } catch {
+    // Storage can be blocked (embeds, private modes); the in-memory flag still holds.
+  }
+}
 
 const builtInAgentCreationActionDefinitions: AgentCreationActionDefinition[] = [
   {
@@ -103,7 +122,8 @@ export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreatio
   if (typeof window === 'undefined') {
     return builtInAgentCreationActionDefinitions
   }
-  if (generatedAgentCreationActionsMissing) {
+  if (generatedAgentCreationActionsMissing || readMissingMarker()) {
+    generatedAgentCreationActionsMissing = true
     return builtInAgentCreationActionDefinitions
   }
   try {
@@ -111,6 +131,7 @@ export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreatio
     if (!response.ok) {
       if (response.status === 404) {
         generatedAgentCreationActionsMissing = true
+        writeMissingMarker()
       }
       return builtInAgentCreationActionDefinitions
     }

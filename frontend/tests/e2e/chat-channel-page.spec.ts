@@ -56,7 +56,7 @@ test("operator configures one chat surface for both placements", async ({ page }
   await expect(page.locator("#websiteEmbedCopy-startPrompt")).toHaveValue("Ask us anything");
 
   // Both placements can be turned on from the same page.
-  await page.locator("#anonChatToggle").click();
+  await page.getByRole("switch", { name: "Public link" }).click();
   await expect
     .poll(() =>
       agentUpdates.some(

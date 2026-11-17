@@ -343,12 +343,12 @@ export function AllConversationsListPane({
             className="h-8 pl-8 text-sm"
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           <Select
             value={filters.outcome}
             onValueChange={(value) => onFiltersChange({ ...filters, outcome: value as OutcomeFilter })}
           >
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by outcome">
+            <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by outcome">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -361,7 +361,7 @@ export function AllConversationsListPane({
             value={filters.agentId ?? ALL_AGENTS}
             onValueChange={(value) => onFiltersChange({ ...filters, agentId: value === ALL_AGENTS ? null : value })}
           >
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by agent">
+            <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by agent">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -375,7 +375,7 @@ export function AllConversationsListPane({
             value={filters.siteOrigin ?? ALL_SITES}
             onValueChange={(value) => onFiltersChange({ ...filters, siteOrigin: value === ALL_SITES ? null : value })}
           >
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by site">
+            <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by site">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -389,7 +389,7 @@ export function AllConversationsListPane({
             value={filters.callerKind ?? ALL_CALLERS}
             onValueChange={(value) => onFiltersChange({ ...filters, callerKind: value === ALL_CALLERS ? null : value as CallerKindFilter })}
           >
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by caller">
+            <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by caller">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

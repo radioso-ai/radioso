@@ -139,6 +139,7 @@ export function ChatChannelSection(props: ChatChannelSectionProps) {
               headerEnd={
                 <Switch
                   id="anonChatToggle"
+                  aria-label="Public link"
                   checked={anonSettings.anonymousChatEnabled}
                   onCheckedChange={onAnonymousChatToggle}
                   disabled={isAnonSaving}

@@ -105,17 +105,14 @@ export function InboxQueue({
                 className="h-8 pl-8 text-sm"
               />
             </div>
-            {/* min-w-0 on each trigger lets it actually shrink to its 1/3 share
-                instead of overflowing the pane at its content width (flex
-                items default to min-width:auto); the trigger's own line-clamp
-                on the selected value then elides long labels within that
-                shrunk width. */}
-            <div className="flex gap-1.5">
+            {/* Each trigger keeps a readable minimum width; the row wraps instead of
+                squeezing the selected value into an ellipsis. */}
+            <div className="flex flex-wrap gap-1.5">
               <Select
                 value={filters.type}
                 onValueChange={(value) => onFiltersChange({ ...filters, type: value as EscalationType | 'all' })}
               >
-                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by type">
+                <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -130,7 +127,7 @@ export function InboxQueue({
                 value={filters.agentId}
                 onValueChange={(value) => onFiltersChange({ ...filters, agentId: value })}
               >
-                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by agent">
+                <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by agent">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -146,7 +143,7 @@ export function InboxQueue({
                 value={filters.channel}
                 onValueChange={(value) => onFiltersChange({ ...filters, channel: value })}
               >
-                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by channel">
+                <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by channel">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -160,7 +157,7 @@ export function InboxQueue({
                 value={filters.takenBy}
                 onValueChange={(value) => onFiltersChange({ ...filters, takenBy: value })}
               >
-                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by taken by">
+                <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by taken by">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

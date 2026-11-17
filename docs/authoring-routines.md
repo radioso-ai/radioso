@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-16
+last_updated: 2026-11-18
 ---
 
 # Authoring Routines
@@ -651,6 +651,19 @@ eligible refund and an ineligible refund.
 The routine's **Completion message** controls its default finish. Its **Handoff
 message** controls the standard escalation reply. A named ending carries its own
 message and appears as a target in the branch rows that reach it.
+
+An ending's message is written for the path you expect, and the agent delivers it
+the way the run went. Its reply is told the outcome of each skill step that ran
+on the way to the ending in that turn, such as `empty` from a search that found
+nothing or `failed`, and whether anyone outside the chat gets the request: a
+hand-off, a team notice, the completion export, an action or approval step, or a
+skill that can act outside the conversation. A letting agency's **Hand off**
+ending that says "A scout will check the shortlisted properties" comes out as
+"nothing matched, a scout will follow up" when the listing search reports
+`empty`; on a **Finish** with no notice and nothing else passing the request on,
+the reply promises no follow-up at all. To word the empty search yourself, add a
+**Rule** row under the search for the outcome `empty` (a retrieval skill reports
+`found` or `empty`) that leads to a named ending of its own.
 
 An ending can also tell your team what the routine collected. A hand-off always
 does: the conversation goes to a person, and that person needs the details. A

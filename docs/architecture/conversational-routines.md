@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-11-13
+last_updated: 2026-11-18
 ---
 
 # Conversational Routines
@@ -615,6 +615,29 @@ On each turn, before normal skill selection, the engine checks for a routine:
      own, not as the course's. A fact the agent stated on an earlier turn from a
      source it no longer has, such as dates from a retrieval answer before the
      routine started, is not a source for the step either.
+   - An ending's text is written for the path its author intended, so its reply
+     is told what the run did (`RoutineStepReplyInput.ending`, set by the runner
+     on every `terminal` step it lands on). `requestPassedOn` is true when the
+     ending hands off, carries an operator notice, or fires the completion
+     export; when the ending's turn emitted an action or ran a tool step whose
+     skill may act outside the conversation (`actsOutsideConversation`); or when
+     the path the turn started on holds a tool, action, or approval step, read
+     the way `completedRunSentValues` reads it. `skillOutcomes` lists the status
+     each tool step on the ending's turn reported, from the turn's
+     `skill_dispatched` trace entries; a skill name or status that is not an
+     identifier is left out of the prompt. The renderer puts both in
+     `routine-step-ending.md`: after the step instruction on a finish, and after
+     the meaning on a hand-off ending with a message. The reply leaves out a
+     result a tool step reported it did not produce, such as a shortlist from a
+     search that came back `empty`, and any promise that someone will follow up
+     when nothing passes the request on. A hand-off ending without a message,
+     and the runner's own `stuck` and `consent_declined` hand-offs, promise only
+     that a person continues, and get no block. The host's grounded answer leaves
+     an ending on a retrieval that found nothing to the step reply, since a
+     decline is the wrong reply for the message that ends the flow; an ending
+     whose turn retrieved evidence is still the grounded answer, which states
+     what the excerpts support and receives no `ending`. A tool step an earlier
+     turn ran shows no outcome, because routine state keeps none across turns.
    - A `{{context.<name>}}` reference fills the host's rendering of the variable
      into the step instruction; for `page_context` that is the page's URL,
      title, and locale. The host's context renderer can also give a variable's
@@ -1098,7 +1121,9 @@ the retry is unreadable too. The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
 chat step, `routine-step-context-evidence.md` around the visitor's page,
 `routine-step-sources.md` and `routine-step-sources-none.md` for the quoted
-sources the step has, and `routine-step-reask.md` with its `-unanswered` or
+sources the step has, `routine-step-ending.md` for what the run did on an
+ending, also inside `routine-step-terminal-handoff-with-message.md`, and
+`routine-step-reask.md` with its `-unanswered` or
 `-unreadable` opening and its `-gap`, `-exhausted-gap`, `-missing-slots`, and
 `-exhausted` pieces on a re-ask) writes the reply. A routine turn therefore
 makes two or three model calls, and up to two more when the selector's

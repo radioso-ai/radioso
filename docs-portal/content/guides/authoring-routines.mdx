@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-11-12
+last_updated: 2026-11-18
 ---
 
 # Author a routine
@@ -669,6 +669,30 @@ answers it. To give a visitor an earlier way out of a step that collects somethi
 hard to get right — a booking reference, an exact date — add a row for it, such as
 **AI decides** "the visitor wants to talk to a person" → **Hand off**.
 
+### What an ending says
+
+You write an ending's message for the path you expect the visitor to take, and
+the agent delivers it the way the run actually went. Before it writes the
+reply, the agent is told the outcome of every skill step that ran on the way to
+the ending in that turn, such as `empty` from a search that found nothing or
+`failed`, and whether anyone outside the chat gets the request: a **Hand off**,
+a **Notify the team** notice, the completion export, an action or approval step,
+or a skill that can act outside the conversation. It keeps the message's meaning
+and leaves out what the run didn't do.
+
+Take a letting agency's routine that searches its listings and ends on **Hand
+off** with "A scout will check the shortlisted properties and get back to you."
+When a visitor's brief matches no listing, the search reports `empty`, so the
+reply says nothing matched rather than mention a shortlist, and keeps the scout's
+follow-up, since the hand-off passes the request on. End the same routine on a
+**Finish** with **Notify the team** off, and nobody outside the chat hears about
+the visitor, so the reply promises no follow-up either.
+
+To say something specific when a search finds nothing, give that case an ending
+of its own. Add a **Rule** row under the search step for the skill outcome
+`empty` — a retrieval skill reports `found` or `empty` — and point it at a named
+ending written for it, with the general path after it.
+
 ## Validation and publishing
 
 The editor validates as you work. A routine is one of the agent's scoped editable
@@ -749,6 +773,11 @@ from a test that kept skills off.
 - A finish sends no team notice: check that **Notify the team** is on for that
   ending, and that the agent has a contact recipient — the notice goes where
   contact requests go.
+- An ending's reply leaves out part of its message, such as a shortlist or a
+  promise that the team will be in touch: the run didn't do what that part needs.
+  A skill before the ending found nothing or failed, or nothing passes the
+  request on. Branch on the skill's outcome to an ending written for that case,
+  or turn on **Notify the team** (see [What an ending says](#what-an-ending-says)).
 - The **Send with** select shows a name as **(unavailable)**: the notify skill
   it names was deleted, turned off, or can no longer be named by a routine.
   Validation flags the ending until you pick another skill or switch back to

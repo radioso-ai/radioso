@@ -5,7 +5,12 @@ import type { PreparedSession } from "../../../src/modules/chat/services/chatSes
 import { attachedPhotoRules } from "../../../src/modules/chat/services/attachedPhotoRules.js";
 import { SKILL_TURN_OUTCOME } from "../../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
 import { retrievalMissHandoffForTurn } from "../../../src/modules/chat/services/handoffOwnership.js";
-import { runConversationQualitySuite, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
+import type { EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
+import {
+  runConversationQualitySuite,
+  type ConversationQualityCase,
+  type ConversationQualityRunnerPort,
+} from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/index.js";
 import { ARTS_WEEKEND_DOC_ID, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { canonicalAnswerEnvelope, conversationQualityChatHarness } from "../../support/conversationQualityChatHarness.js";
@@ -21,12 +26,20 @@ describe("photo-turn cases through the chat pipeline", () => {
   };
   const runCase = async (reply: string) => {
     const harness = conversationQualityChatHarness({ reply, retrievedDocumentIds: [ARTS_WEEKEND_DOC_ID, MOUNTAIN_COURSE_DOC_ID] });
-    const { reports } = await runConversationQualitySuite([pipelineCase], harness.port, { workspaceId: "ws" });
+    const observed: EvalRunObservedOutput[] = [];
+    const port: ConversationQualityRunnerPort = {
+      run: async (evalCase) => {
+        const output = await harness.port.run(evalCase);
+        observed.push(output);
+        return output;
+      },
+    };
+    const { reports } = await runConversationQualitySuite([pipelineCase], port, { workspaceId: "ws" });
     const answerCall = vi.mocked(harness.chatGateway.answer).mock.calls
       .map(([input]) => input)
       .find((input) => input.systemPrompt?.includes("Output envelope"));
     const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
-    return { report: reports[0], answerCall, assistantMessage };
+    return { report: reports[0], answerCall, assistantMessage, observed: observed[0] };
   };
 
   it("runs on the photo's description, and gives the answer model the attached-photo rules", async () => {
@@ -56,9 +69,9 @@ describe("photo-turn cases through the chat pipeline", () => {
     expect(report?.status).toBe("fail");
   });
 
-  // The photo rules keep a decline uncited, so a photo miss the model commits as `no_support`
-  // is still a decline: it keeps its reason and the agent's hand-off on a miss.
-  it("keeps an uncited photo decline a decline, with the hand-off on a miss", async () => {
+  // A photo miss the model commits as `no_support` is a decline: it keeps its reason and the
+  // agent's hand-off on a miss, and a Result its body cites anyway (#1823) is dropped.
+  it("keeps a photo decline a decline, cited or not, with the hand-off on a miss", async () => {
     const decline = (claims: number[][], answer: string) => canonicalAnswerEnvelope({
       coverage: "unanswered_insufficient_evidence",
       requestFocus: "courses like a pixel-art pyramid",
@@ -73,20 +86,23 @@ describe("photo-turn cases through the chat pipeline", () => {
     ));
     const cited = await runCase(decline([[1]], "That looks like a pixel-art stepped pyramid. The closest we have is the creative-arts weekend[[1]]."));
 
-    expect(report?.status).toBe("pass");
-    expect(assistantMessage?.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
-    // A decline that cites a Result is read as a degraded answer and never hands off.
-    expect(cited.assistantMessage?.skillOutcome).not.toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
-    const handoff = retrievalMissHandoffForTurn({
+    const handoffFor = (skillOutcome: string | null | undefined) => retrievalMissHandoffForTurn({
       session: {
         agent: { handoffOnRetrievalMiss: true, id: "agent-1" },
         conversation: { id: "conversation-1" },
         userMessage: { id: "message-1" },
       } as unknown as PreparedSession,
-      presentation: { skillOutcome: assistantMessage?.skillOutcome } as ChatPresentedAnswer,
+      presentation: { skillOutcome } as ChatPresentedAnswer,
       workspaceId: "ws",
-    });
-    expect(handoff.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
+    }).ownershipHandoff;
+
+    expect(report?.status).toBe("pass");
+    expect(assistantMessage?.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+    expect(handoffFor(assistantMessage?.skillOutcome)).toEqual({ reason: "retrieval_miss" });
+    expect(cited.assistantMessage?.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+    expect(cited.observed?.answer).toBe("That looks like a pixel-art stepped pyramid. The closest we have is the creative-arts weekend.");
+    expect(cited.observed?.citations ?? []).toEqual([]);
+    expect(handoffFor(cited.assistantMessage?.skillOutcome)).toEqual({ reason: "retrieval_miss" });
   });
 
   it("passes a reply that says what the photo shows and offers the closest course as the closest", async () => {

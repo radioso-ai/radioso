@@ -160,3 +160,29 @@ describe("GroundedAnswerHeadReader", () => {
     expect(reader.current).toEqual(resolved);
   });
 });
+
+describe("GroundedAnswerHeadReader.completedWithHead", () => {
+  const malformed = { protocolVersion: null, coverage: null, requestFocus: null, outcome: null, parseStatus: "malformed" as const };
+
+  it("gives an envelope whose tail did not parse the head the stream committed", () => {
+    const reader = new GroundedAnswerHeadReader();
+    pushAll(reader, fullEnvelope({ ...HEAD, outcome: "no_support" }), 9);
+
+    expect(reader.completedWithHead(malformed)).toEqual({ ...malformed, ...HEAD, outcome: "no_support", protocolVersion: 2 });
+  });
+
+  it("leaves an envelope that carries its own head as it is", () => {
+    const reader = new GroundedAnswerHeadReader();
+    pushAll(reader, fullEnvelope({ ...HEAD, outcome: "no_support" }), 9);
+    const own = { protocolVersion: 2 as const, coverage: HEAD.coverage, requestFocus: HEAD.requestFocus, outcome: HEAD.outcome };
+
+    expect(reader.completedWithHead(own)).toBe(own);
+  });
+
+  it("adds no head the stream never parsed", () => {
+    const reader = new GroundedAnswerHeadReader();
+    pushAll(reader, "Free text without a head.", 9);
+
+    expect(reader.completedWithHead(malformed)).toBe(malformed);
+  });
+});

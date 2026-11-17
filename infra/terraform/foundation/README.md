@@ -167,7 +167,7 @@ user, and only its own environment's instance gives it one. The Terraform identi
 account to the job, as it may every account in `runtime_service_accounts`.
 
 `db_access_audit.tf` also adds a `radioso-<env>-db-access` bucket in the environment's region,
-with 12-month retention, and a sink that routes the instance's Cloud SQL Data Access audit
+with 12-month retention, locked so no one can shorten that retention or delete the bucket, and a sink that routes the instance's Cloud SQL Data Access audit
 entries there. pgAudit's record of each statement arrives as one of those entries.
 Cloud SQL writes them only when the project's Data Access audit logs for
 `cloudsql.googleapis.com` are on. That setting is project-wide, so the environment with

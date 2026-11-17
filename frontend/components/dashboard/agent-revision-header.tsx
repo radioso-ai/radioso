@@ -11,7 +11,8 @@ import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, t
 import { hasPublishableChanges, useAgentRevision } from '@/lib/agent-revision-context'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
-import { changeFieldLabels, changedFields, revisionDisplayLabel, summarizeChangeValue } from '@/lib/agent-revision-change-summary'
+import { changeFieldLabels, changedFields, summarizeChange } from '@/lib/agent-revision-change-summary'
+import { revisionDisplayLabel } from '@/lib/agent-revision-label'
 import { describeGreeting } from '@/lib/exact-greeting-editor'
 
 /** A clean draft has nothing to report, so the status stays silent. */
@@ -39,7 +40,10 @@ function ChangeDetail({ before, after }: { before: unknown; after: unknown }) {
   if (!fields.length) return null
   return <dl className="mt-1 max-h-44 overflow-auto break-words rounded border bg-muted/40 p-2 text-xs">
     <div className="grid gap-1 border-b pb-1 font-medium text-muted-foreground sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)]"><dt>Field</dt><dd>Before</dd><dd>After</dd></div>
-    {fields.map((field) => <div key={field} className="grid gap-1 py-1 sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)]"><dt className="font-medium">{changeFieldLabels[field] ?? field}</dt><dd className="whitespace-pre-wrap text-muted-foreground">{summarizeChangeValue((before as Record<string, unknown> | undefined)?.[field])}</dd><dd className="whitespace-pre-wrap">{summarizeChangeValue((after as Record<string, unknown> | undefined)?.[field])}</dd></div>)}
+    {fields.map((field) => {
+      const summary = summarizeChange((before as Record<string, unknown> | undefined)?.[field], (after as Record<string, unknown> | undefined)?.[field])
+      return <div key={field} className="grid gap-1 py-1 sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)]"><dt className="font-medium">{changeFieldLabels[field] ?? field}</dt><dd className="whitespace-pre-wrap text-muted-foreground">{summary.before}</dd><dd className="whitespace-pre-wrap">{summary.after}</dd></div>
+    })}
   </dl>
 }
 

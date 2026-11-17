@@ -1,6 +1,6 @@
 export type AgentCreationActionKind = 'route' | 'wizard-dialog'
 
-interface AgentCreationAction {
+export interface AgentCreationAction {
   id: string
   label: string
   href: string | null
@@ -16,32 +16,13 @@ export interface AgentCreationActionDefinition {
   kind?: AgentCreationActionKind
 }
 
-interface AgentCreationActionContext {
+export interface AgentCreationActionContext {
   accountId: string
   workspacePublicRouteKey?: string | null
 }
 
 const agentCreationActionsConfigFilename = 'agent-creation-actions.json'
-const missingConfigSessionKey = 'radioso:agent-creation-actions-missing'
 let generatedAgentCreationActionsMissing = false
-
-// The file only exists in builds that generate it, so a 404 is remembered for
-// the browser session; otherwise every full page load re-probes it.
-const readMissingMarker = (): boolean => {
-  try {
-    return window.sessionStorage?.getItem(missingConfigSessionKey) === '1'
-  } catch {
-    return false
-  }
-}
-
-const writeMissingMarker = (): void => {
-  try {
-    window.sessionStorage?.setItem(missingConfigSessionKey, '1')
-  } catch {
-    // Storage can be blocked (embeds, private modes); the in-memory flag still holds.
-  }
-}
 
 const builtInAgentCreationActionDefinitions: AgentCreationActionDefinition[] = [
   {
@@ -122,8 +103,7 @@ export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreatio
   if (typeof window === 'undefined') {
     return builtInAgentCreationActionDefinitions
   }
-  if (generatedAgentCreationActionsMissing || readMissingMarker()) {
-    generatedAgentCreationActionsMissing = true
+  if (generatedAgentCreationActionsMissing) {
     return builtInAgentCreationActionDefinitions
   }
   try {
@@ -131,7 +111,6 @@ export const loadAgentCreationActionDefinitions = async (): Promise<AgentCreatio
     if (!response.ok) {
       if (response.status === 404) {
         generatedAgentCreationActionsMissing = true
-        writeMissingMarker()
       }
       return builtInAgentCreationActionDefinitions
     }

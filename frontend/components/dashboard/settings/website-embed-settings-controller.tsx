@@ -424,6 +424,7 @@ function WebsiteEmbedSettingsPanel({
         </div>
         <Switch
           id="websiteEmbedToggle"
+          aria-label="Website widget"
           checked={anonSettings.websiteEmbedEnabled ?? false}
           onCheckedChange={(checked) => handleWebsiteEmbedSettingChange('websiteEmbedEnabled', checked)}
           disabled={isAnonSaving}

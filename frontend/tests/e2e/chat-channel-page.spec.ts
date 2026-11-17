@@ -68,7 +68,7 @@ test("operator configures one chat surface for both placements", async ({ page }
     .toBe(true);
   await expect(page.getByRole("heading", { name: "Public link", exact: true })).toBeVisible();
 
-  await page.locator("#websiteEmbedToggle").click();
+  await page.getByRole("switch", { name: "Website widget" }).click();
   await expect
     .poll(() =>
       agentUpdates.some(

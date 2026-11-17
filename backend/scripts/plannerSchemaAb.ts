@@ -22,11 +22,11 @@
  */
 import type { MessageRecord } from "../src/db/repositories/messageRepository.js";
 import {
-  buildTurnPlanResponseFormat,
   buildTurnPlanningPrompt,
   parseTurnPlan,
   type TurnPlan,
 } from "../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanResponseFormat } from "../src/modules/chat/services/turnPlanWireFormat.js";
 import { OpenAITextGenerationClient } from "../src/shared/infra/llm/openaiProvider.js";
 import type {
   JsonSchemaResponseFormat,

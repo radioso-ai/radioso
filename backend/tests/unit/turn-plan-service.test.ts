@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import {
   TurnPlanService,
-  buildTurnPlanResponseFormat,
   buildTurnPlanningPrompt,
   estimateTurnPlanningPromptTokens,
   parseTurnPlan,
@@ -12,6 +11,7 @@ import {
   type TurnPlanGatewayFactory,
   type TurnPlanRequest,
 } from "../../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanResponseFormat } from "../../src/modules/chat/services/turnPlanWireFormat.js";
 import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 

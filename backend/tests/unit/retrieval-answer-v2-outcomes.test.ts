@@ -1624,4 +1624,53 @@ describe("a decline the grounded answer commits while citing a Result", () => {
       labels: { protocol: "v2", verdict: "no_support", reason: "cited_decline", stream: "true", decline: "content_gap", photo_turn: "true" },
     });
   });
+
+  // A cited decline is counted as one whatever else its envelope got wrong, so the count
+  // sizes every decline that named a Result.
+  it.each([
+    ["leaves the citation out of its manifest", citedDecline("no_support", { claims: [] }), "v2"],
+    ["carries a manifest that does not parse", citedDecline("no_support", { claims: "[[1]]" }), "malformed"],
+  ])("counts a cited decline that %s as a cited decline", async (_name, raw, protocol) => {
+    const { composer, metricWrites } = buildComposer(raw);
+
+    const presented = await composer.composeAnswer(baseSession(), "Like this?", undefined, undefined);
+
+    expect(presented.skillOutcome).toBe("no_context");
+    expect(presented.citations).toBeUndefined();
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol, verdict: "no_support", reason: "cited_decline", stream: "false", decline: "content_gap", photo_turn: "false" },
+    }]);
+  });
+
+  // A reply cut off after its head (at the token limit, say) leaves a tail that does not
+  // parse. The stream already committed the head's decline and released its text, so the
+  // decline still decides the turn.
+  it("settles a streamed decline whose tail is cut off as the decline its head committed", async () => {
+    const cutOff = citedDecline().replace(/"claims":.*$/, "\"claims\":[[1");
+    const { composer, metricWrites } = buildComposer(cutOff);
+
+    const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Like this?", undefined, undefined));
+
+    expect(chunks.join("")).toBe(CITED_DECLINE_VISIBLE);
+    expect(result.finalPresentation.answer).toBe(CITED_DECLINE_VISIBLE);
+    expect(result.finalPresentation.citations).toBeUndefined();
+    expect(result.finalPresentation.grounding).toBe("no_support");
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(metricWrites).toContainEqual({
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "malformed", verdict: "no_support", reason: "cited_decline", stream: "true", decline: "content_gap", photo_turn: "false" },
+    });
+  });
+
+  it("composes the decline a streamed blank decline committed when its tail is cut off", async () => {
+    const cutOff = citedDecline("no_support", { answer: "" }).replace(/"claims":.*$/, "\"claims\":[");
+    const { composer, counts } = buildComposer(cutOff);
+
+    const { result } = await drain(composer.streamAnswer(baseSession(), "Like this?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(counts().fallbackCalls).toBe(1);
+  });
 });

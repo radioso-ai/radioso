@@ -63,7 +63,14 @@ export const contactSupportRoutine: RoutineDefinition = {
     defaultTransition("ask_issue", "done", 1),
   ],
   terminals: [
-    { stableStepId: "done", kind: "complete", instruction: "Confirm that a support agent will follow up by email.", ordinal: 0 },
+    // The ending notifies the support team, so its follow-up promise is one the run keeps (#1820).
+    {
+      stableStepId: "done",
+      kind: "complete",
+      instruction: "Confirm that a support agent will follow up by email.",
+      ordinal: 0,
+      operatorNotice: { subject: null, intro: null },
+    },
   ],
 };
 

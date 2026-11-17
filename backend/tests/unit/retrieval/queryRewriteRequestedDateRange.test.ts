@@ -151,3 +151,27 @@ describe("requested date range prompt rule", () => {
     expect(rule).not.toContain("is its next occurrence from today unless");
   });
 });
+
+describe("reference-back prompt rule", () => {
+  const rewritePrompts = ["retrieval/query-rewrite.md", "chat/turn-interpretation.md", "chat/turn-planning.md"];
+  const referenceRule = (template: string) =>
+    template.split("\n").find((line) => line.startsWith("A reference that points back instead of naming its subject"));
+  const mentionsGuidance = (template: string) =>
+    template.split("\n").find((line) => line.startsWith("subjectMentions:"));
+
+  it("gives every rewrite prompt the same rule for a reference back, read from the subject mentions", () => {
+    const rules = rewritePrompts.map((path) => referenceRule(loadPromptTemplate(path)));
+
+    expect(rules[0]).toContain("look further back through subjectMentions");
+    expect(new Set(rules).size).toBe(1);
+  });
+
+  it("asks both free-JSON rewrite prompts for the subject mentions in the same words", () => {
+    const guidance = ["retrieval/query-rewrite.md", "chat/turn-interpretation.md"].map((path) =>
+      mentionsGuidance(loadPromptTemplate(path)),
+    );
+
+    expect(guidance[0]).toContain("oldest first");
+    expect(new Set(guidance).size).toBe(1);
+  });
+});

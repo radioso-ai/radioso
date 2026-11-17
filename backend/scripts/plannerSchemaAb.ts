@@ -4,11 +4,11 @@
  * Isolates the fused turn planner (no DB, no worker): renders the production
  * prompt and response schema, calls the chat model directly, and scores
  * referential rewrite resolution per arm. `production` is exactly what
- * `buildTurnPlanResponseFormat` emits: the `resolutionNote` scratch field and
- * the derivation fields (turnKind, proposedActiveSubject) ordered before the
- * resolved query fields (rewrittenQuery, semanticQuery, lexicalQuery) they
- * depend on. `legacy` reproduces the pre-2026-09-17 schema — no
- * `resolutionNote`, resolved query fields emitted before the derivation
+ * `buildTurnPlanResponseFormat` emits: the `subjectMentions` and `resolutionNote`
+ * scratch fields and the derivation fields (turnKind, proposedActiveSubject)
+ * ordered before the resolved query fields (rewrittenQuery, semanticQuery,
+ * lexicalQuery) they depend on. `legacy` reproduces the pre-2026-09-17 schema — no
+ * scratch fields, resolved query fields emitted before the derivation
  * fields that explain them — so this harness can still demonstrate the
  * referential-rewrite regression that ordering caused, and catch a future
  * schema edit that reintroduces it. See `CHAT_BEHAVIOR.turnPlanning.
@@ -22,11 +22,11 @@
  */
 import type { MessageRecord } from "../src/db/repositories/messageRepository.js";
 import {
-  buildTurnPlanResponseFormat,
   buildTurnPlanningPrompt,
   parseTurnPlan,
   type TurnPlan,
 } from "../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanResponseFormat } from "../src/modules/chat/services/turnPlanWireFormat.js";
 import { OpenAITextGenerationClient } from "../src/shared/infra/llm/openaiProvider.js";
 import type {
   JsonSchemaResponseFormat,
@@ -45,6 +45,8 @@ interface Expectation {
   anyOf?: string[];
   /** No entry may appear — catches vague placeholders like "the second option". */
   noneOf?: string[];
+  /** proposedActiveSubject (lowercased) must contain this — the subject itself, not just the query text. */
+  subject?: string;
 }
 
 interface AbCase {
@@ -53,6 +55,19 @@ interface AbCase {
   query: string;
   expect: Expectation;
 }
+
+/**
+ * The visitor answers "which course?" with a category, then names the course in a message the
+ * assistant does not acknowledge, and two turns later asks about "the event" (#1744).
+ */
+const courseNamedBehindContactForm = (course: string): AbCase["history"] => [
+  { role: "user", content: "Vorrei partecipare all'evento dal 3/10/2031 al 5/10/2031" },
+  { role: "assistant", content: "Che bello! A quale corso vorresti partecipare?" },
+  { role: "user", content: "Corso residenziale" },
+  { role: "assistant", content: "Perfetto. Per procedere mi servono il tuo nome e il tuo indirizzo email." },
+  { role: "user", content: course },
+  { role: "assistant", content: "Grazie. Per completare la richiesta mi servono il tuo nome e il tuo indirizzo email." },
+];
 
 const CASES: AbCase[] = [
   {
@@ -175,6 +190,18 @@ const CASES: AbCase[] = [
     expect: { route: "retrieval", anyOf: ["okta"] },
   },
   {
+    id: "referent-named-behind-category-it",
+    history: courseNamedBehindContactForm("Il silenzio del cuore"),
+    query: "Mi mandi un preventivo completo compreso di pernottamento per l'evento?",
+    expect: { route: "retrieval", subject: "silenzio del cuore" },
+  },
+  {
+    id: "referent-named-behind-category-split-it",
+    history: courseNamedBehindContactForm("Il respiro super consapevole"),
+    query: "Mi mandi un preventivo completo compreso di pernottamento per l'evento?",
+    expect: { route: "retrieval", subject: "respiro super consapevole" },
+  },
+  {
     id: "direct-thanks",
     history: [
       { role: "user", content: "How do refunds work?" },
@@ -200,19 +227,19 @@ const LEGACY_REWRITE_ORDER = [
 ] as const;
 
 /**
- * Reproduces the pre-2026-09-17 production schema: no `resolutionNote`, and
- * `rewrite.properties` keyed with the resolved query fields (rewrittenQuery,
- * semanticQuery, lexicalQuery) before the derivation fields (turnKind,
- * proposedActiveSubject) that explain them. Under strict structured output,
- * property order is emission order, so this re-key is the only byte that
- * differs from the `production` arm.
+ * Reproduces the pre-2026-09-17 production schema: no `resolutionNote` and no
+ * `subjectMentions` (#1744, later), and `rewrite.properties` keyed with the
+ * resolved query fields (rewrittenQuery, semanticQuery, lexicalQuery) before the
+ * derivation fields (turnKind, proposedActiveSubject) that explain them. Under
+ * strict structured output, property order is emission order, so dropping the
+ * scratch fields and this re-key are the only differences from the `production` arm.
  */
 const toLegacySchema = (format: JsonSchemaResponseFormat): JsonSchemaResponseFormat => {
   const schema = structuredClone(format.schema) as {
     properties: { rewrite: { properties: Record<string, unknown>; required: string[] } };
   };
   const rewrite = schema.properties.rewrite;
-  const { resolutionNote: _resolutionNote, ...remaining } = rewrite.properties;
+  const { resolutionNote: _resolutionNote, subjectMentions: _subjectMentions, ...remaining } = rewrite.properties;
   const missing = LEGACY_REWRITE_ORDER.filter((key) => !(key in remaining));
   if (missing.length > 0) {
     throw new Error(`rewrite schema is missing keys the legacy order expects: ${missing.join(", ")}`);
@@ -263,6 +290,10 @@ const score = (plan: TurnPlan | null, expectation: Expectation): { ok: boolean; 
   }
   for (const needle of expectation.noneOf ?? []) {
     if (text.includes(needle)) return { ok: false, why: `placeholder "${needle}"` };
+  }
+  const subject = plan.rewriteProposal?.proposedActiveSubject?.toLowerCase() ?? "";
+  if (expectation.subject && !subject.includes(expectation.subject)) {
+    return { ok: false, why: `subject="${subject}"` };
   }
   return { ok: true, why: "" };
 };

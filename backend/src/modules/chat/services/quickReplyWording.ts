@@ -1,5 +1,5 @@
 import type { AgentMechanicsReplies } from "../../agents/public.js";
-import type { TurnPlanQuickReplyKind } from "./turnPlanService.js";
+import type { TurnPlanQuickReplyKind } from "./turnPlanWireFormat.js";
 
 /** Why the planner's own words were not sent (format checks only; low-cardinality). */
 export type PlannerTextRejection = "digit" | "currency" | "link" | "email";

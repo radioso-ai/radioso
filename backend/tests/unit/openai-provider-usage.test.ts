@@ -15,10 +15,8 @@ import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelI
 import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
-import {
-  buildTurnPlanResponseFormat,
-  buildTurnPlanningPrompt,
-} from "../../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanningPrompt } from "../../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanResponseFormat } from "../../src/modules/chat/services/turnPlanWireFormat.js";
 
 const chatConfig: LlmCapabilityConfig = {
   capability: "chat",

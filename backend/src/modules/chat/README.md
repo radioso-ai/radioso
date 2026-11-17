@@ -1044,7 +1044,9 @@ imports from `services/`.
   `includeSlotValues` opt-in: eval replay, which persists its trace to append-only
   evidence, gets no preview.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
-  agent's chat model, strict parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
+  agent's chat model, strict parse and semantic validation), `turnPlanWireFormat.ts`
+  (the strict response schema, its shared enum values, and the positional routine
+  aliases), and `turnPlanCoordinator.ts` (gate, eligibility bounds from
   `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,

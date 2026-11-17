@@ -174,6 +174,12 @@ describe("ConversationTurnInterpreter", () => {
     expect(prompt).toContain('"rewrite"');
   });
 
+  it("asks for the user's subject mentions before it resolves the reference or the subject", () => {
+    const prompt = buildTurnInterpretationPrompt({ context: "", query: "e per l'evento?", today: "2026-10-21" });
+
+    expect(prompt).toContain('"rewrite":{"subjectMentions":["string"],"resolutionNote":"string|null"');
+  });
+
   it("dates the staged interpretation so the rewrite can resolve a named period", () => {
     const prompt = buildTurnInterpretationPrompt({ context: "", query: "Che corsi ci sono a marzo?", today: "2026-10-21 (Wednesday)" });
 

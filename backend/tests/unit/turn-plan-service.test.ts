@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import {
   TurnPlanService,
-  buildTurnPlanResponseFormat,
   buildTurnPlanningPrompt,
   estimateTurnPlanningPromptTokens,
   parseTurnPlan,
@@ -12,6 +11,7 @@ import {
   type TurnPlanGatewayFactory,
   type TurnPlanRequest,
 } from "../../src/modules/chat/services/turnPlanService.js";
+import { buildTurnPlanResponseFormat } from "../../src/modules/chat/services/turnPlanWireFormat.js";
 import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
@@ -162,6 +162,27 @@ describe("parseTurnPlan", () => {
       },
     }), candidates);
     expect(plan?.rewriteProposal).not.toHaveProperty("resolutionNote");
+  });
+
+  it("still parses when subjectMentions is null (schema-less fallback contract)", () => {
+    const plan = parseTurnPlan(validPlanJson({
+      rewrite: {
+        subjectMentions: null,
+        resolutionNote: null,
+        rewrittenQuery: "What is the refund window?",
+        semanticQuery: "refund window duration",
+        lexicalQuery: "refund window",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund window",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }), candidates);
+    expect(plan?.rewriteProposal?.proposedActiveSubject).toBe("refund window");
   });
 
   it("still parses when resolutionNote is absent (schema-less fallback contract)", () => {
@@ -595,10 +616,11 @@ describe("buildTurnPlanResponseFormat", () => {
     expect(format.schema.required).toContain("responseLanguageTag");
   });
 
-  it("orders rewrite properties and required derivation-first, resolutionNote before turnKind and proposedActiveSubject, before the resolved query fields", () => {
+  it("orders rewrite properties and required derivation-first, subjectMentions then resolutionNote before turnKind and proposedActiveSubject, before the resolved query fields", () => {
     const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
     const rewrite = schemaProperty(format, "rewrite") as { properties: Record<string, unknown>; required: string[] };
     const expectedOrder = [
+      "subjectMentions",
       "resolutionNote",
       "turnKind",
       "proposedActiveSubject",
@@ -629,6 +651,16 @@ describe("buildTurnPlanResponseFormat", () => {
         dateTo: { type: "string" },
       },
     });
+  });
+
+  it("asks for the user's subject mentions as a string list, oldest first, before the subject is chosen", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    const rewrite = schemaProperty(format, "rewrite") as { properties: Record<string, Record<string, unknown>> };
+    expect(rewrite.properties.subjectMentions).toMatchObject({
+      type: "array",
+      items: { type: "string" },
+    });
+    expect(rewrite.properties.subjectMentions?.description).toContain("oldest first");
   });
 
   it("describes resolutionNote as a nullable string derivation scratch field", () => {
@@ -916,10 +948,10 @@ describe("buildTurnPlanningPrompt", () => {
     expect(prompt).toContain("field/value pairs");
   });
 
-  it("orders the fallback rewrite shape resolutionNote-first, matching the provider schema", () => {
+  it("orders the fallback rewrite shape subjectMentions-first, matching the provider schema", () => {
     const prompt = rendered(promptInput());
     expect(prompt).toContain(
-      '"rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
+      '"rewrite":{"subjectMentions":["string"],"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
     );
     expect(prompt).toContain("resolutionNote");
   });

@@ -9,7 +9,7 @@ import {
   plannerQuickReplyTextRejection,
   type PlannerTextRejection,
 } from "./quickReplyWording.js";
-import { TURN_PLAN_QUICK_REPLY_KINDS, type TurnPlanQuickReplyKind } from "./turnPlanService.js";
+import { TURN_PLAN_QUICK_REPLY_KINDS, type TurnPlanQuickReplyKind } from "./turnPlanWireFormat.js";
 
 /**
  * Whose words a quick reply carries: one of the agent's authored lines, or the planner's own

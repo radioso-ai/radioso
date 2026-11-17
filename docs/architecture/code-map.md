@@ -2117,7 +2117,8 @@ Primary internals:
   writes the reply from a directive-bound skill's result;
   `prompts/chat/skill-result-answer.md`)
 - `backend/src/modules/chat/services/turnPlanService.ts` and
-  `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
+  `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanWireFormat.ts`
+  (the planner's strict response schema) and `turnPlanQuickReply.ts`
   (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/chat/services/replyBlocks/` and `contracts/replyBlocks.ts`

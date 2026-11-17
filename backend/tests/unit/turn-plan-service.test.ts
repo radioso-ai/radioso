@@ -164,6 +164,27 @@ describe("parseTurnPlan", () => {
     expect(plan?.rewriteProposal).not.toHaveProperty("resolutionNote");
   });
 
+  it("still parses when subjectMentions is null (schema-less fallback contract)", () => {
+    const plan = parseTurnPlan(validPlanJson({
+      rewrite: {
+        subjectMentions: null,
+        resolutionNote: null,
+        rewrittenQuery: "What is the refund window?",
+        semanticQuery: "refund window duration",
+        lexicalQuery: "refund window",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund window",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }), candidates);
+    expect(plan?.rewriteProposal?.proposedActiveSubject).toBe("refund window");
+  });
+
   it("still parses when resolutionNote is absent (schema-less fallback contract)", () => {
     const plan = parseTurnPlan(validPlanJson(), candidates);
     expect(plan).not.toBeNull();

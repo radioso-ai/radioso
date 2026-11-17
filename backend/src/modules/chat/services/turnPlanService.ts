@@ -300,7 +300,7 @@ const turnPlanOutputShapeBlock = (input: {
     "Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason. turnKind belongs only on the enclosing rewrite object.\n" +
     "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
     "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
-    "subjectMentions comes first: when the latest message refers back to something instead of naming it, up to the five most recent concrete subjects the user named, oldest first, as the user wrote them; otherwise an empty array.\n" +
+    "subjectMentions comes first: when the latest message refers back to something instead of naming it, the concrete subjects the user named or chose, oldest first; otherwise an empty array.\n" +
     "resolutionNote is optional prose scratch space: write it after subjectMentions and before the other rewrite fields, naming the concrete item this turn resolves to and how, or use null on a fresh, self-contained request.\n" +
     (input.hasQuickReplyLane
       ? "requestPresent, openQuestion, and quickReply are always present and always last, in that order; quickReply is kind none with an empty text unless the Quick Reply Rules allow a reply.\n"
@@ -449,7 +449,7 @@ const confidenceSchema = z.number().finite().min(0).max(1);
 // the prompt's prose Output Shape Rules rather than this zod shape — still parses
 // when either field is omitted entirely, not just when it is null.
 const rewriteSchema = z.object({
-  subjectMentions: z.array(z.string()).optional(),
+  subjectMentions: z.array(z.string()).nullable().optional(),
   resolutionNote: z.string().nullable().optional(),
   turnKind: z.enum(TURN_KIND_VALUES),
   proposedActiveSubject: z.string().nullable(),
@@ -555,19 +555,23 @@ const pageReadJsonSchema = {
 // Under strict structured output, `properties` key order is emission order: the
 // model fills the JSON object in the order this schema declares it, and it can
 // only reason through tokens it has already emitted — never ones still to come.
-// So the derivation fields (resolutionNote, turnKind, proposedActiveSubject),
-// which say what this turn refers to and how, must come before the resolved
+// So the derivation fields (subjectMentions, resolutionNote, turnKind,
+// proposedActiveSubject), which say what this turn refers to and how, must come before the resolved
 // query fields (rewrittenQuery, semanticQuery, lexicalQuery) that depend on that
 // resolution. An A/B on 2026-09-17 (backend/scripts/plannerSchemaAb.ts) found
 // the previous query-fields-first order was the cause of referential rewrite
 // collapse at low reasoning effort, not reasoning effort itself: reordering
 // derivation-first plus adding the leading `resolutionNote` scratch field
 // matches "low"'s accuracy at "none" with fewer output tokens. See
-// CHAT_BEHAVIOR.turnPlanning.reasoningEffort in behaviorConfig.ts. For the same
-// reason `subjectMentions` leads: a reference back to a course the user named a few
-// turns earlier resolved to the broader category they gave before it, until the model
-// listed the user's mentions before choosing one (#1744). The same rule puts `quickReply` last in the plan: the model writes a reply only after it has
-// committed the route and every classification that decides whether one is allowed,
+// CHAT_BEHAVIOR.turnPlanning.reasoningEffort in behaviorConfig.ts.
+//
+// For the same reason `subjectMentions` leads the rewrite: a reference back to a
+// course the user named a few turns earlier resolved to the broader category they
+// gave before it, until the model listed what the user named before choosing one
+// (#1744).
+//
+// The same emission-order rule puts `quickReply` last in the plan: the model writes a
+// reply only after it has committed the route and every classification that decides whether one is allowed,
 // and only after `requestPresent` and `openQuestion` have said whether the message asks
 // for anything and whether the conversation is waiting on the user.
 const rewriteJsonSchema = {
@@ -594,7 +598,7 @@ const rewriteJsonSchema = {
       type: "array",
       items: { type: "string" },
       description:
-        "When the latest user message refers back to something instead of naming it: up to the five most recent concrete subjects the user named in the conversation, oldest first, each as the user wrote it: a proper name or title, a category, an edition, a date or date range. A user message counts even when it does not answer what the assistant asked. Otherwise, or when the user named none, an empty array.",
+        "When the latest message refers back to something instead of naming it, list the concrete subjects the user named or chose in the conversation, oldest first: what the user wrote, or the assistant's name for an option the user picked from what it offered. A proper name or title, a category, an edition, a date or a date range each counts. A user message counts even when it does not answer what the assistant asked. Otherwise, or when the user named or chose none, use an empty array.",
     },
     resolutionNote: {
       type: ["string", "null"],

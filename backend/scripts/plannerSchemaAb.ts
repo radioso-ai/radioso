@@ -4,11 +4,11 @@
  * Isolates the fused turn planner (no DB, no worker): renders the production
  * prompt and response schema, calls the chat model directly, and scores
  * referential rewrite resolution per arm. `production` is exactly what
- * `buildTurnPlanResponseFormat` emits: the `resolutionNote` scratch field and
- * the derivation fields (turnKind, proposedActiveSubject) ordered before the
- * resolved query fields (rewrittenQuery, semanticQuery, lexicalQuery) they
- * depend on. `legacy` reproduces the pre-2026-09-17 schema — no
- * `resolutionNote`, resolved query fields emitted before the derivation
+ * `buildTurnPlanResponseFormat` emits: the `subjectMentions` and `resolutionNote`
+ * scratch fields and the derivation fields (turnKind, proposedActiveSubject)
+ * ordered before the resolved query fields (rewrittenQuery, semanticQuery,
+ * lexicalQuery) they depend on. `legacy` reproduces the pre-2026-09-17 schema — no
+ * scratch fields, resolved query fields emitted before the derivation
  * fields that explain them — so this harness can still demonstrate the
  * referential-rewrite regression that ordering caused, and catch a future
  * schema edit that reintroduces it. See `CHAT_BEHAVIOR.turnPlanning.
@@ -227,19 +227,19 @@ const LEGACY_REWRITE_ORDER = [
 ] as const;
 
 /**
- * Reproduces the pre-2026-09-17 production schema: no `resolutionNote`, and
- * `rewrite.properties` keyed with the resolved query fields (rewrittenQuery,
- * semanticQuery, lexicalQuery) before the derivation fields (turnKind,
- * proposedActiveSubject) that explain them. Under strict structured output,
- * property order is emission order, so this re-key is the only byte that
- * differs from the `production` arm.
+ * Reproduces the pre-2026-09-17 production schema: no `resolutionNote` and no
+ * `subjectMentions` (#1744, later), and `rewrite.properties` keyed with the
+ * resolved query fields (rewrittenQuery, semanticQuery, lexicalQuery) before the
+ * derivation fields (turnKind, proposedActiveSubject) that explain them. Under
+ * strict structured output, property order is emission order, so dropping the
+ * scratch fields and this re-key are the only differences from the `production` arm.
  */
 const toLegacySchema = (format: JsonSchemaResponseFormat): JsonSchemaResponseFormat => {
   const schema = structuredClone(format.schema) as {
     properties: { rewrite: { properties: Record<string, unknown>; required: string[] } };
   };
   const rewrite = schema.properties.rewrite;
-  const { resolutionNote: _resolutionNote, ...remaining } = rewrite.properties;
+  const { resolutionNote: _resolutionNote, subjectMentions: _subjectMentions, ...remaining } = rewrite.properties;
   const missing = LEGACY_REWRITE_ORDER.filter((key) => !(key in remaining));
   if (missing.length > 0) {
     throw new Error(`rewrite schema is missing keys the legacy order expects: ${missing.join(", ")}`);

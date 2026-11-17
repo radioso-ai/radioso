@@ -15,8 +15,8 @@ import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.
  *
  * `grounded` is earned by the body's assertions. A decline is committed by the head,
  * before the body is written, so whatever the body adds (a cited Result, planned
- * suggestions, a broken anchor) never turns it back into an answer: the presenter drops
- * what a decline cannot carry, and the counts below still record what the body did.
+ * suggestions, a broken anchor) never turns it back into an answer; the counts below
+ * still record what the body did.
  */
 export type { GroundingVerdict };
 

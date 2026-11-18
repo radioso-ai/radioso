@@ -12,7 +12,7 @@ import type { AgentSkillRepositoryPort } from "./repository.js";
  * The release a stored conversation is pinned to, as far as its skills go: `null` when the
  * conversation is pinned to none, `agentSkills` absent when that release predates skill tracking.
  */
-export interface ConversationReleaseSkillsReader {
+interface ConversationReleaseSkillsReader {
   findConversationRelease(input: {
     workspaceId: string;
     conversationId: string;

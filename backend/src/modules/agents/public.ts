@@ -63,8 +63,6 @@ export {
 export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
-  readNotifyContactDelivery,
-  resolveEffectiveContactDelivery,
 } from "./domain.js";
 export {
   AgentService,
@@ -168,3 +166,4 @@ export {
 export * from "./copilotPrimitiveRegistry.js";
 export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";
 export { agentDraftChange, writesAgentDraft } from "./agentDraftChange.js";
+export { readNotifyContactDelivery, resolveEffectiveContactDelivery } from "./contactHumanSkill.js";

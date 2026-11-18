@@ -96,7 +96,7 @@ export interface SlackSkillDefinitionRepositoryPort {
  * Runs a skill write and projects the skill it touched into the agent's draft under the agent
  * revision lock: agentSkills' `writeAgentSkillIntoDraft`, which composition hands in.
  */
-export type AgentSkillDraftWrite = <T>(
+type AgentSkillDraftWrite = <T>(
   db: Db,
   scope: { workspaceId?: string; agentId: string },
   write: (trx: Transaction<DB>) => Promise<T>,

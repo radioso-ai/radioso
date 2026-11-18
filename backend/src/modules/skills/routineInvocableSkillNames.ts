@@ -30,10 +30,10 @@ import type { ConversationSkill } from "../../shared/domain/conversationSkills.j
  */
 export const routineNameDispatchedSkillKinds = ["webhook", "customer_email", "slack"] as const;
 
-export type RoutineNameDispatchedSkillKind = (typeof routineNameDispatchedSkillKinds)[number];
+type RoutineNameDispatchedSkillKind = (typeof routineNameDispatchedSkillKinds)[number];
 
 /** Skill names grouped by kind, one list per runtime resolver in the chain. */
-export type RoutineInvocableSkillNamesByKind = Readonly<Record<RoutineNameDispatchedSkillKind, readonly string[]>>;
+type RoutineInvocableSkillNamesByKind = Readonly<Record<RoutineNameDispatchedSkillKind, readonly string[]>>;
 
 export interface RoutineInvocableSkillNamesContext {
   readonly workspaceId: string;

@@ -26,11 +26,11 @@ import {
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   mergeAgentSurfaceSettings,
-  withContactHumanSkill,
   validateAgentInput,
   type AgentInput,
   type AgentRecord,
 } from "../domain.js";
+import { withContactHumanSkill } from "../contactHumanSkill.js";
 import {
   agentInputFieldSchemas,
   agentReviewedSettingsPatchSchema,

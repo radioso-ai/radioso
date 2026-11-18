@@ -1,6 +1,6 @@
 import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
-import { withContactHumanSkill } from "../domain.js";
+import { withContactHumanSkill } from "../contactHumanSkill.js";
 import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
 import type { AgentSkillSpine } from "../../agentSkills/public.js";
 

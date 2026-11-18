@@ -24,7 +24,7 @@ import { SLACK_SKILLS_ADAPTER } from "../../../modules/slackSkills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 
-export interface SkillBackedContextResolverOptions {
+interface SkillBackedContextResolverOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "findById">;
   skillExecutorRegistry: SkillExecutorRegistry;
 }

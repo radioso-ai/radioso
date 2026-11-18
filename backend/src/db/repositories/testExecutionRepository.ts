@@ -2,7 +2,7 @@ import type { AgentRevision } from "../../modules/agents/public.js";
 import { sql, type Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type { VisitorImageClaim } from "../../modules/visitorImages/public.js";
-import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
+import { answerSources, type TestExecution, type TestExecutionAttempt, type TestExecutionAttemptRecord, type TestExecutionClaim, type TestExecutionHistoryItem, type TestExecutionHistorySide, type TestExecutionRepositoryPort, type TestExecutionRunnerResult, type TestExecutionSide, type TestExecutionState } from "../../modules/test-execution/testExecution.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -42,6 +42,7 @@ const appendAssistant = (history: TestExecutionSide["history"], input: CompleteI
   role: "assistant" as const,
   content: input.result.answer,
   messageId: input.result.messageId,
+  ...answerSources(input.result),
   ...(input.result.turnTrace ? { turnTrace: input.result.turnTrace } : {}),
   createdAt: input.now,
   ...spokenMark(input),

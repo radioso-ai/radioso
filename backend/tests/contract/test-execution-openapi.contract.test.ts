@@ -43,6 +43,20 @@ describe("test execution OpenAPI contract", () => {
     expect(completed?.required).toContain("answer");
   });
 
+  it("carries the sources an answer cites on its completion and on its stored entry (#1816)", () => {
+    const { registry, security } = createOpenApiRegistry();
+    registerTestExecutionPaths(registry, security);
+    const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
+    const events = (document.components?.schemas?.TestExecutionEvent as { oneOf: Array<{ properties: { type: { enum: string[] } } & Record<string, unknown>; required: string[] }> }).oneOf;
+    const completed = events.find((event) => event.properties.type.enum.includes("side_completed"));
+    const entry = (document.components?.schemas?.TestExecutionSide as { properties: { history: { items: { properties: Record<string, unknown>; required: string[] } } } }).properties.history.items;
+    for (const answer of [completed, entry]) {
+      expect(answer?.properties.citations).toMatchObject({ type: "array" });
+      expect(answer?.properties.answerSegments).toMatchObject({ type: "array" });
+      expect(answer?.required).not.toContain("citations");
+    }
+  });
+
   it("carries the detail's seeded turn count for the copy notice", () => {
     const { registry, security } = createOpenApiRegistry();
     registerTestExecutionPaths(registry, security);

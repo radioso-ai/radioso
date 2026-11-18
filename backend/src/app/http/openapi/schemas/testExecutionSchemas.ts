@@ -7,11 +7,23 @@ import { publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchem
 
 const uuid = z.string().uuid();
 
-export const registerTestExecutionSchemas = (registry: OpenAPIRegistry, replyBlockSchema: z.ZodTypeAny = z.unknown()) => {
+/** The reply shapes a test turn shares with every chat surface, registered once elsewhere. */
+export interface TestExecutionReplySchemas {
+  ReplyBlockSchema?: z.ZodTypeAny;
+  CitationSchema?: z.ZodTypeAny;
+  AnswerSegmentSchema?: z.ZodTypeAny;
+}
+
+export const registerTestExecutionSchemas = (registry: OpenAPIRegistry, reply: TestExecutionReplySchemas = {}) => {
+  const replyBlockSchema = reply.ReplyBlockSchema ?? z.unknown();
+  const answerSources = {
+    citations: z.array(reply.CitationSchema ?? z.unknown()).optional().describe("The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none."),
+    answerSegments: z.array(reply.AnswerSegmentSchema ?? z.unknown()).optional().describe("The answer's text runs, each with the indices of the citations it rests on. Present only with citations."),
+  };
   const TestExecutionEventSchema = registry.register("TestExecutionEvent", z.discriminatedUnion("type", [
     z.object({ type: z.literal("side_started"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid }),
     z.object({ type: z.literal("message_delta"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, delta: z.string() }),
-    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid, answer: z.string().describe("The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize."), blocks: z.array(replyBlockSchema).optional().describe("The reply blocks the turn presents beside its answer, such as cards built from a skill's records. Test Chat renders every block kind and layout."), turnTrace: z.unknown().optional() }),
+    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid, answer: z.string().describe("The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize."), ...answerSources, blocks: z.array(replyBlockSchema).optional().describe("The reply blocks the turn presents beside its answer, such as cards built from a skill's records. Test Chat renders every block kind and layout."), turnTrace: z.unknown().optional() }),
     z.object({ type: z.literal("side_failed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, code: z.string(), retryable: z.boolean() }),
     z.object({ type: z.literal("execution_partial"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
     z.object({ type: z.literal("execution_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
@@ -24,7 +36,7 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry, replyBlo
       reading: z.string().nullable().describe("What the agent's chat model read in the photo; null when it could not read it."),
     })).min(1).max(MAX_IMAGES_PER_MESSAGE),
   }).describe("The photos a user message carries. `content` is the turn text the agent ran on: the typed text followed by one `<attached_photo>` block per photo. Show `typedText` and the photos; the readings are the agent's."));
-  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn."), imageInput: TestExecutionImageInputSchema.optional() });
+  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), ...answerSources, attemptId: uuid, createdAt: z.string().datetime(), spoken: z.literal(true).optional().describe("The operator spoke this turn on a call from Test Chat and heard its answer; absent on a typed turn."), imageInput: TestExecutionImageInputSchema.optional() });
   const TestExecutionSideSchema = registry.register("TestExecutionSide", z.object({
     id: uuid, revision: RevisionSummarySchema,
     conversationId: uuid, state: z.enum(["running", "partial", "failed", "completed"]), retryable: z.boolean(), history: z.array(TestExecutionHistoryEntrySchema),

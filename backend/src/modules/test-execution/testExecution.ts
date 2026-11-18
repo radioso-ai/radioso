@@ -1,5 +1,6 @@
 import type { ReplyBlock } from "@radioso/conversation-contract";
 
+import type { AnswerSegment, ChatCitation } from "../../shared/domain/answerCitation.js";
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   isUsageLimitExceededError,
@@ -54,6 +55,9 @@ export interface TestExecutionHistoryEntry {
   messageId?: string;
   /** Private, operator-only execution trace for inspecting this assistant turn. */
   turnTrace?: unknown;
+  /** The sources an assistant answer cites and where its text cites them; absent when it cites none. */
+  citations?: readonly ChatCitation[];
+  answerSegments?: readonly AnswerSegment[];
   attemptId: string;
   createdAt: Date;
   /** The operator spoke this turn on a call, and heard its answer; absent on a typed turn. */
@@ -231,7 +235,7 @@ export type TestExecutionEvent =
   | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string }
   | { type: "message_delta"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; delta: string }
   /** `answer` is the stored answer, the authority over the `message_delta` text streamed before it. */
-  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; blocks?: readonly ReplyBlock[]; turnTrace?: unknown }
+  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; citations?: readonly ChatCitation[]; answerSegments?: readonly AnswerSegment[]; blocks?: readonly ReplyBlock[]; turnTrace?: unknown }
   | { type: "side_failed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; code: string; retryable: boolean }
   | { type: "execution_partial"; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: "execution_completed"; executionId: string; generation: number; turnId: string; attemptId: string };
@@ -290,6 +294,12 @@ export interface TrustedTestExecutionRunnerPort {
 export interface TestExecutionRunnerResult {
   answer: string;
   messageId: string;
+  /**
+   * The sources the answer cites, as live chat attaches them to the same reply, and the answer's
+   * text runs with the citations each rests on. Both are absent on an answer that cites none.
+   */
+  citations?: readonly ChatCitation[];
+  answerSegments?: readonly AnswerSegment[];
   /** The reply blocks the turn presents beside its answer, as Test Chat renders them. */
   blocks?: readonly ReplyBlock[];
   /** The runner's presentation trace stays with the private execution evidence. */
@@ -297,6 +307,17 @@ export interface TestExecutionRunnerResult {
   /** Opaque, versioned runtime continuation owned by the runner adapter. */
   continuation: unknown;
 }
+
+type AnswerSources = Pick<TestExecutionRunnerResult, "citations" | "answerSegments">;
+
+/**
+ * What a test answer keeps of its sources, on its result, its completion and its stored entry:
+ * the citations and the text runs that place them when it cites any, and neither when it cites none.
+ */
+export const answerSources = (answer: AnswerSources): AnswerSources =>
+  answer.citations?.length
+    ? { citations: answer.citations, ...(answer.answerSegments?.length ? { answerSegments: answer.answerSegments } : {}) }
+    : {};
 
 /** One seeded message. The seed source decides what a thread contains; this module only orders it into turns. */
 export interface TestExecutionSeedMessage {
@@ -869,6 +890,7 @@ export class TestExecutionService {
         sideId,
         messageId: result.messageId,
         answer: result.answer,
+        ...answerSources(result),
         ...(result.blocks?.length ? { blocks: result.blocks } : {}),
         ...(result.turnTrace ? { turnTrace: result.turnTrace } : {}),
       },

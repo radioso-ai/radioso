@@ -31,6 +31,7 @@ interface TestExecutionEvalSnapshotHistoryEntry {
 }
 
 export {
+  answerSources,
   TEST_EXECUTION_LABEL_CHARS,
   type TestExecution,
   type TestExecutionHistoryEntry,

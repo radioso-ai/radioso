@@ -109,6 +109,7 @@ describe("buildTurnTraceSummary", () => {
       totalModelTimeMs: 350,
       totalTurnWallClockMs: 500,
       droppedCallCount: 0,
+      answerCoverageAvailability: "not_recorded",
     });
     const canonicalCalls = envelope.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls;
     expect(canonicalCalls).toEqual([
@@ -222,6 +223,56 @@ describe("buildTurnTraceSummary", () => {
       totalModelTimeMs: 0,
       totalTurnWallClockMs: 80,
       droppedCallCount: 0,
+      answerCoverageAvailability: "not_recorded",
+    });
+  });
+
+  // #1817: a reader tells a turn that measured no coverage from one recorded before turns said so.
+  describe("answer coverage availability", () => {
+    const spineWith = (stages: ConversationTrace["stages"]): ConversationTrace => ({
+      traceId: "turn-4",
+      startedAt: at(0),
+      completedAt: at(10),
+      stages,
+    });
+
+    it("reads the turn's coverage verdict stage", () => {
+      const spine = spineWith([
+        { id: "compose", kind: "compose", status: "applied" },
+        {
+          id: "answer_coverage_head",
+          kind: "answer_coverage_head",
+          status: "applied",
+          outputs: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence" },
+        },
+      ]);
+
+      expect(buildTurnTraceSummary(spine).answerCoverageAvailability).toBe("assessed");
+    });
+
+    it("says not_recorded for a turn that reported no verdict, such as a routine step", () => {
+      const spine = spineWith([{ id: "routine:booking", kind: "routine_resume", status: "applied" }]);
+
+      expect(buildTurnTraceSummary(spine).answerCoverageAvailability).toBe("not_recorded");
+    });
+
+    it("skips the stage a second report leaves, which carries no verdict", () => {
+      const spine = spineWith([
+        {
+          id: "answer_coverage_head",
+          kind: "answer_coverage_head",
+          status: "fallback",
+          outputs: { availability: "failed" },
+        },
+        {
+          id: "answer_coverage_head_repeat",
+          kind: "answer_coverage_head",
+          status: "fallback",
+          outputs: { reason: "already_reported" },
+        },
+      ]);
+
+      expect(buildTurnTraceSummary(spine).answerCoverageAvailability).toBe("failed");
     });
   });
 });

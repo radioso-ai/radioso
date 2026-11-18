@@ -463,6 +463,7 @@ describe("buildTurnTraceEnvelope", () => {
       totalModelTimeMs: 0,
       totalTurnWallClockMs: 0,
       droppedCallCount: 0,
+      answerCoverageAvailability: "not_recorded",
     });
     expect(envelope.openTelemetry).toBeUndefined();
   });

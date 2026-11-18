@@ -1,4 +1,8 @@
-import type { ConversationTrace, ConversationTraceStage } from "@radioso/conversation-contract";
+import type {
+  AnswerCoverageAvailability,
+  ConversationTrace,
+  ConversationTraceStage,
+} from "@radioso/conversation-contract";
 
 import { isCriticalPathModelCall, MODEL_CALLS_STAGE_ID } from "./turnTraceModelCalls.js";
 
@@ -12,6 +16,13 @@ export interface TurnTraceSummary {
   totalModelTimeMs: number;
   totalTurnWallClockMs: number;
   droppedCallCount: number;
+  /**
+   * The availability of the turn's coverage verdict: its `answer_coverage_head` stage's, or
+   * `not_recorded` when the turn reported none (a routine step, a direct reply). Every summary
+   * carries it, so a reader tells a turn that measured no coverage from one recorded before
+   * turns reported it.
+   */
+  answerCoverageAvailability: AnswerCoverageAvailability;
 }
 
 /**
@@ -96,6 +107,25 @@ const capabilityStagesFrom = (stage: ConversationTraceStage): Record<string, unk
   return payload.stages.filter(isRecord);
 };
 
+const ANSWER_COVERAGE_AVAILABILITIES = {
+  assessed: true,
+  not_recorded: true,
+  failed: true,
+  invalid: true,
+} as const satisfies Record<AnswerCoverageAvailability, true>;
+
+const isAnswerCoverageAvailability = (value: unknown): value is AnswerCoverageAvailability =>
+  typeof value === "string" && Object.hasOwn(ANSWER_COVERAGE_AVAILABILITIES, value);
+
+// A second report in one turn leaves a stage with no availability; the first one holds the verdict.
+const answerCoverageAvailabilityOf = (spine: ConversationTrace): AnswerCoverageAvailability => {
+  const availability = spine.stages
+    .filter((stage) => stage.kind === "answer_coverage_head")
+    .map((stage) => stage.outputs?.availability)
+    .find(isAnswerCoverageAvailability);
+  return availability ?? "not_recorded";
+};
+
 const serialDepth = (calls: ModelCallInterval[]): number => {
   const timed = calls
     .filter((call): call is Required<Pick<ModelCallInterval, "startedAtMs" | "completedAtMs">> & ModelCallInterval =>
@@ -160,5 +190,6 @@ export const buildTurnTraceSummary = (
       ?? durationBetween(spine.startedAt, spine.completedAt)
       ?? 0,
     droppedCallCount: modelCallSummary?.droppedCallCount ?? 0,
+    answerCoverageAvailability: answerCoverageAvailabilityOf(spine),
   };
 };

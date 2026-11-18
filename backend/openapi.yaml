@@ -26408,6 +26408,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionState"
+        "400":
+          description: bad_request when a path parameter is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/greeting/draft:
     get:
       tags:
@@ -26429,6 +26435,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentGreetingDraft"
+        "400":
+          description: bad_request when a path parameter is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent draft not found
           content:
@@ -26462,7 +26474,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentGreetingDraftResponse"
         "400":
-          description: bad_request when Exact words is enabled and the content fails validation
+          description: bad_request when the agent id or request body is malformed, or when Exact words is enabled and the content fails validation
           content:
             application/json:
               schema:
@@ -26494,6 +26506,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionCandidateResponse"
+        "400":
+          description: bad_request when the agent id or request body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: revision_conflict when the saved draft generation changed
           content:
@@ -26528,6 +26546,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionListResponse"
+        "400":
+          description: bad_request when a path parameter or query is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/revisions/{revisionId}:
     get:
       tags:
@@ -26555,6 +26579,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionDetailResponse"
+        "400":
+          description: bad_request when a path parameter is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/revisions/{revisionId}/publish:
     post:
       tags:
@@ -26588,6 +26618,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionPublishResponse"
+        "400":
+          description: bad_request when a path parameter or request body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: revision_conflict when the revision, draft generation, pointer, or idempotency command is stale
           content:

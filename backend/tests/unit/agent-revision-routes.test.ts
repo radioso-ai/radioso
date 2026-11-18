@@ -242,6 +242,21 @@ describe("agent revision HTTP routes", () => {
     await request(createApp()).get(`/api/v1/agents/${otherAgentId}/revisions/${otherAgentId}`).set("Authorization", "Bearer token").expect(404);
   });
 
+  it.each([
+    ["publish", "post", `/api/v1/agents/${agentId}/revisions/not-a-uuid/publish`, "revisionId"],
+    ["detail", "get", `/api/v1/agents/${agentId}/revisions/not-a-uuid`, "revisionId"],
+    ["state", "get", `/api/v1/agents/not-a-uuid/revision-state`, "agentId"],
+    ["candidates", "post", `/api/v1/agents/not-a-uuid/revisions/candidates`, "agentId"],
+    ["list query", "get", `/api/v1/agents/${agentId}/revisions?include=bogus`, "include"],
+  ] as const)("answers a malformed %s request with 400 naming the field", async (_name, method, path, field) => {
+    const response = await request(createApp())[method](path)
+      .set("Authorization", "Bearer token")
+      .send(method === "post" ? { expectedDraftGeneration: 7, ...(_name === "publish" ? { expectedPublishedRevisionId: baselineId, idempotencyKey: "release-1" } : {}) } : undefined);
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("bad_request");
+    expect(Object.keys(response.body.error.details.fieldErrors)).toEqual([field]);
+  });
+
   it("returns the existing stale publication conflict without moving publication behavior into the route", async () => {
     await request(createApp())
       .post(`/api/v1/agents/${agentId}/revisions/${candidateId}/publish`)

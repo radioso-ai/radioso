@@ -4744,6 +4744,29 @@
           "validation"
         ]
       },
+      "AgentRevisionSkill": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "invocationMode": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "invocationMode",
+          "enabled"
+        ]
+      },
       "AgentRevisionDetailResponse": {
         "type": "object",
         "properties": {
@@ -4934,6 +4957,41 @@
                           ]
                         }
                       },
+                      "agentSkills": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "skillId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "skillName": {
+                              "type": "string"
+                            },
+                            "change": {
+                              "type": "string",
+                              "enum": [
+                                "added",
+                                "removed",
+                                "changed"
+                              ]
+                            },
+                            "before": {
+                              "$ref": "#/components/schemas/AgentRevisionSkill"
+                            },
+                            "after": {
+                              "$ref": "#/components/schemas/AgentRevisionSkill"
+                            }
+                          },
+                          "required": [
+                            "skillId",
+                            "skillName",
+                            "change"
+                          ]
+                        },
+                        "description": "Skills this revision adds, removes or changes against its base release, by name. A skill's settings are not shown; a change to them reads as `changed`. The default-answer skill is not listed: retrieval settings apply without publishing."
+                      },
                       "greeting": {
                         "type": "object",
                         "properties": {
@@ -4979,6 +5037,7 @@
                       "directives",
                       "routines",
                       "contextVariableEnablements",
+                      "agentSkills",
                       "greeting",
                       "visitorImagesEnabled"
                     ]

@@ -48,7 +48,7 @@ describe("routineMatchesDraft: what still counts as a change (#1819)", () => {
     exposure,
     consents,
     completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: "crm-hook" },
-  } as Partial<RoutineDefinition>);
+  });
   const base = () => draftInputFromRoutine(stored);
 
   it("matches the stored routine itself", () => {
@@ -57,18 +57,18 @@ describe("routineMatchesDraft: what still counts as a change (#1819)", () => {
 
   it("sees a stored nested value cleared to null", () => {
     const withToolRef = routine({
-      steps: [{ ...routine().steps[0]!, toolRef: "lookup_order" }, routine().steps[1]!],
-      transitions: [{ ...routine().transitions[0]!, guardKind: "llm", guardText: "The visitor named an order." }, routine().transitions[1]!],
-    } as Partial<RoutineDefinition>);
+      steps: [{ ...routine().steps[0], toolRef: "lookup_order" }, routine().steps[1]],
+      transitions: [{ ...routine().transitions[0], guardKind: "llm", guardText: "The visitor named an order." }, routine().transitions[1]],
+    });
     const draft = draftInputFromRoutine(withToolRef);
 
     expect(routineMatchesDraft(withToolRef, draft)).toBe(true);
-    expect(routineMatchesDraft(withToolRef, { ...draft, steps: [{ ...draft.steps[0]!, toolRef: null }, draft.steps[1]!] })).toBe(false);
-    expect(routineMatchesDraft(withToolRef, { ...draft, transitions: [{ ...draft.transitions![0]!, guardText: null }, draft.transitions![1]!] })).toBe(false);
+    expect(routineMatchesDraft(withToolRef, { ...draft, steps: [{ ...draft.steps[0], toolRef: null }, draft.steps[1]] })).toBe(false);
+    expect(routineMatchesDraft(withToolRef, { ...draft, transitions: [{ ...draft.transitions![0], guardText: null }, draft.transitions![1]] })).toBe(false);
   });
 
   it("sees a consent change", () => {
-    expect(routineMatchesDraft(stored, { ...base(), consents: [{ ...consents[0]!, onDecline: "handoff" }] } as never)).toBe(false);
+    expect(routineMatchesDraft(stored, { ...base(), consents: [{ ...consents[0], onDecline: "handoff" }] } as never)).toBe(false);
     expect(routineMatchesDraft(stored, { ...base(), consents: [] })).toBe(false);
   });
 

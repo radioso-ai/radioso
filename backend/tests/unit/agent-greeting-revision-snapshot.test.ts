@@ -198,7 +198,7 @@ describe("equalScopedAuthoringSnapshots: timestamps (#1765)", () => {
 
   it("still sees a content change", () => {
     const edited = withTimes("2026-03-01T00:00:00Z");
-    edited.routines[0]!.name = "intake v2";
+    edited.routines[0].name = "intake v2";
     expect(equalScopedAuthoringSnapshots(withTimes("2026-02-01T00:00:00Z") as never, edited as never)).toBe(false);
   });
 });

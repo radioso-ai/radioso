@@ -163,7 +163,7 @@ export interface WorkbenchReplayResolvedConfig {
 
 export interface WorkbenchReplayResult {
   answer: string;
-  /** Ephemeral turn identity; never a production conversation-message row. */
+  /** The answer's own ephemeral id, apart from the visitor message's; never a production conversation-message row. */
   messageId?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];

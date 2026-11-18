@@ -198,20 +198,23 @@ describe("DefaultRoutineRunner tells an ending's reply what the run did (#1820)"
     expect(input.ending).toEqual({ requestPassedOn: true, skillOutcomes: [] });
   });
 
-  it("counts no tool step that failed, though its skill may have acted outside the conversation", async () => {
-    // A ticket webhook that answered 500: the reply must not say the team will email them.
-    const input = await replyInputFor({
-      routine: searchRoutine(finishEnding),
-      path: ["ask_brief"],
-      nextStepId: "search",
-      results: { search_listings: { status: "failed", outputs: { reason: "http_500" }, actsOutsideConversation: true } },
-    });
+  // A ticket webhook that answered 500: the reply must not say the team will email them.
+  it.each(["failed", "cancelled", "expired"])(
+    "counts no tool step that reported %s, though its skill may have acted outside the conversation",
+    async (status) => {
+      const input = await replyInputFor({
+        routine: searchRoutine(finishEnding),
+        path: ["ask_brief"],
+        nextStepId: "search",
+        results: { search_listings: { status, outputs: { reason: "http_500" }, actsOutsideConversation: true } },
+      });
 
-    expect(input.ending).toEqual({
-      requestPassedOn: false,
-      skillOutcomes: [{ skillName: "search_listings", status: "failed" }],
-    });
-  });
+      expect(input.ending).toEqual({
+        requestPassedOn: false,
+        skillOutcomes: [{ skillName: "search_listings", status }],
+      });
+    },
+  );
 
   // The issue's shape across turns: the search ran and its results were shown on turn one, and the
   // visitor's answer reaches a finish that tells no one on turn two.

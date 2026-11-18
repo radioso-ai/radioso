@@ -160,7 +160,9 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 
   /**
    * Whether running `skillName` can act outside the conversation, by the rule a dispatch applies,
-   * read without running it. A skill that does not resolve never runs, so it acts nowhere.
+   * read without running it. A skill that does not resolve never runs, so it acts nowhere; the
+   * production chain ends in the external-tool resolver, which takes any remaining name as an MCP
+   * tool, so there a removed or misspelled name reads as acting outside.
    */
   actsOutsideConversation(skillName: string): boolean {
     const skill = this.resolver.resolve(skillName);

@@ -3,8 +3,9 @@ import { skillOutcomeLabel } from '@/lib/skill-dispatch-outcome'
 
 /**
  * Reads a routine stage's `routine` sub-trace into the step-by-step view the turn inspector
- * renders. Slot keys only: the runner never puts a captured value on this trace, and the
- * reader ignores anything else on the payload.
+ * renders. Steps carry slot keys only. The filled slots' values come through only when the
+ * trace carries them (`slotValues`, which a Test Chat turn's trace has and a conversation's
+ * never does); the reader ignores anything else on the payload.
  */
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -123,6 +124,26 @@ const rejectedSlotsOf = (value: unknown): RoutineRejectedSlotView[] =>
     return key ? [{ key, reason: isKnownRejectedSlotReason(reason) ? reason : 'unknown' }] : []
   })
 
+/** A filled slot's value as the trace carries it; a sensitive slot's reads as the redaction mark. */
+interface RoutineSlotValueView {
+  key: string
+  value: string
+  /** The trace cut the value to its length bound. */
+  truncated?: true
+}
+
+// Scalars only, as the runner writes them; an entry of any other shape is dropped.
+const slotValuesOf = (value: unknown): RoutineSlotValueView[] =>
+  asArray(value).flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const key = asString(entry.key)
+    const slotValue = entry.value
+    if (!key || !(typeof slotValue === 'string' || typeof slotValue === 'number' || typeof slotValue === 'boolean')) {
+      return []
+    }
+    return [{ key, value: String(slotValue), ...(entry.truncated === true ? { truncated: true as const } : {}) }]
+  })
+
 export interface RoutineRunTraceView {
   startStepId?: string
   landedStepId?: string
@@ -131,13 +152,17 @@ export interface RoutineRunTraceView {
   /** Slot keys that held a value before the turn and were given a different one. */
   replacedSlotKeys?: string[]
   filledSlotKeys: string[]
+  /** Each filled slot's value after the turn, present only on a trace that carries them (Test Chat). */
+  slotValues?: RoutineSlotValueView[]
+  /** Filled slots past the trace's count bound, whose values it left out. */
+  omittedSlotCount?: number
   steps: RoutineTraceStepView[]
 }
 
 /**
- * Parse the routine stage's `routine` sub-trace into a renderable, metadata-safe
- * step-by-step view. Carries slot *keys* only — the runner never puts captured
- * values on the trace, and this defensively ignores anything else on the payload.
+ * Parse the routine stage's `routine` sub-trace into a renderable step-by-step view.
+ * Steps carry slot *keys* only; the turn's filled slot values come through only when
+ * the trace carries them, and this defensively ignores anything else on the payload.
  * Returns undefined when the stage has no routine sub-trace.
  */
 export const buildRoutineRunTrace = (
@@ -173,6 +198,7 @@ export const buildRoutineRunTrace = (
       }
     })
   const replacedSlotKeys = asStringArray(payload.replacedSlotKeys)
+  const omittedSlotCount = asNumber(payload.omittedSlotCount)
   return {
     startStepId: asString(payload.startStepId),
     landedStepId: asString(payload.landedStepId),
@@ -180,6 +206,8 @@ export const buildRoutineRunTrace = (
     capturedSlotKeys: asStringArray(payload.capturedSlotKeys),
     ...(replacedSlotKeys.length > 0 ? { replacedSlotKeys } : {}),
     filledSlotKeys: asStringArray(payload.filledSlotKeys),
+    ...(Array.isArray(payload.slotValues) ? { slotValues: slotValuesOf(payload.slotValues) } : {}),
+    ...(omittedSlotCount !== undefined && omittedSlotCount > 0 ? { omittedSlotCount } : {}),
     steps,
   }
 }

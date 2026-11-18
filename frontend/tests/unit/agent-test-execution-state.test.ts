@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, finalizeTestExecutionStream, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent } from '@/lib/agent-test-execution-state'
+import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, finalizeTestExecutionStream, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent, turnDebugSelection } from '@/lib/agent-test-execution-state'
 
 const state = () => initializeTestExecutionState({
   id: 'execution-1',
@@ -124,6 +124,41 @@ describe('agent test execution state', () => {
       persistedAssistantMessageId: 'assistant-message-1',
       turnTrace: trace,
     })
+  })
+
+  // #1766: the Flow's Message step finds the turn's message by the id the trace names for it.
+  it('hands turn debug the selected turn\'s answer, and its message under the id the trace gave it', () => {
+    const traceFor = (visitorMessageId: string) => ({
+      version: 1,
+      spine: { traceId: `trace-${visitorMessageId}`, startedAt: '', stages: [{ id: 'message', kind: 'message', status: 'applied' as const, outputs: { eventId: visitorMessageId } }] },
+    })
+    const complete = (current: ReturnType<typeof state>, turnId: string, answer: string, messageId: string, visitorMessageId: string) =>
+      reduceTestExecutionEvent(current, {
+        type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', turnId, attemptId: `${turnId}-attempt`,
+        messageId, answer, turnTrace: traceFor(visitorMessageId),
+      })
+    const first = complete(beginTestExecutionTurn(state(), 'Do you have parking?', 'turn-1', 'turn-1-attempt'), 'turn-1', 'Yes, two spaces.', 'answer-1', 'visitor-1')
+    const second = complete(beginTestExecutionTurn(first, 'Can I bring a dog?', 'turn-2', 'turn-2-attempt'), 'turn-2', 'Small dogs only.', 'answer-2', 'visitor-2')
+    const messages = second.sides.left.messages
+
+    const selected = turnDebugSelection(messages, messages[0].id)
+
+    expect(selected?.messageId).toBe('answer-1')
+    expect(selected?.turnTrace.spine.traceId).toBe('trace-visitor-1')
+    expect(selected?.messages).toEqual([
+      { id: 'visitor-1', role: 'user', content: 'Do you have parking?' },
+      { id: 'answer-1', role: 'assistant', content: 'Yes, two spaces.' },
+      { id: 'left-turn-2-user', role: 'user', content: 'Can I bring a dog?' },
+      { id: 'answer-2', role: 'assistant', content: 'Small dogs only.' },
+    ])
+    expect(turnDebugSelection(messages, messages[3].id)?.messages[2]).toEqual({ id: 'visitor-2', role: 'user', content: 'Can I bring a dog?' })
+  })
+
+  it('has nothing to debug for a turn whose answer carries no trace', () => {
+    const active = beginTestExecutionTurn(state(), 'Hello', 'turn-1', 'attempt-1')
+
+    expect(turnDebugSelection(active.sides.left.messages, active.sides.left.messages[0].id)).toBeNull()
+    expect(turnDebugSelection(active.sides.left.messages, 'unknown')).toBeNull()
   })
 
   it('streams deltas into the reply and settles it on the stored answer the completion carries', () => {

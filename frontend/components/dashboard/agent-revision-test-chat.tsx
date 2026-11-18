@@ -93,6 +93,7 @@ import {
   reduceTestExecutionEvent,
   pendingReadingImageIds,
   sideHasSentMessage,
+  turnDebugSelection,
   withStoredImageInputs,
   type TestExecutionState,
 } from "@/lib/agent-test-execution-state";
@@ -117,7 +118,7 @@ import {
   writeAgentRevisionTestChatSession,
   type AgentRevisionTestChatSession,
 } from "@/lib/agent-revision-test-chat-session";
-import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
+import type { ContextVariable } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 
@@ -197,15 +198,7 @@ export function AgentRevisionTestChat({
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
-  const [selectedDebug, setSelectedDebug] = useState<{
-    messageId: string;
-    turnTrace: TurnTraceEnvelope;
-    messages: Array<{
-      id: string;
-      role: "user" | "assistant";
-      content: string;
-    }>;
-  } | null>(null);
+  const [selectedDebug, setSelectedDebug] = useState<ReturnType<typeof turnDebugSelection>>(null);
   const [debugFlowOpen, setDebugFlowOpen] = useState(false);
   const [message, setMessage] = useState(cachedSession?.message ?? "");
   const [execution, setExecution] = useState<TestExecutionState | null>(cachedSession?.execution ?? null);
@@ -1759,21 +1752,10 @@ export function AgentRevisionTestChat({
                               );
                             }}
                             onMessageSelect={(messageId) => {
-                              const selectedIndex = side?.messages.findIndex((item) => item.id === messageId) ?? -1;
-                              const diagnostic = selectedIndex < 0
-                                ? undefined
-                                : side?.messages.slice(selectedIndex).find((item) => item.role === "assistant");
-                              if (diagnostic?.turnTrace) {
+                              const selection = side ? turnDebugSelection(side.messages, messageId) : null;
+                              if (selection) {
                                 setDebugFlowOpen(false);
-                                setSelectedDebug({
-                                  messageId: diagnostic.persistedAssistantMessageId ?? diagnostic.id,
-                                  turnTrace: diagnostic.turnTrace,
-                                  messages: side?.messages.map((item) => ({
-                                    id: item.persistedAssistantMessageId ?? item.id,
-                                    role: item.role,
-                                    content: item.content,
-                                  })) ?? [],
-                                });
+                                setSelectedDebug(selection);
                               }
                             }}
                           /> : assistantIdentity.notice ? (

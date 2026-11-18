@@ -296,7 +296,10 @@ export const routineTurnSignalFromSpine = (
  * `requestFocus`/`unresolvedRequest` (kept out of traces by design) and has no
  * per-turn/request id to attribute the verdict to, so both id fields come
  * back empty; callers should prefer a persisted record when one exists and
- * fall back to this only to fill the gap.
+ * fall back to this only to fill the gap. A turn with no verdict stage reads
+ * its summary's `answerCoverageAvailability` (`not_recorded` when it measured
+ * none); a turn whose summary has no such field was recorded before turns
+ * reported coverage, and resolves to nothing.
  */
 export const answerCoverageFromTurnTrace = (
   envelope: TurnTraceEnvelope | undefined,
@@ -310,10 +313,9 @@ export const answerCoverageFromTurnTrace = (
     // (`{ reason: "already_reported" }`) with no availability — skip it.
     return typeof outputs.availability === 'string'
   })
-  if (!stage) {
-    return undefined
-  }
-  const core = normalizeAnswerCoverageCore(stage.outputs)
+  const core = normalizeAnswerCoverageCore(
+    stage ? stage.outputs : { availability: record(envelope?.summary)?.answerCoverageAvailability },
+  )
   if (!core) {
     return undefined
   }

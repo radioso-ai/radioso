@@ -381,6 +381,40 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.steps[1].readOpeningMessage).toBeUndefined()
   })
 
+  // #1817: Test Chat's trace carries each filled slot's value; a conversation's carries none.
+  it('carries the filled slots\' values when the trace has them, keeping only well-formed entries', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        filledSlotKeys: ['email', 'adults', 'notes', 'phone'],
+        slotValues: [
+          { key: 'email', type: 'email', value: 'guest@example.com' },
+          { key: 'adults', type: 'number', value: 2 },
+          { key: 'notes', type: 'text', value: 'Arriving late, after…', truncated: true },
+          { key: 'phone', type: 'text', value: '[redacted]' },
+          { key: 'broken', type: 'text', value: { nested: true } },
+          { type: 'text', value: 'no key' },
+        ],
+        omittedSlotCount: 3,
+        steps: [],
+      }),
+    )
+
+    expect(view?.slotValues).toEqual([
+      { key: 'email', value: 'guest@example.com' },
+      { key: 'adults', value: '2' },
+      { key: 'notes', value: 'Arriving late, after…', truncated: true },
+      { key: 'phone', value: '[redacted]' },
+    ])
+    expect(view?.omittedSlotCount).toBe(3)
+  })
+
+  it('carries no slot values when the trace has none', () => {
+    const view = buildRoutineRunTrace(routineStage({ filledSlotKeys: ['email'], steps: [] }))
+
+    expect(view).not.toHaveProperty('slotValues')
+    expect(view).not.toHaveProperty('omittedSlotCount')
+  })
+
   it('returns undefined when the stage carries no routine sub-trace', () => {
     expect(buildRoutineRunTrace({ id: 'routine:contact', kind: 'routine_resume', status: 'applied' })).toBeUndefined()
     expect(

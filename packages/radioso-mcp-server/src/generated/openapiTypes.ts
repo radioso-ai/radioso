@@ -12122,6 +12122,11 @@ export interface components {
             attemptId: string;
             /** Format: uuid */
             sideId: string;
+            /**
+             * Format: uuid
+             * @description The id this side's history stores the turn's message under, the id the turn's trace names it by. Absent for a message stored before messages had ids.
+             */
+            userMessageId?: string;
         } | {
             /** @enum {string} */
             type: "message_delta";

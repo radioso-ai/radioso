@@ -157,6 +157,20 @@ describe('agent test execution state', () => {
     })
   })
 
+  // #1766: the turn's trace names the operator's message by the id its side stores it under.
+  it('lists a sent message under the id its side stores it under, as a reopened session does', () => {
+    const active = beginTestExecutionTurn(state(), 'Do you have parking?', 'turn-1', 'attempt-1')
+    const started = (current: typeof active, sideId: string, userMessageId?: string) => reduceTestExecutionEvent(current, {
+      type: 'side_started', executionId: 'execution-1', generation: 2, sideId, turnId: 'turn-1', attemptId: 'attempt-1', ...(userMessageId ? { userMessageId } : {}),
+    })
+
+    const updated = started(started(active, 'left', 'left-visitor-message'), 'right')
+
+    expect(updated.sides.left.messages.map((message) => [message.role, message.id])).toEqual([['user', 'left-visitor-message'], ['assistant', 'left-turn-1-assistant']])
+    // A side whose store names no id keeps the one the session gave the message.
+    expect(updated.sides.right.messages[0]?.id).toBe('right-turn-1-user')
+  })
+
   it('streams deltas into the reply and settles it on the stored answer the completion carries', () => {
     const active = beginTestExecutionTurn(state(), 'Refunds?', 'turn-1', 'attempt-1')
     const streamed = ['  Refunds take [[1]]', ' five days.\n'].reduce((current, delta) => reduceTestExecutionEvent(current, {

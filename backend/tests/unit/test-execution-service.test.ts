@@ -112,9 +112,10 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     const claims = input.sideIds.map((sideId) => {
       const side = this.execution!.sides.find((item) => item.id === sideId)!;
       const existing = side.history.find((item) => item.turnId === input.turnId && item.role === "user");
-      if (!existing) (side.history as Array<unknown>).push({ turnId: input.turnId, attemptId: input.attemptId, role: "user", content: input.message, createdAt: input.now });
+      const userMessageId = existing ? existing.messageId : `user-message:${sideId}:${input.turnId}`;
+      if (!existing) (side.history as Array<unknown>).push({ turnId: input.turnId, attemptId: input.attemptId, role: "user", content: input.message, messageId: userMessageId, createdAt: input.now });
       side.state = "running";
-      return { sideId, attempt: { executionId: input.executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs), state: "running" as const } };
+      return { sideId, attempt: { executionId: input.executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs), state: "running" as const, ...(userMessageId ? { userMessageId } : {}) } };
     });
     return { claims };
   }
@@ -252,6 +253,30 @@ describe("TestExecutionService", () => {
       "America/Los_Angeles",
       "Europe/Rome",
     ]);
+  });
+
+  // #1766: the turn's trace names the operator's message by the id each side's transcript stores.
+  it("runs each side's turn under the id its transcript stores the message under, and names it when the side starts", async () => {
+    let invocation = 0;
+    const runner = vi.fn(async (_input: RunnerInput): Promise<TestExecutionRunnerResult> => {
+      invocation += 1;
+      if (invocation === 2) throw new Error("provider timeout");
+      return { answer: "answer", messageId: ids[8], continuation: null };
+    });
+    const { service, repository } = setup(runner);
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+
+    const events = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "Open on Sunday?", generation: 1, turnId: ids[6], attemptId: ids[7] });
+    const storedIds = repository.execution!.sides.map((side) => side.history.find((entry) => entry.role === "user")?.messageId);
+    const failed = repository.execution!.sides.find((side) => side.state === "failed")!;
+    await service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: failed.id, generation: 1, turnId: ids[6], attemptId: "70000000-0000-4000-8000-000000000001" });
+
+    expect(new Set(storedIds).size).toBe(2);
+    expect(events.flatMap((event) => event.type === "side_started" ? [[event.sideId, event.userMessageId]] : []))
+      .toEqual(repository.execution!.sides.map((side, index) => [side.id, storedIds[index]]));
+    expect(runner.mock.calls.slice(0, 2).map(([input]) => input.userMessageId).sort()).toEqual([...storedIds].sort());
+    // A retry runs the same stored message again.
+    expect(runner.mock.calls[2]?.[0].userMessageId).toBe(failed.history.find((entry) => entry.role === "user")?.messageId);
   });
 
   it("runs a turn without a time zone when the client sent none", async () => {

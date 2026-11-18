@@ -13,6 +13,13 @@ execution, so a failed turn a later message superseded still reads as failed. A
 runner failure is logged with its error type and code and the execution, side,
 turn, and attempt ids, never its message text.
 
+Claiming a new turn stores the operator's message on each side under an id of
+its own (`messageId` on the history entry). The claim hands that id to the runner
+(`userMessageId`), which replays the turn's message under it, so the turn's trace
+names a message the transcript holds; `side_started` carries it to a client that
+just sent the message. A retry keeps the stored id. A message stored before
+messages had ids keeps none, and its turn replays under a fresh one.
+
 Start at `testExecution.ts`. The HTTP routes are mounted under the agent routes
 in `app/http/routes/testExecutionRoutes.ts`; the trusted runner adapter is
 `chat/services/trustedTestExecutionRunnerAdapter.ts`. Revision selection belongs

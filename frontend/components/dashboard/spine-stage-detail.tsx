@@ -6,6 +6,7 @@ import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
 import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
 import { buildRoutineRunTrace, type RoutineRunTraceView } from '@/lib/routine-run-trace'
 import { RejectedSlotChips } from './rejected-slot-chips'
+import { RoutineFilledSlots } from './routine-filled-slots'
 import {
   routineEventDescription,
   routineEventLabel,
@@ -991,8 +992,6 @@ function RoutineStageDetail({
   const routineId = asString(outputs.routineId)
   const completed = typeof outputs.completed === 'boolean' ? outputs.completed : undefined
   const trace = buildRoutineRunTrace(stage)
-  const capturedThisTurn = new Set(trace?.capturedSlotKeys ?? [])
-  const replacedThisTurn = new Set(trace?.replacedSlotKeys ?? [])
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -1010,28 +1009,7 @@ function RoutineStageDetail({
       {trace ? <RoutineStepsTimeline trace={trace} /> : null}
       {trace && (trace.filledSlotKeys.length > 0 || trace.capturedSlotKeys.length > 0) ? (
         <Section label={`Slots filled (${trace.filledSlotKeys.length})`}>
-          {trace.filledSlotKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No slots filled yet.</p>
-          ) : (
-            <ul className="flex flex-wrap gap-1.5">
-              {trace.filledSlotKeys.map((key) => (
-                <li
-                  key={key}
-                  className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${
-                    capturedThisTurn.has(key)
-                      ? 'bg-emerald-500/10 text-emerald-600'
-                      : replacedThisTurn.has(key)
-                        ? 'bg-sky-500/10 text-sky-600'
-                        : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {key}
-                  {capturedThisTurn.has(key) ? <span className="ml-1 not-italic">• new</span> : null}
-                  {replacedThisTurn.has(key) ? <span className="ml-1 not-italic">• replaced</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <RoutineFilledSlots trace={trace} />
         </Section>
       ) : null}
       {(routineId || typeof completed === 'boolean' || typeof answerLength === 'number' || trace?.terminalKind) ? (

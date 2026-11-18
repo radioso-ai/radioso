@@ -142,13 +142,26 @@ export { readAgentRevisionGreeting };
  * pins. It also gives routine arrays the same priority-first ordering used by
  * draft selection, so equivalent published and draft closures compare cleanly.
  */
+/**
+ * A directive or routine as an operator authored it. `createdAt`/`updatedAt` record when a row was
+ * written, not what it says: a save that restores earlier content moves them without changing
+ * anything publishable, so every draft-versus-release comparison reads this view.
+ */
+export const withoutWriteTimestamps = <T extends { createdAt: Date; updatedAt: Date }>(
+  value: T,
+): Omit<T, "createdAt" | "updatedAt"> => {
+  const { createdAt: _createdAt, updatedAt: _updatedAt, ...authored } = value;
+  return authored;
+};
+
 const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
   customInstruction: snapshot.customInstruction,
-  directives: snapshot.directives,
+  directives: snapshot.directives.map(withoutWriteTimestamps),
+  // createdAt orders routines of equal priority, as draft selection does, and is not compared.
   routines: [...snapshot.routines].sort((left, right) =>
     right.activation.priority - left.activation.priority ||
     left.createdAt.getTime() - right.createdAt.getTime() ||
-    left.id.localeCompare(right.id)),
+    left.id.localeCompare(right.id)).map(withoutWriteTimestamps),
   contextVariableEnablements: snapshot.contextVariableEnablements,
   greeting: canonicalGreeting(snapshot),
 });

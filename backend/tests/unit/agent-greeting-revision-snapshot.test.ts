@@ -183,3 +183,22 @@ describe("equalScopedAuthoringSnapshots: exact greeting", () => {
     expect(equalScopedAuthoringSnapshots(snapshotWith(route), snapshotWith(stored))).toBe(true);
   });
 });
+
+describe("equalScopedAuthoringSnapshots: timestamps (#1765)", () => {
+  const at = (iso: string) => new Date(iso);
+  const withTimes = (updatedAt: string) => ({
+    ...baseSnapshot(),
+    directives: [{ id: "d1", name: "tone", body: "Be brief.", priority: 1, createdAt: at("2026-01-01T00:00:00Z"), updatedAt: at(updatedAt) }],
+    routines: [{ id: "r1", name: "intake", activation: { priority: 5 }, createdAt: at("2026-01-01T00:00:00Z"), updatedAt: at(updatedAt) }],
+  });
+
+  it("does not see a routine or directive that was saved again with the same content", () => {
+    expect(equalScopedAuthoringSnapshots(withTimes("2026-02-01T00:00:00Z") as never, withTimes("2026-03-01T00:00:00Z") as never)).toBe(true);
+  });
+
+  it("still sees a content change", () => {
+    const edited = withTimes("2026-03-01T00:00:00Z");
+    edited.routines[0]!.name = "intake v2";
+    expect(equalScopedAuthoringSnapshots(withTimes("2026-02-01T00:00:00Z") as never, edited as never)).toBe(false);
+  });
+});

@@ -95,7 +95,7 @@ export interface RoutineTraceStepEntry {
   capturedSlotKeys?: string[];
   /** Declared slot keys that held a value and were given a different one at this step this turn (names only — never values). */
   replacedSlotKeys?: string[];
-  /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
+  /** Slots whose returned value was not stored, each with why: `undeclared` (no such declared slot), `consent` (a consent covers it and was not granted), `type_mismatch` (does not fit the slot's type), `not_scalar` (a list or object). Keys and reasons only. */
   rejectedSlots?: RoutineTraceRejectedSlot[];
   /** On `reask_limit_reached` and `reask_limit_handoff`: how many times in a row the step has now been asked again. */
   reaskCount?: number;

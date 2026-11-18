@@ -71,7 +71,7 @@ const currentStepBlock = (step: RoutineStep, skillResult?: RoutineSkillResult): 
   return `The current step is "${step.id}".`;
 };
 
-const slotLine = (slot: RoutineSlotSchema): string => {
+export const slotLine = (slot: RoutineSlotSchema): string => {
   const description = slot.description?.replace(/\s+/g, " ").trim();
   return `- ${slot.key} (${slot.type})${description ? `: ${description}` : ""}`;
 };

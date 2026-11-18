@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   ClarificationCandidate,
+  ClarificationDecision,
   ClarificationPolicy,
   ConversationClarificationStore,
   PendingClarification,
@@ -257,6 +258,14 @@ describe("clarificationStage", () => {
       mappingOutcome: "mapped:a",
     });
     expect(JSON.stringify(stage)).not.toContain("secret");
+  });
+
+  it("records how many activation keys were dropped, only when some were", () => {
+    const decision: ClarificationDecision = { kind: "auto_pick", candidate: candidate({ id: "demo", confidence: 0.9 }), reason: "priority" };
+    expect(clarificationStage({ surface: "routine_activation", decision, undeclaredKeyCount: 2 }).outputs)
+      .toMatchObject({ undeclaredKeyCount: 2 });
+    expect(clarificationStage({ surface: "routine_activation", decision, undeclaredKeyCount: 0 }).outputs)
+      .not.toHaveProperty("undeclaredKeyCount");
   });
 
   it("records all considered candidates and the chosen id for auto-picks", () => {

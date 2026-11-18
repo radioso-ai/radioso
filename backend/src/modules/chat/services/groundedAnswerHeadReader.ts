@@ -92,6 +92,22 @@ export class GroundedAnswerHeadReader {
     return this.resolved;
   }
 
+  /**
+   * The completed envelope, keeping the head this reader parsed. A tail that failed to
+   * parse after that head (a reply cut off at the token limit) leaves the envelope with
+   * none, yet the head was read from the same text before `answer` and the turn already
+   * acted on it, so it still decides the turn. Only a v2 envelope has a head. An envelope
+   * that carries its own head comes back as it is.
+   */
+  completedWithHead<T extends Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">>(
+    envelope: T,
+  ): T {
+    if (this.resolved.kind !== "parsed" || headOfCompletedEnvelope(envelope)) {
+      return envelope;
+    }
+    return { ...envelope, ...this.resolved.head, protocolVersion: 2 };
+  }
+
   private evaluate(): GroundedAnswerHeadStatus {
     const firstNonWhitespace = this.raw.match(/\S/)?.[0];
     if (firstNonWhitespace && firstNonWhitespace !== "{") {

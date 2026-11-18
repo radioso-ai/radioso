@@ -42,7 +42,7 @@ describe("scope-neutral interpretation prompt contract", () => {
     const fusedRequest = buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
-        routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+        routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotLines: [] }],
         directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
         today: "2026-10-21",
     });

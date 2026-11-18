@@ -225,6 +225,7 @@ export const clarificationStage = (input: {
   consideredCandidates?: ClarificationCandidate[];
   reason?: string;
   margin?: number;
+  undeclaredKeyCount?: number;
   mappingOutcome?: string;
 }): ConversationTraceStage => {
   const timestamp = nowIso();
@@ -244,6 +245,7 @@ export const clarificationStage = (input: {
       decision: decisionName(input.decision),
       ...(reason ? { reason } : {}),
       ...(input.margin !== undefined ? { margin: input.margin } : {}),
+      ...(input.undeclaredKeyCount ? { undeclaredKeyCount: input.undeclaredKeyCount } : {}),
       ...(chosenCandidateId ? { chosenCandidateId } : {}),
       candidates: traceCandidates(consideredCandidates),
       ...(input.mappingOutcome ? { mappingOutcome: input.mappingOutcome } : {}),

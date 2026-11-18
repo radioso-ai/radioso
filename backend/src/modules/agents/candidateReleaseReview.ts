@@ -2,7 +2,7 @@ import type { AgentRevisionSnapshot } from "./agentRevision.js";
 import { revisionTakesPhotos } from "../visitorImages/contracts/revisionSwitch.js";
 import { visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
-import { diffAgentRevisionSkills } from "./agentRevisionSkills.js";
+import { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
 
 export interface CandidateReleaseChange { readonly field: string; readonly id: string; readonly before: string | null; readonly after: string | null; readonly truncated: boolean; }
 
@@ -20,15 +20,10 @@ const changesFor = (field: "directives" | "routines" | "contextVariableEnablemen
   });
 };
 
-/** A skill named first, with its settings redacted: they can hold recipients, payloads and tool settings. */
-const skillSummary = (skill: NonNullable<AgentRevisionSnapshot["agentSkills"]>[number] | undefined): unknown => skill
-  ? { skillName: skill.skillName, kind: skill.kind, invocationMode: skill.invocationMode, enabled: skill.enabled, targetType: skill.targetType ?? null, targetId: skill.targetId ?? null, configRedacted: skill.config !== undefined }
-  : null;
-
 /** Skill changes by skill id, read from the same comparison as the draft-dirty check (`diffAgentRevisionSkills`). */
 const skillChanges = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): CandidateReleaseChange[] =>
   diffAgentRevisionSkills(base, candidate).map((change) => {
-    const before = text(skillSummary(change.before)); const after = text(skillSummary(change.after));
+    const before = text(change.before ? redactedRevisionSkill(change.before) : null); const after = text(change.after ? redactedRevisionSkill(change.after) : null);
     return { field: "agentSkills", id: change.skillId, before: before.value, after: after.value, truncated: before.truncated || after.truncated };
   });
 

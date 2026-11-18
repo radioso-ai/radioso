@@ -4,13 +4,33 @@ import type { AgentRevisionSnapshot } from "./agentRevision.js";
 type RevisionSkill = NonNullable<AgentRevisionSnapshot["agentSkills"]>[number];
 
 /** One skill a release adds, removes or changes, named as the operator authored it. */
-export interface AgentRevisionSkillChange {
+interface AgentRevisionSkillChange {
   readonly skillId: string;
   readonly skillName: string;
   readonly change: "added" | "removed" | "changed";
+  /** For a changed skill: whether its settings (`config`) changed, which a redacted review cannot show. */
+  readonly settingsChanged?: boolean;
   readonly before?: RevisionSkill;
   readonly after?: RevisionSkill;
 }
+
+/**
+ * A skill as a review shows it, wherever it is shown (the publication review, the version history,
+ * Ray's candidate reader): its settings are left out, since they can hold recipients, payloads and
+ * tool settings; `configRedacted` says some were there.
+ */
+export const redactedRevisionSkill = (skill: RevisionSkill) => ({
+  name: skill.skillName,
+  kind: skill.kind,
+  invocationMode: skill.invocationMode,
+  enabled: skill.enabled,
+  targetType: skill.targetType ?? null,
+  targetId: skill.targetId ?? null,
+  configRedacted: skill.config !== undefined,
+});
+
+const canonicalSettings = (skill: RevisionSkill): string =>
+  canonicalJson(JSON.parse(JSON.stringify(skill.config ?? {})) as unknown);
 
 /**
  * The skills a release serves, by id. The default-answer skill is left out: it carries the agent's
@@ -57,7 +77,14 @@ export const diffAgentRevisionSkills = (
     if (!previous && next) changes.push({ skillId, skillName: next.skillName, change: "added", after: next });
     else if (previous && !next) changes.push({ skillId, skillName: previous.skillName, change: "removed", before: previous });
     else if (previous && next && authoredSkill(previous) !== authoredSkill(next)) {
-      changes.push({ skillId, skillName: next.skillName, change: "changed", before: previous, after: next });
+      changes.push({
+        skillId,
+        skillName: next.skillName,
+        change: "changed",
+        settingsChanged: canonicalSettings(previous) !== canonicalSettings(next),
+        before: previous,
+        after: next,
+      });
     }
   }
   return changes.sort((left, right) => left.skillName.localeCompare(right.skillName) || left.skillId.localeCompare(right.skillId));

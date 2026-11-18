@@ -6546,6 +6546,10 @@ export interface components {
             kind: string;
             invocationMode: string;
             enabled: boolean;
+            targetType: string | null;
+            targetId: string | null;
+            /** @description The skill has settings; they are not shown, since they can hold recipients, payloads and tool settings. */
+            configRedacted: boolean;
         };
         AgentRevisionDetailResponse: {
             revision: components["schemas"]["AgentRevisionSummary"] & {
@@ -6598,13 +6602,15 @@ export interface components {
                         before?: unknown;
                         after?: unknown;
                     }[];
-                    /** @description Skills this revision adds, removes or changes against its base release, by name. A skill's settings are not shown; a change to them reads as `changed`. The default-answer skill is not listed: retrieval settings apply without publishing. */
+                    /** @description Skills this revision adds, removes or changes against its base release, by name. The default-answer skill is not listed: retrieval settings apply without publishing. */
                     agentSkills: {
                         /** Format: uuid */
                         skillId: string;
                         skillName: string;
                         /** @enum {string} */
                         change: "added" | "removed" | "changed";
+                        /** @description For a changed skill: whether its settings changed. They are not shown. */
+                        settingsChanged?: boolean;
                         before?: components["schemas"]["AgentRevisionSkill"];
                         after?: components["schemas"]["AgentRevisionSkill"];
                     }[];

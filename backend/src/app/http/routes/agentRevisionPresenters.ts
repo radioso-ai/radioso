@@ -1,13 +1,13 @@
 import { revisionTakesPhotos } from "../../../modules/visitorImages/public.js";
-import { diffAgentRevisionSkills, readAgentRevisionGreeting, visitorImagesSwitchChanged, withoutWriteTimestamps, type AgentRevision, type AgentRevisionSkillChange, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
+import { diffAgentRevisionSkills, readAgentRevisionGreeting, redactedRevisionSkill, visitorImagesSwitchChanged, withoutWriteTimestamps, type AgentRevision, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
 
 type RevisionSummary = { id: string; label: string; kind: "candidate" | "published"; versionNumber: number | null; createdAt: string; publishedAt?: string };
 type RevisionSummaryInput = Pick<AgentRevision, "id" | "createdAt" | "publishedAt" | "publishedVersion">;
 type ScopedChange = "added" | "removed" | "changed";
 type DirectiveChange = { id: string; change: ScopedChange; before?: AgentRevisionSnapshot["directives"][number]; after?: AgentRevisionSnapshot["directives"][number] };
 type RoutineChange = { definitionId: string; change: ScopedChange; before?: AgentRevisionSnapshot["routines"][number]; after?: AgentRevisionSnapshot["routines"][number] };
-type RevisionSkill = { name: string; kind: string; invocationMode: string; enabled: boolean };
-type SkillChange = { skillId: string; skillName: string; change: ScopedChange; before?: RevisionSkill; after?: RevisionSkill };
+type RevisionSkill = ReturnType<typeof redactedRevisionSkill>;
+type SkillChange = { skillId: string; skillName: string; change: ScopedChange; settingsChanged?: boolean; before?: RevisionSkill; after?: RevisionSkill };
 type ContextVariableEnablementChange = { contextVariableId: string; change: ScopedChange; before?: AgentRevisionSnapshot["contextVariableEnablements"][number]; after?: AgentRevisionSnapshot["contextVariableEnablements"][number] };
 
 const revisionKind = (revision: RevisionSummaryInput): "candidate" | "published" => revision.publishedAt ? "published" : "candidate";
@@ -57,15 +57,12 @@ const diffContextVariableEnablements = (before: AgentRevisionSnapshot, after: Ag
   return changes;
 };
 
-/** A skill as the review shows it: its settings stay out, since they can hold recipients and payloads. */
-const presentRevisionSkill = (skill: NonNullable<AgentRevisionSkillChange["after"]>): RevisionSkill =>
-  ({ name: skill.skillName, kind: skill.kind, invocationMode: skill.invocationMode, enabled: skill.enabled });
-
 const presentSkillChanges = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): SkillChange[] =>
-  diffAgentRevisionSkills(base, candidate).map(({ skillId, skillName, change, before, after }) => ({
+  diffAgentRevisionSkills(base, candidate).map(({ skillId, skillName, change, settingsChanged, before, after }) => ({
     skillId, skillName, change,
-    ...(before ? { before: presentRevisionSkill(before) } : {}),
-    ...(after ? { after: presentRevisionSkill(after) } : {}),
+    ...(settingsChanged !== undefined ? { settingsChanged } : {}),
+    ...(before ? { before: redactedRevisionSkill(before) } : {}),
+    ...(after ? { after: redactedRevisionSkill(after) } : {}),
   }));
 
 const emptySnapshot: AgentRevisionSnapshot = { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] };

@@ -146,10 +146,25 @@ describe("agent revision presenters", () => {
     expect(changes).toEqual(expect.arrayContaining([
       { skillId: newRoutineId, skillName: "lookup_orders", change: "added", after: expect.objectContaining({ name: "lookup_orders", enabled: true }) },
       { skillId: removedDirectiveId, skillName: "old_lookup", change: "removed", before: expect.objectContaining({ name: "old_lookup" }) },
-      { skillId: directiveId, skillName: "notify_team", change: "changed", before: expect.objectContaining({ enabled: true }), after: expect.objectContaining({ enabled: false }) },
+      { skillId: directiveId, skillName: "notify_team", change: "changed", settingsChanged: false, before: expect.objectContaining({ enabled: true }), after: expect.objectContaining({ enabled: false }) },
     ]));
     expect(changes).toHaveLength(3);
     expect(JSON.stringify(changes)).not.toContain("team@acme.example");
+  });
+
+  it("says a skill's settings changed when only its hidden settings did", () => {
+    const skill: NonNullable<AgentRevisionSnapshot["agentSkills"]>[number] = {
+      id: directiveId, agentId, workspaceId, skillName: "notify_team", kind: "notify", invocationMode: "agent_selectable", enabled: true,
+      targetType: null, targetId: null, config: { delivery: { recipientEmails: ["team@acme.example"] } },
+      createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    };
+    const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null, snapshot: snapshot({ agentSkills: [skill] }) });
+    const candidate = revision({ snapshot: snapshot({ agentSkills: [{ ...skill, config: { delivery: { recipientEmails: ["sales@acme.example"] } } }] }) });
+
+    const [change] = presentRevisionDetail(candidate, base).scopedChanges.agentSkills;
+
+    expect(change).toMatchObject({ skillName: "notify_team", change: "changed", settingsChanged: true });
+    expect(JSON.stringify(change)).not.toContain("acme.example");
   });
 
   it("reports no skill change when only a skill's write time moved", () => {

@@ -22,7 +22,7 @@ it("redacts agent skill config in summaries", () => { const result = describeCan
 it("names a skill change by the skill's name", () => {
   const [change] = describeCandidateReleaseDiff(withAgentSkills([]), withAgentSkills([agentSkill()])).changes;
   expect(change).toMatchObject({ field: "agentSkills", before: null });
-  expect(JSON.parse(change?.after ?? "null")).toMatchObject({ skillName: "lookup_orders", enabled: true });
+  expect(JSON.parse(change?.after ?? "null")).toMatchObject({ name: "lookup_orders", enabled: true, configRedacted: true });
 });
 it("reports no skill change when only write timestamps, order or config key order differ", () => {
   const notify = agentSkill({ id: "44444444-4444-4444-8444-444444444444", skillName: "notify_team", kind: "notify", config: { delivery: { recipientEmails: ["team@acme.example"] }, subject: "New lead" } });

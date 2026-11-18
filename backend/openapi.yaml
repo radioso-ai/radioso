@@ -3350,11 +3350,25 @@ components:
           type: string
         enabled:
           type: boolean
+        targetType:
+          type:
+            - string
+            - "null"
+        targetId:
+          type:
+            - string
+            - "null"
+        configRedacted:
+          type: boolean
+          description: The skill has settings; they are not shown, since they can hold recipients, payloads and tool settings.
       required:
         - name
         - kind
         - invocationMode
         - enabled
+        - targetType
+        - targetId
+        - configRedacted
     AgentRevisionDetailResponse:
       type: object
       properties:
@@ -3506,6 +3520,9 @@ components:
                               - added
                               - removed
                               - changed
+                          settingsChanged:
+                            type: boolean
+                            description: "For a changed skill: whether its settings changed. They are not shown."
                           before:
                             $ref: "#/components/schemas/AgentRevisionSkill"
                           after:
@@ -3514,7 +3531,7 @@ components:
                           - skillId
                           - skillName
                           - change
-                      description: "Skills this revision adds, removes or changes against its base release, by name. A skill's settings are not shown; a change to them reads as `changed`. The default-answer skill is not listed: retrieval settings apply without publishing."
+                      description: "Skills this revision adds, removes or changes against its base release, by name. The default-answer skill is not listed: retrieval settings apply without publishing."
                     greeting:
                       type: object
                       properties:

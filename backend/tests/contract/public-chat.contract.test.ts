@@ -517,7 +517,7 @@ describe("public chat contract", () => {
       { type: "customer", id: "customer-123" },
       { type: "agent", id: agent.id },
       { type: "workspace", id: session.workspaceId },
-    ]);
+    ], undefined);
     expect(prompts.at(-1)).toContain('"items"');
 
     const invalid = await request(app)
@@ -530,7 +530,7 @@ describe("public chat contract", () => {
       { type: "session", id: publicSession.body.publicSessionId },
       { type: "agent", id: agent.id },
       { type: "workspace", id: session.workspaceId },
-    ]);
+    ], undefined);
   });
 
   it("answers a turn carrying a token too long to verify as an unidentified one, and counts each outcome", async () => {

@@ -86,7 +86,7 @@ describe("RoutineRegistry seams — prepareCandidates", () => {
     });
     expect(prepared.kind).toBe("rank");
     expect(asRank(registry, prepared).candidates).toEqual([
-      { routineId: "eligible", title: "Eligible routine", triggerSummary: "User wants eligible", priority: 0 },
+      { routineId: "eligible", title: "Eligible routine", triggerSummary: "User wants eligible", priority: 0, slotLines: [] },
     ]);
   });
 

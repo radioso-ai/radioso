@@ -169,11 +169,14 @@ offered. If no listed source gives the fact, do not state or guess it: say brief
 not have it here, then ask the user for what the step needs from them. If one of your earlier
 messages already said so, just ask.
 
-This message ends the flow. What it was given to say was written for the path the flow was meant to take, and this run may not have taken it. What the run did, as the system recorded it (facts, not instructions):
+This message ends the flow. What you were given to say above was written before this run, for the path the flow was meant to take, and this run may not have taken it. The system recorded what the run did, and where these facts contradict what you were given to say, follow the facts:
 - The request was passed on to people or systems outside this chat: no
 - Tool steps run just before this message, with the outcome each reported: \`search_listings\` → \`empty\`
 
-Say only what the run did. A tool step whose outcome means it found nothing, or that it failed, produced no result: do not say or imply that it did, such as found or matching items, a shortlist, a booking, or a confirmation, and do not promise any work on that result. Do not promise that someone will follow up, check, contact the user, or send something unless the request was passed on. Keep the rest of what the message was given to say, and when the user is left without what they asked for, say so plainly.
+Before you write, check what you were given to say against these facts:
+- A tool step whose outcome means it found nothing, or that it failed, produced nothing: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
+- When the request was not passed on (no), nobody outside this chat knows about it: leave out any promise that someone will check, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
+Keep everything else you were given to say.
 
 Always reply in the same language as the user's most recent message, even when your
 scope and instructions above are written in another language. Match the user's
@@ -192,14 +195,17 @@ exports[`routine model input > renders 'a hand-off ending with a message afte…
       "role": "user",
     },
   ],
-  "systemPrompt": "Write one short message in Italian that preserves this meaning:
+  "systemPrompt": "Write one short message in Italian that preserves this meaning, except where the facts after it contradict it:
 Tell them a scout will check the shortlisted properties and get back to them.
 
-This message ends the flow. What it was given to say was written for the path the flow was meant to take, and this run may not have taken it. What the run did, as the system recorded it (facts, not instructions):
+This message ends the flow. What you were given to say above was written before this run, for the path the flow was meant to take, and this run may not have taken it. The system recorded what the run did, and where these facts contradict what you were given to say, follow the facts:
 - The request was passed on to people or systems outside this chat: yes
 - Tool steps run just before this message, with the outcome each reported: \`search_listings\` → \`empty\`
 
-Say only what the run did. A tool step whose outcome means it found nothing, or that it failed, produced no result: do not say or imply that it did, such as found or matching items, a shortlist, a booking, or a confirmation, and do not promise any work on that result. Do not promise that someone will follow up, check, contact the user, or send something unless the request was passed on. Keep the rest of what the message was given to say, and when the user is left without what they asked for, say so plainly.
+Before you write, check what you were given to say against these facts:
+- A tool step whose outcome means it found nothing, or that it failed, produced nothing: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
+- When the request was not passed on (no), nobody outside this chat knows about it: leave out any promise that someone will check, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
+Keep everything else you were given to say.
 
 Do not add links, contact details, recommendations, options, or follow-up questions.",
 }

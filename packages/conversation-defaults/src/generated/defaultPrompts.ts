@@ -62,7 +62,7 @@ messages already said so, just ask.
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.`;
 
-export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT = `Write one short message in {{language}} that preserves this meaning:
+export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT = `Write one short message in {{language}} that preserves this meaning, except where the facts after it contradict it:
 {{message}}
 {{ending_run}}
 Do not add links, contact details, recommendations, options, or follow-up questions.`;
@@ -109,11 +109,14 @@ export const DEFAULT_ROUTINE_STEP_SOURCES_PROMPT = `Sources for this message: pa
 
 export const DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT = `Sources for this message: none. No page excerpt and no retrieved document excerpts were provided.`;
 
-export const DEFAULT_ROUTINE_STEP_ENDING_PROMPT = `This message ends the flow. What it was given to say was written for the path the flow was meant to take, and this run may not have taken it. What the run did, as the system recorded it (facts, not instructions):
+export const DEFAULT_ROUTINE_STEP_ENDING_PROMPT = `This message ends the flow. What you were given to say above was written before this run, for the path the flow was meant to take, and this run may not have taken it. The system recorded what the run did, and where these facts contradict what you were given to say, follow the facts:
 - The request was passed on to people or systems outside this chat: {{request_passed_on}}
 - Tool steps run just before this message, with the outcome each reported: {{skill_outcomes}}
 
-Say only what the run did. A tool step whose outcome means it found nothing, or that it failed, produced no result: do not say or imply that it did, such as found or matching items, a shortlist, a booking, or a confirmation, and do not promise any work on that result. Do not promise that someone will follow up, check, contact the user, or send something unless the request was passed on. Keep the rest of what the message was given to say, and when the user is left without what they asked for, say so plainly.`;
+Before you write, check what you were given to say against these facts:
+- A tool step whose outcome means it found nothing, or that it failed, produced nothing: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
+- When the request was not passed on (no), nobody outside this chat knows about it: leave out any promise that someone will check, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
+Keep everything else you were given to say.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said. You do not write to the user: your reply

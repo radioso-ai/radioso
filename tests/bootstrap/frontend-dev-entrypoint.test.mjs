@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 
 const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 
@@ -35,6 +38,49 @@ test("frontend dev entrypoint builds frontend workspace dependencies before star
     entrypoint,
     /build_frontend_workspace_dependencies[\s\S]+if ! next_cache_ready[\s\S]+start_next_dev/,
   );
+});
+
+async function runVendorChunkWatchdog(bundleSource, existingChunks) {
+  const script = await readFile(path.join(repoRoot, "infra/frontend.dev.entrypoint.sh"), "utf8");
+  const start = script.indexOf("next_cache_has_missing_vendor_chunk() {");
+  const end = script.indexOf("\nnext_cache_ready() {");
+  const fn = script.slice(start, end);
+
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "watchdog-"));
+  const appDir = path.join(cwd, "frontend/.next/dev/server/app");
+  const chunkDir = path.join(cwd, "frontend/.next/dev/server/vendor-chunks");
+  await mkdir(appDir, { recursive: true });
+  await mkdir(chunkDir, { recursive: true });
+  await writeFile(path.join(appDir, "page.js"), bundleSource);
+  for (const chunk of existingChunks) {
+    await writeFile(path.join(chunkDir, `${chunk}.js`), "");
+  }
+  try {
+    const output = execFileSync("sh", ["-c", `${fn}\nnext_cache_has_missing_vendor_chunk`], {
+      cwd,
+      encoding: "utf8",
+    });
+    return { missing: true, output };
+  } catch (error) {
+    if (error.status === 1) return { missing: false, output: error.stdout };
+    throw error;
+  }
+}
+
+// Dev bundles embed chunk requires inside a JSON-escaped string, so the name is followed by `\"`.
+const escapedBundle =
+  'eval("__webpack_require__(\\"../vendor-chunks/@example+client@1.0.22\\"); ' +
+  'require(\\"../vendor-chunks/example-client\\")");';
+
+test("vendor chunk watchdog does not flag chunks referenced through JSON-escaped quotes", async () => {
+  const result = await runVendorChunkWatchdog(escapedBundle, ["@example+client@1.0.22", "example-client"]);
+  assert.equal(result.missing, false, result.output);
+});
+
+test("vendor chunk watchdog reports a chunk that is really missing", async () => {
+  const result = await runVendorChunkWatchdog(escapedBundle, ["example-client"]);
+  assert.equal(result.missing, true);
+  assert.match(result.output, /missing server\/vendor-chunks\/@example\+client@1\.0\.22\.js/);
 });
 
 test("frontend dev image contains the workspace packages used by its isolated install", async () => {

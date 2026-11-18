@@ -52,17 +52,38 @@ test("a skill switch is a draft change: Review & publish turns on and the review
       },
     });
   });
+  const noGreeting = { exactWordsEnabled: false, exactContent: null };
   await page.route(`**/backend/api/v1/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}`, async (route) => {
-    const response = await route.fetch();
-    const body = await response.json() as { revision: { scopedChanges: Record<string, unknown> } };
-    body.revision.scopedChanges.agentSkills = [{
-      skillId: lookupOrderId,
-      skillName: "lookup_order",
-      change: "changed",
-      before: { name: "lookup_order", kind: "retrieve", invocationMode: "agent_selectable", enabled: true },
-      after: { name: "lookup_order", kind: "retrieve", invocationMode: "agent_selectable", enabled: false },
-    }];
-    await route.fulfill({ response, json: body });
+    await route.fulfill({
+      json: {
+        revision: {
+          id: defaultCandidateRevisionId,
+          label: "Draft",
+          kind: "candidate",
+          versionNumber: null,
+          createdAt: nowIso,
+          snapshotFormatVersion: 1,
+          scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true, greeting: true },
+          dependencyWarnings: [],
+          enabledContextVariableIds: [],
+          scopedChanges: {
+            customInstruction: { before: "Keep answers concise.", after: "Keep answers concise.", changed: false },
+            directives: [],
+            routines: [],
+            contextVariableEnablements: [],
+            agentSkills: [{
+              skillId: lookupOrderId,
+              skillName: "lookup_order",
+              change: "changed",
+              before: { name: "lookup_order", kind: "retrieve", invocationMode: "agent_selectable", enabled: true },
+              after: { name: "lookup_order", kind: "retrieve", invocationMode: "agent_selectable", enabled: false },
+            }],
+            greeting: { before: noGreeting, after: noGreeting, changed: false },
+            visitorImagesEnabled: { before: false, after: false, changed: false },
+          },
+        },
+      },
+    });
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);

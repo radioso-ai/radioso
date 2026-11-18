@@ -64,6 +64,7 @@ import {
   type SkillOutcome,
 } from "../../src/modules/skills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
+import { recordModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const emptyTrace = () => {
@@ -3210,5 +3211,119 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
     });
     expect(result.actions).toEqual(expect.arrayContaining([expect.objectContaining({ type: "approval.request" })]));
     expect(result.continuation?.routineState).toMatchObject({ routineId: "follow_up", status: "suspended" });
+  });
+});
+
+// #1817, #1766: what Test Chat's turn debug reads off a replayed turn.
+describe("WorkbenchReplayRunner turn debug", () => {
+  const MODEL_CALL_MS = 25;
+  /** One model call that takes `MODEL_CALL_MS`, recorded at the inference seam as a live turn's is. */
+  const modelCall = async (operation: string): Promise<void> => {
+    const startedAt = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, MODEL_CALL_MS));
+    const completedAt = Date.now();
+    recordModelCallTrace({
+      operation,
+      attemptKey: operation,
+      provider: "openai",
+      model: "gpt-5-mini",
+      startedAt: new Date(startedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      durationMs: completedAt - startedAt,
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      status: "succeeded",
+    });
+  };
+  /** `answerSkill`, whose answer takes one model call. */
+  const modelBackedAnswerSkill = (): TurnSkill => {
+    const skill = answerSkill();
+    return {
+      ...skill,
+      renderer: {
+        ...skill.renderer,
+        render: async (outcome, ctx) => {
+          await modelCall("grounded_answer");
+          return skill.renderer.render(outcome, ctx);
+        },
+      },
+    };
+  };
+  const replayRunner = () => new WorkbenchReplayRunner({
+    retrievalTurn: retrievalTurn([]),
+    auditService: createAuditService(),
+    turnSkills: [modelBackedAnswerSkill()],
+    conversationEngine: new DefaultConversationEngine(),
+    turnRouter: stubTurnRouter(),
+  });
+  const replayInput = () => ({
+    workspaceId: "ws-1",
+    executionMode: "safe_test" as const,
+    sourceAgentId: "agent-1",
+    conversationId: "private-side-1",
+    baselineAgentConfig: projectInternalAgentConfig(agent()),
+    query: "How long do refunds take?",
+    history: [],
+  });
+  const recordedModelCalls = (result: Awaited<ReturnType<WorkbenchReplayRunner["run"]>>) =>
+    result.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls;
+
+  it("counts the model calls a replayed turn made and times the turn, streamed or not", async () => {
+    const ran = await replayRunner().run(replayInput());
+    const { result: streamed } = await collect(replayRunner().stream(replayInput()));
+
+    for (const result of [ran, streamed]) {
+      expect(result.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+      expect(result.turnTrace?.summary?.totalTurnWallClockMs).toBeGreaterThanOrEqual(MODEL_CALL_MS - 1);
+      expect(recordedModelCalls(result))
+        .toEqual([expect.objectContaining({ operation: "grounded_answer", model: "gpt-5-mini", totalTokens: 150 })]);
+    }
+  });
+
+  it("counts and times a routine-claimed turn's model calls, streamed or not", async () => {
+    const gateway = {
+      answer: vi.fn(async () => {
+        await modelCall("answer");
+        return "Reception will confirm by email.";
+      }),
+    };
+    const routineRunner = () => new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      routineProvider: handoffRoutineProvider(),
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+    const routineInput = () => ({
+      ...replayInput(),
+      query: "Yes, that is right.",
+      routineStartState: { routineId: "book_accommodation", path: ["recap"], variables: {}, status: "active" as const },
+    });
+
+    const ran = await routineRunner().run(routineInput());
+    const { result: streamed } = await collect(routineRunner().stream(routineInput()));
+
+    for (const result of [ran, streamed]) {
+      expect(result.handoff).toEqual(expect.objectContaining({ routineId: "book_accommodation" }));
+      expect(result.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1 });
+      expect(result.turnTrace?.summary?.totalTurnWallClockMs).toBeGreaterThanOrEqual(MODEL_CALL_MS - 1);
+      expect(recordedModelCalls(result)).toEqual([expect.objectContaining({ operation: "answer" })]);
+    }
+  });
+
+  it("gives the answer an id of its own, apart from the visitor message its trace names", async () => {
+    const ran = await replayRunner().run(replayInput());
+    const { result: streamed } = await collect(replayRunner().stream(replayInput()));
+
+    for (const result of [ran, streamed]) {
+      const visitorMessageId = result.turnTrace?.spine.stages.find((stage) => stage.kind === "message")?.outputs?.eventId;
+      expect(visitorMessageId).toEqual(expect.any(String));
+      expect(result.messageId).toEqual(expect.any(String));
+      expect(result.messageId).not.toBe(visitorMessageId);
+    }
   });
 });

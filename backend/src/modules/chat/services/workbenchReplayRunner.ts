@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { ReplyBlock } from "../contracts/replyBlocks.js";
 import type { ToolImageSource } from "../../toolImages/contracts/index.js";
@@ -13,6 +15,12 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { AgentRevision } from "../../agents/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import {
+  createModelCallTraceCollector,
+  runAsyncIterableWithModelCallTrace,
+  runWithModelCallTrace,
+  type ModelCallTraceCollector,
+} from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
@@ -305,6 +313,10 @@ interface PreparedReplayTurn {
   engineInput: Parameters<ChatTurnAssembly["renderPreparedByEngine"]>[1];
   requestReceivedAt: number;
   answerStartedAt: number;
+  /** The turn's model calls, collected as a live turn's are, so its trace counts and times them. */
+  modelCalls: ModelCallTraceCollector;
+  /** The id the turn's answer goes out under (`WorkbenchReplayResult.messageId`); the visitor's message keeps its own. */
+  replyMessageId: string;
 }
 
 /**
@@ -317,7 +329,12 @@ export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
-    const turn = await this.prepareTurn(input);
+    const modelCalls = createModelCallTraceCollector();
+    return runWithModelCallTrace(modelCalls, () => this.runTurn(input, modelCalls));
+  }
+
+  private async runTurn(input: WorkbenchReplayInput, modelCalls: ModelCallTraceCollector): Promise<WorkbenchReplayResult> {
+    const turn = await this.prepareTurn(input, modelCalls);
     const routineResult = await this.routineTurn(turn);
     if (routineResult) {
       return routineResult;
@@ -333,7 +350,15 @@ export class WorkbenchReplayRunner {
    * expand them.
    */
   async *stream(input: WorkbenchReplayInput): AsyncGenerator<string, WorkbenchReplayResult> {
-    const turn = await this.prepareTurn(input);
+    const modelCalls = createModelCallTraceCollector();
+    return yield* runAsyncIterableWithModelCallTrace(modelCalls, () => this.streamTurn(input, modelCalls));
+  }
+
+  private async *streamTurn(
+    input: WorkbenchReplayInput,
+    modelCalls: ModelCallTraceCollector,
+  ): AsyncGenerator<string, WorkbenchReplayResult> {
+    const turn = await this.prepareTurn(input, modelCalls);
     const observeFirstChunk = this.firstAnswerChunkObserver(turn.requestReceivedAt);
     const routineResult = yield* this.routineTurnStream(turn, observeFirstChunk);
     if (routineResult) {
@@ -369,7 +394,7 @@ export class WorkbenchReplayRunner {
     };
   }
 
-  private async prepareTurn(input: WorkbenchReplayInput): Promise<PreparedReplayTurn> {
+  private async prepareTurn(input: WorkbenchReplayInput, modelCalls: ModelCallTraceCollector): Promise<PreparedReplayTurn> {
     input.signal?.throwIfAborted();
     const requestReceivedAt = Date.now();
     if (input.candidateRevision && input.executionMode !== "safe_test") {
@@ -544,6 +569,8 @@ export class WorkbenchReplayRunner {
       },
       requestReceivedAt,
       answerStartedAt: Date.now(),
+      modelCalls,
+      replyMessageId: randomUUID(),
     };
   }
 
@@ -636,11 +663,12 @@ export class WorkbenchReplayRunner {
     await routineResult.commitRoutineState();
     await routineResult.commitClarificationState?.();
     await turn.session.directiveStateStore?.commit();
-    // A replayed reply goes out under its turn's id (`WorkbenchReplayResult.messageId`).
-    turn.consentStore.record({ events: routineResult.consentEvents, replyMessageId: turn.session.userMessage.id });
+    turn.consentStore.record({ events: routineResult.consentEvents, replyMessageId: turn.replyMessageId });
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,
+      replyMessageId: turn.replyMessageId,
+      modelCalls: turn.modelCalls,
       session: withCommittedPageRead(turn.session, routineResult.pageRead),
       presentation: routineResult.presentation,
       engineTrace: delivery.reply
@@ -674,10 +702,12 @@ export class WorkbenchReplayRunner {
     await rendered.commitRoutineState?.();
     await turn.clarificationStore.commit();
     await rendered.session.directiveStateStore?.commit();
-    turn.consentStore.record({ events: rendered.consentEvents, replyMessageId: rendered.session.userMessage.id });
+    turn.consentStore.record({ events: rendered.consentEvents, replyMessageId: turn.replyMessageId });
     return this.presentResult({
       input: turn.input,
       agent: turn.agent,
+      replyMessageId: turn.replyMessageId,
+      modelCalls: turn.modelCalls,
       session: rendered.session,
       presentation: rendered.presentation,
       engineTrace: rendered.engineTrace,
@@ -856,6 +886,8 @@ export class WorkbenchReplayRunner {
   private presentResult(input: {
     input: WorkbenchReplayInput;
     agent: ReturnType<typeof materializeAgentFromConfig>;
+    replyMessageId: string;
+    modelCalls: ModelCallTraceCollector;
     session: PreparedSession;
     presentation: ChatPresentedAnswer;
     engineTrace?: Parameters<typeof buildTurnTraceForPresentation>[0]["engineTrace"];
@@ -879,6 +911,7 @@ export class WorkbenchReplayRunner {
       answerStartedAt: input.answerStartedAt,
       stream: input.stream,
       engineTrace: input.engineTrace,
+      modelCallTrace: input.modelCalls,
     });
     // A replay never dispatches this turn's actions, so an operator notice never actually sends;
     // Test Chat carries its message content on the trace instead. That content lists the
@@ -889,7 +922,7 @@ export class WorkbenchReplayRunner {
     const handoffPreview = input.input.includeSlotValues === true ? this.operatorNoticePreviewFor(input) : undefined;
     return {
       answer: input.presentation.answer,
-      messageId: input.session.userMessage.id,
+      messageId: input.replyMessageId,
       citations: input.presentation.citations,
       answerSegments: input.presentation.answerSegments,
       // Carried so a coach preview can show the effect of a directive addressed to

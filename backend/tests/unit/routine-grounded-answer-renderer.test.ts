@@ -376,6 +376,21 @@ describe("createRoutineGroundedAnswerRenderer", () => {
         expect(renderer().stepReplyMetadata!({ step: ending, steering: [], turn: { ...turnWithRetrieval(emptyRetrieval()), stagedContext: [] } })).toBeUndefined();
       });
 
+      // A finish that notifies the team already passes the request on: marked a miss as well, it
+      // would send the team a second notice and hand the conversation to a person.
+      it("leaves unmarked an ending that passes the request on, so its own notice is the only one and ownership stays", () => {
+        const presenter = chatAnswerPresenter();
+        const notified = { requestPassedOn: true, skillOutcomes: [{ skillName: "retrieval.context", status: "no_context" }] };
+        const metadata = renderer().stepReplyMetadata!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()), ending: notified });
+        const routineNotice = { type: "completion.notify", payload: { routineId: "home_search" } };
+
+        expect(metadata).toBeUndefined();
+        const presentation = presentRoutineRenderableAnswer(presenter, { answer: "Nothing matched; the team has your brief." });
+        const handoffSession = { ...session(), agent: { ...session().agent, handoffOnRetrievalMiss: true } } as PreparedSession;
+        expect(retrievalMissHandoffForTurn({ session: handoffSession, presentation, workspaceId: "workspace_1", actions: [routineNotice] }))
+          .toEqual({ ownershipHandoff: null, actions: [routineNotice] });
+      });
+
       it("presents that reply as the turn's retrieval miss, the way a chat step's decline on the same miss is, so the miss hand-off runs", () => {
         const presenter = chatAnswerPresenter();
         const metadata = renderer().stepReplyMetadata!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()) });

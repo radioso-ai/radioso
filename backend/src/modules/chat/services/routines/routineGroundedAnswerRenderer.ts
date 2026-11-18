@@ -351,9 +351,13 @@ export const createRoutineGroundedAnswerRenderer = (
     async render(input) {
       return (await prepare(input)?.render()) ?? null;
     },
+    // An ending that already passes the request on (a notice, an export, a webhook) is no miss to
+    // hand off: marked one, the turn would notify the team twice and give the conversation to a person.
     stepReplyMetadata(input) {
       const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
-      return retrieval && endsOnRetrievalMiss(input, retrieval) ? { [ROUTINE_RETRIEVAL_MISS_KEY]: true } : undefined;
+      return retrieval && endsOnRetrievalMiss(input, retrieval) && input.ending?.requestPassedOn !== true
+        ? { [ROUTINE_RETRIEVAL_MISS_KEY]: true }
+        : undefined;
     },
   };
 };

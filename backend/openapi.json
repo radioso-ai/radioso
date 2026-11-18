@@ -37963,7 +37963,7 @@
             }
           },
           "400": {
-            "description": "bad_request when a path parameter, query, or body is malformed",
+            "description": "bad_request when a path parameter is malformed",
             "content": {
               "application/json": {
                 "schema": {
@@ -38010,7 +38010,7 @@
             }
           },
           "400": {
-            "description": "bad_request when a path parameter, query, or body is malformed",
+            "description": "bad_request when a path parameter is malformed",
             "content": {
               "application/json": {
                 "schema": {
@@ -38075,7 +38075,7 @@
             }
           },
           "400": {
-            "description": "bad_request when Exact words is enabled and the content fails validation",
+            "description": "bad_request when the agent id or request body is malformed, or when Exact words is enabled and the content fails validation",
             "content": {
               "application/json": {
                 "schema": {
@@ -38127,6 +38127,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRevisionCandidateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request when the agent id or request body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -38190,7 +38200,7 @@
             }
           },
           "400": {
-            "description": "bad_request when a path parameter, query, or body is malformed",
+            "description": "bad_request when a path parameter or query is malformed",
             "content": {
               "application/json": {
                 "schema": {
@@ -38246,7 +38256,7 @@
             }
           },
           "400": {
-            "description": "bad_request when a path parameter, query, or body is malformed",
+            "description": "bad_request when a path parameter is malformed",
             "content": {
               "application/json": {
                 "schema": {
@@ -38312,7 +38322,7 @@
             }
           },
           "400": {
-            "description": "bad_request when a path parameter, query, or body is malformed",
+            "description": "bad_request when a path parameter or request body is malformed",
             "content": {
               "application/json": {
                 "schema": {

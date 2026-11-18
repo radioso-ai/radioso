@@ -657,7 +657,9 @@ the way the run went. Its reply is told the outcome of each skill step that ran
 on the way to the ending in that turn, such as `empty` from a search that found
 nothing or `failed`, and whether anyone outside the chat gets the request: a
 hand-off, a team notice, the completion export, an action or approval step, or a
-skill that can act outside the conversation. A letting agency's **Hand off**
+skill step that can act outside the conversation, such as a webhook, and didn't
+fail. A search passes nothing on, on any turn. An ending written from a search's
+results hears the same facts. A letting agency's **Hand off**
 ending that says "A scout will check the shortlisted properties" comes out as
 "nothing matched, a scout will follow up" when the listing search reports
 `empty`; on a **Finish** with no notice and nothing else passing the request on,
@@ -740,7 +742,13 @@ The **Replies go to** reminder (`operator_notice_reply_to_unset`) sits outside
 these validation notes and never stops the routine from saving or publishing, and
 so does `mutable_slot_not_correctable`, Ray's note on a field marked **Editable
 after completion** that no visitor can change (see
-[Changes after a routine ends](#changes-after-a-routine-ends)).
+[Changes after a routine ends](#changes-after-a-routine-ends)). So does
+`ending_tells_no_one`: a **Finish** a run can reach with no tool, action, or
+approval step on the way and **Notify the team** off, so nobody outside the chat
+hears of it and its reply promises no follow-up. The ending's editor says so
+under **Notify the team**, and Ray reports it with the other advisories. A search
+step counts as passing the request on here, so an ending past one isn't flagged,
+though its reply still promises nothing the run didn't do.
 
 ## Map
 

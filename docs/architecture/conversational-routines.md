@@ -620,25 +620,31 @@ On each turn, before normal skill selection, the engine checks for a routine:
      is told what the run did (`RoutineStepReplyInput.ending`, set by the runner
      on every `terminal` step it lands on). `requestPassedOn` is true when the
      ending hands off, carries an operator notice, or fires the completion
-     export; when the ending's turn emitted an action or ran a tool step whose
-     skill may act outside the conversation (`actsOutsideConversation`); or when
-     the path the turn started on holds a tool, action, or approval step, read
-     the way `completedRunSentValues` reads it. `skillOutcomes` lists the status
+     export; when the ending's turn emitted an action, or ran a tool step whose
+     skill may act outside the conversation (`actsOutsideConversation` on its
+     result) and that did not report `failed`; or when the path the turn started
+     on holds an action or approval step, or a tool step whose skill the
+     dispatcher's `actsOutsideConversation(skillName)` reads, without running it,
+     as acting outside. A search reads as staying inside, and a dispatcher that
+     cannot say counts no earlier tool step. `skillOutcomes` lists the status
      each tool step on the ending's turn reported, from the turn's
      `skill_dispatched` trace entries; a skill name or status that is not an
      identifier is left out of the prompt. The renderer puts both in
-     `routine-step-ending.md`: after the step instruction on a finish, and after
-     the meaning on a hand-off ending with a message. The reply leaves out a
-     result a tool step reported it did not produce, such as a shortlist from a
-     search that came back `empty`, and any promise that someone will follow up
-     when nothing passes the request on. A hand-off ending without a message,
-     and the runner's own `stuck` and `consent_declined` hand-offs, promise only
-     that a person continues, and get no block. The host's grounded answer leaves
-     an ending on a retrieval that found nothing to the step reply, since a
-     decline is the wrong reply for the message that ends the flow; an ending
-     whose turn retrieved evidence is still the grounded answer, which states
-     what the excerpts support and receives no `ending`. A tool step an earlier
-     turn ran shows no outcome, because routine state keeps none across turns.
+     `routine-step-ending.md`: after the step instruction on a finish, after
+     the meaning on a hand-off ending with a message, and, for an ending the
+     host grounds on retrieved evidence, as one more `source: "routine"` rule in
+     the grounded answer's steering. The reply leaves out a result a tool step
+     reported it did not produce, such as a shortlist from a search that came
+     back `empty` or a booking whose tool `failed`, and any promise that someone
+     will follow up when nothing passes the request on. A hand-off ending without
+     a message, and the runner's own `stuck` and `consent_declined` hand-offs,
+     promise only that a person continues, and get no block. The host's grounded
+     answer leaves an ending on a retrieval that found nothing to the step reply,
+     since a decline is the wrong reply for the message that ends the flow, and
+     marks it through `stepReplyMetadata`, so the reply is presented as the
+     turn's retrieval miss (`no_context`), as a chat step's decline on the same
+     miss is, and the miss hand-off runs for both. A tool step an earlier turn ran
+     shows no outcome, because routine state keeps none across turns.
    - A `{{context.<name>}}` reference fills the host's rendering of the variable
      into the step instruction; for `page_context` that is the page's URL,
      title, and locale. The host's context renderer can also give a variable's
@@ -950,7 +956,10 @@ sending what it collected: no route from its first step reaches an ending that s
 nothing (`endingSendsCollectedValues`) without crossing a tool, action, or approval step.
 The advisory never blocks saving or publishing. Ray's `validate_routine` and routine
 proposals report it, and a backend test compares it against `completedRunSentValues` over
-every route through the compiled routine.
+every route through the compiled routine. The same traversal reports `ending_tells_no_one`
+for each ending that sends nothing and that some route reaches without crossing one of
+those steps: its reply hears that nothing passes the request on, and promises no follow-up.
+The routine editor shows it under the ending's **Notify the team** switch.
 
 ## Activation and clarification
 

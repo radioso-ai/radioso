@@ -14,7 +14,7 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
-| `routines.ts` | 6 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, and `kitchen-note`, whose confirm step reads a held note back |
+| `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `home-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
 | `cases.ts` | the seed cases, the reply block cases included |
@@ -37,12 +37,13 @@ Two layers (see `src/modules/eval/suite/`):
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
   `--judge-tag quick-reply --judge-tag unavailable --judge-tag offer-scope --judge-tag photo-turn`,
-  so the quick-reply judge assertions, the judges of the two `unavailable` cases, the judges of
+  so the quick-reply judge assertions, the judges of the three `unavailable` cases, the judges of
   the three `offer-scope` cases, and the judges of the five `photo-turn` cases gate every run,
   and the baseline is recorded the way the gate runs. No
   deterministic check can tell an invented page summary from a real one
   (`page-read-metadata-only-summary-unavailable`), a date the reply made up from one it read
-  (`routine-step-without-sources-keeps-visitor-dates-theirs`), an offer to write the
+  (`routine-step-without-sources-keeps-visitor-dates-theirs`), a promise of follow-up from an
+  ending's own text (`routine-ending-after-empty-search-promises-nothing`), an offer to write the
   visitor's email from a reply that only gives the contact (`offer-scope-*`), or a course
   offered as the closest from one passed off as a match (`photo-turn-*`). A run refuses any
   case left with nothing to gate, so a filtered run that selects a judge-only case must grade its
@@ -215,6 +216,21 @@ recording at 4 of 5: the one failed sample asked for the edition's dates "to che
 
 ```bash
 pnpm run evals -- --tag unsourced-facts
+```
+
+## Ending case
+
+`routine-ending-after-empty-search-promises-nothing` runs the `home-search` routine from its brief
+step. The visitor describes the flat they want, the routine's `retrieval.context` step searches a
+corpus that holds no homes, and the routine ends on a finish whose text says a scout will check
+the shortlisted properties, with no notice and nothing else passing the request on. The ending's
+reply is told the search came back with nothing and that nobody outside the chat gets the
+request (`routine-step-ending.md`), so the judge checks it neither describes found or shortlisted
+homes nor promises that anyone will follow up. The case carries the `unavailable` tag, so its
+judge gates every run. It needs a recorded baseline entry before it can gate.
+
+```bash
+pnpm run evals -- --tag ending
 ```
 
 ## Offer-scope cases

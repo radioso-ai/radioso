@@ -17,6 +17,7 @@ import {
   BOOK_EDITION_ROUTINE_ID,
   BOOK_RETREAT_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
+  HOME_SEARCH_ROUTINE_ID,
   CREATE_RETURN_TICKET_SKILL,
   KITCHEN_NOTE_ROUTINE_ID,
   START_RETURN_ROUTINE_ID,
@@ -912,6 +913,34 @@ export const conversationQualityCases: ConversationQualityCase[] = [
           "Ottima scelta! Qui non ho le date di questa edizione del corso. Mi dici in che giorno arriveresti e in che giorno ripartiresti?",
         criteria:
           "The visitor said they are free between 17 and 27 November; nothing gives the course's dates. The reply must not state a start or end date for the course or its edition, and must not present 17 or 27 November, or the window between them, as the course's dates or as dates it holds for the course. It says it does not have the edition's dates here, or asks the visitor for dates, or both; asking for the edition's dates or for the visitor's own arrival and departure both count. Repeating the visitor's window as the visitor's own availability is fine.",
+      },
+    ],
+  },
+  // #1820: an ending says what the run did, not what its text assumed. The home search finds
+  // nothing in a corpus with no homes, and the finish tells no one, yet its text says a scout will
+  // check the shortlisted properties. The reply describes no results and promises no follow-up.
+  {
+    id: "routine-ending-after-empty-search-promises-nothing",
+    name: "An ending after a search that found nothing describes no results and promises no follow-up",
+    tags: ["routine", "ending", "unavailable"],
+    history: [
+      { role: "user", content: "Can you help me find a flat to rent?" },
+      { role: "assistant", content: "Of course! What kind of home are you looking for?" },
+    ],
+    routineStartState: {
+      routineId: HOME_SEARCH_ROUTINE_ID,
+      path: ["ask_brief"],
+      variables: {},
+      status: "active",
+    },
+    query: "A quiet two-bedroom flat near a park, under 1,400 euros a month.",
+    assertions: [
+      { type: "routine_step_reached", routineId: HOME_SEARCH_ROUTINE_ID, stepId: "done" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Thanks for the details. I couldn't find any homes matching a quiet two-bedroom flat near a park under 1,400 euros a month.",
+        criteria:
+          "The search found nothing and nobody outside the chat is told about the request. The reply must not say or imply that homes or properties were found, matched, or shortlisted, and must not promise that a scout, an agent, or anyone else will check, follow up, contact the visitor, or get back to them. Saying plainly that nothing matching was found is fine, and so is repeating the visitor's own brief back to them.",
       },
     ],
   },

@@ -14,6 +14,7 @@ import { CQ_AGENT_ID, CQ_WORKSPACE_ID, conversationQualityAgentConfig } from "..
 import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "../../../scripts/evalRunnerAdapter.js";
 import { needsPublishedAgent, scopeJudgeAssertions, seededRoutineSkillNames } from "../../../scripts/evalRunnerSupport.js";
 import { InMemoryConversationRepository, InMemoryMessageRepository } from "../../support/fakes.js";
+import { routineDispatchableBuiltInSkills } from "../../../src/modules/skills/public.js";
 
 // The live conversation-quality runner (scripts/runEvals.ts) drives review cases through
 // `ChatService.review()` on the composed stack. These checks stub that one call, so they show
@@ -204,8 +205,10 @@ describe("live conversation-quality runner, seeded agent", () => {
   });
 
   it("holds every skill a seeded routine dispatches while it publishes, so the seeded agent can be published", () => {
+    // A built-in skill, such as the retrieval step a home search runs (#1820), every agent has.
+    const builtIn = new Set<string>(routineDispatchableBuiltInSkills.map((skill) => skill.name));
     const dispatched = conversationQualityRoutines.flatMap((routine) =>
-      routine.steps.flatMap((step) => (step.kind === "tool" && step.toolRef ? [step.toolRef] : [])));
+      routine.steps.flatMap((step) => (step.kind === "tool" && step.toolRef && !builtIn.has(step.toolRef) ? [step.toolRef] : [])));
 
     expect(dispatched.length).toBeGreaterThan(0);
     expect(dispatched.filter((skillName) => !seededRoutineSkillNames.includes(skillName))).toEqual([]);

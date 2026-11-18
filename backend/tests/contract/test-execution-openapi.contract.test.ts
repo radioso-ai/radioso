@@ -44,16 +44,17 @@ describe("test execution OpenAPI contract", () => {
   });
 
   it("carries the sources an answer cites on its completion and on its stored entry (#1816)", () => {
-    const { registry, security } = createOpenApiRegistry();
-    registerTestExecutionPaths(registry, security);
+    const { registry, schemas, security } = createOpenApiRegistry();
+    registerTestExecutionPaths(registry, security, undefined, schemas);
     const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
     const events = (document.components?.schemas?.TestExecutionEvent as { oneOf: Array<{ properties: { type: { enum: string[] } } & Record<string, unknown>; required: string[] }> }).oneOf;
     const completed = events.find((event) => event.properties.type.enum.includes("side_completed"));
     const entry = (document.components?.schemas?.TestExecutionSide as { properties: { history: { items: { properties: Record<string, unknown>; required: string[] } } } }).properties.history.items;
     for (const answer of [completed, entry]) {
-      expect(answer?.properties.citations).toMatchObject({ type: "array" });
-      expect(answer?.properties.answerSegments).toMatchObject({ type: "array" });
+      expect(answer?.properties.citations).toMatchObject({ type: "array", items: { $ref: expect.stringMatching(/\/Citation$/) } });
+      expect(answer?.properties.answerSegments).toMatchObject({ type: "array", items: { $ref: expect.stringMatching(/\/AnswerSegment$/) } });
       expect(answer?.required).not.toContain("citations");
+      expect(answer?.required).not.toContain("answerSegments");
     }
   });
 

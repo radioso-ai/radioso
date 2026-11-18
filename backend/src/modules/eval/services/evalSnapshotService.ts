@@ -12,7 +12,7 @@ import {
   type InternalAgentExternalSkillsConfig,
 } from "../../agents/public.js";
 import type { TestExecutionEvalSnapshotSource } from "../../test-execution/public.js";
-import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import { storedAnswerSegments, storedCitations } from "../../../shared/domain/answerCitation.js";
 import {
   loadConversationSummaryText,
   type ConversationSummaryStore,
@@ -58,53 +58,6 @@ const truncateMessages = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-const extractCitations = (metadata: Record<string, unknown> | undefined): ChatCitation[] | undefined => {
-  const raw = metadata?.citations;
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  const citations = raw.flatMap((value): ChatCitation[] => {
-    if (!isRecord(value)) {
-      return [];
-    }
-    const { documentId, chunkId, title, sourceUrl } = value;
-    if (typeof documentId !== "string" || typeof chunkId !== "string" || typeof title !== "string") {
-      return [];
-    }
-    return [{
-      documentId,
-      chunkId,
-      title,
-      ...(typeof sourceUrl === "string" && sourceUrl.length > 0 ? { sourceUrl } : {}),
-    }];
-  });
-
-  return citations.length > 0 ? citations : undefined;
-};
-
-const extractAnswerSegments = (metadata: Record<string, unknown> | undefined): AnswerSegment[] | undefined => {
-  const raw = metadata?.answerSegments;
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  const segments = raw.flatMap((value): AnswerSegment[] => {
-    if (!isRecord(value) || typeof value.text !== "string") {
-      return [];
-    }
-    const citationIndices = Array.isArray(value.citationIndices)
-      ? value.citationIndices.filter((index): index is number => Number.isInteger(index) && index >= 0)
-      : undefined;
-    return [{
-      text: value.text,
-      ...(citationIndices && citationIndices.length > 0 ? { citationIndices } : {}),
-    }];
-  });
-
-  return segments.length > 0 ? segments : undefined;
-};
 
 const extractGroundingSummary = (metadata: Record<string, unknown> | undefined): EvalSnapshotMessage["groundingSummary"] => {
   const verdict = metadata?.groundingVerdict;
@@ -164,8 +117,8 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
     createdAt: record.createdAt.toISOString(),
     ...(imageInput ? { imageInput } : {}),
     ...(record.role === "assistant" ? {
-      citations: extractCitations(record.metadata),
-      ...(withheld ? {} : { answerSegments: extractAnswerSegments(record.metadata) }),
+      citations: storedCitations(record.metadata),
+      ...(withheld ? {} : { answerSegments: storedAnswerSegments(record.metadata) }),
       groundingSummary: extractGroundingSummary(record.metadata),
       ...(directiveFirings ? { directiveFirings } : {}),
     } : {}),
@@ -367,6 +320,8 @@ export class EvalSnapshotService {
         content: entry.content,
         createdAt: entry.createdAt.toISOString(),
         ...(entry.role === "user" && entry.imageInput ? { imageInput: entry.imageInput } : {}),
+        ...(entry.role === "assistant" && entry.citations?.length ? { citations: [...entry.citations] } : {}),
+        ...(entry.role === "assistant" && entry.answerSegments?.length ? { answerSegments: [...entry.answerSegments] } : {}),
       })),
       originalInstructionBlock: null,
       originalModelId: candidate.chatModelOverride?.model ?? null,

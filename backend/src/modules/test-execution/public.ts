@@ -1,5 +1,6 @@
 import type { AgentRevision } from "../agents/public.js";
 import type { FrozenTestValue } from "../context-variables/public.js";
+import type { AnswerSegment, ChatCitation } from "../../shared/domain/answerCitation.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import type { TestExecutionImageInput } from "./testExecution.js";
 
@@ -27,6 +28,9 @@ interface TestExecutionEvalSnapshotHistoryEntry {
   /** The photos a user turn carried, beside `content`, the turn text with their readings. */
   imageInput?: TestExecutionImageInput;
   messageId?: string;
+  /** The sources an assistant reply cites and where its text cites them, kept with the captured case. */
+  citations?: readonly ChatCitation[];
+  answerSegments?: readonly AnswerSegment[];
   createdAt: Date;
 }
 

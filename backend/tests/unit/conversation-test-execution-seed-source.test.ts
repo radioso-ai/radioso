@@ -188,6 +188,43 @@ describe("ConversationTestExecutionSeedSource", () => {
     expect(seed?.messages[1]).not.toHaveProperty("imageInput");
   });
 
+  it("seeds a reply with the sources it cites, as the Inbox shows them (#1816)", async () => {
+    const citations = [{ documentId: "doc-hours", chunkId: "chunk-hours", title: "Opening hours", sourceUrl: "https://studio.example/hours" }];
+    const answerSegments = [{ text: "The studio is open nine to five on weekdays.", citationIndices: [0] }];
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "When is the studio open?", createdAt: new Date(1) }),
+      buildMessage({ id: "m-2", role: "assistant", content: "The studio is open nine to five on weekdays.", metadata: { citations, answerSegments }, createdAt: new Date(2) }),
+      buildMessage({ id: "m-3", role: "assistant", content: "Anything else?", metadata: { citations: [], answerSegments: [{ text: "Anything else?" }] }, createdAt: new Date(3) }),
+    ]);
+
+    const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
+
+    expect(seed?.messages[0]).not.toHaveProperty("citations");
+    expect(seed?.messages[1]).toMatchObject({ citations, answerSegments });
+    expect(seed?.messages[2]).not.toHaveProperty("citations");
+    expect(seed?.messages[2]).not.toHaveProperty("answerSegments");
+  });
+
+  it("seeds a withheld reply with its sources but without the text runs that repeat it (#1816, #1543)", async () => {
+    const citations = [{ documentId: "doc-care", chunkId: "chunk-care", title: "Injury care" }];
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({
+        id: "m-1",
+        role: "assistant",
+        content: "With a torn ACL, start with the gentle class.",
+        metadata: { sensitiveSlotKeys: ["injury"], citations, answerSegments: [{ text: "With a torn ACL, start with the gentle class.", citationIndices: [0] }] },
+        createdAt: new Date(1),
+      }),
+    ]);
+    listSensitiveSlotKeys.mockResolvedValue(["injury"]);
+
+    const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
+
+    expect(seed?.messages[0]).toMatchObject({ content: "[redacted]", citations });
+    expect(seed?.messages[0]).not.toHaveProperty("answerSegments");
+    expect(JSON.stringify(seed)).not.toContain("ACL");
+  });
+
   it("seeds a withheld message without its photos' readings (#1543)", async () => {
     const imageInput = { typedText: "My knee", images: [{ id: randomUUID(), reading: "A swollen knee with a brace." }] };
     listRecentByConversationId.mockResolvedValue([

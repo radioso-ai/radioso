@@ -327,6 +327,9 @@ export interface TestExecutionSeedMessage {
   createdAt: Date;
   /** The photos a visitor's message carried, kept so the copy shows them as the conversation does. */
   imageInput?: TestExecutionImageInput;
+  /** The sources a reply cites and where its text cites them, kept so the copy shows them as the Inbox does. */
+  citations?: readonly ChatCitation[];
+  answerSegments?: readonly AnswerSegment[];
 }
 
 export interface TestExecutionSeed {
@@ -564,6 +567,7 @@ export class TestExecutionService {
         turnId: turn.turnId, attemptId: turn.attemptId, role: message.role,
         content: message.content, messageId: message.messageId, createdAt: message.createdAt,
         ...(message.imageInput ? { imageInput: message.imageInput } : {}),
+        ...(message.role === "assistant" ? answerSources(message) : {}),
       };
     });
   }

@@ -31,8 +31,11 @@ carried. A side that fails after streaming ends `side_failed` with no completion
 An answer that cites the workspace's documents carries its `citations` and
 `answerSegments` on the result, on `side_completed` and on its stored history
 entry, the same sources live chat stores with that reply; an answer that cites
-none carries neither (`answerSources`). Test Chat shows them as the public chat
-and the Inbox do.
+none carries neither (`answerSources`). A seeded reply carries the sources its
+source message stored, without the text runs when the message is withheld
+(#1543), and a captured eval case keeps a test reply's sources. Test Chat shows
+the sources a reply cites as the Inbox shows them, whatever the agent's citation
+display setting.
 
 A single execution can start from an existing conversation (`seedConversationId`
 on start). This module only knows the `TestExecutionSeedSource` port: it receives

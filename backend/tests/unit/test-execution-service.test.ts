@@ -800,6 +800,23 @@ describe("TestExecutionService", () => {
       expect(side.history.map(({ role, content, messageId, createdAt }) => ({ role, content, messageId, createdAt }))).toEqual(thread);
     });
 
+    it("keeps the sources a copied reply cites on its history entry, and none on one that cites none (#1816)", async () => {
+      const citations = [{ documentId: "doc-hours", chunkId: "chunk-hours", title: "Opening hours" }];
+      const answerSegments = [{ text: "Nine to five.", citationIndices: [0] }];
+      const { service } = seededSetup(async () => seed([
+        { role: "user", content: "When is the studio open?", messageId: "m-1", createdAt: new Date(10) },
+        { role: "assistant", content: "Nine to five.", messageId: "m-2", createdAt: new Date(20), citations, answerSegments },
+        { role: "assistant", content: "Anything else?", messageId: "m-3", createdAt: new Date(30), citations: [] },
+      ]));
+
+      const execution = await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      const [question, cited, uncited] = execution.sides[0].history;
+      expect(question).not.toHaveProperty("citations");
+      expect(cited).toMatchObject({ citations, answerSegments });
+      expect(uncited).not.toHaveProperty("citations");
+    });
+
     it("records what the seed copied in, so history can count and label the test without its transcript", async () => {
       const { service, repository } = seededSetup(async () => seed(thread));
       const create = vi.spyOn(repository, "create");

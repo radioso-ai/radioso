@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { registerTestExecutionSchemas, type TestExecutionReplySchemas } from "../schemas/testExecutionSchemas.js";
 
-/** The voice session answer of Test Chat's Talk, the error envelope, and the reply shapes a turn's answer carries. */
-interface TestChatVoiceSchemas extends TestExecutionReplySchemas {
+/** Schemas registered elsewhere: the voice session answer of Test Chat's Talk, the error envelope, and the reply shapes a turn's answer carries. */
+interface TestExecutionSharedSchemas extends TestExecutionReplySchemas {
   TestChatVoiceSessionResponseSchema: z.ZodTypeAny;
   ErrorResponseSchema: z.ZodTypeAny;
 }
@@ -13,9 +13,9 @@ export const registerTestExecutionPaths = (
   registry: OpenAPIRegistry,
   security: { bearerAuthScheme: { name: string } },
   evalSnapshotSchema: z.ZodTypeAny = z.unknown(),
-  voice?: TestChatVoiceSchemas,
+  sharedSchemas?: TestExecutionSharedSchemas,
 ) => {
-  const schemas = registerTestExecutionSchemas(registry, voice);
+  const schemas = registerTestExecutionSchemas(registry, sharedSchemas);
   const authenticated = [{ [security.bearerAuthScheme.name]: [] }];
   registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/test-executions", tags: ["Agents"], summary: "List private immutable revision tests", operationId: "listAgentTestExecutions", security: authenticated, request: { params: z.object({ agentId: z.string().uuid() }), query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().min(1).optional() }) }, responses: { 200: { description: "Private test history returned", content: { "application/json": { schema: schemas.TestExecutionHistoryListResponseSchema } } } } });
   registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/test-executions/{executionId}", tags: ["Agents"], summary: "Get private immutable revision test evidence", operationId: "getAgentTestExecution", security: authenticated, request: { params: schemas.TestExecutionParamsSchema }, responses: { 200: { description: "Private test evidence returned", content: { "application/json": { schema: schemas.TestExecutionHistoryDetailResponseSchema } } } } });
@@ -25,13 +25,13 @@ export const registerTestExecutionPaths = (
   registry.registerPath({ method: "post", path: "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain", tags: ["Agents"], summary: "Continue one settled comparison version as a private test", operationId: "retainAgentTestExecutionSide", security: authenticated, request: { params: schemas.TestExecutionRetainParamsSchema }, responses: { 201: { description: "Single private test execution created", content: { "application/json": { schema: schemas.TestExecutionSchema } } } } });
   registry.registerPath({ method: "post", path: "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/eval-snapshots/{messageId}", tags: ["Agents"], summary: "Capture a private test response as immutable Eval evidence", operationId: "captureAgentTestExecutionEvalSnapshot", security: authenticated, request: { params: schemas.TestExecutionRetainParamsSchema.extend({ messageId: z.string().min(1) }) }, responses: { 201: { description: "Immutable Eval snapshot captured from the private test turn", content: { "application/json": { schema: evalSnapshotSchema } } } } });
   registry.registerPath({ method: "post", path: "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry", tags: ["Agents"], summary: "Retry one failed private test side", operationId: "retryAgentTestExecutionSide", security: authenticated, request: { params: schemas.TestExecutionRetryParamsSchema, body: { required: true, content: { "application/json": { schema: schemas.TestExecutionRetryRequestSchema } } } }, responses: { 200: { description: "Fenced side events", content: sse } } });
-  if (voice) registerTestChatVoiceSessionPath(registry, schemas, voice, authenticated);
+  if (sharedSchemas) registerTestChatVoiceSessionPath(registry, schemas, sharedSchemas, authenticated);
 };
 
 const registerTestChatVoiceSessionPath = (
   registry: OpenAPIRegistry,
   schemas: ReturnType<typeof registerTestExecutionSchemas>,
-  voice: TestChatVoiceSchemas,
+  voice: TestExecutionSharedSchemas,
   security: Array<Record<string, string[]>>,
 ) => {
   const error = (description: string) => ({ description, content: { "application/json": { schema: voice.ErrorResponseSchema } } });

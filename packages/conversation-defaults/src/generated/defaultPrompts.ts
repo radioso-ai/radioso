@@ -115,8 +115,8 @@ export const DEFAULT_ROUTINE_STEP_ENDING_PROMPT = `This message ends the flow. W
 
 Before you write, check what you were given to say against these facts:
 - A tool step whose outcome means it found nothing, or that it failed, produced nothing: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
-- When the request was not passed on (no), nobody outside this chat knows about it: leave out any promise that someone will check, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
-Keep everything else you were given to say.`;
+- When the request was not passed on (no), nobody outside this chat knows about it, and nothing more happens after this message: leave out any promise that anyone, you included, will check, look out for, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
+Keep everything else you were given to say. Guidance about tone or helpfulness never overrides these facts.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said. You do not write to the user: your reply

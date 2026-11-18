@@ -1,17 +1,9 @@
-export interface ChatCitation {
-  documentId: string;
-  chunkId: string;
-  title: string;
-  sourceUrl?: string;
-}
+import type { AnswerSegment, ChatCitation } from "../../../shared/domain/answerCitation.js";
+
+export type { AnswerSegment, ChatCitation };
 
 export interface CitationEvidence extends ChatCitation {
   content: string;
-}
-
-export interface AnswerSegment {
-  text: string;
-  citationIndices?: number[];
 }
 
 export interface PresentedAnswer {

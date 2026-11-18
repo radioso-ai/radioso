@@ -112,6 +112,37 @@ describe('agent test execution state', () => {
     expect(withoutCards.sides.right.messages.at(-1)).not.toHaveProperty('blocks')
   })
 
+  it('keeps the sources a completion cites on its reply, and when the test is reopened (#1816)', () => {
+    const citations = [{ documentId: 'doc-hours', chunkId: 'chunk-hours', title: 'Opening hours', sourceUrl: 'https://studio.example/hours' }]
+    const answerSegments = [{ text: 'The studio is open nine to five on weekdays.', citationIndices: [0] }]
+    const active = beginTestExecutionTurn(state(), 'When is the studio open?', 'turn-1', 'attempt-1')
+    const cited = reduceTestExecutionEvent(active, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', messageId: 'message-left',
+      answer: 'The studio is open nine to five on weekdays.', turnId: 'turn-1', attemptId: 'attempt-1', citations, answerSegments,
+    })
+    const uncited = reduceTestExecutionEvent(cited, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'right', messageId: 'message-right',
+      answer: 'Ask the front desk.', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(uncited.sides.left.messages.at(-1)).toMatchObject({ citations, answerSegments })
+    expect(uncited.sides.right.messages.at(-1)).not.toHaveProperty('citations')
+
+    const reopened = hydrateTestExecutionState({
+      id: 'execution-1', generation: 2, mode: 'single', skillEffects: 'suppressed', state: 'completed', createdAt: '', testValues: [], seededTurnCount: 0,
+      sides: [{
+        id: 'left', revision: { id: 'revision-8', label: 'Draft', kind: 'candidate', versionNumber: null, createdAt: '' }, conversationId: 'left-chat', state: 'completed', retryable: false,
+        history: [
+          { turnId: 'turn-1', role: 'user', content: 'When is the studio open?', attemptId: 'attempt-1', createdAt: '' },
+          { turnId: 'turn-1', role: 'assistant', content: 'The studio is open nine to five on weekdays.', messageId: 'message-1', attemptId: 'attempt-1', createdAt: '', citations, answerSegments },
+        ],
+      }],
+      attempts: [],
+    })
+
+    expect(reopened.sides.left.messages.at(-1)).toMatchObject({ citations, answerSegments })
+  })
+
   it('keeps the completed response identity and trace for eval capture and turn debug', () => {
     const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
     const trace = { version: 1, spine: { stages: [] } } as never

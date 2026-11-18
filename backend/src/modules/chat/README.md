@@ -26,6 +26,9 @@ adapter drives `WorkbenchReplayRunner.stream`, which is `run` with the answer's
 text yielded as `ChatTurnAssembly.streamPreparedByEngine` produces it. Both share
 the turn's preparation (`prepareTurn`) and settlement (`settleRoutineTurn`,
 `settleRenderedTurn`), so the result, continuation, and state commits match.
+The result's `citations` and `answerSegments` come from the same presentation
+live chat stores with the reply, routine replies included; the adapter carries
+them into the test's stored answer.
 A routine-claimed turn's reply follows the identical rule live chat applies
 (`services/routines/routineReplyFor.ts`, consulting
 `services/routines/routineReplyDelivery.ts`): a turn with no durable effect

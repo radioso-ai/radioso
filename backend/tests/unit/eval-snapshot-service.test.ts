@@ -536,6 +536,45 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
     expect(repository.lastCreateInput?.messages[1]).not.toHaveProperty("imageInput");
   });
 
+  it("keeps the sources a captured test reply cites, as a captured conversation reply keeps them (#1816)", async () => {
+    const repository = new CapturingEvalRepository();
+    const revision: AgentRevision = {
+      id: "revision-1",
+      snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] },
+      sourceDraftGeneration: 1,
+      sourceBasePublishedRevisionId: null,
+      createdAt: fixedDate,
+      publishedAt: null,
+      publishedVersion: null,
+    };
+    const citations = [{ documentId: "doc-hours", chunkId: "chunk-hours", title: "Opening hours" }];
+    const answerSegments = [{ text: "The studio is open nine to five on weekdays.", citationIndices: [0] }];
+    const execution: TestExecution = {
+      id: "execution-1", workspaceId: "ws-1", agentId: "agent-1", generation: 1, mode: "single", state: "completed",
+      skillEffects: "suppressed", seededTurnCount: 0, testValues: [], createdAt: fixedDate,
+      sides: [{
+        id: "side-1", executionId: "execution-1", revision, conversationId: "private-conversation-1", state: "completed", retryable: false, continuation: null,
+        history: [
+          { turnId: "turn-1", attemptId: "attempt-1", role: "user", content: "When is the studio open?", createdAt: fixedDate },
+          { turnId: "turn-1", attemptId: "attempt-1", role: "assistant", content: "The studio is open nine to five on weekdays.", messageId: "assistant-1", citations, answerSegments, createdAt: fixedDate },
+        ],
+      }],
+    };
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(null),
+      new StubMessageRepository([]),
+      new StubAgentRepository(agent()),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    await service.captureTestExecutionTurn({ workspaceId: "ws-1", agentId: "agent-1", execution, sideId: "side-1", assistantMessageId: "assistant-1", capturedBy: "account-1" });
+
+    expect(repository.lastCreateInput?.messages[0]).not.toHaveProperty("citations");
+    expect(repository.lastCreateInput?.messages[1]).toMatchObject({ citations, answerSegments });
+  });
+
   it("refuses to capture from a private test that ran skills for real", async () => {
     const repository = new CapturingEvalRepository();
     const service = new EvalSnapshotService(

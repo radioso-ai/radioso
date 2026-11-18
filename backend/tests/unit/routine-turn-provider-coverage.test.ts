@@ -80,7 +80,6 @@ const dependencies = (published: RoutineRegistration, pinned?: RoutineRegistrati
     loadPreview: vi.fn(async (): Promise<RoutineRegistration[]> => []),
   },
   routineDefinitionRepository: {},
-  routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) },
   routineRegistrations: [],
   routineTriggerEmbeddingService: { persistPublished: vi.fn() },
   skillExecutorRegistry: {},

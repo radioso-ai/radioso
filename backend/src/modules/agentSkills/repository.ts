@@ -220,8 +220,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       if (!updated) {
         return null;
       }
-      await this.syncDraftAgentSkill(trx, workspaceId, agentId, (agentSkills) =>
-        agentSkills?.map((skill) => (skill.id === id ? updated : skill)));
+      await syncDraftAgentSkill(trx, workspaceId, agentId, id);
       return updated;
     };
     // Composition-owned reviewed-operation units of work need the skill write, its draft
@@ -321,53 +320,96 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       if (!deleted) {
         return false;
       }
-      await this.syncDraftAgentSkill(trx, workspaceId, agentId, (agentSkills) =>
-        agentSkills?.filter((skill) => skill.id !== id));
+      await syncDraftAgentSkill(trx, workspaceId, agentId, id);
       return true;
     });
   }
-
-  /**
-   * Projects an already-applied agent_skills write into the draft revision snapshot,
-   * when (and only when) a draft row exists for this agent. `next` receives the
-   * currently-tracked list (`undefined` when this draft predates skill tracking) and
-   * either returns the updated list, or `undefined` to signal "not tracked yet" —
-   * which reads the live table (already reflecting the write this transaction just
-   * made) instead, so a draft that has never tracked skills is seeded with the full
-   * current set rather than silently starting from just this one change.
-   */
-  private async syncDraftAgentSkill(
-    trx: Transaction<DB>,
-    workspaceId: string,
-    agentId: string,
-    next: (agentSkills: AgentSkillSpine[] | undefined) => AgentSkillSpine[] | undefined,
-  ): Promise<void> {
-    const draft = await trx
-      .selectFrom("agent_drafts")
-      .select(["generation", "snapshot"])
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .executeTakeFirst();
-    if (!draft) {
-      return;
-    }
-    const snapshot = parseAgentRevisionSnapshot(draft.snapshot);
-    // See agentRevision.ts: the snapshot's agentSkills entries are validated-shape-but-open
-    // strings for kind/invocationMode, not the narrower runtime enums, so this repository
-    // (which already validated them once via AgentSkillsService before they were ever
-    // written) casts back to AgentSkillSpine at this boundary.
-    const currentAgentSkills = snapshot.agentSkills as unknown as AgentSkillSpine[] | undefined;
-    const agentSkills = next(currentAgentSkills) ?? await new AgentSkillRepository(trx).listByAgent(workspaceId, agentId);
-    await trx
-      .updateTable("agent_drafts")
-      .set({
-        generation: draft.generation + 1,
-        snapshot: toSanitizedJsonb({ ...snapshot, agentSkills }),
-        updated_at: currentTimestamp(),
-      })
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("generation", "=", draft.generation)
-      .execute();
-  }
 }
+
+/**
+ * Projects one skill's live row into the agent's draft after a write to it, inside the writer's
+ * transaction: the row as it now stands replaces the draft's copy, a new row is appended, and a
+ * deleted one leaves the draft. A draft that predates skill tracking (`agentSkills` absent) is
+ * seeded with the agent's full live set instead, which already reflects this write. A no-op for an
+ * agent with no draft row: a write that matched nothing has nothing to project.
+ */
+const syncDraftAgentSkill = async (
+  trx: Transaction<DB>,
+  workspaceId: string,
+  agentId: string,
+  skillId: string,
+): Promise<void> => {
+  const draft = await trx
+    .selectFrom("agent_drafts")
+    .select(["generation", "snapshot"])
+    .where("workspace_id", "=", workspaceId)
+    .where("agent_id", "=", agentId)
+    .executeTakeFirst();
+  if (!draft) {
+    return;
+  }
+  const snapshot = parseAgentRevisionSnapshot(draft.snapshot);
+  const skills = new AgentSkillRepository(trx);
+  // See agentRevision.ts: the snapshot's agentSkills entries are validated-shape-but-open
+  // strings for kind/invocationMode, not the narrower runtime enums; every row was validated
+  // when it was written, so this repository casts back to AgentSkillSpine at this boundary.
+  const tracked = snapshot.agentSkills as unknown as AgentSkillSpine[] | undefined;
+  let agentSkills: AgentSkillSpine[];
+  if (tracked) {
+    const current = await skills.findById(workspaceId, agentId, skillId);
+    agentSkills = !current
+      ? tracked.filter((skill) => skill.id !== skillId)
+      : tracked.some((skill) => skill.id === skillId)
+        ? tracked.map((skill) => (skill.id === skillId ? current : skill))
+        : [...tracked, current];
+  } else {
+    agentSkills = await skills.listByAgent(workspaceId, agentId);
+  }
+  await trx
+    .updateTable("agent_drafts")
+    .set({
+      generation: draft.generation + 1,
+      snapshot: toSanitizedJsonb({ ...snapshot, agentSkills }),
+      updated_at: currentTimestamp(),
+    })
+    .where("workspace_id", "=", workspaceId)
+    .where("agent_id", "=", agentId)
+    .where("generation", "=", draft.generation)
+    .execute();
+};
+
+/**
+ * Runs one write to an agent's `agent_skills` rows and projects the skill it touched into the
+ * agent's draft (`syncDraftAgentSkill`), in one transaction under the agent revision lock. Every
+ * skill writer outside this repository (the webhook, customer email, Slack and external MCP skill
+ * routes) goes through it, so a skill edit is a draft change whichever route made it.
+ *
+ * A writer keyed by agent alone passes no workspace; it is read from the agent first, so the lock
+ * is taken before the write. `touchedSkillId` names the skill the write created, changed or
+ * deleted, or null when it matched nothing.
+ */
+export const writeAgentSkillIntoDraft = async <T>(
+  db: Db,
+  scope: { workspaceId?: string; agentId: string },
+  write: (trx: Transaction<DB>) => Promise<T>,
+  touchedSkillId: (result: T) => string | null,
+): Promise<T> => {
+  const run = async (trx: Transaction<DB>): Promise<T> => {
+    const workspaceId = scope.workspaceId ?? (await trx
+      .selectFrom("agents")
+      .select("workspace_id")
+      .where("id", "=", scope.agentId)
+      .executeTakeFirst())?.workspace_id;
+    if (!workspaceId) {
+      return write(trx);
+    }
+    await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, scope.agentId)).execute(trx);
+    const result = await write(trx);
+    const skillId = touchedSkillId(result);
+    if (skillId) {
+      await syncDraftAgentSkill(trx, workspaceId, scope.agentId, skillId);
+    }
+    return result;
+  };
+  return db.isTransaction ? run(db as Transaction<DB>) : db.transaction().execute(run);
+};

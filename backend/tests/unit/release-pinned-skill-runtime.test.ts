@@ -15,7 +15,7 @@ import { ConversationAgentWebhookPermissionResolver } from "../../src/modules/ch
 import { McpSkillExecutor } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import { SdkMcpToolService } from "../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import { NotifyExecutor } from "../../src/modules/notify/notifyExecutor.js";
-import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import { compileRoutineDefinition, createRoutineTurnProvider, type RoutineDefinition } from "../../src/modules/routines/public.js";
 import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../src/modules/routines/skillDispatcher.js";
 import { SkillExecutorRegistry, type SkillInvocation } from "../../src/modules/skills/public.js";
 import { conversationSkillsOf } from "../../src/shared/domain/conversationSkills.js";
@@ -151,6 +151,51 @@ describe("a notify skill and a contact request a released conversation runs", ()
 });
 
 describe("a routine a released conversation runs", () => {
+  const routineProvider = (live: AgentSkillSpine[]) => {
+    const listByAgent = vi.fn(async () => live);
+    const definition = {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", agentId, lineageId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "ticket", version: 1, enabled: true,
+      activation: { triggerDescription: "The visitor reports a fault.", gateRef: null, priority: 10, reentryMode: "once_per_conversation" },
+      slots: [], steps: [{ stableStepId: "file", kind: "tool", instruction: "File the ticket.", toolRef: "post_ticket", ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "file", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+      createdAt: new Date(), updatedAt: new Date(),
+    } as RoutineDefinition;
+    const provider = createRoutineTurnProvider({
+      agentSkillRepository: { listByAgent },
+      capabilityPolicy: { can: vi.fn(async () => ({ allowed: true })) },
+      clusteringEmbeddings: {} as never,
+      embeddingModelForWorkspace: vi.fn(async () => "unused"),
+      logger: { debug: vi.fn(), warn: vi.fn() },
+      publishedRoutineSource: { load: async () => [{ routine: compileRoutineDefinition(definition), trigger: { description: "x", priority: 10 } }], loadPinned: async () => [], loadPreview: async () => [] },
+      routineDefinitionRepository: {} as never,
+      routineRegistrations: [],
+      routineTriggerEmbeddingService: { persistPublished: vi.fn() },
+      skillExecutorRegistry: new SkillExecutorRegistry(),
+      approvalResumeEffectJournal: {} as never,
+      turnPlanAdapters: { activator: ({ fallback }) => fallback, reentryGate: ({ fallback }) => fallback, slotCorrection: ({ fallback }) => fallback },
+    });
+    return { provider, listByAgent };
+  };
+  const turn = { modelGateway: { complete: vi.fn(async () => ({ text: "" })) }, agentId, workspaceId };
+
+  it("lists a routine's skills from the conversation's release, not the agent's live skills", async () => {
+    const released = skill({ skillName: "post_ticket", kind: "webhook", invocationMode: "routine_named" });
+    const { provider, listByAgent } = routineProvider([]);
+
+    await provider.forTurn({ ...turn, conversationSkills: [released] });
+
+    expect(listByAgent).not.toHaveBeenCalled();
+  });
+
+  it("reads the agent's live skills when the release recorded none", async () => {
+    const { provider, listByAgent } = routineProvider([]);
+
+    await provider.forTurn(turn);
+
+    expect(listByAgent).toHaveBeenCalledWith(workspaceId, agentId);
+  });
+
   it("hands the conversation's skills to the executor a routine skill step dispatches", async () => {
     const released = skill({ skillName: "post_ticket", kind: "webhook", invocationMode: "routine_named" });
     const seen: SkillInvocation[] = [];
@@ -235,7 +280,10 @@ describe("a completion export a released conversation runs", () => {
     } as AgentRevision;
     const source = createPublishedRoutineRegistrationSource({ listActiveByAgent: async () => [], listVersionsByAgent: async () => [], findPinnedById: async () => null, findById: async () => null }, {
       revisionReader: { findRevision: async () => revision },
-      resolveCompletionExport: createCompletionExportResolver(conversationSkills([{ ...exportSkill, enabled: false }], undefined)),
+      resolveCompletionExport: createCompletionExportResolver(
+        conversationSkills([{ ...exportSkill, enabled: false }], undefined),
+        { findByAgentAndName: async () => ({ ...exportSkill, enabled: false }) },
+      ),
     });
 
     const [registration] = await source.load({ agentId, workspaceId, agentRevisionId: revision.id });

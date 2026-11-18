@@ -67,7 +67,7 @@ describe("ConversationSkills", () => {
 
   it("looks a skill up in the conversation's set an invocation carries, not the live row", async () => {
     const { skills, fallbacks } = build();
-    const live = vi.fn(async () => "live row");
+    const live = vi.fn(async (): Promise<Record<string, unknown> | undefined> => ({ source: "live" }));
     const lookup = skills.scopedLookup({ kind: "webhook", fromSkill: (found) => found.config, live });
 
     await expect(lookup({ workspaceId, agentId, skillName: "lookup_orders", context: withConversationSkills([skill()]) }))

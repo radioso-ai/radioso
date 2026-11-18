@@ -325,7 +325,6 @@ const contactRoutineProvider = (): ChatRoutineProvider => createRoutineTurnProvi
   routineDefinitionRepository: {
     searchActivationTriggerEmbeddings: vi.fn(async () => ({ matches: [], noVectorRoutineIds: [] })),
   },
-  routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
   routineRegistrations: builtInRegistrations(),
   routineTriggerEmbeddingService: { persistPublished: vi.fn() },
   skillExecutorRegistry: {} as never,

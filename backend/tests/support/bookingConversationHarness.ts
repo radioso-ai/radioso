@@ -114,7 +114,6 @@ const turnProvider = (reentryMode: ReentryMode) => createRoutineTurnProvider({
     loadPreview: async () => [],
   },
   routineDefinitionRepository: {},
-  routineInvocableSkillNames: { listByKindForAgent: async () => ({ webhook: [], customer_email: [], slack: [] }) },
   routineRegistrations: [],
   routineTriggerEmbeddingService: { persistPublished: async () => undefined },
   skillExecutorRegistry: {},

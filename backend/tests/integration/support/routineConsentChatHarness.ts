@@ -149,7 +149,6 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       clusteringEmbeddings: {},
       embeddingModelForWorkspace: async () => "unused",
       metricsRegistry: metrics,
-      routineInvocableSkillNames: { listByKindForAgent: async () => ({ webhook: [], customer_email: [], slack: [] }) },
       routineTriggerEmbeddingService: { persistPublished: async () => undefined },
     } as unknown as Parameters<typeof composeRoutineTurnProvider>[0]);
 

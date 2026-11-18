@@ -1,3 +1,4 @@
+import { writeAgentSkillIntoDraft } from "../agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
 
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -103,22 +104,24 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        workspace_id: input.workspaceId,
-        skill_name: input.skillName,
-        kind: "slack",
-        enabled: input.enabled ?? true,
-        target_type: "slack_installation",
-        target_id: input.installationId,
-        config: toJsonb(config),
-      })
-      .returning(SKILL_COLUMNS)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as unknown as SlackSkillDefinitionRow);
+    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          workspace_id: input.workspaceId,
+          skill_name: input.skillName,
+          kind: "slack",
+          enabled: input.enabled ?? true,
+          target_type: "slack_installation",
+          target_id: input.installationId,
+          config: toJsonb(config),
+        })
+        .returning(SKILL_COLUMNS)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as unknown as SlackSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findEnabledByName(
@@ -168,30 +171,34 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
     // config patch leaves the stored config untouched, like `|| '{}'::jsonb`).
     const enabled = "enabled" in input ? input.enabled ?? null : null;
     const hasConfig = Object.keys(config).length > 0;
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        enabled: eb.fn.coalesce(eb.val(enabled), eb.ref("enabled")),
-        ...(hasConfig ? { config: jsonbConcat(eb.ref("config"), toJsonb(config)) } : {}),
-        updated_at: currentTimestamp(),
-      }))
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "slack")
-      .returning(SKILL_COLUMNS)
-      .executeTakeFirst();
-    return row ? mapRecord(row as unknown as SlackSkillDefinitionRow) : null;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          enabled: eb.fn.coalesce(eb.val(enabled), eb.ref("enabled")),
+          ...(hasConfig ? { config: jsonbConcat(eb.ref("config"), toJsonb(config)) } : {}),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "slack")
+        .returning(SKILL_COLUMNS)
+        .executeTakeFirst();
+      return row ? mapRecord(row as unknown as SlackSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "slack")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "slack")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 }

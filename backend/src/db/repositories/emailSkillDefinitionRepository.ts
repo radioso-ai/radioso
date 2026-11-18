@@ -1,3 +1,4 @@
+import { writeAgentSkillIntoDraft } from "../../modules/agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -127,22 +128,24 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        workspace_id: input.workspaceId,
-        skill_name: input.skillName,
-        kind: "customer_email",
-        enabled: input.enabled ?? true,
-        target_type: "customer_email_connection",
-        target_id: input.connectionId,
-        config: toJsonb(config),
-      })
-      .returning(emailSkillColumns)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as EmailSkillDefinitionRow);
+    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          workspace_id: input.workspaceId,
+          skill_name: input.skillName,
+          kind: "customer_email",
+          enabled: input.enabled ?? true,
+          target_type: "customer_email_connection",
+          target_id: input.connectionId,
+          config: toJsonb(config),
+        })
+        .returning(emailSkillColumns)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as EmailSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<EmailSkillDefinitionRecord | null> {
@@ -188,31 +191,35 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       ...("boundInputs" in input ? { boundInputs: input.boundInputs ?? {} } : {}),
       ...("exposedInputs" in input ? { exposedInputs: input.exposedInputs ?? {} } : {}),
     };
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        ...(input.enabled != null ? { enabled: input.enabled } : {}),
-        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
-        updated_at: currentTimestamp(),
-      }))
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "customer_email")
-      .returning(emailSkillColumns)
-      .executeTakeFirst();
-    return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          ...(input.enabled != null ? { enabled: input.enabled } : {}),
+          config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "customer_email")
+        .returning(emailSkillColumns)
+        .executeTakeFirst();
+      return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "customer_email")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "customer_email")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 
   async countByConnection(workspaceId: string, connectionId: string): Promise<number> {

@@ -77,7 +77,6 @@ const build = () => {
     logger: { debug: vi.fn(), warn: vi.fn() },
     publishedRoutineSource,
     routineDefinitionRepository: {} as never,
-    routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
     routineRegistrations: builtInRegistrations(),
     routineTriggerEmbeddingService: { persistPublished: vi.fn() },
     skillExecutorRegistry: {} as never,

@@ -247,6 +247,11 @@ export interface WorkbenchReplayInput {
   sourceAgentId: string;
   /** Stable private identity supplied by a trusted execution aggregate. */
   conversationId?: string;
+  /**
+   * The id the trusted execution aggregate's transcript stores the turn's message under, so the
+   * trace's `message` stage names a message the caller can show. A fresh id when absent.
+   */
+  userMessageId?: string;
   /** Trusted runner-only immutable candidate. Public chat never accepts this input. */
   candidateRevision?: AgentRevision;
   baselineAgentConfig: InternalAgentConfig;
@@ -410,6 +415,7 @@ export class WorkbenchReplayRunner {
     });
     const effects = createEphemeralChatTurnEffectProfile(input.history, {
       conversationId: input.conversationId,
+      userMessageId: input.userMessageId,
       directiveState: input.directiveStateStartState,
     });
     const coordination: ReplayCoordination | undefined = input.signal

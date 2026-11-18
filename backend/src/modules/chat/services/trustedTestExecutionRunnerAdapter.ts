@@ -151,6 +151,8 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       accountId: input.accountId,
       sourceAgentId: input.agentId,
       conversationId: input.conversationId,
+      // The turn's message keeps the id the transcript stores it under, so its trace names it.
+      userMessageId: input.userMessageId,
       candidateRevision: revision,
       baselineAgentConfig: agentConfig,
       query: input.message,

@@ -277,6 +277,34 @@ describeDb("test execution repository", () => {
     expect(typeof rightLostResponseRetry === "string" ? rightLostResponseRetry : rightLostResponseRetry.claims[0]?.replay?.answer).toBe("right recovered");
   });
 
+  // #1766: the turn's trace names the operator's message by the id its side's transcript stores.
+  it("stores each side's turn message under an id of its own, claims a retry under the same id, and keeps older entries as stored", async () => {
+    const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
+    const earlier = { turnId: randomUUID(), attemptId: randomUUID(), role: "user" as const, content: "stored before ids", createdAt: new Date(0) };
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
+      { id: leftId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [earlier], continuation: null },
+      { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
+    ] });
+
+    const claimed = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [leftId, rightId], generation: 1, turnId, attemptId, message: "Open on Sunday?", inputFingerprint: "Open on Sunday?", now: new Date(1000), leaseMs: 1_000, retry: false });
+    if (typeof claimed === "string") throw new Error(claimed);
+    const claimedIds = claimed.claims.map((claim) => claim.attempt.userMessageId);
+    expect(claimedIds).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/), expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(new Set(claimedIds).size).toBe(2);
+    const stored = await repository.find({ workspaceId, agentId, executionId });
+    expect(stored?.sides.map((side) => side.history.find((entry) => entry.turnId === turnId)?.messageId))
+      .toEqual(claimed.claims.map((claim) => claim.attempt.userMessageId));
+    expect(stored?.sides.find((side) => side.id === leftId)?.history[0]).not.toHaveProperty("messageId");
+
+    const left = claimed.claims.find((claim) => claim.sideId === leftId)!;
+    const right = claimed.claims.find((claim) => claim.sideId === rightId)!;
+    await repository.complete({ workspaceId, agentId, executionId, sideId: rightId, turnId, attemptId, fence: right.attempt.fence, result: { answer: "Yes.", messageId: randomUUID(), continuation: null }, now: new Date(1050) });
+    await repository.fail({ workspaceId, agentId, executionId, sideId: leftId, turnId, attemptId, fence: left.attempt.fence, code: "runner_failed", now: new Date(1100) });
+    const retried = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [leftId], generation: 1, turnId, attemptId: randomUUID(), message: "Open on Sunday?", inputFingerprint: "Open on Sunday?", now: new Date(1200), leaseMs: 1_000, retry: true });
+    if (typeof retried === "string") throw new Error(retried);
+    expect(retried.claims[0]?.attempt.userMessageId).toBe(left.attempt.userMessageId);
+  });
+
   it("keeps the aggregate and active turn running until independently finishing comparison sides settle", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [

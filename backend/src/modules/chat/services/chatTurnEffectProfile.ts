@@ -91,7 +91,17 @@ const createEphemeralConversationRepository = (conversationId?: string): Convers
   async touch() {},
 });
 
-const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
+/** The turn's one user message takes `userMessageId` when the caller names one; every other message gets a fresh id. */
+const userMessageIds = (userMessageId?: string): (() => string) => {
+  let unclaimed = userMessageId;
+  return () => {
+    const id = unclaimed ?? randomUUID();
+    unclaimed = undefined;
+    return id;
+  };
+};
+
+const createEphemeralMessageRepository = (nextUserMessageId: () => string): MessageRepositoryPort => ({
   async findByIdAndWorkspaceId() {
     return null;
   },
@@ -121,7 +131,7 @@ const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
   },
   async create(input) {
     return {
-      id: input.id ?? randomUUID(),
+      id: input.id ?? (input.role === "user" ? nextUserMessageId() : randomUUID()),
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       role: input.role,
@@ -239,7 +249,7 @@ export interface EphemeralChatTurnEffectProfile {
 
 export const createEphemeralChatTurnEffectProfile = (
   history: readonly MessageRecord[],
-  input: { conversationId?: string; directiveState?: DirectiveFiringState | null } = {},
+  input: { conversationId?: string; userMessageId?: string; directiveState?: DirectiveFiringState | null } = {},
 ): EphemeralChatTurnEffectProfile => {
   const directiveStateStore = new EphemeralDirectiveStateStore(
     input.directiveState ?? directiveStateFromHistory(history),
@@ -248,7 +258,7 @@ export const createEphemeralChatTurnEffectProfile = (
   let consentStore: SessionRoutineConsentStore | null = null;
   return {
     conversationRepository: createEphemeralConversationRepository(input.conversationId),
-    messageRepository: createEphemeralMessageRepository(),
+    messageRepository: createEphemeralMessageRepository(userMessageIds(input.userMessageId)),
     auditService: {
       async record() {},
       async recordForLiveConversation() {},

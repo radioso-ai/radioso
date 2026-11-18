@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { AgentRevision } from "../../modules/agents/public.js";
 import { sql, type Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
@@ -26,7 +28,13 @@ const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): bo
   history.filter((entry) => entry.role === "user").at(-1)?.turnId === turnId;
 /** A spoken turn's entries say so; a typed turn's carry no marker at all. */
 const spokenMark = (input: { spoken?: true }) => (input.spoken ? { spoken: true as const } : {});
-const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now, ...spokenMark(input), ...(input.photos ? { imageInput: input.photos.imageInput } : {}) }];
+/** A new turn's message is stored under an id of its own, the id its replay gives the message and its trace names. */
+const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, messageId: randomUUID(), createdAt: input.now, ...spokenMark(input), ...(input.photos ? { imageInput: input.photos.imageInput } : {}) }];
+/** A claim names the id its side stores the turn's message under; an entry stored before messages had ids names none. */
+const withUserMessageId = (attempt: TestExecutionAttempt, history: TestExecutionSide["history"]): TestExecutionAttempt => {
+  const userMessageId = history.find((entry) => entry.role === "user" && entry.turnId === attempt.turnId)?.messageId;
+  return userMessageId ? { ...attempt, userMessageId } : attempt;
+};
 /** What a turn is listed by: the operator's message, or, for one with photos, what they typed, never the readings the turn text carries. */
 const listedMessage = (input: ClaimInput): string => visibleMessageText({ content: input.message, inputMetadata: { imageInput: input.photos?.imageInput } }).text;
 
@@ -323,22 +331,23 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       const fence = Math.max(minimumFence, (side.active_fence ?? 0) + 1);
       const leaseExpiresAt = new Date(input.now.getTime() + input.leaseMs);
       await trx.insertInto("agent_test_execution_attempts").values({ execution_id: input.executionId, side_id: side.id, turn_id: input.turnId, attempt_id: input.attemptId, input_fingerprint: input.inputFingerprint, fence, state: "running", lease_expires_at: leaseExpiresAt, result: null, failure_code: null }).execute();
-      await trx.updateTable("agent_test_execution_sides").set({ state: "running", retryable: false, history: toJsonb(appendUser(parseHistory(side.history), input)), active_turn_id: input.turnId, active_attempt_id: input.attemptId, active_fence: fence, updated_at: currentTimestamp() }).where("id", "=", side.id).execute();
-      claims.push({ sideId: side.id, attempt: { executionId: input.executionId, sideId: side.id, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence, leaseExpiresAt, state: "running" } });
+      const history = appendUser(parseHistory(side.history), input);
+      await trx.updateTable("agent_test_execution_sides").set({ state: "running", retryable: false, history: toJsonb(history), active_turn_id: input.turnId, active_attempt_id: input.attemptId, active_fence: fence, updated_at: currentTimestamp() }).where("id", "=", side.id).execute();
+      claims.push({ sideId: side.id, attempt: withUserMessageId({ executionId: input.executionId, sideId: side.id, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence, leaseExpiresAt, state: "running" }, history) });
     }
     await trx.updateTable("agent_test_execution_turns").set({ state: "running", updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("turn_id", "=", input.turnId).execute();
     await trx.updateTable("agent_test_executions").set({ state: "running", updated_at: currentTimestamp() }).where("id", "=", input.executionId).execute();
     return { claims };
   }
 
-  private async replayCompletedClaims(trx: TransactionDb, sides: ReadonlyArray<{ id: string; active_attempt_id: string | null }>, input: ClaimInput): Promise<{ claims: TestExecutionClaim[] } | null> {
+  private async replayCompletedClaims(trx: TransactionDb, sides: ReadonlyArray<{ id: string; active_attempt_id: string | null; history: unknown }>, input: ClaimInput): Promise<{ claims: TestExecutionClaim[] } | null> {
     const claims: TestExecutionClaim[] = [];
     for (const side of sides) {
       if (side.active_attempt_id !== null) return null;
       const completed = await trx.selectFrom("agent_test_execution_attempts").selectAll().where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", input.turnId).where("attempt_id", "=", input.attemptId).where("state", "=", "completed").forUpdate().executeTakeFirst();
       const result = completed ? parseResult(completed.result) : undefined;
       if (!completed || !result) return null;
-      claims.push({ sideId: side.id, attempt: this.mapAttempt(completed, input.message), replay: result });
+      claims.push({ sideId: side.id, attempt: withUserMessageId(this.mapAttempt(completed, input.message), parseHistory(side.history)), replay: result });
     }
     return { claims };
   }
@@ -347,7 +356,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     const requested = await trx.selectFrom("agent_test_execution_attempts").selectAll().where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", input.turnId).where("attempt_id", "=", input.attemptId).forUpdate().executeTakeFirst();
     if (requested) {
       const result = requested.state === "completed" ? parseResult(requested.result) : undefined;
-      return result ? { claims: [{ sideId: side.id, attempt: this.mapAttempt(requested, input.message), replay: result }] } : "attempt_conflict";
+      return result ? { claims: [{ sideId: side.id, attempt: withUserMessageId(this.mapAttempt(requested, input.message), parseHistory(side.history)), replay: result }] } : "attempt_conflict";
     }
     const latest = await trx.selectFrom("agent_test_execution_attempts").selectAll().where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", input.turnId).orderBy("fence", "desc").forUpdate().executeTakeFirst();
     if (!latest) return "retry_invalid";
@@ -364,7 +373,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
         claims: [{
           sideId: side.id,
           // This is a delivery claim: preserve durable history and result, but fence SSE to the new request identity.
-          attempt: { ...this.mapAttempt(latest, input.message), attemptId: input.attemptId },
+          attempt: withUserMessageId({ ...this.mapAttempt(latest, input.message), attemptId: input.attemptId }, parseHistory(side.history)),
           replay: result,
         }],
       };

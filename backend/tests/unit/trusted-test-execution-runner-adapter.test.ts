@@ -179,6 +179,37 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     }));
   });
 
+  // #1766: the trace names the operator's messages by the ids the transcript stores them under.
+  it("replays the turn's message and earlier ones under the ids the transcript stores them under", async () => {
+    const replay = {
+      stream: vi.fn(async function* (_input: { userMessageId?: string; history: Array<{ id: string }> }) {
+        return { answer: "answer", messageId: "ephemeral-message", continuation };
+      }),
+    };
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => revision },
+    });
+    const input = {
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "And on Sunday?", continuation, testValues: [],
+      executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
+      history: [
+        { turnId: "turn-1", attemptId: "attempt-1", role: "user" as const, content: "Open Saturday?", messageId: "user-message-1", createdAt: new Date(0) },
+        { turnId: "turn-1", attemptId: "attempt-1", role: "assistant" as const, content: "Yes.", messageId: "answer-1", createdAt: new Date(0) },
+        // A transcript stored before its messages had ids still replays.
+        { turnId: "turn-0", attemptId: "attempt-0", role: "user" as const, content: "Hello", createdAt: new Date(0) },
+      ],
+    };
+
+    await collect(adapter.stream({ ...input, userMessageId: "user-message-2" }));
+
+    expect(replay.stream.mock.calls[0]?.[0].userMessageId).toBe("user-message-2");
+    expect(replay.stream.mock.calls[0]?.[0].history.map((message) => message.id))
+      .toEqual(["user-message-1", "answer-1", "turn-0:user:attempt-0"]);
+  });
+
   it("replays the turn as a visitor in the operator's browser zone, and as none when the client sent no zone", async () => {
     const replay = {
       stream: vi.fn(async function* (_input: { visitorTimeZone?: string | null }) {

@@ -127,6 +127,8 @@ export interface TestExecutionAttempt {
   leaseExpiresAt: Date;
   state: "running" | "failed" | "completed";
   result?: TestExecutionRunnerResult;
+  /** The id the side's transcript stores the turn's message under; absent on an entry stored before messages had ids. */
+  userMessageId?: string;
 }
 
 /** Read-only durable fence evidence. Results and continuations stay side-owned. */
@@ -228,7 +230,8 @@ export interface TestExecutionClaim {
 }
 
 export type TestExecutionEvent =
-  | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string }
+  /** `userMessageId` is the id the side's transcript stores the turn's message under, the id its trace names. */
+  | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; userMessageId?: string }
   | { type: "message_delta"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; delta: string }
   /** `answer` is the stored answer, the authority over the `message_delta` text streamed before it. */
   | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; answer: string; blocks?: readonly ReplyBlock[]; turnTrace?: unknown }
@@ -275,6 +278,8 @@ export interface TrustedTestExecutionRunnerPort {
     candidateRevision: AgentRevision;
     conversationId: string;
     message: string;
+    /** The id the side's transcript stores `message` under; the turn runs the message under it. */
+    userMessageId?: string;
     history: readonly TestExecutionHistoryEntry[];
     continuation: unknown;
     testValues: readonly FrozenTestValue[];
@@ -774,7 +779,7 @@ export class TestExecutionService {
 
   private async *runClaims(execution: TestExecution, claims: readonly TestExecutionClaim[], identity: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {
     const sides = new Map(execution.sides.map((side) => [side.id, side]));
-    for (const claim of claims) yield { type: "side_started", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId: claim.sideId };
+    for (const claim of claims) yield { type: "side_started", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId: claim.sideId, ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}) };
     // Each side runs on its own and pushes its events as they happen, so comparison sides' text
     // interleaves live, a slow side never holds back a fast one, and a side's result is stored
     // even when the reader of this stream has gone.
@@ -811,7 +816,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}), history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
       let streamed = "";
       let step = await turn.next();
       while (!step.done) {

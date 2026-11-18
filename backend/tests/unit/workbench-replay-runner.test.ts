@@ -3326,4 +3326,53 @@ describe("WorkbenchReplayRunner turn debug", () => {
       expect(result.messageId).not.toBe(visitorMessageId);
     }
   });
+
+  it("gives the turn's message the id the caller's transcript stores it under, so the trace names it", async () => {
+    const userMessageId = "5a0c6d1e-2f3b-4c4d-8e5f-6a7b8c9d0e1f";
+    const ran = await replayRunner().run({ ...replayInput(), userMessageId });
+    const { result: streamed } = await collect(replayRunner().stream({ ...replayInput(), userMessageId }));
+
+    for (const result of [ran, streamed]) {
+      expect(result.turnTrace?.spine.stages.find((stage) => stage.kind === "message")?.outputs?.eventId).toBe(userMessageId);
+      expect(result.messageId).not.toBe(userMessageId);
+    }
+  });
+
+  it("counts only its own model calls when two replays overlap", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const skillMakingCalls = (count: number, hold?: Promise<void>): TurnSkill => {
+      const skill = answerSkill();
+      return {
+        ...skill,
+        renderer: {
+          ...skill.renderer,
+          render: async (outcome, ctx) => {
+            for (let call = 0; call < count; call += 1) {
+              await modelCall(`grounded_answer`);
+              if (call === 0) await hold;
+            }
+            return skill.renderer.render(outcome, ctx);
+          },
+        },
+      };
+    };
+    const runnerMaking = (count: number, hold?: Promise<void>) => new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [skillMakingCalls(count, hold)],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+
+    // The first replay holds after its first call while the second runs its three calls to the end.
+    const first = collect(runnerMaking(2, firstHeld).stream(replayInput()));
+    const second = collect(runnerMaking(3).stream(replayInput()));
+    const { result: secondResult } = await second;
+    releaseFirst();
+    const { result: firstResult } = await first;
+
+    expect(firstResult.turnTrace?.summary).toMatchObject({ totalLlmCalls: 2 });
+    expect(secondResult.turnTrace?.summary).toMatchObject({ totalLlmCalls: 3 });
+  });
 });

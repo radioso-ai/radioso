@@ -129,6 +129,40 @@ describe("agent revision presenters", () => {
     });
   });
 
+  it("lists skill changes by name, without their settings or write timestamps", () => {
+    const skill = (id: string, skillName: string, overrides: Partial<NonNullable<AgentRevisionSnapshot["agentSkills"]>[number]> = {}): NonNullable<AgentRevisionSnapshot["agentSkills"]>[number] => ({
+      id, agentId, workspaceId, skillName, kind: "notify", invocationMode: "agent_selectable", enabled: true, targetType: null, targetId: null,
+      config: { delivery: { recipientEmails: ["team@acme.example"] } },
+      createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"), ...overrides,
+    });
+    const kept = skill(directiveId, "notify_team");
+    const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null, snapshot: snapshot({ agentSkills: [kept, skill(removedDirectiveId, "old_lookup")] }) });
+    const candidate = revision({
+      snapshot: snapshot({ agentSkills: [skill(newRoutineId, "lookup_orders"), { ...kept, enabled: false, updatedAt: new Date("2026-09-08T00:00:00.000Z") }] }),
+    });
+
+    const changes = presentRevisionDetail(candidate, base).scopedChanges.agentSkills;
+
+    expect(changes).toEqual(expect.arrayContaining([
+      { skillId: newRoutineId, skillName: "lookup_orders", change: "added", after: expect.objectContaining({ name: "lookup_orders", enabled: true }) },
+      { skillId: removedDirectiveId, skillName: "old_lookup", change: "removed", before: expect.objectContaining({ name: "old_lookup" }) },
+      { skillId: directiveId, skillName: "notify_team", change: "changed", before: expect.objectContaining({ enabled: true }), after: expect.objectContaining({ enabled: false }) },
+    ]));
+    expect(changes).toHaveLength(3);
+    expect(JSON.stringify(changes)).not.toContain("team@acme.example");
+  });
+
+  it("reports no skill change when only a skill's write time moved", () => {
+    const skill: NonNullable<AgentRevisionSnapshot["agentSkills"]>[number] = {
+      id: directiveId, agentId, workspaceId, skillName: "notify_team", kind: "notify", invocationMode: "agent_selectable", enabled: true,
+      targetType: null, targetId: null, config: {}, createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    };
+    const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null, snapshot: snapshot({ agentSkills: [skill] }) });
+    const candidate = revision({ snapshot: snapshot({ agentSkills: [{ ...skill, updatedAt: new Date("2026-09-08T00:00:00.000Z") }] }) });
+
+    expect(presentRevisionDetail(candidate, base).scopedChanges.agentSkills).toEqual([]);
+  });
+
   it("reports no greeting change when neither revision authored one", () => {
     const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null });
     const candidate = revision();

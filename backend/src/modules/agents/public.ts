@@ -140,6 +140,7 @@ export {
   type AgentRevisionState,
   type PublicationResult,
 } from "./agentRevision.js";
+export { diffAgentRevisionSkills, type AgentRevisionSkillChange } from "./agentRevisionSkills.js";
 export {
   AgentRevisionRuntimeResolver,
   agentNotPublished,

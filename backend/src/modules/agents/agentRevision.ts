@@ -11,6 +11,7 @@ import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { sameVisitorImagesSwitch } from "./agentRevisionVisitorImages.js";
+import { diffAgentRevisionSkills } from "./agentRevisionSkills.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK } from "../../shared/domain/locale.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
@@ -172,11 +173,13 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
   greeting: canonicalGreeting(snapshot),
 });
 
+/** Whether a draft holds exactly what a release serves: the draft-dirty check. */
 export const equalScopedAuthoringSnapshots = (
   left: AgentRevisionSnapshot,
   right: AgentRevisionSnapshot,
 ): boolean => JSON.stringify(projectScopedAuthoringSnapshot(left)) === JSON.stringify(projectScopedAuthoringSnapshot(right))
-  && sameVisitorImagesSwitch(left, right);
+  && sameVisitorImagesSwitch(left, right)
+  && diffAgentRevisionSkills(right, left).length === 0;
 
 /** Candidate/release validation happens after draft saves: incomplete graphs can
  * be authored, but cannot become a runnable immutable revision.

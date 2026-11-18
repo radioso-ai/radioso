@@ -1,11 +1,13 @@
 import { revisionTakesPhotos } from "../../../modules/visitorImages/public.js";
-import { readAgentRevisionGreeting, visitorImagesSwitchChanged, withoutWriteTimestamps, type AgentRevision, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
+import { diffAgentRevisionSkills, readAgentRevisionGreeting, visitorImagesSwitchChanged, withoutWriteTimestamps, type AgentRevision, type AgentRevisionSkillChange, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
 
 type RevisionSummary = { id: string; label: string; kind: "candidate" | "published"; versionNumber: number | null; createdAt: string; publishedAt?: string };
 type RevisionSummaryInput = Pick<AgentRevision, "id" | "createdAt" | "publishedAt" | "publishedVersion">;
 type ScopedChange = "added" | "removed" | "changed";
 type DirectiveChange = { id: string; change: ScopedChange; before?: AgentRevisionSnapshot["directives"][number]; after?: AgentRevisionSnapshot["directives"][number] };
 type RoutineChange = { definitionId: string; change: ScopedChange; before?: AgentRevisionSnapshot["routines"][number]; after?: AgentRevisionSnapshot["routines"][number] };
+type RevisionSkill = { name: string; kind: string; invocationMode: string; enabled: boolean };
+type SkillChange = { skillId: string; skillName: string; change: ScopedChange; before?: RevisionSkill; after?: RevisionSkill };
 type ContextVariableEnablementChange = { contextVariableId: string; change: ScopedChange; before?: AgentRevisionSnapshot["contextVariableEnablements"][number]; after?: AgentRevisionSnapshot["contextVariableEnablements"][number] };
 
 const revisionKind = (revision: RevisionSummaryInput): "candidate" | "published" => revision.publishedAt ? "published" : "candidate";
@@ -55,6 +57,17 @@ const diffContextVariableEnablements = (before: AgentRevisionSnapshot, after: Ag
   return changes;
 };
 
+/** A skill as the review shows it: its settings stay out, since they can hold recipients and payloads. */
+const presentRevisionSkill = (skill: NonNullable<AgentRevisionSkillChange["after"]>): RevisionSkill =>
+  ({ name: skill.skillName, kind: skill.kind, invocationMode: skill.invocationMode, enabled: skill.enabled });
+
+const presentSkillChanges = (base: AgentRevisionSnapshot | null, candidate: AgentRevisionSnapshot): SkillChange[] =>
+  diffAgentRevisionSkills(base, candidate).map(({ skillId, skillName, change, before, after }) => ({
+    skillId, skillName, change,
+    ...(before ? { before: presentRevisionSkill(before) } : {}),
+    ...(after ? { after: presentRevisionSkill(after) } : {}),
+  }));
+
 const emptySnapshot: AgentRevisionSnapshot = { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] };
 
 /** Revision review compares recorded immutable snapshots, never the mutable draft. */
@@ -62,7 +75,7 @@ export const presentRevisionDetail = (revision: AgentRevision, baseRevision: Age
   const before = baseRevision?.snapshot ?? emptySnapshot;
   const beforeGreeting = readAgentRevisionGreeting(before);
   const afterGreeting = readAgentRevisionGreeting(revision.snapshot);
-  return { ...presentRevisionSummary(revision), snapshotFormatVersion: 1, scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true, greeting: true }, dependencyWarnings: [], enabledContextVariableIds: revision.snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled).map((enablement) => enablement.variableId).sort(), scopedChanges: { customInstruction: { before: before.customInstruction, after: revision.snapshot.customInstruction, changed: before.customInstruction !== revision.snapshot.customInstruction }, directives: diffDirectives(before.directives, revision.snapshot.directives), routines: diffRoutines(before.routines, revision.snapshot.routines), contextVariableEnablements: diffContextVariableEnablements(before, revision.snapshot), greeting: { before: beforeGreeting, after: afterGreeting, changed: stableJson(beforeGreeting) !== stableJson(afterGreeting) }, visitorImagesEnabled: { before: revisionTakesPhotos(before), after: revisionTakesPhotos(revision.snapshot), changed: visitorImagesSwitchChanged(baseRevision?.snapshot ?? null, revision.snapshot) } } };
+  return { ...presentRevisionSummary(revision), snapshotFormatVersion: 1, scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true, greeting: true }, dependencyWarnings: [], enabledContextVariableIds: revision.snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled).map((enablement) => enablement.variableId).sort(), scopedChanges: { customInstruction: { before: before.customInstruction, after: revision.snapshot.customInstruction, changed: before.customInstruction !== revision.snapshot.customInstruction }, directives: diffDirectives(before.directives, revision.snapshot.directives), routines: diffRoutines(before.routines, revision.snapshot.routines), contextVariableEnablements: diffContextVariableEnablements(before, revision.snapshot), agentSkills: presentSkillChanges(baseRevision?.snapshot ?? null, revision.snapshot), greeting: { before: beforeGreeting, after: afterGreeting, changed: stableJson(beforeGreeting) !== stableJson(afterGreeting) }, visitorImagesEnabled: { before: revisionTakesPhotos(before), after: revisionTakesPhotos(revision.snapshot), changed: visitorImagesSwitchChanged(baseRevision?.snapshot ?? null, revision.snapshot) } } };
 };
 
 export const presentRevisionState = (state: AgentRevisionState, canPublish: boolean, proactiveGreetingEnabled = false) => ({ agentId: state.agentId, status: state.status, draft: { generation: state.draft.generation, basePublishedRevisionId: state.draft.basePublishedRevisionId, updatedAt: state.draft.updatedAt.toISOString() }, publishedRevision: state.publishedRevision ? presentRevisionSummary(state.publishedRevision) : null, canPublish, proactiveGreetingEnabled });

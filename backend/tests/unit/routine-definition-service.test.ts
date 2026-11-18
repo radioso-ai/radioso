@@ -887,6 +887,24 @@ describe("RoutineDefinitionService", () => {
     expect(catalog.listForAgent).toHaveBeenCalledWith({ workspaceId, agentId });
   });
 
+  it("returns the serving verdict from a save, changed or not, so it matches what validate says (#1819)", async () => {
+    const { repository, service } = createService({
+      skillAuthoringCatalog: {
+        listForAgent: vi.fn(async () => [skillDescriptor("billing.lookup")]),
+        getForAgent: vi.fn(),
+      },
+    });
+    repository.skipsEqualWrites = true;
+    const created = await service.createDraft(workspaceId, agentId, toolDraft());
+    const unknownSkill = expect.objectContaining({ code: "unknown_skill", location: "step:step_lookup" });
+
+    const unchanged = await service.updateDraft(workspaceId, agentId, created.routine.id, toolDraft());
+    const changed = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...toolDraft(), name: "renamed-lookup" });
+
+    expect(unchanged.validation).toMatchObject({ ok: false, diagnostics: [unknownSkill] });
+    expect(changed.validation).toMatchObject({ ok: false, diagnostics: [unknownSkill] });
+  });
+
   it("accepts a tool step whose skill is runtime-resolvable but not in the catalog (webhook/customer-email)", async () => {
     const catalog = {
       // catalog does NOT include account.lookup (e.g. a webhook/email skill)

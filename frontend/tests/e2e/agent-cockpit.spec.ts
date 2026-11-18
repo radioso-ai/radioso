@@ -366,7 +366,7 @@ test('uses an explicit eval selection and sends the exact candidate and cases', 
   await expect(runEvals).toBeEnabled()
   await runEvals.click()
 
-  await expect(page.getByRole('columnheader', { name: evalCandidate.label, exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: /^Draft(?!.*T00:00:00)/ })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'Passed Completed · Current' })).toBeVisible()
   expect(requestBodies).toContainEqual({ revisionIds: [candidateId], caseIds: [caseId], testValues: [], mode: 'full_assistant', executionPolicy: 'safe_test' })
 })

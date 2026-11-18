@@ -165,7 +165,8 @@ export const disableEnterpriseFrontendRoutes = async (options = {}) => {
   for (const directory of collectGeneratedDirectories(routes)) {
     await fs.rm(path.join(resolvedFrontendRoot, directory), { recursive: true, force: true });
   }
-  await fs.rm(path.join(resolvedFrontendRoot, agentCreationActionsConfigPath), { force: true });
+  // An empty definition list, not a missing file: the loader would otherwise 404 on every page load.
+  await writeIfChanged(path.join(resolvedFrontendRoot, agentCreationActionsConfigPath), '{"actions":[]}\n');
   await fs.rm(path.join(resolvedFrontendRoot, legacyAgentCreationActionsConfigPath), { force: true });
   await writeIfChanged(
     path.join(resolvedFrontendRoot, editionTailwindSourcesPath),

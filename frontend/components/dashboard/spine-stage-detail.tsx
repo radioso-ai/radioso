@@ -5,6 +5,7 @@ import { normalizeAnswerCoverageCore, normalizeAnswerCoverageHeadStageFields } f
 import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
 import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
 import { buildRoutineRunTrace, type RoutineRunTraceView } from '@/lib/routine-run-trace'
+import { RejectedSlotChips } from './rejected-slot-chips'
 import {
   routineEventDescription,
   routineEventLabel,
@@ -968,17 +969,7 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   <SlotKeyChips keys={step.replacedSlotKeys} tone="bg-sky-500/10 text-sky-600" />
                 </div>
               ) : null}
-              {step.rejectedSlotKeys ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                    title="The value did not fit the slot's type, so it was not stored."
-                  >
-                    not stored, wrong type
-                  </span>
-                  <SlotKeyChips keys={step.rejectedSlotKeys} tone="bg-amber-500/10 text-amber-600" />
-                </div>
-              ) : null}
+              {step.rejectedSlots ? <RejectedSlotChips slots={step.rejectedSlots} /> : null}
             </li>
           ))}
         </ol>

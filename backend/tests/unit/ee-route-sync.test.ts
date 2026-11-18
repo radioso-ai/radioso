@@ -160,9 +160,8 @@ describe("Enterprise frontend route sync", () => {
     await expect(fs.stat(path.join(tempRoot, "app/sample/page.tsx"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    await expect(fs.stat(path.join(tempRoot, "public/agent-creation-actions.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    // Present but empty, so the browser loader never probes a missing file.
+    expect(JSON.parse(await fs.readFile(path.join(tempRoot, "public/agent-creation-actions.json"), "utf8"))).toEqual({ actions: [] });
     await expect(fs.readFile(path.join(tempRoot, "app/edition-tailwind-sources.css"), "utf8"))
       .resolves
       .toContain("No edition-specific Tailwind sources.");

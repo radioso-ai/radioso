@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, routing, and the live, safe-test, and review execution modes."
-last_updated: 2026-10-13
+last_updated: 2026-11-18
 ---
 
 # Assistant Turn Spine
@@ -334,7 +334,16 @@ model calls contribute to total model time but count once at that point in the
 serial-depth calculation. Synthesized legacy envelopes do not receive this
 summary because they did not capture the required call data. The workbench and
 activity turn inspector show the summary and the per-stage timing and usage
-fields for current envelopes.
+fields for current envelopes. A replayed turn (Test Chat, eval replay) collects
+its model calls the same way a live turn does, so its summary counts and times
+them too.
+
+The summary's `answerCoverageAvailability` is the availability of the turn's
+coverage verdict: the `answer_coverage_head` stage's when the turn reported one,
+`not_recorded` when it measured none, as on a routine step or a direct reply.
+A turn inspector with no stored assessment for the turn reads its coverage from
+this field, and treats a summary without it as a turn recorded before turns
+reported coverage.
 
 ## Skills are dispatched, not called
 

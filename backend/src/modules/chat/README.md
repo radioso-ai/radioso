@@ -40,7 +40,12 @@ caller, same as the non-streaming `run()` entry (eval replay, and
 continuation carries the routine into the next Test Chat turn, and the result
 carries its hand-off and operator-notice preview. The first chunk's latency
 lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
-`delivery_mode`), a series apart from live chat's.
+`delivery_mode`), a series apart from live chat's. Both entries run the turn
+inside its own model-call collector, as `ChatService` does, so the replayed
+trace's summary counts and times its model calls. The answer goes out under an
+id of its own (`WorkbenchReplayResult.messageId`, also the id a consent prompt
+it shows is kept under); the trace's `message` stage names the visitor
+message's id.
 
 ## Public Surfaces
 

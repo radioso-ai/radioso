@@ -827,9 +827,11 @@ already filtered out of its own response before returning it, while an
 `undeclared` entry in `rejectedSlots` is what the runner itself dropped from
 the selector's values, so it also catches a free-form key from a selector that
 does no filtering of its own. Activation counts the keys it dropped separately,
-as `undeclaredKeyCount` on the clarification stage. The trace carries slot names only —
-never captured values, which may be personal data — so it is safe to show in the
-debug surface. This is the first place to look when a routine "isn't filling
+as `undeclaredKeyCount` on the clarification stage. A conversation's trace carries slot
+names only — never captured values, which may be personal data — so it is safe to show in
+the debug surface. A Test Chat turn's trace also carries each filled slot's value
+(`slotValues`, a sensitive slot's masked), and Test Chat's debug panel lists the filled
+slots beside their values. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
 from that turn's message. A returned key lands in `capturedSlotKeys` when it
 filled an empty slot, and in `replacedSlotKeys` when the slot already held a value

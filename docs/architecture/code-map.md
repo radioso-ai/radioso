@@ -2339,7 +2339,7 @@ Primary internals:
 - `RoutineHostEffects` in `packages/conversation-contract/index.d.ts` (what a routine turn asks its host to record with the turn: a decision gate, consent events; the engine carries it unread from the runner to the claim's effects and `ProcessTurnResult` as `hostEffects`)
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
-- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector
+- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector, and `frontend/components/dashboard/routine-filled-slots.tsx` lists the filled slots, beside their values on a Test Chat trace
 - `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
@@ -2883,7 +2883,11 @@ Turn debug view entry points:
   by the Flow, the dispatch stage detail, and the routine step timeline
 - `frontend/components/dashboard/turn-flow-graph.tsx` and `turn-flow-overlay.tsx` —
   the draw layer and its full-screen host
-- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts`
+- `frontend/lib/turn-trace.ts` (`answerCoverageFromTurnTrace`) — a turn's coverage
+  from its verdict stage or its summary's `answerCoverageAvailability`
+- `frontend/lib/agent-test-execution-state.ts` (`turnDebugSelection`) — the answer,
+  trace, and thread Test Chat's debug sheet and Flow read for a selected turn
+- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts tests/unit/turn-trace.test.ts tests/unit/agent-test-execution-state.test.ts`
 
 Useful searches:
 

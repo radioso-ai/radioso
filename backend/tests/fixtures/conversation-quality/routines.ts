@@ -11,7 +11,7 @@ export const START_RETURN_ROUTINE_ID = "routine:cq-agent:start-return:v1";
 export const BOOK_RETREAT_ROUTINE_ID = "routine:cq-agent:book-retreat:v1";
 export const BOOK_EDITION_ROUTINE_ID = "routine:cq-agent:book-edition:v1";
 export const KITCHEN_NOTE_ROUTINE_ID = "routine:cq-agent:kitchen-note:v1";
-export const HOME_SEARCH_ROUTINE_ID = "routine:cq-agent:home-search:v1";
+export const ADOPTION_SEARCH_ROUTINE_ID = "routine:cq-agent:adoption-search:v1";
 /** The tool name `startReturnRoutine` is exposed under; the same name in chat and on the agent-facing doors. */
 export const START_RETURN_TOOL_NAME = "start_return";
 /** The skill the return routine dispatches once it holds an order id and a reason. */
@@ -284,41 +284,42 @@ export const kitchenNoteRoutine: RoutineDefinition = {
 };
 
 /**
- * A home search that ends on a finish telling no one (#1820). The brief step takes what the
- * visitor wants, a retrieval step searches the agent's documents for it, and the routine ends on
- * a finish whose text assumes a shortlist and a scout. The corpus holds no homes, so the search
- * finds nothing, and nothing passes the request on: the reply describes no results and promises
- * no follow-up. Cases start it on the brief step; its trigger names a home to rent, which no other
- * case asks for.
+ * A search that ends on a finish telling no one (#1820). The brief step takes the dog the visitor
+ * wants to adopt, a retrieval step searches the agent's documents for it, and the routine ends on
+ * a finish whose text assumes a shortlist and a volunteer. The corpus holds software help and
+ * courses, nothing on animals, so the search finds nothing and nothing passes the request on: the
+ * reply describes no results and promises no follow-up. A brief about homes would not do: the
+ * residential courses' rooms and euro prices answer it. Cases start it on the brief step; its
+ * trigger names adopting a pet, which no other case asks for.
  */
-export const homeSearchRoutine: RoutineDefinition = {
-  id: HOME_SEARCH_ROUTINE_ID,
+export const adoptionSearchRoutine: RoutineDefinition = {
+  id: ADOPTION_SEARCH_ROUTINE_ID,
   agentId: CQ_AGENT_ID,
-  lineageId: "lineage:home-search",
+  lineageId: "lineage:adoption-search",
   version: 1,
   enabled: true,
   createdAt: FIXED_DATE,
   updatedAt: FIXED_DATE,
-  name: "Find a home to rent",
+  name: "Find a dog to adopt",
   activation: {
-    triggerDescription: "the visitor wants help finding a flat or house to rent — not a booking, a course, a demo, a return, a refund, or a request to reach support",
+    triggerDescription: "the visitor wants help finding a dog or cat to adopt — not a booking, a course, a demo, a return, a refund, or a request to reach support",
     gateRef: null,
     priority: 10,
     reentryMode: "once_per_conversation",
   },
   slots: [
-    { stableSlotId: "slot_brief", key: "brief", type: "text", required: true, description: "What kind of home they want: area, size, budget.", ordinal: 0 },
+    { stableSlotId: "slot_brief", key: "brief", type: "text", required: true, description: "What kind of dog they want: age, size, temperament.", ordinal: 0 },
   ],
   steps: [
-    { stableStepId: "ask_brief", kind: "chat", instruction: "Ask what kind of home they are looking for: {{slot.brief}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
-    { stableStepId: "search", kind: "tool", instruction: "Search the listings.", toolRef: "retrieval.context", actionType: null, ordinal: 1, metadata: {} },
+    { stableStepId: "ask_brief", kind: "chat", instruction: "Ask what kind of dog they would like to adopt: {{slot.brief}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    { stableStepId: "search", kind: "tool", instruction: "Search the dogs waiting for a home.", toolRef: "retrieval.context", actionType: null, ordinal: 1, metadata: {} },
   ],
   transitions: [
     defaultTransition("ask_brief", "search", 0),
     defaultTransition("search", "done", 1),
   ],
   terminals: [
-    { stableStepId: "done", kind: "complete", instruction: "Tell them a scout will check the shortlisted properties and get back to them.", ordinal: 0 },
+    { stableStepId: "done", kind: "complete", instruction: "Tell them a volunteer will check the shortlisted dogs and get back to them.", ordinal: 0 },
   ],
 };
 
@@ -329,5 +330,5 @@ export const conversationQualityRoutines: RoutineDefinition[] = [
   bookRetreatRoutine,
   bookEditionRoutine,
   kitchenNoteRoutine,
-  homeSearchRoutine,
+  adoptionSearchRoutine,
 ];

@@ -190,6 +190,45 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion({ type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID }, output).status).toBe("fail");
   });
 
+  // A case about an ending after a search that found nothing passes only through that search (#1820).
+  it("passes routine_skill_status only when the named tool step reported that status this turn", () => {
+    const outputWith = (skillStatus: string) => observed({
+      turnTrace: trace([
+        {
+          id: `routine:${CONTACT_SUPPORT_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: CONTACT_SUPPORT_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: CONTACT_SUPPORT_ROUTINE_ID,
+              startStepId: "ask_brief",
+              landedStepId: "done",
+              capturedSlotKeys: [],
+              filledSlotKeys: [],
+              steps: [
+                { stepId: "search", kind: "skill", event: "skill_dispatched", skillName: "retrieval.context", skillStatus },
+                { stepId: "done", kind: "terminal", event: "rendered" },
+              ],
+            },
+          },
+        },
+      ]),
+    });
+    const assertion = { type: "routine_skill_status" as const, routineId: CONTACT_SUPPORT_ROUTINE_ID, stepId: "search", status: "no_context" };
+
+    expect(evaluateTraceAssertion(assertion, outputWith("no_context")).status).toBe("pass");
+    expect(evaluateTraceAssertion(assertion, outputWith("context_ready"))).toMatchObject({
+      status: "fail",
+      reason: 'Step "search" of routine "' + CONTACT_SUPPORT_ROUTINE_ID + '" reported "context_ready"; expected "no_context".',
+    });
+    expect(evaluateTraceAssertion({ ...assertion, stepId: "lookup" }, outputWith("no_context")).status).toBe("fail");
+    expect(evaluateTraceAssertion({ ...assertion, routineId: BOOK_DEMO_ROUTINE_ID }, outputWith("no_context")).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed({})).status).toBe("error");
+  });
+
   it("passes routine_slots_filled only when every named slot is filled after the turn", () => {
     const output = observed({
       turnTrace: trace([

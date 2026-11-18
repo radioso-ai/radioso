@@ -148,6 +148,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_skips_skill"), skillName: z.string().min(1) }),
   z.object({ type: z.literal("turn_activates_routine"), routineId: z.string().min(1) }),
   z.object({ type: z.literal("routine_step_reached"), routineId: z.string().min(1), stepId: z.string().min(1) }),
+  z.object({ type: z.literal("routine_skill_status"), routineId: z.string().min(1), stepId: z.string().min(1), status: z.string().min(1) }),
   z.object({ type: z.literal("routine_slots_filled"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
   z.object({ type: z.literal("routine_slots_unfilled"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
   z.object({ type: z.literal("routine_slots_returned"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),

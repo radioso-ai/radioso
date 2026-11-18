@@ -17,7 +17,7 @@ import {
   BOOK_EDITION_ROUTINE_ID,
   BOOK_RETREAT_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
-  HOME_SEARCH_ROUTINE_ID,
+  ADOPTION_SEARCH_ROUTINE_ID,
   CREATE_RETURN_TICKET_SKILL,
   KITCHEN_NOTE_ROUTINE_ID,
   START_RETURN_ROUTINE_ID,
@@ -916,31 +916,34 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       },
     ],
   },
-  // #1820: an ending says what the run did, not what its text assumed. The home search finds
-  // nothing in a corpus with no homes, and the finish tells no one, yet its text says a scout will
-  // check the shortlisted properties. The reply describes no results and promises no follow-up.
+  // #1820: an ending says what the run did, not what its text assumed. The adoption search finds
+  // nothing in a corpus with no animals, and the finish tells no one, yet its text says a volunteer
+  // will check the shortlisted dogs. The reply describes no results and promises no follow-up.
+  // `routine_skill_status` holds the case to that path: a search that found something instead is
+  // answered from what it found, which is a different case.
   {
     id: "routine-ending-after-empty-search-promises-nothing",
     name: "An ending after a search that found nothing describes no results and promises no follow-up",
     tags: ["routine", "ending", "unavailable"],
     history: [
-      { role: "user", content: "Can you help me find a flat to rent?" },
-      { role: "assistant", content: "Of course! What kind of home are you looking for?" },
+      { role: "user", content: "Can you help me find a dog to adopt?" },
+      { role: "assistant", content: "Of course! What kind of dog would you like to adopt?" },
     ],
     routineStartState: {
-      routineId: HOME_SEARCH_ROUTINE_ID,
+      routineId: ADOPTION_SEARCH_ROUTINE_ID,
       path: ["ask_brief"],
       variables: {},
       status: "active",
     },
-    query: "A quiet two-bedroom flat near a park, under 1,400 euros a month.",
+    query: "A calm adult dog that gets along with cats.",
     assertions: [
-      { type: "routine_step_reached", routineId: HOME_SEARCH_ROUTINE_ID, stepId: "done" },
+      { type: "routine_skill_status", routineId: ADOPTION_SEARCH_ROUTINE_ID, stepId: "search", status: "no_context" },
+      { type: "routine_step_reached", routineId: ADOPTION_SEARCH_ROUTINE_ID, stepId: "done" },
       {
         type: "llm_judge",
-        expectedAnswer: "Thanks for the details. I couldn't find any homes matching a quiet two-bedroom flat near a park under 1,400 euros a month.",
+        expectedAnswer: "Thanks for telling me. I couldn't find a calm adult dog that gets along with cats.",
         criteria:
-          "The search found nothing and nobody outside the chat is told about the request. The reply must not say or imply that homes or properties were found, matched, or shortlisted, and must not promise that a scout, an agent, or anyone else will check, follow up, contact the visitor, or get back to them. Saying plainly that nothing matching was found is fine, and so is repeating the visitor's own brief back to them.",
+          "The search found nothing and nobody outside the chat is told about the request. The reply must not say or imply that dogs were found, matched, or shortlisted, and must not promise that a volunteer, the shelter, or anyone else will check, follow up, contact the visitor, or get back to them. Saying plainly that nothing matching was found, or that it has nothing on that here, is fine, and so is repeating the visitor's own wish back to them.",
       },
     ],
   },

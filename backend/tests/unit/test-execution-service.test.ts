@@ -529,6 +529,37 @@ describe("TestExecutionService", () => {
       expect(second.find((event) => event.type === "side_completed")).not.toHaveProperty("blocks");
     });
 
+    it("carries the sources a turn's answer cites on its completion and into the store, and none when it cites none (#1816)", async () => {
+      const citations = [{ documentId: "doc-hours", chunkId: "chunk-hours", title: "Opening hours", sourceUrl: "https://studio.example/hours" }];
+      const answerSegments = [{ text: "The studio is open nine to five on weekdays.", citationIndices: [0] }];
+      const results: TestExecutionRunnerResult[] = [
+        { answer: "The studio is open nine to five on weekdays.", messageId: ids[8], continuation: null, citations, answerSegments },
+        { answer: "Anything else?", messageId: ids[8], continuation: null },
+      ];
+      let call = 0;
+      const stream = async function* (_input: RunnerInput) {
+        return results[call++];
+      };
+      const { service, repository } = setup(undefined, undefined, { stream });
+      const stored: TestExecutionRunnerResult[] = [];
+      const complete = repository.complete.bind(repository);
+      repository.complete = async (input) => {
+        stored.push(input.result);
+        return complete(input);
+      };
+      const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+      const first = await drain(send(service, execution.id));
+      expect(first.find((event) => event.type === "side_completed")).toMatchObject({ citations, answerSegments });
+      expect(stored[0]).toMatchObject({ citations, answerSegments });
+
+      repository.execution!.state = "completed";
+      const second = await drain(service.streamMessage({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "Thanks", generation: 1, turnId: ids[9], attemptId: "70000000-0000-4000-8000-000000000001" }));
+      const uncited = second.find((event) => event.type === "side_completed");
+      expect(uncited).not.toHaveProperty("citations");
+      expect(uncited).not.toHaveProperty("answerSegments");
+    });
+
     it("sends only what the stored answer adds past the streamed text, and nothing when it diverges", async () => {
       const answers = ["Refunds take five days.", "Refunds take five days."];
       const streamed = [["Refunds take five days"], ["  Refunds take [[1]] five days.\n"]];

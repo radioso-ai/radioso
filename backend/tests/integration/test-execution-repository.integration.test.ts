@@ -292,8 +292,9 @@ describeDb("test execution repository", () => {
     expect(claimedIds).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/), expect.stringMatching(/^[0-9a-f-]{36}$/)]);
     expect(new Set(claimedIds).size).toBe(2);
     const stored = await repository.find({ workspaceId, agentId, executionId });
-    expect(stored?.sides.map((side) => side.history.find((entry) => entry.turnId === turnId)?.messageId))
-      .toEqual(claimed.claims.map((claim) => claim.attempt.userMessageId));
+    // Claims come back in side-id order, the execution in side order: compare by side.
+    expect(new Map(stored?.sides.map((side) => [side.id, side.history.find((entry) => entry.turnId === turnId)?.messageId])))
+      .toEqual(new Map(claimed.claims.map((claim) => [claim.sideId, claim.attempt.userMessageId])));
     expect(stored?.sides.find((side) => side.id === leftId)?.history[0]).not.toHaveProperty("messageId");
 
     const left = claimed.claims.find((claim) => claim.sideId === leftId)!;

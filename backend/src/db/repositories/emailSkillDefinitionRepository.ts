@@ -5,6 +5,7 @@ import type {
   CustomerEmailSkillDefinitionSummary,
 } from "../../modules/customerEmail/domain.js";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface EmailSkillDefinitionRecord {
@@ -72,18 +73,34 @@ const emailSkillColumns = [
 const selectEmailSkills = (db: Db) =>
   db.selectFrom("agent_skills").select(emailSkillColumns).where("kind", "=", "customer_email");
 
-const mapRecord = (row: EmailSkillDefinitionRow): EmailSkillDefinitionRecord => ({
+/** A customer email skill read from its `agent_skills` row, live or as a release froze it. */
+export const emailSkillDefinitionFromSkill = (skill: ConversationSkillRow): EmailSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as EmailSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    connectionId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    mode: config.mode ?? "draft",
+    boundInputs: config.boundInputs ?? {},
+    exposedInputs: config.exposedInputs ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: EmailSkillDefinitionRow): EmailSkillDefinitionRecord => emailSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  connectionId: row.target_id,
   skillName: row.skill_name,
-  mode: row.config.mode ?? "draft",
-  boundInputs: row.config.boundInputs ?? {},
-  exposedInputs: row.config.exposedInputs ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface EmailSkillDefinitionRepositoryPort {

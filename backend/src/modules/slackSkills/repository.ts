@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   SlackSkillDefinitionSummary,
@@ -36,17 +37,33 @@ const SKILL_COLUMNS = [
   "updated_at",
 ] as const;
 
-const mapRecord = (row: SlackSkillDefinitionRow): SlackSkillDefinitionSummary => ({
+/** A Slack skill read from its `agent_skills` row, live or as a release froze it. */
+export const slackSkillDefinitionFromSkill = (skill: ConversationSkillRow): SlackSkillDefinitionSummary => {
+  const config = (skill.config ?? {}) as SlackSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    installationId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    boundInputs: config.boundInputs ?? {},
+    exposedInputs: config.exposedInputs ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: SlackSkillDefinitionRow): SlackSkillDefinitionSummary => slackSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  installationId: row.target_id,
   skillName: row.skill_name,
-  boundInputs: row.config.boundInputs ?? {},
-  exposedInputs: row.config.exposedInputs ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface CreateSlackSkillDefinitionInput {

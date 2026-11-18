@@ -8,6 +8,7 @@ import {
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../../modules/chat/composition.js";
 import type { ApplicationModule } from "../applicationModule.js";
+import { buildConversationSkills } from "../conversationSkills.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 export const createWebhookSendApplicationModule = (): ApplicationModule => ({
@@ -21,7 +22,7 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
       // authorization from blocking the visitor-facing reply.
       requiredCapabilities: [],
       queuedFrom: "routine_action_step",
-      handler: ({ database, logger, telemetryService, webhookDestinations, assertPublicWebsiteUrl }) => {
+      handler: ({ database, logger, telemetryService, webhookDestinations, assertPublicWebsiteUrl, metrics }) => {
         return new WebhookSendActionHandler({
           destinations: webhookDestinations,
           deliveryOutcomes: webhookDestinations,
@@ -29,6 +30,7 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
             new ConversationRepository(database.kysely),
             new AgentRepository(database.kysely),
             new AgentSkillRepository(database.kysely),
+            buildConversationSkills(database.kysely, metrics),
           ),
           httpClient: new FetchWebhookHttpClient(assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
           telemetryService,

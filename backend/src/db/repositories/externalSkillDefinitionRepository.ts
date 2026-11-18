@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { ExposedParamSpec } from "../../modules/externalSkills/skillDefinitions/resolver.js";
 
 export interface ExternalSkillDefinitionRecord {
@@ -59,20 +60,36 @@ interface ExternalSkillDefinitionRow {
   updated_at: Date;
 }
 
-const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionRecord => ({
+/** An external MCP skill read from its `agent_skills` row, live or as a release froze it. */
+export const externalSkillDefinitionFromSkill = (skill: ConversationSkillRow): ExternalSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as ExternalSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    agentId: skill.agentId,
+    workspaceId: skill.workspaceId,
+    connectionId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    toolName: config.toolName ?? "",
+    boundParams: config.boundParams ?? {},
+    exposedParams: config.exposedParams ?? {},
+    declaredOutcomes: config.declaredOutcomes ?? null,
+    outcomeMap: config.outcomeMap ?? null,
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionRecord => externalSkillDefinitionFromSkill({
   id: row.id,
   agentId: row.agent_id,
   workspaceId: row.workspace_id,
-  connectionId: row.target_id,
   skillName: row.skill_name,
-  toolName: row.config.toolName ?? "",
-  boundParams: row.config.boundParams ?? {},
-  exposedParams: row.config.exposedParams ?? {},
-  declaredOutcomes: row.config.declaredOutcomes ?? null,
-  outcomeMap: row.config.outcomeMap ?? null,
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 // External MCP skills live on the shared `agent_skills` spine. MCP-specific

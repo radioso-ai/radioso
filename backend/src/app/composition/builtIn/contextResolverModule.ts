@@ -1,5 +1,10 @@
 import type { AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
-import type { AgentSkillKind, AgentSkillSpine } from "../../../modules/agentSkills/public.js";
+import type { AgentSkillKind } from "../../../modules/agentSkills/public.js";
+import {
+  withConversationSkills,
+  type ConversationSkill,
+  type ConversationSkillSet,
+} from "../../../shared/domain/conversationSkills.js";
 import type {
   ContextResolverPort,
   ContextVariableScope,
@@ -34,12 +39,13 @@ export class SkillBackedContextResolver implements ContextResolverPort {
     variableName: string;
     scope: ContextVariableScope;
     signal?: AbortSignal;
+    conversationSkills?: ConversationSkillSet;
   }): Promise<{ value: unknown } | null> {
-    const agentSkill = await this.options.agentSkills.findById(
-      input.workspaceId,
-      input.agentId,
-      input.resolverSkillId,
-    );
+    // A conversation's release decides which resolver skill runs and how it is set; the live row
+    // answers only for a conversation whose release recorded no skills.
+    const agentSkill = input.conversationSkills
+      ? input.conversationSkills.find((skill) => skill.id === input.resolverSkillId) ?? null
+      : await this.options.agentSkills.findById(input.workspaceId, input.agentId, input.resolverSkillId);
     if (!agentSkill?.enabled) {
       return null;
     }
@@ -67,6 +73,7 @@ export class SkillBackedContextResolver implements ContextResolverPort {
           agentId: input.agentId,
           sessionId: input.scope.id,
           variableName: input.variableName,
+          ...withConversationSkills(input.conversationSkills),
         },
         emit: noopSkillEmitPort,
         signal: input.signal,
@@ -90,7 +97,7 @@ type RuntimeSkillDefinition = SkillDefinition & {
   metadata?: Record<string, unknown>;
 };
 
-const skillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): RuntimeSkillDefinition => {
+const skillDefinitionForAgentSkill = (agentSkill: ConversationSkill): RuntimeSkillDefinition => {
   const configuredExecution = executionFromConfig(agentSkill.config?.execution);
   return {
     name: agentSkill.skillName,
@@ -101,7 +108,7 @@ const skillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): RuntimeSkill
     supportedCallers: [],
     requiredCapabilities: [],
     contractReferences: [],
-    execution: configuredExecution ?? executionForKind(agentSkill.kind),
+    execution: configuredExecution ?? executionForKind(agentSkill.kind as AgentSkillKind),
     diagnostics: {
       defined: true,
       shapeAware: false,

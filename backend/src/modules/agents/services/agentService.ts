@@ -26,7 +26,7 @@ import {
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   mergeAgentSurfaceSettings,
-  resolveEffectiveContactDelivery,
+  withContactHumanSkill,
   validateAgentInput,
   type AgentInput,
   type AgentRecord,
@@ -228,20 +228,10 @@ export class AgentService {
   }
 
   async resolve(workspaceId: string, agentId?: string | null): Promise<AgentRecord> {
-    const withSkillBackedFlags = async (agent: AgentRecord): Promise<AgentRecord> => {
-      const notifySkill = await this.agentSkills?.findByName(workspaceId, agent.id, "contact_human");
-      if (notifySkill?.kind !== "notify") {
-        return agent;
-      }
-      return {
-        ...agent,
-        contactRequestsEnabled: notifySkill.enabled,
-        // Resolve delivery from the same source dispatch sends to, so the contact
-        // gate doesn't hide a working notify-skill destination behind a stale
-        // legacy contactRequestDelivery (or vice versa).
-        contactRequestDelivery: resolveEffectiveContactDelivery(notifySkill, agent.contactRequestDelivery),
-      };
-    };
+    // The live `contact_human` skill sets the agent's contact switch and delivery, from the same
+    // source dispatch sends to; a conversation's release re-applies its own (`applyAgentRevisionSnapshot`).
+    const withSkillBackedFlags = async (agent: AgentRecord): Promise<AgentRecord> =>
+      withContactHumanSkill(agent, await this.agentSkills?.findByName(workspaceId, agent.id, "contact_human"));
     if (agentId) {
       const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
       if (!agent) {

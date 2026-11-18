@@ -1,5 +1,6 @@
 import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
+import { withContactHumanSkill } from "../domain.js";
 import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
 import type { AgentSkillSpine } from "../../agentSkills/public.js";
 
@@ -39,7 +40,9 @@ interface ResolvedAgentRevision {
 }
 
 export const applyAgentRevisionSnapshot = (agent: AgentRecord, revision: AgentRevision): AgentRecord => ({
-  ...agent,
+  // The contact switch and delivery follow the release's `contact_human` skill, not the live one
+  // the agent was read with, so the contact routine's gate matches the skill that will deliver.
+  ...withContactHumanSkill(agent, revision.snapshot.agentSkills?.find((skill) => skill.skillName === "contact_human")),
   customInstruction: revision.snapshot.customInstruction ?? "",
   authoredDirectives: revision.snapshot.directives,
   // `agentSkills` is absent on snapshots predating skill tracking (see

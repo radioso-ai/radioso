@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { TurnContext } from "@radioso/conversation-contract";
 
 import type { EnqueueActionRequestInput } from "../../db/repositories/actionRequestRepository.js";
-import type { AgentSkillRepositoryPort } from "../agentSkills/public.js";
+import type { ConversationSkill } from "../../shared/domain/conversationSkills.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../chat/contracts/index.js";
 import type {
   SkillDispatchResult,
@@ -52,7 +52,15 @@ const invocationMessageId = (invocation: SkillInvocation): string | null => {
 
 export class NotifyExecutor implements SkillExecutorPort {
   constructor(private readonly options: {
-    skills: Pick<AgentSkillRepositoryPort, "findByName">;
+    /** The skill's row for the conversation the invocation runs for (its context carries that conversation's skills). */
+    skills: {
+      findByName(
+        workspaceId: string,
+        agentId: string,
+        skillName: string,
+        context?: Readonly<Record<string, unknown>>,
+      ): Promise<ConversationSkill | null>;
+    };
     outbox: NotifyOutboxPort;
   }) {}
 
@@ -63,7 +71,7 @@ export class NotifyExecutor implements SkillExecutorPort {
       return settled("failed", { reason: "context_missing" });
     }
 
-    const skill = await this.options.skills.findByName(workspaceId, agentId, invocation.skill.name);
+    const skill = await this.options.skills.findByName(workspaceId, agentId, invocation.skill.name, invocation.context);
     if (!skill || skill.kind !== "notify" || !skill.enabled) {
       return settled("failed", { reason: "skill_not_found" });
     }

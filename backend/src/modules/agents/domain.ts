@@ -149,6 +149,23 @@ export const resolveEffectiveContactDelivery = (
   return readNotifyContactDelivery(notifySkill.config) ?? legacyDelivery;
 };
 
+/**
+ * The agent's contact switch and delivery as its `contact_human` notify skill sets them: the skill's
+ * switch is the agent's, and its delivery wins over the agent-level one. An agent without such a
+ * skill keeps its own. Applied to the live skill for the dashboard and to the release's skill for a
+ * conversation, so the contact routine's gate reads the same skill a delivery would.
+ */
+export const withContactHumanSkill = <T extends Pick<AgentRecord, "contactRequestsEnabled" | "contactRequestDelivery">>(
+  agent: T,
+  notifySkill: ContactNotifySkillView | null | undefined,
+): T => notifySkill?.kind === "notify"
+  ? {
+      ...agent,
+      contactRequestsEnabled: notifySkill.enabled === true,
+      contactRequestDelivery: resolveEffectiveContactDelivery(notifySkill, agent.contactRequestDelivery),
+    }
+  : agent;
+
 export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;

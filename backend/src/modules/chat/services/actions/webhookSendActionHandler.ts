@@ -2,6 +2,7 @@ import type {
   WebhookDeliveryOutcomeStatus,
   WebhookDestinationResolver,
 } from "../../../webhooks/public.js";
+import type { ConversationSkill, ConversationSkillSet } from "../../../../shared/domain/conversationSkills.js";
 import type { TelemetryEventInput } from "../../../../shared/observability/telemetry/telemetryService.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -47,11 +48,12 @@ interface WebhookSendAgentLookup {
 }
 
 interface WebhookCompletionExportSkillLookup {
-  findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
-    kind: string;
-    enabled: boolean;
-    targetId?: string | null;
-  } | null>;
+  findByName(workspaceId: string, agentId: string, skillName: string): Promise<Pick<ConversationSkill, "kind" | "enabled" | "targetId"> | null>;
+}
+
+/** The skills of the release a stored conversation is pinned to (`ConversationSkills.forConversation`). */
+interface WebhookSendConversationSkills {
+  forConversation(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<ConversationSkillSet>;
 }
 
 export type WebhookSendHttpClient = WebhookHttpClient;
@@ -112,6 +114,8 @@ export class ConversationAgentWebhookPermissionResolver implements WebhookSendPe
     private readonly conversations: WebhookSendConversationLookup,
     private readonly agents: WebhookSendAgentLookup,
     private readonly skills?: WebhookCompletionExportSkillLookup,
+    /** A queued export reads `completion_export` from its conversation's release, not the live row. */
+    private readonly conversationSkills?: WebhookSendConversationSkills,
   ) {}
 
   async canSend(context: ActionHandlerContext): Promise<WebhookSendPermissionDecision> {
@@ -129,7 +133,14 @@ export class ConversationAgentWebhookPermissionResolver implements WebhookSendPe
     if (!agent) {
       return { allowed: false, reason: "agent_not_resolved" };
     }
-    const skill = await this.skills?.findByName(context.workspaceId, conversation.agentId, "completion_export");
+    const releaseSkills = await this.conversationSkills?.forConversation({
+      workspaceId: context.workspaceId,
+      agentId: conversation.agentId,
+      conversationId: context.conversationId,
+    });
+    const skill = releaseSkills
+      ? releaseSkills.find((candidate) => candidate.skillName === "completion_export") ?? null
+      : await this.skills?.findByName(context.workspaceId, conversation.agentId, "completion_export");
     if (skill?.kind === "webhook") {
       return skill.enabled ? { allowed: true } : { allowed: false, reason: "capability_disabled" };
     }

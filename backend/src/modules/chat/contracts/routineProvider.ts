@@ -1,3 +1,4 @@
+import type { ConversationSkillSet } from "../../../shared/domain/conversationSkills.js";
 import type {
   ConversationCoverageRoutineActivator,
   ConversationModelGateway,
@@ -79,6 +80,8 @@ export interface ChatRoutineProvider {
      * first place. Only a private replay (Test Chat, eval) sets this.
      */
     includeSlotValues?: boolean;
+    /** The skills the conversation runs (its release's); absent when the release recorded none. */
+    conversationSkills?: ConversationSkillSet;
     /** The conversation as consents read it (#1544); absent, no consent can be asked this turn. */
     consent?: ChatRoutineConsentTurnFacts;
     /**

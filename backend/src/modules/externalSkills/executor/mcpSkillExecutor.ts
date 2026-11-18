@@ -40,7 +40,12 @@ export interface SkillDefinitionRecord extends SkillBinding {
 }
 
 export interface SkillDefinitionLookup {
-  findEnabledByName(agentId: string, skillName: string): Promise<SkillDefinitionRecord | null>;
+  /** The skill's row for the conversation the invocation runs for (its context carries that conversation's skills). */
+  findEnabledByName(
+    agentId: string,
+    skillName: string,
+    context?: Readonly<Record<string, unknown>>,
+  ): Promise<SkillDefinitionRecord | null>;
 }
 
 export interface ConnectionLookup {
@@ -111,7 +116,7 @@ export class McpSkillExecutor implements SkillExecutorPort {
       return settledFailure("agent_context_missing", "External skill invoked without an agent context");
     }
 
-    const record = await this.deps.skills.findEnabledByName(agentId, skillName);
+    const record = await this.deps.skills.findEnabledByName(agentId, skillName, invocation.context);
     if (!record) {
       return settledFailure("skill_not_found", "External skill is not defined or not enabled");
     }

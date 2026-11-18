@@ -4,6 +4,7 @@ import type {
   WebhookSkillDefinitionSummary,
 } from "../../modules/webhookSkills/domain.js";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface WebhookSkillDefinitionRecord {
@@ -62,17 +63,33 @@ const webhookSkillColumns = [
   "updated_at",
 ] as const;
 
-const mapRecord = (row: WebhookSkillDefinitionRow): WebhookSkillDefinitionRecord => ({
+/** A webhook skill read from its `agent_skills` row, live or as a release froze it. */
+export const webhookSkillDefinitionFromSkill = (skill: ConversationSkillRow): WebhookSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as WebhookSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    destinationId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    boundPayload: config?.boundPayload ?? {},
+    exposedPayload: config?.exposedPayload ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: WebhookSkillDefinitionRow): WebhookSkillDefinitionRecord => webhookSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  destinationId: row.target_id,
   skillName: row.skill_name,
-  boundPayload: row.config?.boundPayload ?? {},
-  exposedPayload: row.config?.exposedPayload ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface WebhookSkillDefinitionRepositoryPort {

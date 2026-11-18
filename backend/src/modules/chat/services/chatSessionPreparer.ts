@@ -894,6 +894,7 @@ export class ChatSessionPreparer {
         agent.id,
         revisionContextVariableEnablements,
         scopes,
+        agent.authoredAgentSkills,
       );
       return input.verifiedIdentity
         ? [...resolved, {

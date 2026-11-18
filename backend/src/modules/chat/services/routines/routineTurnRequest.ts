@@ -35,6 +35,8 @@ export const routineTurnRequest = (
   pinnedRoutineIds: attempt.pinnedRoutineIds,
   previewRoutineIds: session.previewRoutineIds,
   routineInvocation: session.routineInvocation,
+  // The release's skills (`applyAgentRevisionSnapshot`); absent when that release recorded none.
+  ...(session.agent.authoredAgentSkills ? { conversationSkills: session.agent.authoredAgentSkills } : {}),
   skillEffects: session.skillEffects,
   conversationDurability: session.conversationDurability,
   responseLanguage: attempt.responseLanguage,

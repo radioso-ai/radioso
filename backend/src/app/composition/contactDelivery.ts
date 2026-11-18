@@ -34,6 +34,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Env } from "../config/env.js";
 import type { MailTransportPort } from "./applicationModule.js";
+import { buildConversationSkills } from "./conversationSkills.js";
 import { publicApiBaseUrl } from "./publicApiBase.js";
 
 /**
@@ -41,7 +42,10 @@ import { publicApiBaseUrl } from "./publicApiBase.js";
  * `contact_human`, then the agent's contact settings, then the workspace owner or admin.
  * Every sender of operator-facing email resolves recipients through this.
  */
-export const buildContactDeliveryResolver = (database: Database): ConfiguredContactDeliveryResolver =>
+export const buildContactDeliveryResolver = (
+  database: Database,
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+): ConfiguredContactDeliveryResolver =>
   new ConfiguredContactDeliveryResolver(
     new ConversationRepository(database.kysely),
     new AgentRepository(database.kysely),
@@ -50,6 +54,7 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
       new AccountMembershipRepository(database.kysely),
     ),
     new AgentSkillRepository(database.kysely),
+    buildConversationSkills(database.kysely, metrics),
   );
 
 /** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */

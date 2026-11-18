@@ -1,18 +1,18 @@
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { RoutineConsentRepository } from "../../db/repositories/routineConsentRepository.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
-import type { AgentSkillRepository } from "../../modules/agentSkills/public.js";
+import type { AgentSkillRepository, ConversationSkills } from "../../modules/agentSkills/public.js";
 import {
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,
   type ChatRoutineProvider,
 } from "../../modules/chat/composition.js";
-import { createRoutineTurnProvider } from "../../modules/routines/public.js";
+import { createRoutineTurnProvider, type RoutineCompletionExport, type RoutineDefinition } from "../../modules/routines/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { ApplicationComposition } from "./defaultComposition.js";
-import { createPublishedRoutineRegistrationSource } from "./routineDefinitionSource.js";
+import { createPublishedRoutineRegistrationSource, type CompletionExportScope } from "./routineDefinitionSource.js";
 
 type RoutineTurnProviderDependencies = Parameters<typeof createRoutineTurnProvider>[0];
 
@@ -28,6 +28,36 @@ type ChatTurnPlanHandle = Parameters<typeof planAwareRoutineActivator>[0]["handl
  * agent's `completion_export` webhook skill. A routine's consents read what each conversation
  * recorded from the consent records (#1544).
  */
+/**
+ * A routine's skill-backed completion export, read from the `completion_export` skill of the
+ * release the routine is served from (the agent's live skills when that release recorded none),
+ * or from the agent's live skill for a routine served from no release (a preview).
+ */
+export const createCompletionExportResolver = (
+  conversationSkills: Pick<ConversationSkills, "forTurn">,
+  live: Pick<AgentSkillRepository, "findByAgentAndName">,
+) => async (definition: RoutineDefinition, scope: CompletionExportScope): Promise<RoutineCompletionExport | null> => {
+  const releaseSkills = scope.release
+    ? await conversationSkills.forTurn({ workspaceId: scope.release.workspaceId, id: definition.agentId, authoredAgentSkills: scope.release.agentSkills })
+    : null;
+  const skill = releaseSkills
+    ? releaseSkills.find((candidate) => candidate.skillName === "completion_export") ?? null
+    : await live.findByAgentAndName(definition.agentId, "completion_export");
+  if (!skill) {
+    return null;
+  }
+  if (skill.kind !== "webhook" || !skill.enabled || !skill.targetId) {
+    return { enabled: false, triggerKinds: [], destinationRef: "" };
+  }
+  return {
+    enabled: true,
+    triggerKinds: definition.completionExport?.triggerKinds?.length
+      ? definition.completionExport.triggerKinds
+      : ["complete", "handoff"],
+    destinationRef: skill.targetId,
+  };
+};
+
 export const composeRoutineTurnProvider = (
   input: Pick<
     RoutineTurnProviderDependencies,
@@ -35,7 +65,6 @@ export const composeRoutineTurnProvider = (
     | "clusteringEmbeddings"
     | "embeddingModelForWorkspace"
     | "metricsRegistry"
-    | "routineInvocableSkillNames"
     | "routineTriggerEmbeddingService"
   > & {
     composition: Pick<
@@ -44,6 +73,8 @@ export const composeRoutineTurnProvider = (
     >;
     db: Db;
     agentSkillRepository: Pick<AgentSkillRepository, "findByAgentAndName" | "listByAgent">;
+    /** How a routine served from a release reads that release's skills (`buildConversationSkills`). */
+    conversationSkills: Pick<ConversationSkills, "forTurn">;
     logger: AppLogger;
     routineDefinitionRepository: RoutineDefinitionRepository;
   },
@@ -82,22 +113,7 @@ export const composeRoutineTurnProvider = (
           "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
         );
       },
-      resolveCompletionExport: async (definition) => {
-        const skill = await input.agentSkillRepository.findByAgentAndName(definition.agentId, "completion_export");
-        if (!skill) {
-          return null;
-        }
-        if (skill.kind !== "webhook" || !skill.enabled || !skill.targetId) {
-          return { enabled: false, triggerKinds: [], destinationRef: "" };
-        }
-        return {
-          enabled: true,
-          triggerKinds: definition.completionExport?.triggerKinds?.length
-            ? definition.completionExport.triggerKinds
-            : ["complete", "handoff"],
-          destinationRef: skill.targetId,
-        };
-      },
+      resolveCompletionExport: createCompletionExportResolver(input.conversationSkills, input.agentSkillRepository),
     });
   return createRoutineTurnProvider({
     agentSkillRepository: input.agentSkillRepository,
@@ -108,7 +124,6 @@ export const composeRoutineTurnProvider = (
     metricsRegistry: input.metricsRegistry,
     publishedRoutineSource,
     routineDefinitionRepository: input.routineDefinitionRepository,
-    routineInvocableSkillNames: input.routineInvocableSkillNames,
     routineRegistrations: input.composition.routineRegistrations,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     skillExecutorRegistry: input.composition.skillExecutorRegistry,

@@ -622,11 +622,16 @@ On each turn, before normal skill selection, the engine checks for a routine:
      ending hands off, carries an operator notice, or fires the completion
      export; when the ending's turn emitted an action, or ran a tool step whose
      skill may act outside the conversation (`actsOutsideConversation` on its
-     result) and that did not report `failed`; or when the path the turn started
-     on holds an action or approval step, or a tool step whose skill the
-     dispatcher's `actsOutsideConversation(skillName)` reads, without running it,
-     as acting outside. A search reads as staying inside, and a dispatcher that
-     cannot say counts no earlier tool step. `skillOutcomes` lists the status
+     result) and that did not report `failed`, `cancelled`, or `expired`; or when
+     the path the turn started on holds an action or approval step, or a tool
+     step whose skill the dispatcher's `actsOutsideConversation(skillName)`
+     reads, without running it, as acting outside, whatever that step reported
+     then, since the run keeps no earlier outcome. A search reads as staying
+     inside, and a dispatcher that cannot say counts no earlier tool step. The
+     backend's chain ends in the external-tool resolver, which takes any
+     remaining name as an MCP tool, so there a removed or misspelled skill name
+     reads as acting outside; the kit's default dispatcher implements no
+     `actsOutsideConversation`. `skillOutcomes` lists the status
      each tool step on the ending's turn reported, from the turn's
      `skill_dispatched` trace entries; a skill name or status that is not an
      identifier is left out of the prompt. The renderer puts both in
@@ -643,7 +648,10 @@ On each turn, before normal skill selection, the engine checks for a routine:
      since a decline is the wrong reply for the message that ends the flow, and
      marks it through `stepReplyMetadata`, so the reply is presented as the
      turn's retrieval miss (`no_context`), as a chat step's decline on the same
-     miss is, and the miss hand-off runs for both. A tool step an earlier turn ran
+     miss is, and the miss hand-off runs for both. An ending whose
+     `requestPassedOn` is true is not marked: its notice, export, or skill
+     already passed the request on, and a miss hand-off would notify the team a
+     second time and hand the conversation to a person. A tool step an earlier turn ran
      shows no outcome, because routine state keeps none across turns.
    - A `{{context.<name>}}` reference fills the host's rendering of the variable
      into the step instruction; for `page_context` that is the page's URL,
@@ -958,8 +966,11 @@ The advisory never blocks saving or publishing. Ray's `validate_routine` and rou
 proposals report it, and a backend test compares it against `completedRunSentValues` over
 every route through the compiled routine. The same traversal reports `ending_tells_no_one`
 for each ending that sends nothing and that some route reaches without crossing one of
-those steps: its reply hears that nothing passes the request on, and promises no follow-up.
-The routine editor shows it under the ending's **Notify the team** switch.
+those steps, walking through a tool step whose skill is one of `retrievalSkillNames`: its
+reply hears that nothing passes the request on, and promises no follow-up. The backend
+reads those names, with each skill's input keys, from `RoutineDefinitionService.advisoryCatalog`
+(the agent's skills in the `retrieval` category), and the routine editor from its skill
+catalog; the editor shows the advisory under the ending's **Notify the team** switch.
 
 ## Activation and clarification
 

@@ -677,10 +677,12 @@ reply, the agent is told the outcome of every skill step that ran on the way to
 the ending in that turn, such as `empty` from a search that found nothing or
 `failed`, and whether anyone outside the chat gets the request: a **Hand off**,
 a **Notify the team** notice, the completion export, an action or approval step,
-or a skill step that can act outside the conversation, such as a webhook, and
-didn't fail. A search passes nothing on, whichever turn it ran on. It keeps the
-message's meaning and leaves out what the run didn't do, whether it writes the
-reply from the ending alone or from what a search found.
+or a skill step that can act outside the conversation, such as a webhook. On the
+ending's own turn such a step counts only when it didn't fail, cancel, or expire;
+one an earlier turn ran counts whatever it returned then, since the run keeps no
+earlier outcome. A search passes nothing on. It keeps the message's meaning and
+leaves out what the run didn't do, whether it writes the reply from the ending
+alone or from what a search found.
 
 Take a letting agency's routine that searches its listings and ends on **Hand
 off** with "A scout will check the shortlisted properties and get back to you."
@@ -691,8 +693,14 @@ follow-up, since the hand-off passes the request on. End the same routine on a
 the visitor, so the reply promises no follow-up either. The ending's editor says
 so under **Notify the team**: "Nobody hears of this ending, so its reply won't
 promise follow-up." Ray reports the same as `ending_tells_no_one`, an advisory
-that never blocks saving or publishing. A search step on the way counts as
-passing the request on for that note, so an ending past one isn't flagged.
+that never blocks saving or publishing. Both know a search from the agent's
+skills, so a finish past a search gets the note too.
+
+When the search found nothing and nothing passes the request on, the reply counts
+as the turn's retrieval miss, so **Hand off on retrieval miss** hands the
+conversation to a person as it does for any unanswered question. A finish that
+notifies the team, exports, or follows a webhook that went through already passes
+the request on, and the agent keeps the conversation.
 
 To say something specific when a search finds nothing, give that case an ending
 of its own. Add a **Rule** row under the search step for the skill outcome

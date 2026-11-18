@@ -363,6 +363,7 @@ function RoutineEditorScreen({
   // The signature of the draft the server holds. A draft that still matches it has nothing to
   // save, so opening a routine never writes it back (a write bumps updatedAt and dirties the
   // agent draft).
+  const loadValidationSupersededRef = useRef(false)
   const [persistedDraftSignature, setPersistedDraftSignature] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
@@ -543,7 +544,20 @@ function RoutineEditorScreen({
           setDocumentDraft(null)
           setDocumentSessionNonce((nonce) => nonce + 1)
           setValidatedDraftSignature(null)
-          setPersistedDraftSignature(signatureOfStoredRoutine(response.routine))
+          const storedSignature = signatureOfStoredRoutine(response.routine)
+          setPersistedDraftSignature(storedSignature)
+          // Opening does not save, so no save response carries the verdict: read it instead. A
+          // save that lands first has the newer verdict and keeps it.
+          loadValidationSupersededRef.current = false
+          void routinesApi.validateRoutine(agentId, response.routine.id)
+            .then((checked) => {
+              if (!active || loadValidationSupersededRef.current) return
+              setValidation(checked.validation)
+              setValidatedDraftSignature(storedSignature)
+            })
+            .catch((validateError) => {
+              if (active) setError(getApiErrorMessage(validateError, 'Failed to check routine.'))
+            })
         })
         .catch((loadError) => {
           if (!active) return
@@ -634,6 +648,7 @@ function RoutineEditorScreen({
         setForm(routineToForm(response.routine))
         setDocumentDraft(null)
       }
+      loadValidationSupersededRef.current = true
       setValidation(response.validation)
       setValidatedDraftSignature(draftSignature)
       markSaved()

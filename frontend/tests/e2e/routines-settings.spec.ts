@@ -334,6 +334,8 @@ test("opening a routine without editing it never saves it (#1819)", async ({ pag
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await routineRow(page, "Collect pricing intake").click();
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("so the team can follow up");
+  // The verdict comes from a read-only check, not from a save.
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible();
 
   // The autosave debounce is 1.5 s; a save from merely opening would have landed by now.
   await page.waitForTimeout(3_500);

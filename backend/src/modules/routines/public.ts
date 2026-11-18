@@ -35,6 +35,7 @@ export {
   canonicalRoutineAuthoringDraft,
   describeRoutineFieldPatch,
   projectRoutineForReview,
+  routineMatchesDraft,
   routineFieldPatchSchema,
 } from "./authoringEdit.js";
 export { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
@@ -76,6 +77,7 @@ export {
   RoutineDefinitionService,
   translateRoutineDefinitionWriteConflict,
   type RoutineDefinitionDeleteDraftResult,
+  type RoutineDefinitionDraftUpdate,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
 } from "./service.js";

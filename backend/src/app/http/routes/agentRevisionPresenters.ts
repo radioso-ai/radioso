@@ -1,5 +1,5 @@
 import { revisionTakesPhotos } from "../../../modules/visitorImages/public.js";
-import { readAgentRevisionGreeting, visitorImagesSwitchChanged, type AgentRevision, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
+import { readAgentRevisionGreeting, visitorImagesSwitchChanged, withoutWriteTimestamps, type AgentRevision, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
 
 type RevisionSummary = { id: string; label: string; kind: "candidate" | "published"; versionNumber: number | null; createdAt: string; publishedAt?: string };
 type RevisionSummaryInput = Pick<AgentRevision, "id" | "createdAt" | "publishedAt" | "publishedVersion">;
@@ -34,10 +34,8 @@ const stableJson = (value: unknown): string => {
   return JSON.stringify(value) ?? "undefined";
 };
 
-const changed = <T extends { createdAt: Date; updatedAt: Date }>(before: T, after: T): boolean => {
-  const omitTimestamps = (value: T): Omit<T, "createdAt" | "updatedAt"> => { const { createdAt: _createdAt, updatedAt: _updatedAt, ...comparable } = value; return comparable; };
-  return stableJson(omitTimestamps(before)) !== stableJson(omitTimestamps(after));
-};
+const changed = <T extends { createdAt: Date; updatedAt: Date }>(before: T, after: T): boolean =>
+  stableJson(withoutWriteTimestamps(before)) !== stableJson(withoutWriteTimestamps(after));
 
 const diffDirectives = (before: AgentRevisionSnapshot["directives"], after: AgentRevisionSnapshot["directives"]): DirectiveChange[] => {
   const beforeById = new Map(before.map((directive) => [directive.id, directive])); const afterById = new Map(after.map((directive) => [directive.id, directive])); const changes: DirectiveChange[] = [];

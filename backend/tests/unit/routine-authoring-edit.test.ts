@@ -5,6 +5,7 @@ import {
   describeRoutineFieldPatch,
   draftInputFromRoutine,
   projectRoutineForReview,
+  routineMatchesDraft,
   routineFieldPatchSchema,
   RoutineFieldPatchError,
 } from "../../src/modules/routines/authoringEdit.js";
@@ -35,7 +36,73 @@ const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefinition 
   ...overrides,
 });
 
+describe("routineMatchesDraft: what still counts as a change (#1819)", () => {
+  const exposure = { enabled: true, toolName: "support_intake", description: "Collects a support request." };
+  const consents = [{
+    key: "topic_consent",
+    slotKeys: ["order_number"],
+    variants: [{ locale: "en", body: "We ask for the order to route it.", agreeLabel: "Agree", declineLabel: "Decline" }],
+    onDecline: "continue" as const,
+  }];
+  const stored = routine({
+    exposure,
+    consents,
+    completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: "crm-hook" },
+  });
+  const base = () => draftInputFromRoutine(stored);
+
+  it("matches the stored routine itself", () => {
+    expect(routineMatchesDraft(stored, base())).toBe(true);
+  });
+
+  it("sees a stored nested value cleared to null", () => {
+    const withToolRef = routine({
+      steps: [{ ...routine().steps[0], toolRef: "lookup_order" }, routine().steps[1]],
+      transitions: [{ ...routine().transitions[0], guardKind: "llm", guardText: "The visitor named an order." }, routine().transitions[1]],
+    });
+    const draft = draftInputFromRoutine(withToolRef);
+
+    expect(routineMatchesDraft(withToolRef, draft)).toBe(true);
+    expect(routineMatchesDraft(withToolRef, { ...draft, steps: [{ ...draft.steps[0], toolRef: null }, draft.steps[1]] })).toBe(false);
+    expect(routineMatchesDraft(withToolRef, { ...draft, transitions: [{ ...draft.transitions![0], guardText: null }, draft.transitions![1]] })).toBe(false);
+  });
+
+  it("sees a consent change", () => {
+    expect(routineMatchesDraft(stored, { ...base(), consents: [{ ...consents[0], onDecline: "handoff" }] } as never)).toBe(false);
+    expect(routineMatchesDraft(stored, { ...base(), consents: [] })).toBe(false);
+  });
+
+  it("sees exposure switched off", () => {
+    expect(routineMatchesDraft(stored, { ...base(), exposure: { ...exposure, enabled: false } })).toBe(false);
+  });
+
+  it("sees steps reordered", () => {
+    const draft = base();
+    expect(routineMatchesDraft(stored, { ...draft, steps: [...draft.steps].reverse() })).toBe(false);
+  });
+
+  it("sees a completion export switched off while its destination is kept", () => {
+    expect(routineMatchesDraft(stored, {
+      ...base(),
+      completionExport: { enabled: false, triggerKinds: ["complete"], destinationRef: "crm-hook" },
+    })).toBe(false);
+  });
+});
+
 describe("routine authoring edits", () => {
+  it("matches a draft that restates the stored routine, however absence is spelled (#1819)", () => {
+    const stored = routine();
+    const restated = {
+      ...draftInputFromRoutine(stored),
+      completionExport: { enabled: false, triggerKinds: [], destinationRef: "" },
+      steps: stored.steps.map((step) => ({ ...step, actionType: undefined })),
+    };
+
+    expect(routineMatchesDraft(stored, restated)).toBe(true);
+    expect(routineMatchesDraft(stored, { ...restated, name: "renamed" })).toBe(false);
+    expect(routineMatchesDraft(stored, { ...restated, enabled: !stored.enabled })).toBe(false);
+  });
+
   it("drops persistence identity so a stored routine re-enters the authoring schema unchanged", () => {
     const draft = draftInputFromRoutine(routine());
 

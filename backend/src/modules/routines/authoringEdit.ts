@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ROUTINE_DEFINITION_LIMITS,
   routineConsentSchema,
+  routineDefinitionDraftInputSchema,
   routineExposureSchema,
   routineReentryModes,
   routineSlotSensitivities,
@@ -135,6 +136,38 @@ const requireExactlyOneAddress = <T>(
 export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput => {
   const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
   return draft;
+};
+
+/**
+ * The authoring input with absence made uniform: storage reads an unset field back as null (and
+ * a routine without a completion export as a disabled one) where a client leaves it out.
+ */
+const withoutAbsentValues = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutAbsentValues);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== null && entry !== undefined)
+      .map(([key, entry]) => [key, withoutAbsentValues(entry)]),
+  );
+};
+
+const normalizedAuthoring = (draft: RoutineDefinitionDraftAuthoringInput): string | null => {
+  const parsed = routineDefinitionDraftInputSchema.safeParse(draft);
+  if (!parsed.success) return null;
+  const { completionExport, ...rest } = parsed.data;
+  const exportIsUnused = !completionExport || (!completionExport.enabled && completionExport.triggerKinds.length === 0 && !completionExport.destinationRef);
+  return JSON.stringify(withoutAbsentValues(exportIsUnused ? rest : { ...rest, completionExport }));
+};
+
+/**
+ * Whether saving `draft` would leave the stored routine exactly as it is. A false negative only
+ * costs a redundant write; a false positive would drop an edit, so an unparseable side counts as
+ * different.
+ */
+export const routineMatchesDraft = (routine: RoutineDefinition, draft: RoutineDefinitionDraftAuthoringInput): boolean => {
+  const stored = normalizedAuthoring(draftInputFromRoutine(routine));
+  return stored !== null && stored === normalizedAuthoring(draft);
 };
 
 /** Canonical persistence-free authoring projection for external bounded readers. */

@@ -23,6 +23,12 @@ import {
   type RoutineValidationResult,
 } from "./validator.js";
 
+/** `changed` is false when the save restated the stored routine and wrote nothing. */
+export interface RoutineDefinitionDraftUpdate {
+  routine: RoutineDefinition;
+  changed: boolean;
+}
+
 export interface RoutineDefinitionRepositoryPort {
   listByAgent(agentId: string): Promise<RoutineDefinition[]>;
   findById(agentId: string, id: string): Promise<RoutineDefinition | null>;
@@ -30,7 +36,7 @@ export interface RoutineDefinitionRepositoryPort {
   updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition>;
   deleteDraft(agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDeleteDraftResult>;
   createDraftWithAgentDraft(workspaceId: string, agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
-  updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition>;
+  updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDraftUpdate>;
   setEnabledWithAgentDraft(workspaceId: string, agentId: string, id: string, enabled: boolean): Promise<RoutineDefinition | null>;
   deleteDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDeleteDraftResult>;
   listRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
@@ -229,7 +235,7 @@ export class RoutineDefinitionService {
     agentId: string,
     input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
-    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
+    await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
     // A retired, non-canonical row from a pre-cutover branched lineage can still occupy
     // (agent_id, name, version 1) — the identity a fresh create always takes — while being
@@ -248,7 +254,7 @@ export class RoutineDefinitionService {
     } catch (error) {
       throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved, agentDefaultLocale);
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved);
   }
 
   /**
@@ -275,14 +281,14 @@ export class RoutineDefinitionService {
     input: RoutineDefinitionDraftAuthoringInput,
     options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinitionSaveResult> {
-    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
+    await this.requireAgent(workspaceId, agentId);
     // A caller's payload may omit a field the stored routine already carries a real value for
     // (see mergeDraftInputWithExisting); look the routine up first so an omission carries
     // forward instead of falling back to a schema default. A missing id is not a hard failure
     // here — the repository's own conflict guard below still reports it precisely.
     const existing = await this.options.repository.findById(agentId, id);
     const draft = this.validateInput(existing ? mergeDraftInputWithExisting(existing, input) : input);
-    let saved: RoutineDefinition;
+    let saved: RoutineDefinitionDraftUpdate;
     try {
       saved = await this.options.repository.updateDraftWithAgentDraft(workspaceId, agentId, id, draft, options);
     } catch (error) {
@@ -293,7 +299,11 @@ export class RoutineDefinitionService {
       // here instead of letting the raw unique-violation escape as a 500.
       throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved, agentDefaultLocale);
+    // Nothing was written, so there is no change to record and no trigger to re-embed.
+    if (!saved.changed) {
+      return { routine: saved.routine, validation: await this.validateForServing(workspaceId, saved.routine) };
+    }
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved.routine);
   }
 
   /**
@@ -337,12 +347,12 @@ export class RoutineDefinitionService {
     id: string,
     enabled: boolean,
   ): Promise<RoutineDefinitionSaveResult> {
-    const agentDefaultLocale = await this.requireAgent(workspaceId, agentId);
+    await this.requireAgent(workspaceId, agentId);
     const saved = await this.options.repository.setEnabledWithAgentDraft(workspaceId, agentId, id, enabled);
     if (!saved) {
       throw notFound("Routine definition not found");
     }
-    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved, agentDefaultLocale);
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
   }
 
   async validate(
@@ -403,14 +413,14 @@ export class RoutineDefinitionService {
     agentId: string,
     eventType: AuditEventInput["eventType"],
     routine: RoutineDefinition,
-    agentDefaultLocale?: string,
   ): Promise<RoutineDefinitionSaveResult> {
     // Neither depends on the other's result, so they run concurrently rather than serially.
     await Promise.all([
       this.options.triggerEmbeddingService?.persistPublished({ workspaceId, agentId, routine }),
       this.recordAuthoringAudit(eventType, workspaceId, agentId, routine),
     ]);
-    return { routine, validation: validateRoutineDefinition(routine, agentDefaultLocale === undefined ? {} : { agentDefaultLocale }) };
+    // The verdict `validate` gives, so opening a routine and saving it cannot disagree.
+    return { routine, validation: await this.validateForServing(workspaceId, routine) };
   }
 
   /**

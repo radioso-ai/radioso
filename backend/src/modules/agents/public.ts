@@ -128,6 +128,7 @@ export {
   assertCandidateSnapshotIsRunnable,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   equalScopedAuthoringSnapshots,
+  withoutWriteTimestamps,
   parseAgentRevisionSnapshot,
   readAgentRevisionGreeting,
   visitorImagesSwitchChanged,

@@ -135,6 +135,10 @@ const mergeDocumentHeaderChange = (
   })
 }
 
+// The signature the editor derives for a routine it has just loaded and not yet changed.
+const signatureOfStoredRoutine = (routine: RoutineDefinition): string =>
+  JSON.stringify(formToRoutineDraft(routineToForm(routine), { header: headerFromDraft(routine) }))
+
 const currentBrowserUrlMatches = (href: string) =>
   typeof window !== 'undefined' && `${window.location.pathname}${window.location.search}` === href
 
@@ -356,6 +360,13 @@ function RoutineEditorScreen({
   const [documentSessionNonce, setDocumentSessionNonce] = useState(0)
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
+  // The signature of the draft the server holds. A draft that still matches it has nothing to
+  // save, so opening a routine never writes it back (a write bumps updatedAt and dirties the
+  // agent draft).
+  const loadValidationSupersededRef = useRef(false)
+  // The read-only check on open failed, so the routine has no verdict until a save returns one.
+  const [validationCheckFailed, setValidationCheckFailed] = useState(false)
+  const [persistedDraftSignature, setPersistedDraftSignature] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
   const [isTogglingEnabled, setIsTogglingEnabled] = useState(false)
@@ -422,11 +433,12 @@ function RoutineEditorScreen({
   )
   const nameLocalValidationError = !draftHeader.name.trim() ? 'Name is required.' : null
   const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
+  const hasUnsavedChange = Boolean(activeRoutineDraftSignature) && !isValidationCurrent && activeRoutineDraftSignature !== persistedDraftSignature
   const validationStatus: RoutineValidationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
     ? 'invalid'
     : isValidationCurrent && validation?.ok
       ? 'valid'
-      : 'checking'
+      : validationCheckFailed ? 'unchecked' : 'checking'
   const validationDiagnostics = useMemo(
     () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
     [isValidationCurrent, validation?.diagnostics],
@@ -492,6 +504,7 @@ function RoutineEditorScreen({
 
       setValidation(null)
       setValidatedDraftSignature(null)
+      setPersistedDraftSignature(null)
       setError(null)
 
       if (routineRouteId === 'new') {
@@ -533,6 +546,23 @@ function RoutineEditorScreen({
           setDocumentDraft(null)
           setDocumentSessionNonce((nonce) => nonce + 1)
           setValidatedDraftSignature(null)
+          const storedSignature = signatureOfStoredRoutine(response.routine)
+          setPersistedDraftSignature(storedSignature)
+          // Opening does not save, so no save response carries the verdict: read it instead. A
+          // save that lands first has the newer verdict and keeps it.
+          loadValidationSupersededRef.current = false
+          setValidationCheckFailed(false)
+          void routinesApi.validateRoutine(agentId, response.routine.id)
+            .then((checked) => {
+              if (!active || loadValidationSupersededRef.current) return
+              setValidation(checked.validation)
+              setValidatedDraftSignature(storedSignature)
+            })
+            .catch((validateError) => {
+              if (!active || loadValidationSupersededRef.current) return
+              setValidationCheckFailed(true)
+              setError(getApiErrorMessage(validateError, 'Failed to check routine.'))
+            })
         })
         .catch((loadError) => {
           if (!active) return
@@ -617,11 +647,14 @@ function RoutineEditorScreen({
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
+      setPersistedDraftSignature(refreshEditor ? signatureOfStoredRoutine(response.routine) : draftSignature)
       if (refreshEditor) {
         setDraftHeader(headerFromDraft(response.routine))
         setForm(routineToForm(response.routine))
         setDocumentDraft(null)
       }
+      loadValidationSupersededRef.current = true
+      setValidationCheckFailed(false)
       setValidation(response.validation)
       setValidatedDraftSignature(draftSignature)
       markSaved()
@@ -648,7 +681,7 @@ function RoutineEditorScreen({
   const pendingAutosaveTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (isLoading || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
+    if (isLoading || activeRoutineDraftError || !hasUnsavedChange) return
     const timeoutId = window.setTimeout(() => {
       pendingAutosaveTimeoutRef.current = null
       void saveDraftRef.current({ refreshEditor: false })
@@ -658,13 +691,13 @@ function RoutineEditorScreen({
       window.clearTimeout(timeoutId)
       if (pendingAutosaveTimeoutRef.current === timeoutId) pendingAutosaveTimeoutRef.current = null
     }
-  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isValidationCurrent])
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, hasUnsavedChange, isLoading])
 
   // Test draft navigates away, which unmounts this section and cancels the debounce above.
   // Flush any unsaved edit into the same saveDraft the timer would have called so the draft
   // under test always reflects the operator's last keystroke.
   const flushPendingSave = useCallback(async (): Promise<boolean> => {
-    const hasPendingChange = !isValidationCurrent && !activeRoutineDraftError && Boolean(activeRoutineDraftSignature)
+    const hasPendingChange = hasUnsavedChange && !activeRoutineDraftError
     if (!hasPendingChange) return true
     if (pendingAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(pendingAutosaveTimeoutRef.current)
@@ -672,7 +705,7 @@ function RoutineEditorScreen({
     }
     const saved = await saveDraftRef.current({ refreshEditor: false })
     return saved !== null
-  }, [activeRoutineDraftError, activeRoutineDraftSignature, isValidationCurrent])
+  }, [activeRoutineDraftError, hasUnsavedChange])
 
   const handleTestDraft = useCallback(() => {
     void (async () => {
@@ -761,6 +794,8 @@ function RoutineEditorScreen({
       const nextSignature = JSON.stringify(response.draft)
       setDraftHeader(nextHeader)
       setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
+      loadValidationSupersededRef.current = true
+      setValidationCheckFailed(false)
       setValidation(response.validation)
       setValidatedDraftSignature(nextSignature)
       setDocumentDraft(null)

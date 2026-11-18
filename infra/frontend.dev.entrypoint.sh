@@ -130,7 +130,7 @@ next_cache_has_missing_vendor_chunk() {
   missing_vendor_chunk="$(
     if [ -d frontend/.next/dev/server/app ]; then
       find frontend/.next/dev/server/app -type f -name '*.js' | while IFS= read -r page_bundle; do
-        grep -hEo 'vendor-chunks/[^",]+' "$page_bundle" || true
+        grep -hEo 'vendor-chunks/[^",\\]+' "$page_bundle" || true
       done | sort -u | while IFS= read -r chunk; do
         if [ -n "$chunk" ] && [ ! -f "frontend/.next/dev/server/$chunk.js" ]; then
           printf '%s\n' "$chunk"

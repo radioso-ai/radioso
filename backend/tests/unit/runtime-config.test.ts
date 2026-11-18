@@ -256,7 +256,7 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("frontend/.next/dev/routes-manifest.json");
     expect(entrypoint).toContain("frontend/.next/dev/server/middleware-manifest.json");
     expect(entrypoint).toContain("find frontend/.next/dev/server/app");
-    expect(entrypoint).toContain("vendor-chunks/[^\",]+");
+    expect(entrypoint).toContain("vendor-chunks/[^\",\\\\]+");
     expect(entrypoint).toContain("missing server/$missing_vendor_chunk.js");
     expect(entrypoint).toContain("Restarting frontend Next.js dev server after incomplete cache.");
   });

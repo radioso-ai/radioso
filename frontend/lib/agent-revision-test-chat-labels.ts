@@ -1,14 +1,6 @@
-import type { AgentRevisionSummary, ExecutionState, RevisionEvalRun } from './api-agent-revisions'
+import type { ExecutionState, RevisionEvalRun } from './api-agent-revisions'
 
 /** The words Test Chat shows for a revision, a test's state, an eval outcome, its evidence, and a failed side. */
-
-export const revisionDisplayLabel = (revision: AgentRevisionSummary): string => {
-  if (revision.kind === "published" && revision.versionNumber !== null)
-    return `v${revision.versionNumber}`;
-  if (revision.kind === "candidate")
-    return `Draft · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}`;
-  return "Legacy revision";
-};
 
 export const executionStateLabel: Record<ExecutionState, string> = {
   missing: "Not run",

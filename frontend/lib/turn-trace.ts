@@ -298,8 +298,8 @@ export const routineTurnSignalFromSpine = (
  * back empty; callers should prefer a persisted record when one exists and
  * fall back to this only to fill the gap. A turn with no verdict stage reads
  * its summary's `answerCoverageAvailability` (`not_recorded` when it measured
- * none); a turn whose summary has no such field was recorded before turns
- * reported coverage, and resolves to nothing.
+ * none); a turn whose summary has no such field was recorded before the
+ * summary carried it, and resolves to nothing.
  */
 export const answerCoverageFromTurnTrace = (
   envelope: TurnTraceEnvelope | undefined,

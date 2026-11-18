@@ -20,7 +20,7 @@ export interface TurnTraceSummary {
    * The availability of the turn's coverage verdict: its `answer_coverage_head` stage's, or
    * `not_recorded` when the turn reported none (a routine step, a direct reply). Every summary
    * carries it, so a reader tells a turn that measured no coverage from one recorded before
-   * turns reported it.
+   * the summary carried this field.
    */
   answerCoverageAvailability: AnswerCoverageAvailability;
 }

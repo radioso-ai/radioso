@@ -18,16 +18,22 @@ export function RoutineFilledSlots({ trace }: { trace: RoutineRunTraceView }) {
     return (
       <div className="space-y-1.5">
         <dl className="space-y-1 rounded-md border border-border/60 bg-muted/20 p-2.5">
-          {trace.filledSlotKeys.map((key) => (
-            <div key={key} className="flex min-w-0 items-baseline gap-2 text-xs">
-              <dt className="shrink-0 font-mono text-muted-foreground">
-                {key}
-                {capturedThisTurn.has(key) ? <span className="ml-1 text-emerald-600">• new</span> : null}
-                {replacedThisTurn.has(key) ? <span className="ml-1 text-sky-600">• replaced</span> : null}
-              </dt>
-              <dd className="min-w-0 whitespace-pre-wrap break-words text-foreground">{valueByKey.get(key) ?? ''}</dd>
-            </div>
-          ))}
+          {trace.filledSlotKeys.map((key) => {
+            // A slot past the trace's count bound has no value on it; it is listed by name alone.
+            const value = valueByKey.get(key)
+            return (
+              <div key={key} className="flex min-w-0 items-baseline gap-2 text-xs">
+                <dt className="shrink-0 font-mono text-muted-foreground">
+                  {key}
+                  {capturedThisTurn.has(key) ? <span className="ml-1 text-emerald-600">• new</span> : null}
+                  {replacedThisTurn.has(key) ? <span className="ml-1 text-sky-600">• replaced</span> : null}
+                </dt>
+                {value === undefined ? null : (
+                  <dd className="min-w-0 whitespace-pre-wrap break-words text-foreground">{value}</dd>
+                )}
+              </div>
+            )
+          })}
         </dl>
         {trace.omittedSlotCount ? (
           <p className="text-[11px] text-muted-foreground">{trace.omittedSlotCount} more not shown</p>

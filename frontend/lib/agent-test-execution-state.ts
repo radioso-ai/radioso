@@ -44,37 +44,6 @@ export interface TestExecutionState {
 export const sideHasSentMessage = (side: TestExecutionSideState): boolean =>
   side.messages.some((message) => message.role === 'user')
 
-interface TurnDebugSelection {
-  /** The answer's id, as eval capture and the debug panel name it. */
-  messageId: string
-  turnTrace: TurnTraceEnvelope
-  /** The thread the Flow reads message text from, by the ids its trace names. */
-  messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }>
-}
-
-/**
- * What turn debug shows for a selected message: the answer that settled its turn and that
- * answer's trace. The transcript keeps no id for the operator's message, so the turn's message
- * is listed under the id its trace's `message` stage names, which is where the Flow looks it up.
- */
-export const turnDebugSelection = (messages: readonly TestExecutionMessage[], messageId: string): TurnDebugSelection | null => {
-  const selectedIndex = messages.findIndex((item) => item.id === messageId)
-  const answer = selectedIndex < 0 ? undefined : messages.slice(selectedIndex).find((item) => item.role === 'assistant')
-  if (!answer?.turnTrace) return null
-  const tracedMessageId = answer.turnTrace.spine.stages.find((stage) => stage.kind === 'message')?.outputs?.eventId
-  return {
-    messageId: answer.persistedAssistantMessageId ?? answer.id,
-    turnTrace: answer.turnTrace,
-    messages: messages.map((item) => ({
-      id: item.role === 'user' && item.turnId === answer.turnId && typeof tracedMessageId === 'string'
-        ? tracedMessageId
-        : item.persistedAssistantMessageId ?? item.id,
-      role: item.role,
-      content: item.content,
-    })),
-  }
-}
-
 /**
  * Aggregate independent side outcomes into one execution status. A side still
  * running keeps the whole execution running; once none are, a side failure
@@ -337,6 +306,15 @@ export const failTestExecutionSide = (state: TestExecutionState, sideId: string,
   }
 }
 
+/**
+ * The turn's message takes the id its side stores it under, the id the turn's trace names it by,
+ * so a live session lists it as a reopened one does.
+ */
+const withStoredUserMessageId = (messages: TestExecutionMessage[], turnId: string, userMessageId: string | undefined): TestExecutionMessage[] =>
+  userMessageId
+    ? messages.map((message) => message.role === 'user' && message.turnId === turnId ? { ...message, id: userMessageId } : message)
+    : messages
+
 /** Ignore delayed events from an execution that the operator has already replaced. */
 export const reduceTestExecutionEvent = (
   state: TestExecutionState,
@@ -363,7 +341,7 @@ export const reduceTestExecutionEvent = (
     : side.messages
 
   const nextSide: TestExecutionSideState = event.type === 'side_started'
-    ? { ...side, state: 'running', errorCode: undefined, retryable: false, messages: updateLastAssistant({ state: 'streaming' }) }
+    ? { ...side, state: 'running', errorCode: undefined, retryable: false, messages: withStoredUserMessageId(updateLastAssistant({ state: 'streaming' }), event.turnId, event.userMessageId) }
     : event.type === 'message_delta'
       ? {
         ...side,

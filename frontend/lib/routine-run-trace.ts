@@ -124,12 +124,13 @@ const rejectedSlotsOf = (value: unknown): RoutineRejectedSlotView[] =>
     return key ? [{ key, reason: isKnownRejectedSlotReason(reason) ? reason : 'unknown' }] : []
   })
 
-/** A filled slot's value as the trace carries it; a sensitive slot's reads as the redaction mark. */
+/**
+ * A filled slot's value as the trace carries it: a sensitive slot's reads as the redaction mark,
+ * and one cut to the trace's length bound already ends in "…".
+ */
 interface RoutineSlotValueView {
   key: string
   value: string
-  /** The trace cut the value to its length bound. */
-  truncated?: true
 }
 
 // Scalars only, as the runner writes them; an entry of any other shape is dropped.
@@ -141,7 +142,7 @@ const slotValuesOf = (value: unknown): RoutineSlotValueView[] =>
     if (!key || !(typeof slotValue === 'string' || typeof slotValue === 'number' || typeof slotValue === 'boolean')) {
       return []
     }
-    return [{ key, value: String(slotValue), ...(entry.truncated === true ? { truncated: true as const } : {}) }]
+    return [{ key, value: String(slotValue) }]
   })
 
 export interface RoutineRunTraceView {

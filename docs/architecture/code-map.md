@@ -2885,8 +2885,10 @@ Turn debug view entry points:
   the draw layer and its full-screen host
 - `frontend/lib/turn-trace.ts` (`answerCoverageFromTurnTrace`) — a turn's coverage
   from its verdict stage or its summary's `answerCoverageAvailability`
-- `frontend/lib/agent-test-execution-state.ts` (`turnDebugSelection`) — the answer,
-  trace, and thread Test Chat's debug sheet and Flow read for a selected turn
+- Test Chat's messages carry the ids its transcript stores them under (each side's
+  history entries, and `side_started.userMessageId` for a message just sent), the
+  ids the turn's trace names, so the Flow's Message and History steps resolve them;
+  `TrustedTestExecutionRunnerAdapter` replays a turn under those ids
 - `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts tests/unit/turn-trace.test.ts tests/unit/agent-test-execution-state.test.ts`
 
 Useful searches:

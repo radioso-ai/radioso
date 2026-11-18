@@ -256,9 +256,11 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
           return `data: ${JSON.stringify(partial)}\n\ndata: ${JSON.stringify({ type: 'side_failed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
         }
         attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })
+        // The side stores the turn's message under the id the turn's trace names it by.
+        const userMessageId = options.turnTrace?.spine.stages.find((stage) => stage.kind === 'message')?.outputs?.eventId as string | undefined
         if (activeSide) {
           activeSide.history = [...(activeSide.history ?? []),
-            { turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso },
+            { turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, ...(userMessageId ? { messageId: userMessageId } : {}), attemptId: body.attemptId, createdAt: nowIso },
             { turnId: body.turnId, role: 'assistant', content: answer, messageId: `message-${index}`, turnTrace: options.turnTrace, attemptId: body.attemptId, createdAt: nowIso },
           ]
           activeSide.state = 'completed'
@@ -266,7 +268,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
         // Streamed in two chunks, the second with a raw citation anchor the stored answer drops.
         const deltas = [answer.slice(0, 2), `${answer.slice(2)} [[1]]`].map((delta) => ({ type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, delta, turnId: body.turnId, attemptId: body.attemptId }))
         const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, answer, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
-        return [...deltas, done].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')
+        const started = { type: 'side_started', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, ...(userMessageId ? { userMessageId } : {}) }
+        return [started, ...deltas, done].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')
       }).join('')
     await route.fulfill({ contentType: 'text/event-stream', body: responseEvents })
   })
@@ -1807,6 +1810,8 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   const stageDetail = page.getByTestId('turn-flow-stage-detail')
   await expect(stageDetail.getByText('Show the test turn flow', { exact: true })).toBeVisible()
   await expect(stageDetail.getByText('A fenced answer.', { exact: true })).toHaveCount(0)
+  // The Message node finds that message by the id the turn's trace names it by.
+  await expect(page.getByTestId('rf__node-input:message')).toContainText('Show the test turn flow')
 
   // The coverage verdict head (#1260) is its own Flow node, sequenced ahead of
   // the outcome. A positional click can land on a neighbouring node in the

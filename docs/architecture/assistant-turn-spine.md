@@ -342,8 +342,8 @@ The summary's `answerCoverageAvailability` is the availability of the turn's
 coverage verdict: the `answer_coverage_head` stage's when the turn reported one,
 `not_recorded` when it measured none, as on a routine step or a direct reply.
 A turn inspector with no stored assessment for the turn reads its coverage from
-this field, and treats a summary without it as a turn recorded before turns
-reported coverage.
+this field, and treats a summary without it as a turn recorded before the
+summary carried it.
 
 ## Skills are dispatched, not called
 

@@ -227,7 +227,7 @@ describe("buildTurnTraceSummary", () => {
     });
   });
 
-  // #1817: a reader tells a turn that measured no coverage from one recorded before turns said so.
+  // #1817: a reader tells a turn that measured no coverage from one recorded before the summary carried the field.
   describe("answer coverage availability", () => {
     const spineWith = (stages: ConversationTrace["stages"]): ConversationTrace => ({
       traceId: "turn-4",

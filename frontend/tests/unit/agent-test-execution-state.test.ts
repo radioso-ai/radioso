@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, finalizeTestExecutionStream, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent, turnDebugSelection } from '@/lib/agent-test-execution-state'
+import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, finalizeTestExecutionStream, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent } from '@/lib/agent-test-execution-state'
 
 const state = () => initializeTestExecutionState({
   id: 'execution-1',
@@ -126,39 +126,18 @@ describe('agent test execution state', () => {
     })
   })
 
-  // #1766: the Flow's Message step finds the turn's message by the id the trace names for it.
-  it('hands turn debug the selected turn\'s answer, and its message under the id the trace gave it', () => {
-    const traceFor = (visitorMessageId: string) => ({
-      version: 1,
-      spine: { traceId: `trace-${visitorMessageId}`, startedAt: '', stages: [{ id: 'message', kind: 'message', status: 'applied' as const, outputs: { eventId: visitorMessageId } }] },
+  // #1766: the turn's trace names the operator's message by the id its side stores it under.
+  it('lists a sent message under the id its side stores it under, as a reopened session does', () => {
+    const active = beginTestExecutionTurn(state(), 'Do you have parking?', 'turn-1', 'attempt-1')
+    const started = (current: typeof active, sideId: string, userMessageId?: string) => reduceTestExecutionEvent(current, {
+      type: 'side_started', executionId: 'execution-1', generation: 2, sideId, turnId: 'turn-1', attemptId: 'attempt-1', ...(userMessageId ? { userMessageId } : {}),
     })
-    const complete = (current: ReturnType<typeof state>, turnId: string, answer: string, messageId: string, visitorMessageId: string) =>
-      reduceTestExecutionEvent(current, {
-        type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left', turnId, attemptId: `${turnId}-attempt`,
-        messageId, answer, turnTrace: traceFor(visitorMessageId),
-      })
-    const first = complete(beginTestExecutionTurn(state(), 'Do you have parking?', 'turn-1', 'turn-1-attempt'), 'turn-1', 'Yes, two spaces.', 'answer-1', 'visitor-1')
-    const second = complete(beginTestExecutionTurn(first, 'Can I bring a dog?', 'turn-2', 'turn-2-attempt'), 'turn-2', 'Small dogs only.', 'answer-2', 'visitor-2')
-    const messages = second.sides.left.messages
 
-    const selected = turnDebugSelection(messages, messages[0].id)
+    const updated = started(started(active, 'left', 'left-visitor-message'), 'right')
 
-    expect(selected?.messageId).toBe('answer-1')
-    expect(selected?.turnTrace.spine.traceId).toBe('trace-visitor-1')
-    expect(selected?.messages).toEqual([
-      { id: 'visitor-1', role: 'user', content: 'Do you have parking?' },
-      { id: 'answer-1', role: 'assistant', content: 'Yes, two spaces.' },
-      { id: 'left-turn-2-user', role: 'user', content: 'Can I bring a dog?' },
-      { id: 'answer-2', role: 'assistant', content: 'Small dogs only.' },
-    ])
-    expect(turnDebugSelection(messages, messages[3].id)?.messages[2]).toEqual({ id: 'visitor-2', role: 'user', content: 'Can I bring a dog?' })
-  })
-
-  it('has nothing to debug for a turn whose answer carries no trace', () => {
-    const active = beginTestExecutionTurn(state(), 'Hello', 'turn-1', 'attempt-1')
-
-    expect(turnDebugSelection(active.sides.left.messages, active.sides.left.messages[0].id)).toBeNull()
-    expect(turnDebugSelection(active.sides.left.messages, 'unknown')).toBeNull()
+    expect(updated.sides.left.messages.map((message) => [message.role, message.id])).toEqual([['user', 'left-visitor-message'], ['assistant', 'left-turn-1-assistant']])
+    // A side whose store names no id keeps the one the session gave the message.
+    expect(updated.sides.right.messages[0]?.id).toBe('right-turn-1-user')
   })
 
   it('streams deltas into the reply and settles it on the stored answer the completion carries', () => {

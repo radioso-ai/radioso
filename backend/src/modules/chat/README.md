@@ -45,7 +45,8 @@ inside its own model-call collector, as `ChatService` does, so the replayed
 trace's summary counts and times its model calls. The answer goes out under an
 id of its own (`WorkbenchReplayResult.messageId`, also the id a consent prompt
 it shows is kept under); the trace's `message` stage names the visitor
-message's id.
+message's id, which is `WorkbenchReplayInput.userMessageId` when the caller
+stores the message under one (Test Chat does), and a fresh id otherwise.
 
 ## Public Surfaces
 

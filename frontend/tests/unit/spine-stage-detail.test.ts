@@ -402,7 +402,7 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.slotValues).toEqual([
       { key: 'email', value: 'guest@example.com' },
       { key: 'adults', value: '2' },
-      { key: 'notes', value: 'Arriving late, after…', truncated: true },
+      { key: 'notes', value: 'Arriving late, after…' },
       { key: 'phone', value: '[redacted]' },
     ])
     expect(view?.omittedSlotCount).toBe(3)

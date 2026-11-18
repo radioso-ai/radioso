@@ -141,7 +141,8 @@ export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'>
 }
 
 export type TestExecutionEvent =
-  | { type: 'side_started'; executionId: string; generation: number; sideId: string; turnId: string; attemptId: string }
+  /** `userMessageId` is the id the side stores the turn's message under, the id the turn's trace names it by. */
+  | { type: 'side_started'; executionId: string; generation: number; sideId: string; turnId: string; attemptId: string; userMessageId?: string }
   | { type: 'message_delta'; executionId: string; generation: number; sideId: string; delta: string; turnId: string; attemptId: string }
   /** `answer` is the stored answer, which replaces the streamed text; only a backend that predates it omits it. */
   | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; answer?: string; turnId: string; attemptId: string; blocks?: ReplyBlock[]; turnTrace?: TurnTraceEnvelope }

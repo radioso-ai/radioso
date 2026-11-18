@@ -76,6 +76,9 @@ const askContact: RoutineStep = {
   metadata: { collectsSlots: ["email", "phone"] },
 };
 const confirmed: RoutineStep = { id: "confirmed", kind: "terminal", action: "Confirm the booking request was sent." };
+const shortlistEnding = "Tell them a scout will check the shortlisted properties and get back to them.";
+const shortlistFinish: RoutineStep = { id: "done", kind: "terminal", action: shortlistEnding, metadata: { terminalKind: "complete" } };
+const shortlistHandoff: RoutineStep = { id: "scout", kind: "terminal", action: shortlistEnding, metadata: { terminalKind: "handoff" } };
 
 const routineRule = (action: string): SteeringRule => ({ action, source: "routine", lifespan: "response" });
 const contactSteering: SteeringRule[] = [routineRule("Thank them, then ask for their email and phone number.")];
@@ -119,6 +122,25 @@ const replyCases: Array<{ name: string; input: RoutineStepReplyInput; responseLa
     name: "a terminal step reply",
     input: { step: confirmed, steering: [routineRule("Confirm the booking request was sent.")], turn },
     responseLanguage: "German",
+  },
+  {
+    name: "a finish ending after a search that found nothing, passing nothing on",
+    input: {
+      step: shortlistFinish,
+      steering: [routineRule(shortlistEnding)],
+      turn,
+      ending: { requestPassedOn: false, skillOutcomes: [{ skillName: "search_listings", status: "empty" }] },
+    },
+  },
+  {
+    name: "a hand-off ending with a message after a search that found nothing",
+    input: {
+      step: shortlistHandoff,
+      steering: [routineRule(shortlistEnding)],
+      turn,
+      ending: { requestPassedOn: true, skillOutcomes: [{ skillName: "search_listings", status: "empty" }] },
+    },
+    responseLanguage: "Italian",
   },
   {
     name: "a step reply on an unresolved request with directive guidance and one evidence block",

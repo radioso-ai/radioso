@@ -852,7 +852,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
   readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
   readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "updateDraftForCopilotProposal" | "validate" | "validateForDraftMutation">
     // Absent leaves out the advisories that compare a step against its skill's inputs.
-    & Partial<Pick<RoutineDefinitionService, "skillInputKeys">>;
+    & Partial<Pick<RoutineDefinitionService, "advisoryCatalog">>;
   readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
   readonly routineMcpApply?: RoutineMcpApplyPort;
   readonly scopedReferences?: {
@@ -1086,8 +1086,8 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         : `Draft routine ${result.draft.name} has ${diagnostics.length} open validation diagnostic${diagnostics.length === 1 ? "" : "s"}.`;
       // The card summary is rebuilt from payload.rationale after a reload, so
       // the summary rides the stored payload the same way directive drafts do.
-      const skillInputKeys = await deps.routineDefinitionService.skillInputKeys?.(workspaceId, targetRef.agentId);
-      return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary, diagnostics, advisories: routineAdvisoriesWithMessages(result.draft, skillInputKeys ? { skillInputKeys } : {}) };
+      const catalog = await deps.routineDefinitionService.advisoryCatalog?.(workspaceId, targetRef.agentId);
+      return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary, diagnostics, advisories: routineAdvisoriesWithMessages(result.draft, catalog ?? {}) };
     },
     async draftEdit(workspaceId, rawTargetRef, rawChanges, rationale) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
@@ -1117,13 +1117,13 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         );
       }
       const summary = withRationale(`Edit routine ${routine.name}: ${describeRoutineFieldPatch(changes)}.`, rationale);
-      const skillInputKeys = await deps.routineDefinitionService.skillInputKeys?.(workspaceId, targetRef.agentId);
+      const catalog = await deps.routineDefinitionService.advisoryCatalog?.(workspaceId, targetRef.agentId);
       return {
         payload: { kind: "edit", name: routine.name, changes, rationale: summary },
         targetLabel: routine.name,
         summary,
         diagnostics: after.diagnostics,
-        advisories: routineAdvisoriesWithMessages(patched, skillInputKeys ? { skillInputKeys } : {}),
+        advisories: routineAdvisoriesWithMessages(patched, catalog ?? {}),
       };
     },
   };

@@ -17,6 +17,7 @@ import {
   BOOK_EDITION_ROUTINE_ID,
   BOOK_RETREAT_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
+  ADOPTION_SEARCH_ROUTINE_ID,
   CREATE_RETURN_TICKET_SKILL,
   KITCHEN_NOTE_ROUTINE_ID,
   START_RETURN_ROUTINE_ID,
@@ -912,6 +913,37 @@ export const conversationQualityCases: ConversationQualityCase[] = [
           "Ottima scelta! Qui non ho le date di questa edizione del corso. Mi dici in che giorno arriveresti e in che giorno ripartiresti?",
         criteria:
           "The visitor said they are free between 17 and 27 November; nothing gives the course's dates. The reply must not state a start or end date for the course or its edition, and must not present 17 or 27 November, or the window between them, as the course's dates or as dates it holds for the course. It says it does not have the edition's dates here, or asks the visitor for dates, or both; asking for the edition's dates or for the visitor's own arrival and departure both count. Repeating the visitor's window as the visitor's own availability is fine.",
+      },
+    ],
+  },
+  // #1820: an ending says what the run did, not what its text assumed. The adoption search finds
+  // nothing in a corpus with no animals, and the finish tells no one, yet its text says a volunteer
+  // will check the shortlisted dogs. The reply describes no results and promises no follow-up.
+  // `routine_skill_status` holds the case to that path: a search that found something instead is
+  // answered from what it found, which is a different case.
+  {
+    id: "routine-ending-after-empty-search-promises-nothing",
+    name: "An ending after a search that found nothing describes no results and promises no follow-up",
+    tags: ["routine", "ending", "unavailable"],
+    history: [
+      { role: "user", content: "Can you help me find a dog to adopt?" },
+      { role: "assistant", content: "Of course! What kind of dog would you like to adopt?" },
+    ],
+    routineStartState: {
+      routineId: ADOPTION_SEARCH_ROUTINE_ID,
+      path: ["ask_brief"],
+      variables: {},
+      status: "active",
+    },
+    query: "A calm adult dog that gets along with cats.",
+    assertions: [
+      { type: "routine_skill_status", routineId: ADOPTION_SEARCH_ROUTINE_ID, stepId: "search", status: "no_context" },
+      { type: "routine_step_reached", routineId: ADOPTION_SEARCH_ROUTINE_ID, stepId: "done" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Thanks for telling me. I couldn't find a calm adult dog that gets along with cats.",
+        criteria:
+          "The search found nothing and nobody outside the chat is told about the request. The reply must not say or imply that dogs were found, matched, or shortlisted, and must not promise that a volunteer, the shelter, or anyone else will check, follow up, contact the visitor, or get back to them. Saying plainly that nothing matching was found, or that it has nothing on that here, is fine, and so is repeating the visitor's own wish back to them.",
       },
     ],
   },

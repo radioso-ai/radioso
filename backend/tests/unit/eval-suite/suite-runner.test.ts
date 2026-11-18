@@ -260,7 +260,11 @@ const routineStack = () => {
       const runner = new DefaultRoutineRunner(
         routines,
         new RoutineNextStepSelector(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-next-step.md") }),
-        new RoutineStepRenderer(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"), responseLanguage }),
+        new RoutineStepRenderer(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
+          responseLanguage,
+        }),
         dispatcher,
         { contextRenderer: routineContextRenderer, ...direct?.runnerOptions },
       );
@@ -340,6 +344,51 @@ describe("conversation-quality suite gives a routine step the page it references
     expect(stepReply?.prompt).toContain("<page_excerpt>");
     expect(stepReply?.prompt).toContain("dal 30 ottobre al 2 novembre 2026");
     expect(stepReply?.systemPrompt).not.toContain("30 ottobre");
+  });
+});
+
+// An ending's text is written for the path its author intended (#1820). The reply that ends a case's
+// run is told what the run did: the tool steps it ran with their outcomes, and whether anyone outside
+// the chat gets the request, here from the ticket tool and from the ending's team notice.
+describe("conversation-quality suite tells a routine's ending what the run did (#1820)", () => {
+  const endingReplyFor = async (caseId: string): Promise<ChatGatewayInput | undefined> => {
+    const evalCase = conversationQualityCases.find((candidate) => candidate.id === caseId)!;
+    const stack = routineStack();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      routineProvider: stack.routineProvider,
+      chatGateway: stack.chatGateway,
+      chatAnswerPresenter: new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+    });
+    const port = createWorkbenchReplayRunnerPort(runner, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+
+    await runConversationQualitySuite([evalCase], port, { workspaceId: CQ_WORKSPACE_ID });
+
+    const endings = stack.requests.filter((request) => request.systemPrompt?.includes("This message ends the flow."));
+    expect(endings).toHaveLength(1);
+    return endings[0];
+  };
+
+  it("tells the return's ending the ticket tool's outcome and that the request was passed on", async () => {
+    const ending = await endingReplyFor("routine-return-transcript");
+
+    expect(ending?.systemPrompt).toContain(`with the outcome each reported: \`${CREATE_RETURN_TICKET_SKILL}\` → \`completed\``);
+    expect(ending?.systemPrompt).toContain("outside this chat: yes");
+  });
+
+  it("tells the support ending, which notifies the team, that the request was passed on", async () => {
+    const ending = await endingReplyFor("routine-contact-resume");
+
+    expect(ending?.systemPrompt).toContain("with the outcome each reported: none");
+    expect(ending?.systemPrompt).toContain("outside this chat: yes");
   });
 });
 

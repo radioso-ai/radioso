@@ -53,7 +53,7 @@ offered. If no listed source gives the fact, do not state or guess it: say brief
 not have it here, then ask the user for what the step needs from them. If one of your earlier
 messages already said so, just ask.
 
-{{step_progress_instruction}}
+{{step_progress_instruction}}{{ending_run}}
 
 {{response_language_instruction}}
 

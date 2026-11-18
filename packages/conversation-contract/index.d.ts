@@ -11,7 +11,6 @@ import type {
   RoutineInputBinding,
   RoutineItemSelection,
   RoutineShownItems,
-  RoutineStepReask,
   RoutineOperatorNoticeTemplate,
   RoutineSlotSchema,
   RoutineStep,
@@ -19,6 +18,7 @@ import type {
   RoutineTransition,
 } from "./routineGraph.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
+import type { RoutineStepReplyInput } from "./routineStepReply.js";
 import type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -1070,6 +1070,12 @@ export interface ConversationRoutineSkillDispatcher {
     // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
     // part of the dispatch input.
   }): Promise<RoutineSkillResult>;
+  /**
+   * Whether running `skillName` can act outside the conversation, read without running it: false
+   * for a skill that only reads workspace evidence, such as a search. Optional; absent, the runner
+   * counts no tool step an earlier turn ran as passing a request on (#1820).
+   */
+  actsOutsideConversation?(skillName: string): boolean;
 }
 
 /**
@@ -1115,22 +1121,7 @@ export interface ConversationRoutineStepRenderer {
   prepare?(input: RoutineStepReplyInput): PendingRenderableTurn;
 }
 
-/** What a routine step's reply is written from. */
-export interface RoutineStepReplyInput {
-  step: RoutineStep;
-  steering: SteeringRule[];
-  turn: TurnContext;
-  reask?: RoutineStepReask;
-  /**
-   * True when the runner ends the routine on `step` because the visitor stayed stuck on it
-   * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
-   * the visitor a person continues from here; it neither asks the step's question nor
-   * follows its instruction, so `steering` is empty and `reask` absent.
-   */
-  stuckHandoff?: boolean;
-  /** {@link RoutineContextRenderer.evidence} of the context variables the step references; absent when none carries any. */
-  contextEvidence?: readonly string[];
-}
+export type * from "./routineStepReply.js";
 
 /**
  * Which directives steered one routine step's reply, recorded as
@@ -1793,19 +1784,6 @@ export interface RoutineContextRenderer {
   render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
   evidence?(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
 }
-
-/** Renders a grounded answer for a routine step, or null when the step is not groundable. */
-export interface RoutineGroundedAnswerRenderer {
-  render(input: RoutineGroundedAnswerInput): Promise<RenderableTurn | null>;
-  /**
-   * Decides from the turn's staged context alone whether the step is groundable: null when
-   * it is not, otherwise the grounded answer, generated only when asked.
-   * `prepare(input)?.render()` produces what `render(input)` would. Optional.
-   */
-  prepare?(input: RoutineGroundedAnswerInput): PendingRenderableTurn | null;
-}
-
-export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn">;
 
 /**
  * Tool-backed skills. A host that exposes tools (MCP, OpenAPI, local functions) implements

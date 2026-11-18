@@ -23,7 +23,7 @@ const createRoutineStructuralPreparationTool = (dependencies: unknown) => {
   const given = dependencies as { routines?: Record<string, unknown> };
   return createRoutineStructuralPreparationToolOwner({
     ...given,
-    routines: { skillInputKeys: vi.fn(async () => ({})), ...given.routines },
+    routines: { advisoryCatalog: vi.fn(async () => ({})), ...given.routines },
   } as never);
 };
 

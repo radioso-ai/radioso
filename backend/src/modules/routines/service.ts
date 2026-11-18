@@ -13,7 +13,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDraftAuthoringInput,
-  type RoutineSkillInputKeys,
+  type RoutineAdvisoryCatalog,
 } from "./domain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import {
@@ -500,12 +500,17 @@ export class RoutineDefinitionService {
   }
 
   /**
-   * The input keys each of the agent's skills reads from a step's arguments, for the advisory that
-   * tells an author a skill step with no bindings sends a sensitive field masked (#1543).
+   * What the agent's skills tell the routine advisories: the input keys each reads from a step's
+   * arguments, for the advisory that tells an author a skill step with no bindings sends a sensitive
+   * field masked (#1543), and the skills that only read the agent's documents, which pass nothing on
+   * for the advisory that names an ending that tells no one (#1820).
    */
-  async skillInputKeys(workspaceId: string, agentId: string): Promise<RoutineSkillInputKeys> {
+  async advisoryCatalog(workspaceId: string, agentId: string): Promise<RoutineAdvisoryCatalog> {
     const descriptors = await this.options.skillAuthoringCatalog?.listForAgent({ workspaceId, agentId }) ?? [];
-    return Object.fromEntries(descriptors.map((descriptor) => [descriptor.skillName, descriptor.inputs.map((input) => input.key)]));
+    return {
+      skillInputKeys: Object.fromEntries(descriptors.map((descriptor) => [descriptor.skillName, descriptor.inputs.map((input) => input.key)])),
+      retrievalSkillNames: descriptors.filter((descriptor) => descriptor.category === "retrieval").map((descriptor) => descriptor.skillName),
+    };
   }
 
   private async validateWithAvailableSkills(

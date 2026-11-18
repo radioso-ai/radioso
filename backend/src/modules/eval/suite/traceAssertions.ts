@@ -26,6 +26,8 @@ export type SuiteTraceAssertion =
   | { type: "turn_skips_skill"; skillName: string }
   | { type: "turn_activates_routine"; routineId: string }
   | { type: "routine_step_reached"; routineId: string; stepId: string }
+  /** The routine's tool step `stepId` ran this turn and reported `status`, such as `no_context` from a search that found nothing. */
+  | { type: "routine_skill_status"; routineId: string; stepId: string; status: string }
   /** Every named slot is filled after the turn, whichever step the routine landed on. */
   | { type: "routine_slots_filled"; routineId: string; slotKeys: string[] }
   /** None of the named slots holds a value after the turn: the negation of `routine_slots_filled`. */
@@ -107,6 +109,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_skips_skill",
   "turn_activates_routine",
   "routine_step_reached",
+  "routine_skill_status",
   "routine_slots_filled",
   "routine_slots_unfilled",
   "routine_slots_returned",
@@ -448,6 +451,27 @@ export const evaluateTraceAssertion = (
         landed
           ? `Routine "${assertion.routineId}" landed on ${landed}; expected "${assertion.stepId}".`
           : `Routine "${assertion.routineId}" recorded no step trace to match "${assertion.stepId}".`,
+      );
+    }
+    case "routine_skill_status": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const matches = routineStages(output, assertion.routineId);
+      if (matches.length === 0) {
+        return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
+      }
+      const reported = matches.flatMap((stage) => routineTrace(stage)?.steps ?? [])
+        .filter((step) => step.stepId === assertion.stepId && step.event === "skill_dispatched")
+        .map((step) => step.skillStatus ?? "");
+      if (reported.includes(assertion.status)) {
+        return pass(assertion, `Step "${assertion.stepId}" of routine "${assertion.routineId}" reported "${assertion.status}".`);
+      }
+      return fail(
+        assertion,
+        reported.length > 0
+          ? `Step "${assertion.stepId}" of routine "${assertion.routineId}" reported "${reported.join(", ")}"; expected "${assertion.status}".`
+          : `Step "${assertion.stepId}" of routine "${assertion.routineId}" ran no skill this turn; expected "${assertion.status}".`,
       );
     }
     case "routine_slots_filled":

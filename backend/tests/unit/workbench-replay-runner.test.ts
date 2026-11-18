@@ -1979,7 +1979,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(detect).toHaveBeenCalledWith(expect.objectContaining({ query: ITALIAN_CORRECTION }));
     expect(calls).toHaveLength(1);
     expect(calls[0].systemPrompt)
-      .toContain(`Write one short message in Italian that preserves this meaning:\n${ENGLISH_HANDOFF_ENDING}`);
+      .toContain(`Write one short message in Italian that preserves this meaning, except where the facts after it contradict it:\n${ENGLISH_HANDOFF_ENDING}`);
     expect(result.answer).toBe("La reception confermerà disponibilità e prezzo via email.");
     expect(result.handoff).toEqual(expect.objectContaining({ routineId: "book_accommodation", stepId: "handoff" }));
   });

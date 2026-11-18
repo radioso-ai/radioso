@@ -51,6 +51,9 @@ interface RoutineGroundedAnswerRendererOptions {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Marks a step reply as the ending of a turn whose retrieval found nothing (#1820). */
+const ROUTINE_RETRIEVAL_MISS_KEY = "routineRetrievalMiss";
+
 const retrievalResultFromStagedContext = (
   stagedContext: readonly StagedContext[],
 ): RetrievalPipelineResult | null => {
@@ -243,6 +246,11 @@ export const presentRoutineRenderableAnswer = (
   if (presented) {
     return presented;
   }
+  // The ending of a turn whose retrieval found nothing is that turn's retrieval miss (#1820),
+  // classified as a chat step's decline on the same miss is, so the miss hand-off runs for both.
+  if (isRecord(response.metadata) && response.metadata[ROUTINE_RETRIEVAL_MISS_KEY] === true) {
+    return presenter.presentRetrievalDeclineAnswer(response.answer, "content_gap");
+  }
   // A step reply carries authored chips only when it shows a consent's two choices (#1544).
   const suggestions = optionalChatSuggestions(response.suggestions);
   const answer = presenter.presentRoutineAnswer(response.answer, response.citations);
@@ -318,7 +326,9 @@ export const createRoutineGroundedAnswerRenderer = (
   // Which reply the step gets is read off the staged context alone; the answer is generated
   // only when the reply is rendered or streamed. A step that shows a skill step's results
   // (#1763) is written from them on the turn they are staged; otherwise a step grounds on a
-  // staged retrieval.
+  // staged retrieval. An ending on a retrieval that found nothing has nothing to ground: a
+  // decline is the wrong reply for the message that ends the flow, so the step reply writes it
+  // from the ending and what the run did, and is marked as the turn's retrieval miss (#1820).
   const prepare = (input: RoutineGroundedAnswerInput): PendingRenderableTurn | null => {
     const presenting = routinePresentingStepReply(options, input);
     if (presenting) {
@@ -331,7 +341,7 @@ export const createRoutineGroundedAnswerRenderer = (
       });
     }
     const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
-    if (!retrieval) {
+    if (!retrieval || endsOnRetrievalMiss(input, retrieval)) {
       return null;
     }
     return reply(() => grounded(input, retrieval), finish);
@@ -341,5 +351,17 @@ export const createRoutineGroundedAnswerRenderer = (
     async render(input) {
       return (await prepare(input)?.render()) ?? null;
     },
+    // An ending that already passes the request on (a notice, an export, a webhook) is no miss to
+    // hand off: marked one, the turn would notify the team twice and give the conversation to a person.
+    stepReplyMetadata(input) {
+      const retrieval = retrievalResultFromStagedContext(input.turn.stagedContext);
+      return retrieval && endsOnRetrievalMiss(input, retrieval) && input.ending?.requestPassedOn !== true
+        ? { [ROUTINE_RETRIEVAL_MISS_KEY]: true }
+        : undefined;
+    },
   };
 };
+
+/** Whether the step is an ending on a turn whose staged retrieval found nothing (#1820). */
+const endsOnRetrievalMiss = (input: RoutineGroundedAnswerInput, retrieval: RetrievalPipelineResult): boolean =>
+  input.step.kind === "terminal" && retrieval.contexts.length === 0;

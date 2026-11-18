@@ -105,9 +105,11 @@ terminals:
 - kind is "handoff" only when the procedure says to hand off or escalate to a human; otherwise "complete".
 - instruction is the terminal instruction or null.
 - operatorNotice is either null or an object with nullable subject and intro strings. A hand-off ending
-  always notifies the team. Set a notice on a complete ending only when the procedure says the team
-  should be told when it finishes; otherwise use null. A notice is never an action step. Use
-  {{slot.key}} when its text refers to a collected value.
+  always notifies the team. Set a notice on a complete ending when the procedure says the team
+  should be told when it finishes, or when the ending's instruction promises that someone will
+  follow up, check, or contact the visitor: without a notice nobody outside the chat is told, and
+  the agent leaves that promise out of its reply. Otherwise use null. A notice is never an action
+  step. Use {{slot.key}} when its text refers to a collected value.
 - ordinal is zero-based order.
 
 General rules:

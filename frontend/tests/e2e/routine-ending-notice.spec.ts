@@ -113,6 +113,66 @@ test("a finish ending notifies the team with the notice its author wrote, and ke
   await expect(documentEditor.getByLabel("Intro", { exact: true })).toContainText("Please confirm the room.");
 });
 
+// A finish nothing passes the request on from tells no one, so its reply promises no follow-up (#1820).
+test("a finish ending that tells no one says its reply won't promise follow-up, until the author turns its notice on", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [], routines: [bookingRoutine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  const tellsNoOne = documentEditor.getByText("Nobody hears of this ending, so its reply won't promise follow-up.");
+
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+  await expect(tellsNoOne).toHaveCount(0);
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await expect(tellsNoOne).toBeVisible();
+  await documentEditor.getByRole("switch", { name: "Notify the team" }).click();
+  await expect(tellsNoOne).toHaveCount(0);
+});
+
+// A search only reads the agent's documents, so a finish past one still tells no one; a ticket
+// webhook in its place passes the request on.
+test("a finish past a search tells no one, and a finish past a ticket webhook does not say so", async ({ page }) => {
+  const searchStep = { stableStepId: "search", kind: "tool" as const, instruction: "Search the listings.", toolRef: "search_listings", actionType: null, ordinal: 1, metadata: {} };
+  const pastSearch: RoutineFixture = {
+    ...bookingRoutine,
+    steps: [...bookingRoutine.steps, searchStep],
+    transitions: [
+      { ...bookingRoutine.transitions[0], toRef: "search" },
+      { fromStep: "search", toRef: "booked", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 1 },
+    ],
+  };
+  const catalogSkill = (skillName: string, category: "retrieval" | "webhook") => ({
+    skillName,
+    displayName: skillName,
+    category,
+    inputs: [],
+    outcomes: [{ name: "completed", displayName: "Completed", status: "completed" }],
+    hasDataOutputs: false,
+  });
+  const tellsNoOneFor = async (toolRef: string) => {
+    const routine = { ...pastSearch, steps: [bookingRoutine.steps[0], { ...searchStep, toolRef }] };
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page, {
+      routineUpdates: [],
+      routines: [routine],
+      routineSkillCatalog: [catalogSkill("search_listings", "retrieval"), catalogSkill("create_ticket", "webhook")],
+    });
+    await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
+    const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+    await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+    await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+    await expect(documentEditor.getByRole("switch", { name: "Notify the team" })).toBeVisible();
+    return documentEditor.getByText("Nobody hears of this ending, so its reply won't promise follow-up.");
+  };
+
+  await expect(await tellsNoOneFor("search_listings")).toBeVisible();
+  await expect(await tellsNoOneFor("create_ticket")).toHaveCount(0);
+});
+
 test("a notice's fields reference only the slots the routine declares and stop at their length limits", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

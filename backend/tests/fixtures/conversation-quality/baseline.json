@@ -297,6 +297,11 @@
       "passRate": 0.8,
       "samples": 5
     },
+    "routine-ending-after-empty-search-promises-nothing": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
     "offer-scope-accepted-writing-offer-declined": {
       "status": "pass",
       "passRate": 1,

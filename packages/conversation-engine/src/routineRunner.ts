@@ -27,7 +27,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import {
-  completionExportActionFor,
+  completionExportActionFor, endingReplyField,
   maskedSlotKeys,
   routesToHandoff,
   terminalKindFor,
@@ -1060,14 +1060,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected), replyUnread, consentGate.waived)
         : null;
     // Past the re-ask limit the renderer is always told, even when the step holds its slots.
-    const reask: RoutineStepReask | null = reaskExhausted
-      ? { ...(missing ?? { missingSlots: [] }), exhausted: true }
-      : missing;
+    const reask: RoutineStepReask | null = reaskExhausted ? { ...(missing ?? { missingSlots: [] }), exhausted: true } : missing;
     const reply = this.prepareReply({
       ...rendered,
       steering,
       turn: replyTurn,
       ...(reask ? { reask } : {}),
+      // An ending's reply is told what the run did before it, since its text was written for the intended path (#1820).
+      ...endingReplyField(routine, step, state.path, { traceSteps, ...walkEffects() }, (name) => this.skillDispatcher?.actsOutsideConversation?.(name) === true),
     });
 
     const terminalKind = terminalKindFor(step);

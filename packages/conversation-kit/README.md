@@ -275,6 +275,13 @@ routine with a hand-off end, a step still unanswered a turn later ends the routi
 `stuck`: the runner passes the renderer `stuckHandoff: true` with no steering, the
 reply tells the visitor a person continues the conversation, and the turn's
 `handoff` carries `terminalKind: "stuck"`.
+An ending's reply hears what the run did: the status each tool step on its turn
+reported, and whether the request reached anyone outside the chat. The default skill
+dispatcher runs local handlers whose effects it can't see, so it implements no
+`actsOutsideConversation`: a tool step from an earlier turn never counts as passing
+the request on, and on the ending's turn a step counts unless it reported `failed`,
+`cancelled`, or `expired`, or its result says `actsOutsideConversation: false`. Supply a `routineSkillDispatcher` with
+`actsOutsideConversation(skillName)` to count an earlier turn's outside-acting skills.
 The kit wires no consent port, so a routine that carries `consents` never asks one: a
 `consent` step takes its decline path, and the slots it covers stay empty. Supply a
 `routineRunner` built with a `consent` port to ask them.

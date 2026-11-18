@@ -16,10 +16,8 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  ChatMessageThread,
-  type ChatThreadMessage,
-} from "@/components/dashboard/chat-message-thread";
+import { ChatMessageThread } from "@/components/dashboard/chat-message-thread";
+import { testChatThreadMessages } from "@/components/dashboard/test-chat-thread-messages";
 import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/assistant-identity";
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
@@ -120,9 +118,6 @@ import {
 import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
-
-/** A Test Chat message's state as the shared thread shows it. */
-const THREAD_STATUS = { streaming: "streaming", completed: "complete", failed: "error" } as const satisfies Record<string, ChatThreadMessage["status"]>;
 
 const errorMessage = (cause: unknown, fallback: string): string =>
   cause instanceof Error ? cause.message : fallback;
@@ -1701,17 +1696,7 @@ export function AgentRevisionTestChat({
                   </div>
                   {(() => {
                     const side = sideForIndex(index);
-                    const messages: ChatThreadMessage[] =
-                      side?.messages.map((item) => ({
-                        id: item.id,
-                        role: item.role,
-                        content: item.content,
-                        persistedAssistantMessageId: item.persistedAssistantMessageId,
-                        ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
-                        ...(item.imageInput ? { inputMetadata: { method: "typed" as const, imageInput: item.imageInput } } : {}),
-                        ...(item.blocks ? { blocks: item.blocks } : {}),
-                        status: THREAD_STATUS[item.state],
-                      })) ?? [];
+                    const messages = testChatThreadMessages(side);
                     return (
                       <>
                         <div

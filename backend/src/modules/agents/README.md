@@ -21,6 +21,18 @@ a candidate and a publication freeze it, and a revision that holds none takes no
 photos (`revisionTakesPhotos`, owned by the visitorImages contract). Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
+An agent's skills are part of a revision too. `AgentSkillRepository` (agentSkills) projects every
+skill write into the draft in the same transaction, a candidate freezes them, and turn dispatch
+reads them from the release (`authoredAgentSkills`). `diffAgentRevisionSkills`
+(`agentRevisionSkills.ts`) is the one skill comparison behind the draft-dirty check
+(`equalScopedAuthoringSnapshots`), the publication review (`describeCandidateReleaseDiff`) and the
+version history (`presentRevisionDetail`): it matches skills by id, compares what was authored
+rather than write timestamps or list order, and names each change by skill name. It leaves out the
+default-answer skill, which carries the agent's retrieval settings and is read live from the
+skills table, and finds no skill change against a snapshot that records none: a release frozen
+before skills were tracked serves the live skills table, which every skill write keeps equal to
+the draft.
+
 An agent nobody has published answers nothing: `AgentRevisionRuntimeResolver.resolveNew`
 refuses its turn with `agentNotPublished()`, a `404` whose code is `agent_not_published`,
 so a channel can tell it apart from a link that is gone. `AgentPublicationReader`
@@ -70,6 +82,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-runtime-resolver.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-revision-skill-status.test.ts tests/unit/candidate-release-review.test.ts` (skills as draft changes)
 - `cd backend && pnpm exec vitest run tests/unit/agent-voice-settings.test.ts tests/contract/agent-voice-settings.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-settings-proposal-owner.test.ts` (Ray's proposals for both blocks)
 - `cd backend && pnpm exec vitest run tests/unit/agent-mechanics-replies.test.ts`

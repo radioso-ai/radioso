@@ -161,7 +161,7 @@ describe('SkillList submit', () => {
 
   it('replaces config on edit so omitted defaulted fields clear stored overrides', async () => {
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} onDraftSaved={vi.fn()} />)
     })
 
     // Edit lives in the sheet a skill's row opens.
@@ -202,13 +202,13 @@ describe('SkillList submit', () => {
     )
 
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} onDraftSaved={vi.fn()} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     await act(async () => {
-      root.render(<SkillList agentId="agent-2" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} />)
+      root.render(<SkillList agentId="agent-2" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={vi.fn()} onDraftSaved={vi.fn()} />)
     })
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -229,7 +229,7 @@ describe('SkillList submit', () => {
   it('uses the existing agent behavior draft for the retrieval answer switch', async () => {
     const onAssistantBehaviorDraft = vi.fn()
     await act(async () => {
-      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} />)
+      root.render(<SkillList agentId="agent-1" assistantBehaviorSettings={assistantBehaviorSettings} isAssistantBehaviorLoading={false} onAssistantBehaviorDraft={onAssistantBehaviorDraft} onDraftSaved={vi.fn()} />)
     })
 
     // The built-in skills wait in a collapsed group.

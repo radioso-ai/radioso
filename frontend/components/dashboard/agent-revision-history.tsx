@@ -27,6 +27,7 @@ const changeSummary = (revision: AgentRevisionDetail) => {
     revision.scopedChanges.greeting.changed ? 'greeting' : null,
     revision.scopedChanges.directives.length ? `${revision.scopedChanges.directives.length} directive${revision.scopedChanges.directives.length === 1 ? '' : 's'}` : null,
     revision.scopedChanges.routines.length ? `${revision.scopedChanges.routines.length} routine${revision.scopedChanges.routines.length === 1 ? '' : 's'}` : null,
+    revision.scopedChanges.agentSkills?.length ? `${revision.scopedChanges.agentSkills.length} skill${revision.scopedChanges.agentSkills.length === 1 ? '' : 's'}` : null,
     revision.scopedChanges.contextVariableEnablements.length ? `${revision.scopedChanges.contextVariableEnablements.length} context setting${revision.scopedChanges.contextVariableEnablements.length === 1 ? '' : 's'}` : null,
   ].filter(Boolean)
   return changes.length ? changes.join(' · ') : 'No scoped authoring changes recorded'
@@ -114,6 +115,7 @@ export function AgentRevisionHistory({ agentId }: { agentId: string }) {
           {selected.scopedChanges.greeting.changed ? <section><h3 className="font-medium">Greeting</h3><div className="mt-1 grid gap-2 text-xs sm:grid-cols-2"><div className="rounded border bg-muted/40 p-2"><p className="mb-1 font-medium text-muted-foreground">Before</p><p className="whitespace-pre-wrap">{describeGreeting(selected.scopedChanges.greeting.before).join('\n')}</p></div><div className="rounded border p-2"><p className="mb-1 font-medium text-muted-foreground">After</p><p className="whitespace-pre-wrap">{describeGreeting(selected.scopedChanges.greeting.after).join('\n')}</p></div></div></section> : null}
           {selected.scopedChanges.directives.length ? <section><h3 className="font-medium">Directives</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.directives.map((change) => <li key={`${change.id}-${change.change}`}>{change.change}: {change.id}</li>)}</ul></section> : null}
           {selected.scopedChanges.routines.length ? <section><h3 className="font-medium">Routines</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.routines.map((change) => <li key={`${change.definitionId}-${change.change}`}>{change.change}: {change.definitionId}</li>)}</ul></section> : null}
+          {selected.scopedChanges.agentSkills?.length ? <section><h3 className="font-medium">Skills</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.agentSkills.map((change) => <li key={`${change.skillId}-${change.change}`}>{change.change}: @{change.skillName}</li>)}</ul></section> : null}
           {selected.scopedChanges.contextVariableEnablements.length ? <section><h3 className="font-medium">Context</h3><ul className="mt-1 space-y-1 text-muted-foreground">{selected.scopedChanges.contextVariableEnablements.map((change) => <li key={`${change.contextVariableId}-${change.change}`}>{change.change}: {change.contextVariableId}</li>)}</ul></section> : null}
         </div> : null}
       </DialogContent>

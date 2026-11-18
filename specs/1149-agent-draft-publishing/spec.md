@@ -81,8 +81,8 @@ One agent has one published revision shared by every channel. New production con
 ### Functional Requirements
 
 - **FR-001**: The system MUST maintain one mutable private draft, immutable candidate revisions, a current published revision pointer, publication history, base-published metadata, and generation tokens per agent.
-- **FR-002**: A revision MUST contain the full runtime-relevant projection of custom instructions, directive definitions plus enablement/order metadata, selected routine definitions with complete executable closure and membership/order metadata, and per-agent context-variable enablements. Disabled content is retained but is not executable.
-- **FR-003**: Shared context-variable definitions, documents/retrieval content, providers, credentials, external services, generic skills, and non-scoped agent/workspace settings remain live dependencies and are outside the revision boundary.
+- **FR-002**: A revision MUST contain the full runtime-relevant projection of custom instructions, directive definitions plus enablement/order metadata, selected routine definitions with complete executable closure and membership/order metadata, per-agent context-variable enablements, and the agent's skills. Disabled content is retained but is not executable.
+- **FR-003**: Shared context-variable definitions, documents/retrieval content, providers, credentials, external services such as MCP connections, the default-answer skill that carries the agent's retrieval settings, and non-scoped agent/workspace settings remain live dependencies and are outside the revision boundary. The agent's other skills are inside it: adding, editing, enabling, disabling, or deleting one is a draft change that enables publication, runs in draft Test Chat, is listed by skill name in the publication review and version history, and reaches visitors when the draft is published. The draft-change check compares a skill's authored content, not its row timestamps or list order.
 - **FR-004**: All scoped writers, including dashboard, REST API, SDK, MCP, Ray/operator-copilot, import/restore, and routine lifecycle paths, MUST mutate the draft through one authorized aggregate boundary. Legacy save calls must have explicit draft semantics and MUST NOT imply publication authorization.
 - **FR-005**: Candidate creation and publication MUST validate workspace/agent ownership, permissions, scoped graph consistency, routine/reference integrity, and selected context-variable availability. No missing or invalid candidate may fall back to live authoring rows.
 - **FR-006**: Publication MUST use an expected draft generation and published-pointer token, an idempotency key, short transactional pointer update, and an audit event. It MUST not call providers or run evals inside that transaction.
@@ -112,7 +112,7 @@ One agent has one published revision shared by every channel. New production con
 ### Non-Goals
 
 - Full revision history/restore UI, branching, scheduling, new approval roles, mandatory eval gates, or per-channel drafts/published pointers.
-- Versioning shared variable definitions, documents, retrieval indexes, models, providers, generic skills, credentials, external services, or workspace settings.
+- Versioning shared variable definitions, documents, retrieval indexes, models, providers, credentials, external services, or workspace settings.
 - A new eval authoring product, a parallel test engine, or guarantees of deterministic answers/replay when dependencies are live.
 
 ## Success Criteria

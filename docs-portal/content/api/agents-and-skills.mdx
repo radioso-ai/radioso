@@ -13,7 +13,7 @@ Authoring and execution are different. Agent skills are created through the agen
 ## Draft revisions and private tests
 
 Agent behavior is saved in a private draft. A successful directive, routine,
-context-variable, or agent-setting write advances the draft generation; it does
+skill, context-variable, or agent-setting write advances the draft generation; it does
 not change the revision used by new visitor conversations. The dashboard then
 materializes one immutable candidate for that generation, lets you test it, and
 publishes it as a separate action.
@@ -40,6 +40,16 @@ to the draft. It returns `400 bad_request` with the field-level issues in
 with it `false`, the content is saved as written and the issues come back in the
 response's `validation` object. Like every draft write, a successful `PUT`
 advances the draft generation.
+
+Skills are part of the draft as well. Adding, editing, switching, or deleting a
+skill through `/api/v1/agents/{agentId}/skills` changes the draft: while the
+draft's skills differ from the published release, `revision-state` reports
+`draft_dirty`, Test Chat runs the draft, and visitors get the change once you
+publish. `GET .../revisions/{revisionId}` lists each skill the revision adds,
+removes, or changes against its base release under `scopedChanges.agentSkills`,
+by `skillName`. A skill's settings stay out of that list, so a settings edit
+reads as `changed`. The agent's default-answer `retrieve` skill holds its
+retrieval settings, which apply as soon as you save them, so it is not listed.
 
 `POST .../publish` requires the draft generation, the expected published
 revision, and an idempotency key. A stale request returns `409

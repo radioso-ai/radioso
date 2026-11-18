@@ -848,6 +848,7 @@ export function WorkspaceAssistantChannelsTab({
                 assistantBehaviorSettings={assistantBehaviorSettings}
                 isAssistantBehaviorLoading={isAssistantBehaviorLoading}
                 onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                onDraftSaved={dispatchDraftSaved}
               />
             ) : null}
           </section>

@@ -20,7 +20,7 @@ export {
   type RoutineFieldGuardUnit,
   type RoutineGuardKind,
   type RoutineReentryMode,
-  type RoutineSkillInputKeys,
+  type RoutineAdvisoryCatalog,
   type RoutineSlotType,
   type RoutineStepKind,
   type RoutineTerminalKind,

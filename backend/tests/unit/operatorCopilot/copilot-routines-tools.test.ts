@@ -335,6 +335,32 @@ describe("copilot routine validation", () => {
     });
   });
 
+  // A search reads the agent's documents and passes nothing on, so the finish after it tells no one
+  // (#1820): Ray hears it once the catalog names the search as a retrieval skill.
+  it("names a finish past a search as an ending that tells no one, from the agent's skill catalog", async () => {
+    const searchThenFinish = routine({
+      steps: [
+        { stableStepId: "collect_topic", kind: "chat", instruction: "Ask what home they want.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+        { stableStepId: "search", kind: "tool", instruction: "Search the listings.", toolRef: "search_listings", actionType: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "collect_topic", toRef: "search", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 },
+        { fromStep: "search", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 1 },
+      ],
+    });
+    const validate = async (retrievalSkillNames?: readonly string[]) => {
+      const ports = dependencies([searchThenFinish], undefined, {}, retrievalSkillNames);
+      const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+      return await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { advisories: Array<{ code: string; location: string }> };
+    };
+
+    expect((await validate(["search_listings"])).advisories).toEqual([
+      expect.objectContaining({ code: "ending_tells_no_one", location: "step:done.operatorNotice" }),
+    ]);
+    expect((await validate()).advisories).toEqual([]);
+  });
+
   it("flags a notifying ending with no reply-to as a non-blocking advisory, never affecting ok", async () => {
     const ports = dependencies([routine({
       slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],

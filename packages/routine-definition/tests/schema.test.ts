@@ -684,6 +684,33 @@ describe("ending_tells_no_one advisory (#1820)", () => {
   it("reports nothing without the routine's steps and exits to judge", () => {
     expect(routineAdvisories({ slots: [], terminals: [quiet("thanks")] })).toEqual([]);
   });
+
+  // The issue's own shape: a search, then a finish. A search reads the agent's documents and passes
+  // nothing on, so the finish after it tells no one, once the caller says which skills only read.
+  describe("past a tool step", () => {
+    const searchThenFinish = (toolRef: string, kind: "tool" | "action" | "approval" = "tool") => ({
+      slots: [{ key: "arrival", type: "date" as const, mutable: true }],
+      steps: [chat("brief", 0), { stableStepId: "search", kind, toolRef, ordinal: 1 }],
+      transitions: [edge("brief", "search"), edge("search", "scout")],
+      terminals: [quiet("scout")],
+    });
+    const mutableNotCorrectable = { code: "mutable_slot_not_correctable", location: "slot:arrival.mutable", slotKey: "arrival" };
+
+    it("flags a finish past a search the caller names as one that only reads", () => {
+      expect(routineAdvisories(searchThenFinish("search_listings"), { retrievalSkillNames: ["search_listings"] })).toEqual([
+        // A search still counts as sending for a correction after the run ends (#1714).
+        mutableNotCorrectable,
+        tellsNoOne("scout"),
+      ]);
+    });
+
+    it("leaves a finish past any other tool step, an action, or an approval unflagged, and every tool step without the names", () => {
+      expect(routineAdvisories(searchThenFinish("create_ticket"), { retrievalSkillNames: ["search_listings"] })).toEqual([mutableNotCorrectable]);
+      expect(routineAdvisories(searchThenFinish("search_listings", "action"), { retrievalSkillNames: ["search_listings"] })).toEqual([mutableNotCorrectable]);
+      expect(routineAdvisories(searchThenFinish("search_listings", "approval"), { retrievalSkillNames: ["search_listings"] })).toEqual([mutableNotCorrectable]);
+      expect(routineAdvisories(searchThenFinish("search_listings"))).toEqual([mutableNotCorrectable]);
+    });
+  });
 });
 
 describe("endingSendsCollectedValues", () => {

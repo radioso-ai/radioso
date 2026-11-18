@@ -117,7 +117,7 @@ export const resolvedAgent = (
 export const dependencies = (routineDefinitions: RoutineDefinition[] = [
   routine(),
   routine({ id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo" }),
-], agent = resolvedAgent(), skillInputKeys?: Readonly<Record<string, readonly string[]>>) => {
+], agent = resolvedAgent(), skillInputKeys?: Readonly<Record<string, readonly string[]>>, retrievalSkillNames?: readonly string[]) => {
   const listAgents = vi.fn(async () => [{
     id: agent.id,
     name: agent.name,
@@ -152,7 +152,7 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
           list: listRoutines,
           get: getRoutine,
           validate: validateRoutine,
-          skillInputKeys: vi.fn(async () => skillInputKeys ?? {}),
+          advisoryCatalog: vi.fn(async () => ({ skillInputKeys: skillInputKeys ?? {}, ...(retrievalSkillNames ? { retrievalSkillNames } : {}) })),
         },
       }),
       ...createChatCopilotTools({

@@ -401,7 +401,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       list: async () => [fixtureRoutine()],
       get: async () => fixtureRoutine(),
       validate: async () => ({ ok: true, diagnostics: [] }),
-      skillInputKeys: async () => ({}),
+      advisoryCatalog: async () => ({}),
     },
     voiceRecordings: { availability: async () => null },
     chatHistoryService: {
@@ -632,7 +632,7 @@ callerKind: "human" as const,
     routines: {
       get: unusedPort("routines.get"),
       validateForDraftMutation: unusedPort("routines.validateForDraftMutation"),
-      skillInputKeys: unusedPort("routines.skillInputKeys"),
+      advisoryCatalog: unusedPort("routines.advisoryCatalog"),
     },
     scopedReferences: { assertNoScopedReferences: unusedPort("scopedReferences.assertNoScopedReferences") },
     revisions: {

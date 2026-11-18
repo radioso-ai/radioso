@@ -196,7 +196,9 @@ function DocumentEditor({ initialDoc, onDraftChange, diagnostics, detailsExtra, 
   const variables = useMemo(() => doc.information.map((slot) => ({ id: slot.key, name: slot.key, type: slot.type, required: slot.required, mutable: slot.mutable ?? false, sensitive: slot.sensitivity === 'sensitive' })), [doc.information])
   // Fields switched to editable after completion that no visitor can change: every way the
   // routine ends sends what it collected first, so a later change would reach no one (#1714).
-  const advisories = useMemo(() => routineAdvisories(draftFromBlockDoc(doc)), [doc])
+  // A search only reads the agent's documents, so an ending past one can still tell no one (#1820).
+  const retrievalSkillNames = useMemo(() => catalog.skills.filter((skill) => skill.category === 'retrieval').map((skill) => skill.skillName), [catalog.skills])
+  const advisories = useMemo(() => routineAdvisories(draftFromBlockDoc(doc), { retrievalSkillNames }), [doc, retrievalSkillNames])
   const uncorrectableSlotKeys = useMemo(() => new Set(advisories.flatMap((advisory) =>
     advisory.code === 'mutable_slot_not_correctable' && advisory.slotKey ? [advisory.slotKey] : [])), [advisories])
   // Endings a run can reach with nothing passing the request on: their reply promises no follow-up (#1820).

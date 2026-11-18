@@ -846,6 +846,24 @@ describe("RoutineDefinitionService", () => {
     expect(validation).toMatchObject({ ok: true, diagnostics: [] });
   });
 
+  // The advisories read the agent's catalog once: each skill's input keys, and which skills only
+  // read the agent's documents, so a finish past a search is named as telling no one (#1820).
+  it("gives the advisories each skill's input keys and the skills that only read the agent's documents", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async (): Promise<SkillAuthoringDescriptor[]> => [
+        { ...skillDescriptor("search_listings"), category: "retrieval", inputs: [{ key: "query", type: "text", required: false }] },
+        skillDescriptor("create_ticket"),
+      ]),
+      getForAgent: vi.fn(),
+    };
+    const { service } = createService({ skillAuthoringCatalog: catalog });
+
+    expect(await service.advisoryCatalog(workspaceId, agentId)).toEqual({
+      skillInputKeys: { search_listings: ["query"], create_ticket: [] },
+      retrievalSkillNames: ["search_listings"],
+    });
+  });
+
   it("reports a tool step that references a skill outside the agent catalog", async () => {
     const catalog = {
       listForAgent: vi.fn(async () => [skillDescriptor("billing.lookup")]),

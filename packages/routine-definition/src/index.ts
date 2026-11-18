@@ -775,6 +775,13 @@ export interface RoutineAdvisory {
 /** The input keys each skill reads from a step's arguments, by skill name. */
 export type RoutineSkillInputKeys = Readonly<Record<string, readonly string[]>>;
 
+/** What the agent's skill catalog tells {@link routineAdvisories} about the skills a routine's steps run. */
+export interface RoutineAdvisoryCatalog {
+  readonly skillInputKeys?: RoutineSkillInputKeys;
+  /** Skills that only read the agent's documents, such as a search: a step running one passes nothing on (#1820). */
+  readonly retrievalSkillNames?: readonly string[];
+}
+
 /**
  * A skill step with no input bindings hands the skill the routine's values by key, a sensitive
  * one masked; a skill input whose key names a sensitive field therefore receives `[redacted]`.
@@ -842,13 +849,15 @@ export const endingSendsCollectedValues = (
 /**
  * The endings that send nothing which some way through the routine reaches without passing a step
  * that sends, in terminal order; null when the routine has no step to start from. Every exit
- * counts, whatever its condition, so an exit no run takes can still put an ending here.
+ * counts, whatever its condition, so an exit no run takes can still put an ending here. A step
+ * `passesNothingOn` names, such as a search, is walked through as if it sent nothing.
  */
 const quietlyReachedEndings = (
   steps: ReadonlyArray<RoutineAdvisoryStep>,
   transitions: ReadonlyArray<{ readonly fromStep: string; readonly toRef: string }>,
   terminals: ReadonlyArray<RoutineAdvisoryTerminal>,
   completionExport: RoutineAdvisoryCompletionExport | null | undefined,
+  passesNothingOn: (step: RoutineAdvisoryStep) => boolean = () => false,
 ): RoutineAdvisoryTerminal[] | null => {
   const first = [...steps].sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0))[0];
   if (!first) {
@@ -860,7 +869,7 @@ const quietlyReachedEndings = (
   const queue = [first.stableStepId];
   for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
     const step = stepsById.get(id);
-    if (terminalIds.has(id) || !step || stepKindsThatSendValues.has(step.kind)) continue;
+    if (terminalIds.has(id) || !step || (stepKindsThatSendValues.has(step.kind) && !passesNothingOn(step))) continue;
     for (const transition of transitions) {
       if (transition.fromStep === id && !reached.has(transition.toRef)) {
         reached.add(transition.toRef);
@@ -897,9 +906,10 @@ const routineCanEndQuietly = (quietEndings: RoutineAdvisoryTerminal[] | null): b
  *   routine's `steps` and `transitions`. `completionExport` in `options` is the export the routine
  *   runs with when it differs from the one on the definition.
  * - `ending_tells_no_one`: an ending that sends nothing which some way through reaches without a
- *   tool, action, or approval step (#1820). Nobody outside the chat hears of a run that ends there,
- *   so its reply promises no follow-up; one that should needs a notice. Reported only when the
- *   caller supplies the routine's `steps` and `transitions`.
+ *   tool, action, or approval step (#1820), a tool step running one of `retrievalSkillNames` in
+ *   `options` excepted. Nobody outside the chat hears of a run that ends there, so its reply
+ *   promises no follow-up; one that should needs a notice. Reported only when the caller supplies
+ *   the routine's `steps` and `transitions`.
  */
 export const routineAdvisories = (definition: {
   readonly slots: ReadonlyArray<{
@@ -912,8 +922,7 @@ export const routineAdvisories = (definition: {
   readonly transitions?: ReadonlyArray<{ readonly fromStep: string; readonly toRef: string }>;
   readonly terminals: ReadonlyArray<RoutineAdvisoryTerminal>;
   readonly completionExport?: RoutineAdvisoryCompletionExport | null;
-}, options: {
-  readonly skillInputKeys?: RoutineSkillInputKeys;
+}, options: RoutineAdvisoryCatalog & {
   readonly completionExport?: RoutineAdvisoryCompletionExport | null;
 } = {}): RoutineAdvisory[] => {
   const advisories: RoutineAdvisory[] = [];
@@ -931,13 +940,15 @@ export const routineAdvisories = (definition: {
     const sensitiveKeys = new Set(definition.slots.filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key));
     advisories.push(...unboundSensitiveSkillInputAdvisories(definition.steps ?? [], sensitiveKeys, options.skillInputKeys));
   }
+  const completionExport = options.completionExport !== undefined ? options.completionExport : definition.completionExport;
   const quietEndings = definition.steps && definition.transitions
-    ? quietlyReachedEndings(
-      definition.steps,
-      definition.transitions,
-      definition.terminals,
-      options.completionExport !== undefined ? options.completionExport : definition.completionExport,
-    )
+    ? quietlyReachedEndings(definition.steps, definition.transitions, definition.terminals, completionExport)
+    : undefined;
+  // For the reply, a search passes nothing on; for a correction it still counts as sending (#1714).
+  const retrievalSkills = new Set(options.retrievalSkillNames ?? []);
+  const endingsTellingNoOne = definition.steps && definition.transitions
+    ? quietlyReachedEndings(definition.steps, definition.transitions, definition.terminals, completionExport,
+      (step) => step.kind === "tool" && !!step.toolRef && retrievalSkills.has(step.toolRef))
     : undefined;
   const mutableKeys = definition.slots.filter((slot) => slot.mutable === true).map((slot) => slot.key);
   if (mutableKeys.length > 0 && quietEndings !== undefined && !routineCanEndQuietly(quietEndings)) {
@@ -947,7 +958,7 @@ export const routineAdvisories = (definition: {
       slotKey: key,
     })));
   }
-  advisories.push(...(quietEndings ?? []).map((terminal): RoutineAdvisory => ({
+  advisories.push(...(endingsTellingNoOne ?? []).map((terminal): RoutineAdvisory => ({
     code: "ending_tells_no_one",
     location: `step:${terminal.stableStepId}.operatorNotice`,
     stableStepId: terminal.stableStepId,

@@ -36,8 +36,10 @@ const advisoryMessages: Record<RoutineAdvisoryCode, (advisory: RoutineAdvisory, 
  * {@link routineAdvisories}, worded for an operator. `slots` tolerates the pre-parse
  * authoring shape (where an omitted slots array defaults to `[]` only after Zod parses it),
  * so a caller holding `RoutineDefinitionDraftAuthoringInput` can pass it through unchanged.
- * `skillInputKeys` comes from the agent's skill catalog; without it the advisories that compare
- * a step against its skill are left out. `completionExport`, when given, is the export the
+ * `skillInputKeys` and `retrievalSkillNames` come from the agent's skill catalog
+ * (`RoutineDefinitionService.advisoryCatalog`); without them the advisories that compare a step
+ * against its skill are left out, and every tool step counts as passing the request on.
+ * `completionExport`, when given, is the export the
  * routine runs with; without it the definition's own setting decides whether an ending exports.
  */
 export const routineAdvisoriesWithMessages = (

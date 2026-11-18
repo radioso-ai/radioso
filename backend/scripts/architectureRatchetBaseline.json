@@ -64,7 +64,6 @@
     "handoff -> customerReplyDelivery",
     "machineAccess -> account",
     "machineAccess -> audit",
-    "notify -> agentSkills",
     "notify -> chat",
     "notify -> routines",
     "notify -> skills",

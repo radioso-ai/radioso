@@ -12,6 +12,7 @@ export {
 } from "./service.js";
 export {
   AgentSkillRepository,
+  writeAgentSkillIntoDraft,
   type AgentSkillRepositoryPort,
 } from "./repository.js";
 export { mergeSkillConfig } from "./configMerge.js";

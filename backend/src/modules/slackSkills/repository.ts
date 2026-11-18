@@ -1,9 +1,10 @@
-import { writeAgentSkillIntoDraft } from "../agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
+
+import type { Transaction } from "kysely";
 
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type {
   SlackSkillDefinitionSummary,
   SlackSkillDefinitionUpdateInput,
@@ -91,8 +92,22 @@ export interface SlackSkillDefinitionRepositoryPort {
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
 }
 
+/**
+ * Runs a skill write and projects the skill it touched into the agent's draft under the agent
+ * revision lock: agentSkills' `writeAgentSkillIntoDraft`, which composition hands in.
+ */
+export type AgentSkillDraftWrite = <T>(
+  db: Db,
+  scope: { workspaceId?: string; agentId: string },
+  write: (trx: Transaction<DB>) => Promise<T>,
+  touchedSkillId: (result: T) => string | null,
+) => Promise<T>;
+
 export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepositoryPort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly writeIntoDraft: AgentSkillDraftWrite,
+  ) {}
 
   // Base select scoped to the slack-kind rows of agent_skills.
   private selectSlackSkills() {
@@ -104,7 +119,7 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+    return this.writeIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
       const row = await db
         .insertInto("agent_skills")
         .values({
@@ -171,7 +186,7 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
     // config patch leaves the stored config untouched, like `|| '{}'::jsonb`).
     const enabled = "enabled" in input ? input.enabled ?? null : null;
     const hasConfig = Object.keys(config).length > 0;
-    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+    return this.writeIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
       const row = await db
         .updateTable("agent_skills")
         .set((eb) => ({
@@ -190,7 +205,7 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+    return this.writeIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
       const result = await db
         .deleteFrom("agent_skills")
         .where("workspace_id", "=", workspaceId)

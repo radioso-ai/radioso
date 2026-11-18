@@ -15,7 +15,7 @@ import { WebhookSkillExecutor } from "../../src/modules/webhookSkills/public.js"
 import { withConversationSkills } from "../../src/shared/domain/conversationSkills.js";
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
 import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
-import { AgentSkillRepository } from "../../src/modules/agentSkills/repository.js";
+import { AgentSkillRepository, writeAgentSkillIntoDraft } from "../../src/modules/agentSkills/repository.js";
 import { AgentRevisionRuntimeResolver, AgentRevisionService } from "../../src/modules/agents/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
@@ -70,7 +70,7 @@ describeDb("a skills-only edit across an agent's draft and releases", () => {
     externalSkills: new ExternalSkillDefinitionRepository(database.kysely),
     webhookSkills: new WebhookSkillDefinitionRepository(database.kysely),
     emailSkills: new EmailSkillDefinitionRepository(database.kysely),
-    slackSkills: new SlackSkillDefinitionRepository(database.kysely),
+    slackSkills: new SlackSkillDefinitionRepository(database.kysely, writeAgentSkillIntoDraft),
     agentSkills: skills,
   });
 

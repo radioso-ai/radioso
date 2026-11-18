@@ -26366,6 +26366,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionState"
+        "400":
+          description: bad_request when a path parameter, query, or body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/greeting/draft:
     get:
       tags:
@@ -26387,6 +26393,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentGreetingDraft"
+        "400":
+          description: bad_request when a path parameter, query, or body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent draft not found
           content:
@@ -26486,6 +26498,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionListResponse"
+        "400":
+          description: bad_request when a path parameter, query, or body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/revisions/{revisionId}:
     get:
       tags:
@@ -26513,6 +26531,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionDetailResponse"
+        "400":
+          description: bad_request when a path parameter, query, or body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/revisions/{revisionId}/publish:
     post:
       tags:
@@ -26546,6 +26570,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionPublishResponse"
+        "400":
+          description: bad_request when a path parameter, query, or body is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: revision_conflict when the revision, draft generation, pointer, or idempotency command is stale
           content:

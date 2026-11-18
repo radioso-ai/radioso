@@ -37961,6 +37961,16 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "bad_request when a path parameter, query, or body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -37995,6 +38005,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentGreetingDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request when a path parameter, query, or body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -38168,6 +38188,16 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "bad_request when a path parameter, query, or body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -38211,6 +38241,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRevisionDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request when a path parameter, query, or body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -38267,6 +38307,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRevisionPublishResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad_request when a path parameter, query, or body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

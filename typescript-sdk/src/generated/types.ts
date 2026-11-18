@@ -17687,6 +17687,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentRevisionState"];
                 };
             };
+            /** @description bad_request when a path parameter, query, or body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgentGreetingDraft: {
@@ -17707,6 +17716,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentGreetingDraft"];
+                };
+            };
+            /** @description bad_request when a path parameter, query, or body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Agent draft not found */
@@ -17812,6 +17830,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentRevisionListResponse"];
                 };
             };
+            /** @description bad_request when a path parameter, query, or body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgentRevision: {
@@ -17833,6 +17860,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionDetailResponse"];
+                };
+            };
+            /** @description bad_request when a path parameter, query, or body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -17860,6 +17896,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionPublishResponse"];
+                };
+            };
+            /** @description bad_request when a path parameter, query, or body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description revision_conflict when the revision, draft generation, pointer, or idempotency command is stale */

@@ -9,7 +9,7 @@ import {
   type WorkspaceSessionDependencies,
 } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
-import { validateBody } from "../middleware/validate.js";
+import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { presentRevisionDetail, presentRevisionState, presentRevisionSummary } from "./agentRevisionPresenters.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema, revisionListQuerySchema } from "./agentRevisionRequestSchemas.js";
 
@@ -33,7 +33,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.get("/:agentId/revision-state", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = res.locals as { workspaceId: string; accountId: string; userId?: string };
-      const { agentId } = agentParamsSchema.parse(req.params);
+      const { agentId } = parseParams(agentParamsSchema, req.params);
       const canPublish = await dependencies.accountAccessService.hasPermission({ accountId, userId, workspaceId, permission: "workspace.agents.manage" });
       const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
       res.json(presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, agentId), canPublish, agent?.proactiveGreetingEnabled ?? false));
@@ -45,7 +45,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.get("/:agentId/greeting/draft", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { agentId } = agentParamsSchema.parse(req.params);
+      const { agentId } = parseParams(agentParamsSchema, req.params);
       res.json(await dependencies.agentRevisionService.readDraftGreeting(workspaceId, agentId));
     } catch (error) { next(error); }
   });
@@ -56,7 +56,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.put("/:agentId/greeting/draft", workspaceSession, agentManage, validateBody(agentGreetingDraftBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { agentId } = agentParamsSchema.parse(req.params);
+      const { agentId } = parseParams(agentParamsSchema, req.params);
       const { greeting, validation } = await dependencies.agentService.updateDraftGreeting(workspaceId, agentId, req.body);
       res.status(200).json({ greeting, validation });
     } catch (error) { next(error); }
@@ -65,7 +65,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.post("/:agentId/revisions/candidates", workspaceSession, agentManage, validateBody(createRevisionCandidateBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { agentId } = agentParamsSchema.parse(req.params);
+      const { agentId } = parseParams(agentParamsSchema, req.params);
       const candidate = await dependencies.agentRevisionService.createCandidate(workspaceId, agentId, req.body.expectedDraftGeneration);
       res.status(201).json({ candidate: presentRevisionSummary(candidate) });
     } catch (error) { next(error); }
@@ -74,8 +74,8 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.get("/:agentId/revisions", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { agentId } = agentParamsSchema.parse(req.params);
-      const { include } = revisionListQuerySchema.parse(req.query);
+      const { agentId } = parseParams(agentParamsSchema, req.params);
+      const { include } = parseQuery(revisionListQuerySchema, req.query);
       const revisions = await dependencies.agentRevisionService.list(workspaceId, agentId);
       res.json({ revisions: revisions.filter((revision) => include !== "published" || revision.publishedAt !== null).map(presentRevisionSummary) });
     } catch (error) { next(error); }
@@ -84,7 +84,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.get("/:agentId/revisions/:revisionId", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const { agentId, revisionId } = revisionParamsSchema.parse(req.params);
+      const { agentId, revisionId } = parseParams(revisionParamsSchema, req.params);
       const revision = await dependencies.agentRevisionService.detail(workspaceId, agentId, revisionId);
       const baseRevision = revision.sourceBasePublishedRevisionId
         ? await dependencies.agentRevisionService.detail(workspaceId, agentId, revision.sourceBasePublishedRevisionId)
@@ -96,7 +96,7 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
   router.post("/:agentId/revisions/:revisionId/publish", workspaceSession, agentManage, validateBody(publishRevisionBodySchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-      const { agentId, revisionId } = revisionParamsSchema.parse(req.params);
+      const { agentId, revisionId } = parseParams(revisionParamsSchema, req.params);
       const publication = await dependencies.agentRevisionService.publish(workspaceId, agentId, accountId ?? null, { revisionId, ...req.body });
       const [state, agent] = await Promise.all([
         dependencies.agentRevisionService.state(workspaceId, agentId),

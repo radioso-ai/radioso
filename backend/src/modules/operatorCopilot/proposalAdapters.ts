@@ -1030,7 +1030,6 @@ export const createRoutineCopilotProposalAdapter = (deps: {
             });
             refusalWroteNothing = false;
             if (!settled.routine) return { outcome: "failed" as const, reason: "Routine update did not return its saved draft" };
-            // An equal write changed nothing: there is no routine update to audit or re-embed.
             if (settled.changed !== false) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }

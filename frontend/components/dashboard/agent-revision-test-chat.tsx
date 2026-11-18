@@ -25,7 +25,7 @@ import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
 import { parseEvents } from "@/lib/test-execution-events";
-import { revisionDisplayLabel } from "@/lib/agent-revision-label";
+import { evalRevisionLabel, revisionDisplayLabel } from "@/lib/agent-revision-label";
 import { evidenceLabel, executionStateLabel, failureLabel, outcomeLabel } from "@/lib/agent-revision-test-chat-labels";
 import { useTestChatPhotos } from "@/lib/use-test-chat-photos";
 import { testChatVisitorImages } from "@/components/chat/visitor-image-thumbnails";
@@ -300,9 +300,7 @@ export function AgentRevisionTestChat({
         .forEach((id) => {
           labels.set(id, [
             ...(labels.get(id) ?? []),
-            revisionDisplayLabel(
-              revisions.find((revision) => revision.id === detail.id) ?? detail,
-            ),
+            revisionDisplayLabel(revisions.find((revision) => revision.id === detail.id) ?? detail),
           ]);
         }),
     );
@@ -2017,11 +2015,7 @@ export function AgentRevisionTestChat({
                                     (candidate) => candidate.id === revisionId,
                                   );
                                   return evalRevision
-                                    ? evalRevision.versionNumber !== null
-                                      ? `v${evalRevision.versionNumber}`
-                                      : revision
-                                        ? revisionDisplayLabel(revision)
-                                        : "Draft"
+                                    ? evalRevisionLabel(evalRevision, revision)
                                     : revision
                                       ? revisionTriggerLabel(revision)
                                       : "Version unavailable";

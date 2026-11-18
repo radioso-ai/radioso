@@ -754,6 +754,7 @@ export const routineAdvisoryCodes = [
   "operator_notice_reply_to_unset",
   "sensitive_slot_unbound_skill_input",
   "mutable_slot_not_correctable",
+  "ending_tells_no_one",
 ] as const;
 export type RoutineAdvisoryCode = typeof routineAdvisoryCodes[number];
 
@@ -839,32 +840,27 @@ export const endingSendsCollectedValues = (
     (completionExport.triggerKinds ?? []).includes(terminal.kind));
 
 /**
- * Whether some way through the routine reaches an ending that sends nothing without passing a
- * step that sends: the only kind of run a visitor's change can still reach after it ends.
- * Every exit counts, whatever its condition, so an exit no run takes can hide the advisory.
+ * The endings that send nothing which some way through the routine reaches without passing a step
+ * that sends, in terminal order; null when the routine has no step to start from. Every exit
+ * counts, whatever its condition, so an exit no run takes can still put an ending here.
  */
-const routineCanEndQuietly = (
+const quietlyReachedEndings = (
   steps: ReadonlyArray<RoutineAdvisoryStep>,
   transitions: ReadonlyArray<{ readonly fromStep: string; readonly toRef: string }>,
   terminals: ReadonlyArray<RoutineAdvisoryTerminal>,
   completionExport: RoutineAdvisoryCompletionExport | null | undefined,
-): boolean => {
+): RoutineAdvisoryTerminal[] | null => {
   const first = [...steps].sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0))[0];
   if (!first) {
-    return true;
+    return null;
   }
   const stepsById = new Map(steps.map((step) => [step.stableStepId, step]));
-  const terminalsById = new Map(terminals.map((terminal) => [terminal.stableStepId, terminal]));
+  const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const reached = new Set([first.stableStepId]);
   const queue = [first.stableStepId];
   for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
-    const terminal = terminalsById.get(id);
-    if (terminal) {
-      if (!endingSendsCollectedValues(terminal, completionExport)) return true;
-      continue;
-    }
     const step = stepsById.get(id);
-    if (!step || stepKindsThatSendValues.has(step.kind)) continue;
+    if (terminalIds.has(id) || !step || stepKindsThatSendValues.has(step.kind)) continue;
     for (const transition of transitions) {
       if (transition.fromStep === id && !reached.has(transition.toRef)) {
         reached.add(transition.toRef);
@@ -872,8 +868,15 @@ const routineCanEndQuietly = (
       }
     }
   }
-  return false;
+  return terminals.filter((terminal) => reached.has(terminal.stableStepId) && !endingSendsCollectedValues(terminal, completionExport));
 };
+
+/**
+ * Whether some way through the routine reaches an ending that sends nothing without passing a
+ * step that sends: the only kind of run a visitor's change can still reach after it ends.
+ */
+const routineCanEndQuietly = (quietEndings: RoutineAdvisoryTerminal[] | null): boolean =>
+  quietEndings === null || quietEndings.length > 0;
 
 /**
  * Non-blocking findings; none affects compile, validation, or publish. The input is narrow so a
@@ -893,6 +896,10 @@ const routineCanEndQuietly = (
  *   the visitor makes after it ends is ever taken. Reported only when the caller supplies the
  *   routine's `steps` and `transitions`. `completionExport` in `options` is the export the routine
  *   runs with when it differs from the one on the definition.
+ * - `ending_tells_no_one`: an ending that sends nothing which some way through reaches without a
+ *   tool, action, or approval step (#1820). Nobody outside the chat hears of a run that ends there,
+ *   so its reply promises no follow-up; one that should needs a notice. Reported only when the
+ *   caller supplies the routine's `steps` and `transitions`.
  */
 export const routineAdvisories = (definition: {
   readonly slots: ReadonlyArray<{
@@ -924,24 +931,27 @@ export const routineAdvisories = (definition: {
     const sensitiveKeys = new Set(definition.slots.filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key));
     advisories.push(...unboundSensitiveSkillInputAdvisories(definition.steps ?? [], sensitiveKeys, options.skillInputKeys));
   }
-  const mutableKeys = definition.slots.filter((slot) => slot.mutable === true).map((slot) => slot.key);
-  if (
-    mutableKeys.length > 0 &&
-    definition.steps &&
-    definition.transitions &&
-    !routineCanEndQuietly(
+  const quietEndings = definition.steps && definition.transitions
+    ? quietlyReachedEndings(
       definition.steps,
       definition.transitions,
       definition.terminals,
       options.completionExport !== undefined ? options.completionExport : definition.completionExport,
     )
-  ) {
+    : undefined;
+  const mutableKeys = definition.slots.filter((slot) => slot.mutable === true).map((slot) => slot.key);
+  if (mutableKeys.length > 0 && quietEndings !== undefined && !routineCanEndQuietly(quietEndings)) {
     advisories.push(...mutableKeys.map((key): RoutineAdvisory => ({
       code: "mutable_slot_not_correctable",
       location: `slot:${key}.mutable`,
       slotKey: key,
     })));
   }
+  advisories.push(...(quietEndings ?? []).map((terminal): RoutineAdvisory => ({
+    code: "ending_tells_no_one",
+    location: `step:${terminal.stableStepId}.operatorNotice`,
+    stableStepId: terminal.stableStepId,
+  })));
   return advisories;
 };
 export type RoutineValidationCode = typeof routineValidationCodes[number];

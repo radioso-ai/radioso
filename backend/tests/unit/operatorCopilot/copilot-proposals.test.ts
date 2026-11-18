@@ -1613,7 +1613,7 @@ describe("routine proposal adapter", () => {
       targetLabel: "Return intake",
       summary,
       diagnostics: [{ code: "missing_transition" }],
-      advisories: [],
+      advisories: [expect.objectContaining({ code: "ending_tells_no_one", location: "step:terminal_complete.operatorNotice" })],
     });
     const preview = await adapter.preview("workspace-1", targetRef, storedPayload) as { targetLabel: string; current: unknown; proposed: { steps: Record<string, { instruction: string }> } };
     expect(preview.targetLabel).toBe("Return intake");

@@ -113,6 +113,26 @@ test("a finish ending notifies the team with the notice its author wrote, and ke
   await expect(documentEditor.getByLabel("Intro", { exact: true })).toContainText("Please confirm the room.");
 });
 
+// A finish nothing passes the request on from tells no one, so its reply promises no follow-up (#1820).
+test("a finish ending that tells no one says its reply won't promise follow-up, until the author turns its notice on", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [], routines: [bookingRoutine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  const tellsNoOne = documentEditor.getByText("Nobody hears of this ending, so its reply won't promise follow-up.");
+
+  await documentEditor.getByRole("button", { name: "Hand-off ending", exact: true }).click();
+  await expect(tellsNoOne).toHaveCount(0);
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await expect(tellsNoOne).toBeVisible();
+  await documentEditor.getByRole("switch", { name: "Notify the team" }).click();
+  await expect(tellsNoOne).toHaveCount(0);
+});
+
 test("a notice's fields reference only the slots the routine declares and stop at their length limits", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

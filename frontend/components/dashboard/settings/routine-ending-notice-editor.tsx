@@ -129,9 +129,11 @@ function NoticeReplyToField({ id, ending, variables, onChange }: {
 
 // What the team is told when the routine ends here. A hand-off always notifies, so its switch
 // stays on; a finish notifies only when the author turns it on. Blank text means the default.
-export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
+export function RoutineEndingNoticeEditor({ ending, variables, tellsNoOne = false, onChange }: {
   ending: RoutineBlockEnding
   variables: ChipDocVariable[]
+  /** A run can reach this ending with nothing passing the request on (#1820). */
+  tellsNoOne?: boolean
   onChange: (notice: EndingNotice | null) => void
 }) {
   const handoff = ending.kind === 'handoff'
@@ -167,6 +169,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
         <Label htmlFor={`${id}-enabled`} className="text-sm">Notify the team</Label>
         {handoff ? <span className="text-xs text-muted-foreground">Always on for a hand-off.</span> : null}
       </div>
+      {tellsNoOne && !notifies ? <p className="text-xs text-muted-foreground">Nobody hears of this ending, so its reply won&apos;t promise follow-up.</p> : null}
       {notifies ? (
         <div className="space-y-2">
           <NoticeSenderField id={id} skillName={notice?.skillName} onChange={sendWith} />

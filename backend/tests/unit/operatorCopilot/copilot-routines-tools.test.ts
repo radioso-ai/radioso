@@ -324,9 +324,14 @@ describe("copilot routine validation", () => {
       diagnosticCount: 1,
       diagnosticsTruncated: false,
       diagnostics: [{ code: "unreachable_step", location: "steps.confirm", message: "No transition reaches confirm." }],
-      advisoryCount: 0,
+      // Its finish tells no one, which Ray hears as a non-blocking advisory (#1820).
+      advisoryCount: 1,
       advisoriesTruncated: false,
-      advisories: [],
+      advisories: [{
+        code: "ending_tells_no_one",
+        location: "step:done.operatorNotice",
+        message: "ending tells no one: a run can reach ending \"done\" with nothing passing the request on, so its reply promises no follow-up. Turn on its notice if the team should hear of it.",
+      }],
     });
   });
 

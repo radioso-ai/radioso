@@ -584,6 +584,8 @@ describe("mutable_slot_not_correctable advisory (#1714)", () => {
   const quiet = { stableStepId: "just_looking", kind: "complete" as const };
   const notCorrectable = (key: string) => ({ code: "mutable_slot_not_correctable", location: `slot:${key}.mutable`, slotKey: key });
   const bothDates = [notCorrectable("arrival"), notCorrectable("departure")];
+  // A quiet ending a run can reach also tells no one (#1820).
+  const quietTellsNoOne = { code: "ending_tells_no_one", location: "step:just_looking.operatorNotice", stableStepId: "just_looking" };
 
   it("flags every editable field when each ending of the routine notifies the team", () => {
     expect(routineAdvisories({
@@ -600,7 +602,7 @@ describe("mutable_slot_not_correctable advisory (#1714)", () => {
       steps: [chat("dates", 0)],
       transitions: [edge("dates", "requested"), edge("dates", "just_looking")],
       terminals: [notified, quiet],
-    })).toEqual([]);
+    })).toEqual([quietTellsNoOne]);
   });
 
   it("flags the fields when the only quiet ending lies past a tool, action, or approval step", () => {
@@ -625,10 +627,10 @@ describe("mutable_slot_not_correctable advisory (#1714)", () => {
 
     expect(routineAdvisories({ ...definition, terminals: [{ stableStepId: "just_looking", kind: "handoff" as const }] })).toEqual(bothDates);
     expect(routineAdvisories({ ...definition, completionExport: exportOn(["complete"]) })).toEqual(bothDates);
-    expect(routineAdvisories({ ...definition, completionExport: exportOn(["handoff"]) })).toEqual([]);
+    expect(routineAdvisories({ ...definition, completionExport: exportOn(["handoff"]) })).toEqual([quietTellsNoOne]);
     // The export the routine runs with, when the caller knows it, decides over the definition's.
     expect(routineAdvisories(definition, { completionExport: exportOn(["complete"]) })).toEqual(bothDates);
-    expect(routineAdvisories({ ...definition, completionExport: exportOn(["complete"]) }, { completionExport: null })).toEqual([]);
+    expect(routineAdvisories({ ...definition, completionExport: exportOn(["complete"]) }, { completionExport: null })).toEqual([quietTellsNoOne]);
   });
 
   it("reports nothing without editable fields, or without the routine's steps and exits to judge", () => {
@@ -639,6 +641,48 @@ describe("mutable_slot_not_correctable advisory (#1714)", () => {
       terminals: [notified],
     })).toEqual([]);
     expect(routineAdvisories({ slots, terminals: [notified] })).toEqual([]);
+  });
+});
+
+// A finish that nothing passes the request on from tells no one, so its reply promises no
+// follow-up (#1820): an ending written "the team will be in touch" needs a notice.
+describe("ending_tells_no_one advisory (#1820)", () => {
+  const chat = (stableStepId: string, ordinal: number) => ({ stableStepId, kind: "chat" as const, ordinal });
+  const edge = (fromStep: string, toRef: string) => ({ fromStep, toRef });
+  const tellsNoOne = (stableStepId: string) => ({ code: "ending_tells_no_one", location: `step:${stableStepId}.operatorNotice`, stableStepId });
+  const quiet = (stableStepId: string) => ({ stableStepId, kind: "complete" as const });
+
+  it("flags each finish reachable with nothing passing the request on, in terminal order", () => {
+    expect(routineAdvisories({
+      slots: [],
+      steps: [chat("brief", 0)],
+      transitions: [edge("brief", "thanks"), edge("brief", "scout")],
+      terminals: [quiet("scout"), quiet("thanks")],
+    })).toEqual([tellsNoOne("scout"), tellsNoOne("thanks")]);
+  });
+
+  it("leaves out an ending that notifies, hands off, or exports, and one no quiet path reaches", () => {
+    expect(routineAdvisories({
+      slots: [],
+      steps: [chat("brief", 0), { stableStepId: "send_lead", kind: "tool" as const, ordinal: 1 }],
+      transitions: [edge("brief", "noticed"), edge("brief", "person"), edge("brief", "send_lead"), edge("send_lead", "after_lead")],
+      terminals: [
+        { stableStepId: "noticed", kind: "complete" as const, operatorNotice: { subject: null, intro: null } },
+        { stableStepId: "person", kind: "handoff" as const },
+        quiet("after_lead"),
+      ],
+    })).toEqual([]);
+    expect(routineAdvisories({
+      slots: [],
+      steps: [chat("brief", 0)],
+      transitions: [edge("brief", "exported")],
+      terminals: [quiet("exported")],
+      completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: "crm" },
+    })).toEqual([]);
+  });
+
+  it("reports nothing without the routine's steps and exits to judge", () => {
+    expect(routineAdvisories({ slots: [], terminals: [quiet("thanks")] })).toEqual([]);
   });
 });
 

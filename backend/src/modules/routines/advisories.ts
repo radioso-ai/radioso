@@ -28,6 +28,8 @@ const advisoryMessages: Record<RoutineAdvisoryCode, (advisory: RoutineAdvisory, 
     `sensitive field sent masked: step "${advisory.stableStepId ?? ""}" runs ${advisory.skillName ?? "its skill"} with no input bindings, so its input "${advisory.slotKey ?? ""}" receives the sensitive field as [redacted]. Bind that input to @${advisory.slotKey ?? ""} on the step to send the value, or leave it masked on purpose.`,
   mutable_slot_not_correctable: (advisory) =>
     `editable after completion has no effect: @${advisory.slotKey ?? ""} can't be changed once this routine ends, because every way it ends first sends what it collected (an ending that notifies, hands off, or exports, or a tool, action, or approval step). Turn mutable off, or add an ending that sends nothing.`,
+  ending_tells_no_one: (advisory) =>
+    `ending tells no one: a run can reach ending "${advisory.stableStepId ?? ""}" with nothing passing the request on, so its reply promises no follow-up. Turn on its notice if the team should hear of it.`,
 };
 
 /**

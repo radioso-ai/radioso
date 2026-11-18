@@ -100,6 +100,10 @@ export interface RoutineExternalEffectInterceptor {
   }): Promise<RoutineSkillResult>;
 }
 
+/** Whether running a resolved skill can reach outside the conversation (an email, a webhook). */
+const definitionActsOutsideConversation = (skill: SkillDefinition): boolean =>
+  skillActsOutsideConversation({ retrieval: skill.owner === "retrieval", execution: skill.execution });
+
 /** Resolves routine skill references against a fixed set of skill definitions. */
 export class StaticRoutineSkillResolver implements RoutineSkillResolver {
   private readonly byName: Map<string, SkillDefinition>;
@@ -154,6 +158,15 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     return this.dispatchWithExternalEffectInterceptor(input);
   }
 
+  /**
+   * Whether running `skillName` can act outside the conversation, by the rule a dispatch applies,
+   * read without running it. A skill that does not resolve never runs, so it acts nowhere.
+   */
+  actsOutsideConversation(skillName: string): boolean {
+    const skill = this.resolver.resolve(skillName);
+    return skill?.execution ? definitionActsOutsideConversation(skill) : false;
+  }
+
   async dispatchWithExternalEffectInterceptor(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
     externalEffectInterceptor?: RoutineExternalEffectInterceptor,
@@ -194,10 +207,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     // Whether running the skill can reach outside the conversation (an email, a webhook). A
     // safe test runs only the skills that cannot, by the same rule that decides which agent
     // skills a safe test may run and which routine replies live chat saves before showing.
-    const actsOutsideConversation = skillActsOutsideConversation({
-      retrieval: skill.owner === "retrieval",
-      execution: skill.execution,
-    });
+    const actsOutsideConversation = definitionActsOutsideConversation(skill);
     if (this.skillEffects === "suppressed" && actsOutsideConversation) {
       return unavailable(skillName, "suppressed_for_safe_test");
     }

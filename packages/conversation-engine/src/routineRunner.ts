@@ -1067,7 +1067,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       turn: replyTurn,
       ...(reask ? { reask } : {}),
       // An ending's reply is told what the run did before it, since its text was written for the intended path (#1820).
-      ...endingReplyField(routine, step, state.path, { traceSteps, ...walkEffects() }),
+      ...endingReplyField(routine, step, state.path, { traceSteps, ...walkEffects() }, (name) => this.skillDispatcher?.actsOutsideConversation?.(name) === true),
     });
 
     const terminalKind = terminalKindFor(step);

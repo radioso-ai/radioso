@@ -175,31 +175,40 @@ interface EndingTurnWalk {
 }
 
 /**
+ * Whether a step an earlier turn ran passed the request on, for an ending's reply (#1820). An action
+ * or approval step did; a tool step did only when its skill acts outside the conversation, as the
+ * dispatcher reads it without running it. Unlike {@link sentOnEntry}, which reads "may have" as yes
+ * for a correction, the safe answer here is no: a yes lets the reply promise follow-up.
+ */
+const passedOnEarlier = (step: RoutineStep | undefined, actsOutside: (skillName: string) => boolean): boolean =>
+  step?.kind === "action" || step?.kind === "await" || (step?.kind === "skill" && !!step.skillName && actsOutside(step.skillName));
+
+/**
  * What the run did before the ending `step` is, for the ending's reply (#1820); nothing for any
  * other step. The request is passed on when the ending sends it (a hand-off, an operator notice,
  * or the completion export), when the turn emitted an action or ran a tool step that may have
- * acted outside the conversation, or when an earlier turn passed a tool, action, or approval step,
- * read from the path the turn started on as {@link completedRunSentValues} reads it, since the run
- * keeps no earlier outcome. The tool outcomes are this turn's, as its trace recorded them.
+ * acted outside the conversation and did not fail, or when an earlier turn passed an action or
+ * approval step, or a tool step whose skill acts outside ({@link passedOnEarlier}), read from the
+ * path the turn started on. The tool outcomes are this turn's, as its trace recorded them; the run
+ * keeps none from earlier turns.
  */
 export const endingReplyField = (
   routine: Routine,
   step: RoutineStep,
   earlierPath: readonly string[],
   walk: EndingTurnWalk,
+  actsOutside: (skillName: string) => boolean = () => false,
 ): Pick<RoutineStepReplyInput, "ending"> => {
   if (step.kind !== "terminal") {
     return {};
   }
   const stepsById = new Map(routine.steps.map((candidate) => [candidate.id, candidate]));
+  const skillEntries = walk.traceSteps.filter((entry) => entry.event === "skill_dispatched" && entry.skillName && entry.skillStatus);
   const requestPassedOn = endingSends(routine, step) ||
     (walk.actions?.length ?? 0) > 0 ||
-    (walk.skillsWithExternalEffects?.length ?? 0) > 0 ||
-    earlierPath.some((stepId) => sentOnEntry(stepsById.get(stepId)));
-  const skillOutcomes = walk.traceSteps.flatMap((entry) =>
-    entry.event === "skill_dispatched" && entry.skillName && entry.skillStatus
-      ? [{ skillName: entry.skillName, status: entry.skillStatus }]
-      : []);
+    skillEntries.some((entry) => entry.skillStatus !== "failed" && walk.skillsWithExternalEffects?.includes(entry.skillName ?? "") === true) ||
+    earlierPath.some((stepId) => passedOnEarlier(stepsById.get(stepId), actsOutside));
+  const skillOutcomes = skillEntries.map((entry) => ({ skillName: entry.skillName ?? "", status: entry.skillStatus ?? "" }));
   return { ending: { requestPassedOn, skillOutcomes } };
 };
 

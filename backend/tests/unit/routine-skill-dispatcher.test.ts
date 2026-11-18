@@ -102,6 +102,31 @@ afterEach(async () => {
 });
 
 describe("RoutineSkillExecutorDispatcher", () => {
+  // An ending's reply counts a tool step an earlier turn ran as passing the request on only when
+  // its skill can act outside the conversation, read without running it (#1820).
+  describe("says what a skill does without running it", () => {
+    const dispatch = vi.fn();
+    const registry = new SkillExecutorRegistry();
+    registry.register({ kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, executor: { dispatch } });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver(
+        [skillNamed("create_ticket", { kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER, enqueue: false })],
+        new RetrieveRoutineSkillResolver([{ skillName: "search_listings", enabled: true, invocationMode: "routine_named" }]),
+      ),
+      registry,
+    );
+
+    it("reads a webhook as acting outside the conversation and a retrieve skill as staying inside", () => {
+      expect(dispatcher.actsOutsideConversation("create_ticket")).toBe(true);
+      expect(dispatcher.actsOutsideConversation("search_listings")).toBe(false);
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it("reads a skill it cannot resolve as staying inside, since it never runs", () => {
+      expect(dispatcher.actsOutsideConversation("deleted_skill")).toBe(false);
+    });
+  });
+
   it.each([
     ["webhook", WEBHOOK_SKILLS_ADAPTER],
     ["customer email", CUSTOMER_EMAIL_SKILLS_ADAPTER],

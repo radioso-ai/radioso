@@ -1,6 +1,8 @@
 // What a routine step's reply is written from: the step and its steering, the turn, and what the
-// runner reports beside them — a re-ask, a stuck hand-off, or what the run did before its ending.
+// runner reports beside them — a re-ask, a stuck hand-off, or what the run did before its ending —
+// and the host's port for the replies it grounds on retrieved evidence.
 import type { RoutineContextRenderer, SteeringRule, TurnContext } from "./index.js";
+import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
 import type { RoutineStep, RoutineStepReask } from "./routineGraph.js";
 import type { RoutineSkillOutcomeStatus } from "./skillOutcome.js";
 
@@ -53,3 +55,26 @@ export interface RoutineEndingSkillOutcome {
   skillName: string;
   status: RoutineSkillOutcomeStatus;
 }
+
+/** Renders a grounded answer for a routine step, or null when the step is not groundable. */
+export interface RoutineGroundedAnswerRenderer {
+  render(input: RoutineGroundedAnswerInput): Promise<RenderableTurn | null>;
+  /**
+   * Decides from the turn's staged context alone whether the step is groundable: null when
+   * it is not, otherwise the grounded answer, generated only when asked.
+   * `prepare(input)?.render()` produces what `render(input)` would. Optional.
+   */
+  prepare?(input: RoutineGroundedAnswerInput): PendingRenderableTurn | null;
+  /**
+   * Metadata the host puts on a step reply it did not ground, read from the staged context alone,
+   * so it presents that reply the way it classifies the turn: an ending on a retrieval that found
+   * nothing is the turn's retrieval miss (#1820). Optional; absent or undefined adds none.
+   */
+  stepReplyMetadata?(input: RoutineGroundedAnswerInput): Record<string, unknown> | undefined;
+}
+
+/**
+ * `ending` is what the run did before an ending (#1820); with nothing retrieved, an ending is
+ * not groundable, and with evidence its grounded answer is told the same facts.
+ */
+export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn" | "ending">;

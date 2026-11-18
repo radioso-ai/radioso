@@ -77,6 +77,8 @@ const replyInputFor = async (input: {
   path: string[];
   nextStepId: string;
   results?: Record<string, RoutineSkillResult>;
+  /** The dispatcher's static word on which skills can act outside the conversation; absent, it gives none. */
+  actingOutside?: readonly string[];
 }): Promise<RoutineStepReplyInput> => {
   const renderer: ConversationRoutineStepRenderer = { render: vi.fn(async () => ({ answer: "ok" })) };
   const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async ({ skillName }) => {
@@ -86,11 +88,15 @@ const replyInputFor = async (input: {
     }
     return result;
   });
+  const actingOutside = input.actingOutside;
+  const dispatcher: ConversationRoutineSkillDispatcher = actingOutside
+    ? { dispatch, actsOutsideConversation: (skillName) => actingOutside.includes(skillName) }
+    : { dispatch };
   const runner = new DefaultRoutineRunner(
     [input.routine],
     { select: vi.fn(async () => ({ nextStepId: input.nextStepId })) },
     renderer,
-    { dispatch },
+    dispatcher,
   );
 
   await runner.resume({ turn, state: state(input.routine, input.path) });
@@ -192,11 +198,67 @@ describe("DefaultRoutineRunner tells an ending's reply what the run did (#1820)"
     expect(input.ending).toEqual({ requestPassedOn: true, skillOutcomes: [] });
   });
 
+  it("counts no tool step that failed, though its skill may have acted outside the conversation", async () => {
+    // A ticket webhook that answered 500: the reply must not say the team will email them.
+    const input = await replyInputFor({
+      routine: searchRoutine(finishEnding),
+      path: ["ask_brief"],
+      nextStepId: "search",
+      results: { search_listings: { status: "failed", outputs: { reason: "http_500" }, actsOutsideConversation: true } },
+    });
+
+    expect(input.ending).toEqual({
+      requestPassedOn: false,
+      skillOutcomes: [{ skillName: "search_listings", status: "failed" }],
+    });
+  });
+
+  // The issue's shape across turns: the search ran and its results were shown on turn one, and the
+  // visitor's answer reaches a finish that tells no one on turn two.
+  const shownThenFinished: Routine = {
+    id: "property_match",
+    rootStepId: "ask_brief",
+    steps: [
+      { id: "ask_brief", kind: "chat", action: "Ask what kind of home they are looking for." },
+      { id: "search", kind: "skill", skillName: "search_listings" },
+      { id: "show", kind: "chat", action: "Show the homes that match and ask which one they like." },
+      finishEnding,
+    ],
+    transitions: [
+      { from: "ask_brief", to: "search", condition: "The visitor described the home they want." },
+      { from: "search", to: "show", condition: "The search ran." },
+      { from: "show", to: "done", condition: "They answered." },
+    ],
+  };
+
+  it("counts no search an earlier turn ran as passing the request on", async () => {
+    const input = await replyInputFor({ routine: shownThenFinished, path: ["ask_brief", "search", "show"], nextStepId: "done", actingOutside: [] });
+
+    expect(input.ending).toEqual({ requestPassedOn: false, skillOutcomes: [] });
+  });
+
+  it("counts no tool step an earlier turn ran when the dispatcher cannot say what its skill does", async () => {
+    const input = await replyInputFor({ routine: shownThenFinished, path: ["ask_brief", "search", "show"], nextStepId: "done" });
+
+    expect(input.ending).toEqual({ requestPassedOn: false, skillOutcomes: [] });
+  });
+
+  it("counts a tool step an earlier turn ran when its skill acts outside the conversation", async () => {
+    const input = await replyInputFor({
+      routine: shownThenFinished,
+      path: ["ask_brief", "search", "show"],
+      nextStepId: "done",
+      actingOutside: ["search_listings"],
+    });
+
+    expect(input.ending).toEqual({ requestPassedOn: true, skillOutcomes: [] });
+  });
+
   it.each([
-    { kind: "tool", step: { id: "earlier", kind: "skill", skillName: "send_lead" } },
+    { kind: "action", step: { id: "earlier", kind: "action", actionType: "brief.recorded" } },
     { kind: "approval", step: { id: "earlier", kind: "await", decision: { captureKey: "review", options: [] } } },
   ] satisfies Array<{ kind: string; step: RoutineStep }>)(
-    "counts a $kind step an earlier turn ran, and lists no outcome for it",
+    "counts an $kind step an earlier turn ran, and lists no outcome for it",
     async ({ step }) => {
       const routine: Routine = {
         id: "property_match",

@@ -78,6 +78,10 @@ export class ApprovalResumeEffectJournalDispatcher implements ConversationRoutin
     return this.delegate.dispatchWithExternalEffectInterceptor(input, this.interceptor());
   }
 
+  actsOutsideConversation(skillName: string): boolean {
+    return this.delegate.actsOutsideConversation(skillName);
+  }
+
   private interceptor(): RoutineExternalEffectInterceptor {
     return {
       dispatch: async (input) => {

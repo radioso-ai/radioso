@@ -1070,6 +1070,12 @@ export interface ConversationRoutineSkillDispatcher {
     // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
     // part of the dispatch input.
   }): Promise<RoutineSkillResult>;
+  /**
+   * Whether running `skillName` can act outside the conversation, read without running it: false
+   * for a skill that only reads workspace evidence, such as a search. Optional; absent, the runner
+   * counts no tool step an earlier turn ran as passing a request on (#1820).
+   */
+  actsOutsideConversation?(skillName: string): boolean;
 }
 
 /**
@@ -1778,20 +1784,6 @@ export interface RoutineContextRenderer {
   render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
   evidence?(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
 }
-
-/** Renders a grounded answer for a routine step, or null when the step is not groundable. */
-export interface RoutineGroundedAnswerRenderer {
-  render(input: RoutineGroundedAnswerInput): Promise<RenderableTurn | null>;
-  /**
-   * Decides from the turn's staged context alone whether the step is groundable: null when
-   * it is not, otherwise the grounded answer, generated only when asked.
-   * `prepare(input)?.render()` produces what `render(input)` would. Optional.
-   */
-  prepare?(input: RoutineGroundedAnswerInput): PendingRenderableTurn | null;
-}
-
-/** `ending` marks a step the run ends on (#1820): with nothing retrieved, an ending is not groundable. */
-export type RoutineGroundedAnswerInput = Pick<RoutineStepReplyInput, "step" | "steering" | "turn" | "ending">;
 
 /**
  * Tool-backed skills. A host that exposes tools (MCP, OpenAPI, local functions) implements

@@ -49,7 +49,9 @@ services.
   `workspace-switcher.tsx`, `frontend/lib/dashboard-routes.ts`.
 - Chat UI: `agent-revision-test-chat.tsx` is the one operator test surface (the
   agent's **Test** row, backed by `/agents/:id/test-executions`), rendering
-  `chat-message-thread.tsx`; `conversation-drawer.tsx` and `chat-citations.tsx` are the
+  `chat-message-thread.tsx` from `test-chat-thread-messages.ts`, so a test reply shows
+  its sources and cards; a source opens its document in the Inbox's
+  `history/history-document-dialog.tsx`. `conversation-drawer.tsx` and `chat-citations.tsx` are the
   activity-side readers. `chat-citations.tsx` renders an answer's citation markers
   (footnote order, with a run of markers as one pill that highlights its sources);
   `answer-segment-layout.ts` holds the pure segment shaping it relies on: punctuation

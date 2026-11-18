@@ -12156,6 +12156,10 @@ export interface components {
             messageId: string;
             /** @description The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize. */
             answer: string;
+            /** @description The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none. */
+            citations?: components["schemas"]["Citation"][];
+            /** @description The answer's text runs, each with the indices of the citations it rests on. Present only with citations. */
+            answerSegments?: components["schemas"]["AnswerSegment"][];
             /** @description The reply blocks the turn presents beside its answer, such as cards built from a skill's records. Test Chat renders every block kind and layout. */
             blocks?: components["schemas"]["ReplyBlock"][];
             turnTrace?: unknown;
@@ -12237,6 +12241,10 @@ export interface components {
                 /** Format: uuid */
                 messageId?: string;
                 turnTrace?: unknown;
+                /** @description The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none. */
+                citations?: components["schemas"]["Citation"][];
+                /** @description The answer's text runs, each with the indices of the citations it rests on. Present only with citations. */
+                answerSegments?: components["schemas"]["AnswerSegment"][];
                 /** Format: uuid */
                 attemptId: string;
                 /** Format: date-time */
@@ -12381,6 +12389,10 @@ export interface components {
                     /** Format: uuid */
                     messageId?: string;
                     turnTrace?: unknown;
+                    /** @description The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none. */
+                    citations?: components["schemas"]["Citation"][];
+                    /** @description The answer's text runs, each with the indices of the citations it rests on. Present only with citations. */
+                    answerSegments?: components["schemas"]["AnswerSegment"][];
                     /** Format: uuid */
                     attemptId: string;
                     /** Format: date-time */

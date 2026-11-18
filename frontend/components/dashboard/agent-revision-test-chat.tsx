@@ -37,6 +37,8 @@ import { getPrimaryLeafTrace } from "@/lib/turn-trace";
 import { getUsageLimitNotice, getUsageLimitNoticeForCode, type UsageLimitNotice as UsageLimitNoticeData } from "@/lib/usage-limit-error";
 import { UsageLimitNotice } from "@/components/dashboard/shared/usage-limit-notice";
 import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
+import { HistoryDocumentDialog } from "@/components/dashboard/history/history-document-dialog";
+import { useHistoryDocumentDialogState } from "@/components/dashboard/history/use-chat-history-state";
 import {
   followRoute,
   routeIdForLoaded,
@@ -179,6 +181,8 @@ export function AgentRevisionTestChat({
   // as a plain string) because this notice carries a link and is only ever fresh, not resumed.
   const [usageLimitNotice, setUsageLimitNotice] = useState<UsageLimitNoticeData | null>(null);
   const executionLink = useCopyDashboardLink();
+  // A source on a reply opens its document, as it does in the Inbox.
+  const citedDocument = useHistoryDocumentDialogState();
   const resetExecutionLink = executionLink.reset;
   // Clears the stale failure/copy feedback from a previous test before an explicit navigation;
   // a greeting starting on its own does not, so it cannot wipe a link failure it had nothing to do with.
@@ -1714,7 +1718,7 @@ export function AgentRevisionTestChat({
                           {messages.length ? <ChatMessageThread
                             messages={messages}
                             visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId, pendingReadingImageIds(side)) : undefined}
-                            onOpenDocument={async () => "unavailable"}
+                            onOpenDocument={citedDocument.handleOpenCitation}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
                             conversationId={side?.conversationId}
@@ -2130,6 +2134,13 @@ export function AgentRevisionTestChat({
           </>
         )}
       </div>
+      <HistoryDocumentDialog
+        open={citedDocument.isDocumentDialogOpen}
+        isLoading={citedDocument.isDocumentLoading}
+        error={citedDocument.documentError}
+        document={citedDocument.documentDetail}
+        onOpenChange={citedDocument.handleDocumentDialogOpenChange}
+      />
     </>
   );
 }

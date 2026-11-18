@@ -28,6 +28,11 @@ gone. A completion sends only what the stored answer adds past the streamed text
 carries the stored `answer`, which the client shows in place of the streamed text:
 the runtime's final presentation can trim whitespace or citation anchors the stream
 carried. A side that fails after streaming ends `side_failed` with no completion.
+An answer that cites the workspace's documents carries its `citations` and
+`answerSegments` on the result, on `side_completed` and on its stored history
+entry, the same sources live chat stores with that reply; an answer that cites
+none carries neither (`answerSources`). Test Chat shows them as the public chat
+and the Inbox do.
 
 A single execution can start from an existing conversation (`seedConversationId`
 on start). This module only knows the `TestExecutionSeedSource` port: it receives

@@ -794,6 +794,9 @@ to normal answering when it finishes.
   the agent draft's activation set, so **Test** is disabled until you switch
   it over with the round button beside the pill.
 - Each test conversation is private to you and keeps the revision it started on.
+- A step that answers from your documents shows its **Sources**, the same ones
+  a visitor sees on that reply, and each source opens its document, so you can
+  check what the step's answer rests on.
 
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before you publish the agent.

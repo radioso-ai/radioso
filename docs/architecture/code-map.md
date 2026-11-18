@@ -1041,9 +1041,9 @@ Public surfaces and key files:
 - `backend/src/modules/test-execution/testExecutionTurns.ts` (turn read model: turns per side with state and failure code)
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
-- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts` (drives `WorkbenchReplayRunner.stream`)
+- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts` (drives `WorkbenchReplayRunner.stream`; carries the replayed answer's sources through `answerSources`, typed by `backend/src/shared/domain/answerCitation.ts`)
 - `backend/src/app/composition/testExecution.ts` (`buildTestExecutionService`: the store, the trusted runner, the seed source and Test Chat's photo turns)
-- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`); `frontend/lib/test-execution-events.ts` (the turn stream's parser)
+- `frontend/lib/agent-test-execution-state.ts` (stream event reducer; `frontend/tests/unit/agent-test-execution-state.test.ts`); `frontend/lib/test-execution-events.ts` (the turn stream's parser); `frontend/components/dashboard/test-chat-thread-messages.ts` (a side's messages as the thread shows them, sources and cards included; journeys `frontend/tests/e2e/test-chat-sources.spec.ts`, `test-chat-cards.spec.ts`); the routine reply sources test is `backend/tests/unit/test-chat-routine-citations.test.ts`
 - Test Chat photos: `photos` on `TestExecutionService.streamMessage` through `TestExecutionPhotoTurnsPort` (`backend/src/modules/chat/services/testChatPhotoTurns.ts`, over the chat door's claim), bound to the test (`visitor_images.test_execution_id`) in the transaction that stores the turn (`bindVisitorImageClaimIn`); a repeat of a stored turn replays and claims nothing; `backend/src/app/http/routes/testChatImageRoutes.ts` (`GET /api/v1/agents/:agentId/test-executions/:executionId/images/:imageId`); `frontend/lib/use-test-chat-photos.ts` over the pure `test-chat-photos.ts`, rendered by `frontend/components/dashboard/test-chat-composer.tsx`; the journey is `frontend/tests/e2e/test-chat-images.spec.ts`
 - `backend/tests/unit/test-execution-service.test.ts`, `test-execution-photo-turns.test.ts`
 - `backend/tests/integration/test-execution-repository.integration.test.ts`

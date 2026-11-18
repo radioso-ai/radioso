@@ -1,5 +1,5 @@
 import type { ExecutionState, TestExecution, TestExecutionEvent, TestExecutionHistoryDetail } from './api-agent-revisions'
-import type { ReplyBlock, TurnTraceEnvelope, VisitorImageInput } from './api-types'
+import type { AnswerSegment, Citation, ReplyBlock, TurnTraceEnvelope, VisitorImageInput } from './api-types'
 
 export interface TestExecutionSideState {
   id: string
@@ -23,6 +23,9 @@ interface TestExecutionMessage {
   turnTrace?: TurnTraceEnvelope
   /** The reply's blocks, such as cards built from a skill's results, as the turn's completion carried them. */
   blocks?: ReplyBlock[]
+  /** The sources the reply cites and where its text cites them, as live chat shows them. */
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
   /** Said on a call from Test Chat rather than typed. */
   spoken?: true
   /** The photos a message carried and what was typed with them; `content` is the turn text with the readings. */
@@ -81,11 +84,18 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
       attemptId: entry.attemptId,
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
+      ...(entry.role === 'assistant' ? answerSources(entry) : {}),
       ...(entry.spoken ? { spoken: true as const } : {}),
       ...(entry.role === 'user' && entry.imageInput ? { imageInput: entry.imageInput } : {}),
     })),
   }])),
 })
+
+/** A reply's sources: both fields when it cites any, neither when it cites none. */
+const answerSources = (answer: Pick<TestExecutionMessage, 'citations' | 'answerSegments'>): Pick<TestExecutionMessage, 'citations' | 'answerSegments'> =>
+  answer.citations?.length
+    ? { citations: answer.citations, ...(answer.answerSegments?.length ? { answerSegments: answer.answerSegments } : {}) }
+    : {}
 
 type PersistedAttempt = TestExecutionHistoryDetail['attempts'][number]
 type PersistedSide = TestExecutionHistoryDetail['sides'][number]
@@ -139,6 +149,7 @@ const hydrateSideMessages = (side: PersistedSide, latestByTurn: Map<string, Pers
       attemptId: entry.attemptId,
       persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
       turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
+      ...(entry.role === 'assistant' ? answerSources(entry) : {}),
       ...(entry.spoken ? { spoken: true as const } : {}),
       ...(entry.role === 'user' && entry.imageInput ? { imageInput: entry.imageInput } : {}),
     }
@@ -350,6 +361,7 @@ export const reduceTestExecutionEvent = (
             state: 'completed',
             persistedAssistantMessageId: event.messageId,
             turnTrace: event.turnTrace,
+            ...answerSources(event),
             ...(event.blocks?.length ? { blocks: event.blocks } : {}),
           }),
         }

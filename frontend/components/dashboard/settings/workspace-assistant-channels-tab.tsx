@@ -844,11 +844,10 @@ export function WorkspaceAssistantChannelsTab({
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? (
               <SkillList
-                agentId={agentId}
+                agentId={agentId} onDraftSaved={dispatchDraftSaved}
                 assistantBehaviorSettings={assistantBehaviorSettings}
                 isAssistantBehaviorLoading={isAssistantBehaviorLoading}
                 onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                onDraftSaved={dispatchDraftSaved}
               />
             ) : null}
           </section>

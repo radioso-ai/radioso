@@ -36,6 +36,7 @@ import {
 } from '@/lib/directive-surfaces'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { announceAgentDraftSaved } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   directivesApi,
@@ -586,6 +587,7 @@ export function AssistantDirectivesSection({
         invocationMode: 'agent_selectable',
       })
       setAgentSkills((current) => [skill, ...current])
+      announceAgentDraftSaved(agentId)
       setPendingSkillCreation(null)
       setCreationCapabilityId(null)
       pending.resolve(skill.name)

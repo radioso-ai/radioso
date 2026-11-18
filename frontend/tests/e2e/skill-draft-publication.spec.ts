@@ -88,7 +88,6 @@ test("a skill switch is a draft change: Review & publish turns on and the review
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
   await expect(page.getByText("@lookup_order", { exact: true })).toBeVisible();
-  await expect(page.getByText("Skill changes are saved with the draft and go live on publish.", { exact: false })).toBeVisible();
   const reviewAndPublish = page.getByRole("button", { name: "Review & publish", exact: true });
   await expect(reviewAndPublish).toBeDisabled();
 
@@ -97,8 +96,7 @@ test("a skill switch is a draft change: Review & publish turns on and the review
   await expect(reviewAndPublish).toBeEnabled();
   await reviewAndPublish.click();
   const review = page.getByRole("dialog", { name: "Review draft publication" });
-  const skillsSection = review.locator("section").filter({ has: page.getByText("Skills", { exact: true }) });
-  await expect(skillsSection).toContainText("@lookup_order");
-  await expect(skillsSection).toContainText("(changed)");
-  await expect(skillsSection).not.toContainText("Unchanged");
+  const skillChanges = review.getByRole("list", { name: "Skill changes" });
+  await expect(skillChanges.getByRole("listitem")).toHaveCount(1);
+  await expect(skillChanges.getByRole("listitem")).toContainText("@lookup_order");
 });

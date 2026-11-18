@@ -94,19 +94,33 @@ export interface RoutineTraceStepView {
   skillOutcome?: string
   /** The next-step selector's own reading of this turn, when a model call ran here. */
   selection?: RoutineStepSelectionView
-  /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
-  rejectedSlotKeys?: string[]
+  /** Slots whose returned value was not stored, each with why (#1374, #1388, #1544). */
+  rejectedSlots?: RoutineRejectedSlotView[]
   /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
   readOpeningMessage?: boolean
   /** On a consent step, what became of the consent this turn (#1544). */
   consent?: RoutineStepConsentView
 }
 
-// Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
-const rejectedSlotKeysOf = (value: unknown): string[] =>
+export const REJECTED_SLOT_REASONS = ['undeclared', 'consent', 'type_mismatch', 'not_scalar'] as const
+const KNOWN_REJECTED_SLOT_REASONS: readonly unknown[] = REJECTED_SLOT_REASONS
+export type RejectedSlotReason = (typeof REJECTED_SLOT_REASONS)[number] | 'unknown'
+
+export interface RoutineRejectedSlotView {
+  key: string
+  reason: RejectedSlotReason
+}
+
+const isKnownRejectedSlotReason = (value: unknown): value is Exclude<RejectedSlotReason, 'unknown'> =>
+  KNOWN_REJECTED_SLOT_REASONS.includes(value)
+
+// Key and reason only: the runner never puts a rejected value on the trace, and this ignores one
+// if present. A reason this view does not know reads as `unknown`, so the key still shows.
+const rejectedSlotsOf = (value: unknown): RoutineRejectedSlotView[] =>
   asArray(value).flatMap((entry) => {
     const key = isRecord(entry) ? asString(entry.key) : undefined
-    return key ? [key] : []
+    const reason = isRecord(entry) ? entry.reason : undefined
+    return key ? [{ key, reason: isKnownRejectedSlotReason(reason) ? reason : 'unknown' }] : []
   })
 
 export interface RoutineRunTraceView {
@@ -138,7 +152,7 @@ export const buildRoutineRunTrace = (
     .filter(isRecord)
     .map((entry): RoutineTraceStepView => {
       const selection = buildRoutineStepSelection(entry.selection)
-      const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
+      const rejectedSlots = rejectedSlotsOf(entry.rejectedSlots)
       const replacedSlotKeys = asStringArray(entry.replacedSlotKeys)
       const consent = buildRoutineStepConsent(entry.consent)
       return {
@@ -153,7 +167,7 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
         skillOutcome: skillOutcomeLabel({ status: asString(entry.skillStatus), reason: asString(entry.skillReason) }),
         ...(selection ? { selection } : {}),
-        ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
+        ...(rejectedSlots.length > 0 ? { rejectedSlots } : {}),
         ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
         ...(consent ? { consent } : {}),
       }

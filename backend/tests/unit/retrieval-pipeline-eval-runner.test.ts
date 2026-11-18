@@ -11,11 +11,11 @@ import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/r
 
 const SUMMARY = "The user already returned the item and is asking about the refund timeline.";
 
-const pipelineResult = () => {
+const pipelineResult = (contexts: unknown[] = []) => {
   const now = new Date().toISOString();
   return {
     rewrittenQuery: "how long do refunds take",
-    contexts: [],
+    contexts,
     systemPrompt: "BASE GROUNDED SYSTEM PROMPT",
     prompt: "GROUNDED PROMPT",
     citations: [],
@@ -31,16 +31,16 @@ const pipelineResult = () => {
   };
 };
 
-const buildRunner = () => {
-  const captured: { prompt?: string; systemPrompt?: string } = {};
-  const pipeline = { run: async () => pipelineResult() } as unknown as ConstructorParameters<
+const buildRunner = (options: { reply?: string; contexts?: unknown[] } = {}) => {
+  const captured: { prompt?: string; systemPrompt?: string; presentedCitationCount?: number } = {};
+  const pipeline = { run: async () => pipelineResult(options.contexts) } as unknown as ConstructorParameters<
     typeof RetrievalPipelineEvalRunner
   >[0];
   const chatGateway = {
     answer: async (input: { prompt: string; systemPrompt: string }) => {
       captured.prompt = input.prompt;
       captured.systemPrompt = input.systemPrompt;
-      return "Refunds are processed within five business days.";
+      return options.reply ?? "Refunds are processed within five business days.";
     },
   } as unknown as ChatGateway;
   const capabilityResolver = {
@@ -50,7 +50,10 @@ const buildRunner = () => {
     getDefaults: (workspaceId: string) => defaultRetrievalSettings(workspaceId),
   };
   const answerPresentation: EvalAnswerPresentationPort = {
-    present: ({ answer }) => ({ answer, citations: [], answerSegments: [{ text: answer }] }),
+    present: ({ answer, citations }) => {
+      captured.presentedCitationCount = citations.length;
+      return { answer, citations: [], answerSegments: [{ text: answer }] };
+    },
   };
   const runner = new RetrievalPipelineEvalRunner(
     pipeline,
@@ -143,5 +146,45 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
     const stage = result.activityTrace.stages.find((s) => s.kind === "conversation_summary");
     expect(stage?.status).toBe("skipped");
     expect(stage?.outputs?.summary).toBeUndefined();
+  });
+});
+
+// #1823: the replay presents a decline the way chat does, naming no Result.
+describe("RetrievalPipelineEvalRunner declines", () => {
+  const refundContext = {
+    documentId: "doc-1",
+    chunkId: "chunk-1",
+    title: "Refund policy",
+    content: "Refunds are processed within five business days.",
+  };
+  const envelope = (outcome: "answer" | "no_support") => JSON.stringify({
+    coverage: outcome === "answer" ? "answered_sufficient_evidence" : "unanswered_insufficient_evidence",
+    requestFocus: "the refund timeline",
+    outcome,
+    answer: "The closest we have is the refund policy[[1]].",
+    v: 2,
+    claims: [[1]],
+    suggestions: [],
+    grounding: "degraded",
+  });
+  const run = (reply: string) => {
+    const built = buildRunner({ reply, contexts: [refundContext] });
+    return built.runner
+      .answer({ workspaceId: "ws-1", runId: "run-1", query: "How long do refunds take?", history: [] })
+      .then((result) => ({ result, captured: built.captured }));
+  };
+
+  it("presents a committed decline that cites a Result without citations", async () => {
+    const { result, captured } = await run(envelope("no_support"));
+
+    expect(result.groundingSummary).toMatchObject({ verdict: "no_support", declineReason: "content_gap" });
+    expect(captured.presentedCitationCount).toBe(0);
+  });
+
+  it("presents a cited answer with the Results it may cite", async () => {
+    const { result, captured } = await run(envelope("answer"));
+
+    expect(result.groundingSummary).toMatchObject({ verdict: "grounded" });
+    expect(captured.presentedCitationCount).toBe(1);
   });
 });

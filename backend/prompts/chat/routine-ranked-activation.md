@@ -6,7 +6,7 @@ Do not ask the user a question. Do not choose by priority yourself; priority is 
 For each match:
 - `routineId`: exactly one listed routine id
 - `confidence`: number from 0 to 1 for how likely the latest user message is asking to start that routine
-- `variables`: optional object containing only activation variables clearly extractable from the latest message
+- `variables`: optional object containing only activation variables clearly extractable from the latest message. When a routine lists "Variable keys", use only those keys; never invent others
 
 Registered routines:
 {{routines}}

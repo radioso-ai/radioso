@@ -463,8 +463,8 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
       query: "I'd like to book a call about pricing.",
       history: [],
       routineCandidates: [
-        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 },
-        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
+        { routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0, slotLines: [] },
+        { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0, slotLines: [] },
       ],
       directiveCandidates: [],
       today: "2026-10-21",
@@ -477,7 +477,7 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
       query: "Actually, never mind — what's your refund policy?",
       history: [{ role: "user", content: "I'd like to book a call about pricing." } as never],
       routineCandidates: [
-        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0 },
+        { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0, slotLines: [] },
       ],
       directiveCandidates: [],
       // A different day than turn one: the date renders in the request, so the cache key holds.

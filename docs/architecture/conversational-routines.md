@@ -291,7 +291,8 @@ returned.
 A key that names no slot the routine declares is dropped the same way, reported
 as `undeclared`. This runs everywhere a value could enter routine state: the
 selector's values on every step it judges, and the activator's or ranked
-activation's values on the routine's first turn — so a free-form field name
+activation's values on the routine's first turn (where activation has already
+dropped the keys it was not offered) — so a free-form field name
 from any of them never reaches routine state, an action step's payload, or an
 unbound tool-step input. A routine with no declared slot schema has no list to
 check a key against, so every key it is given reaches state untouched — the
@@ -809,10 +810,10 @@ found text posing as a system notice (`authority_claim`, nothing kept), or came
 back unreadable too (`unreadable`). The two signals answer
 different questions: `undeclaredKeyCount` is what the next-step selector
 already filtered out of its own response before returning it, while an
-`undeclared` entry in `rejectedSlots` is what the runner itself dropped —
-from that selector or from the values activation read from the opening
-message — so it also catches a free-form key from a selector that does no
-filtering of its own. The trace carries slot names only —
+`undeclared` entry in `rejectedSlots` is what the runner itself dropped from
+the selector's values, so it also catches a free-form key from a selector that
+does no filtering of its own. Activation counts the keys it dropped separately,
+as `undeclaredKeyCount` on the clarification stage. The trace carries slot names only —
 never captured values, which may be personal data — so it is safe to show in the
 debug surface. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
@@ -957,8 +958,10 @@ Routine activation evaluates all eligible routine triggers together in one ranke
 model call.
 
 The ranked activation input is the latest user message plus the full eligible
-routine list. Each routine contributes its trigger description and authored
-priority. Capability gates are applied before ranking, so a gated-off routine is
+routine list. Each routine contributes its trigger description, its authored
+priority, and the slots activation may fill, each as a line with its key, type
+and description. A slot a consent covers is left out: it takes no value before
+the visitor grants the consent. Capability gates are applied before ranking, so a gated-off routine is
 not considered and cannot appear in a clarifying question.
 
 A routine's reentry mode is also applied before ranking. A routine that already
@@ -969,11 +972,13 @@ the historical behavior of running once per conversation.
 
 The activation result is a per-routine confidence score and any activation
 variables that can already be extracted from the original message. Those
-variables go through the same check as the selector's (see "What a slot
-keeps" above) before they enter the started routine's state: on a routine
-with a declared slot schema, a value that does not fit its slot's type or
-names no declared slot is dropped; a routine with no slot schema keeps
-every key. The decision order is:
+variables are filtered to the slots activation was offered before the
+decision is made: on a routine with a declared slot schema, a key that names no
+offered slot is dropped and counted as `undeclaredKeyCount` on the clarification
+stage's outputs. The survivors then go through the same check as the
+selector's (see "What a slot keeps" above) before they enter the started
+routine's state, so a value that does not fit its slot's type is dropped there.
+A routine with no slot schema keeps every key. The decision order is:
 
 1. Drop candidates below the confidence floor.
 2. If the top routine clears the margin over the runner-up, start it silently.

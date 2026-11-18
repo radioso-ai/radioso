@@ -343,11 +343,7 @@ export class ChatAnswerPresenter {
         throw new Error("retrieval_decline_reason_required");
       }
       return {
-        ...this.presentRetrievalDecline(
-          answer,
-          citationEvidence,
-          declineReason,
-        ),
+        ...this.presentRetrievalDeclineAnswer(answer, declineReason),
         grounding: groundingVerdict,
         groundingSummary,
         groundingDiagnostics,
@@ -445,15 +441,15 @@ export class ChatAnswerPresenter {
     };
   }
 
-  private presentRetrievalDecline(
+  /**
+   * A decline names no Result: its text is presented with every citation anchor removed
+   * and carries no citations or suggestions, even when the body that declined cited one.
+   */
+  presentRetrievalDeclineAnswer(
     answer: string,
-    citationEvidence: CitationEvidence[],
     declineReason: TurnDeclineReason,
   ): ChatPresentedAnswer {
-    const presented = this.answerPresentationService.present({
-      answer,
-      citations: citationEvidence,
-    });
+    const presented = this.answerPresentationService.present({ answer, citations: [] });
     const declineOutcome = declineReason === "out_of_scope"
       ? SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE
       : declineReason === "generation_unavailable"
@@ -468,12 +464,5 @@ export class ChatAnswerPresenter {
       skillOutcome: declineOutcome.outcome,
       skillStatus: declineOutcome.status,
     });
-  }
-
-  presentRetrievalDeclineAnswer(
-    answer: string,
-    declineReason: TurnDeclineReason,
-  ): ChatPresentedAnswer {
-    return this.presentRetrievalDecline(answer, [], declineReason);
   }
 }

@@ -1,13 +1,19 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import { withUserTimeZone } from './browser-time-zone'
 import { createClientId } from './client-id'
-import type { AgentGreetingDraft, ReplyBlock, TurnTraceEnvelope } from './api-types'
+import type { AgentGreetingDraft, AnswerSegment, Citation, ReplyBlock, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
 import type { components } from '../../typescript-sdk/src/generated/types'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
 export type ExecutionState = 'missing' | 'running' | 'partial' | 'failed' | 'completed'
+
+/** The sources a test answer cites and where its text cites them; both absent when it cites none. */
+interface TestAnswerSources {
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
+}
 
 export interface AgentRevisionSummary {
   id: string
@@ -74,7 +80,7 @@ export interface TestExecution {
     conversationId: string
     state: ExecutionState
     retryable: boolean
-    history?: Array<{
+    history?: Array<TestAnswerSources & {
       turnId: string
       role: 'user' | 'assistant'
       content: string
@@ -113,7 +119,7 @@ export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'>
   sides: Array<Omit<TestExecution['sides'][number], 'state' | 'history'> & {
     /** `ready` is persisted before the first message; it is not a completed turn. */
     state: ExecutionState | 'ready'
-    history: Array<{
+    history: Array<TestAnswerSources & {
       turnId: string
       role: 'user' | 'assistant'
       content: string
@@ -144,7 +150,7 @@ export type TestExecutionEvent =
   | { type: 'side_started'; executionId: string; generation: number; sideId: string; turnId: string; attemptId: string }
   | { type: 'message_delta'; executionId: string; generation: number; sideId: string; delta: string; turnId: string; attemptId: string }
   /** `answer` is the stored answer, which replaces the streamed text; only a backend that predates it omits it. */
-  | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; answer?: string; turnId: string; attemptId: string; blocks?: ReplyBlock[]; turnTrace?: TurnTraceEnvelope }
+  | (TestAnswerSources & { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; answer?: string; turnId: string; attemptId: string; blocks?: ReplyBlock[]; turnTrace?: TurnTraceEnvelope })
   | { type: 'side_failed'; executionId: string; generation: number; sideId: string; code: string; retryable: boolean; turnId: string; attemptId: string }
   | { type: 'execution_partial'; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: 'execution_completed'; executionId: string; generation: number; turnId: string; attemptId: string }

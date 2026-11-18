@@ -2,10 +2,11 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { PUBLIC_ASSISTANT_FALLBACK_NAME } from "../../../shared/domain/responseIdentity.js";
 import { applyAgentRevisionSnapshot, materializeAgentFromConfig, type AgentRevision, type InternalAgentConfig } from "../../agents/public.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type {
-  FrozenTestValue,
-  TestExecutionHistoryEntry,
-  TrustedTestExecutionRunnerPort,
+import {
+  answerSources,
+  type FrozenTestValue,
+  type TestExecutionHistoryEntry,
+  type TrustedTestExecutionRunnerPort,
 } from "../../test-execution/public.js";
 import type { ResolvedVariableInput } from "../../context-variables/public.js";
 import {
@@ -124,6 +125,8 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     return {
       answer: replayed.answer,
       messageId: replayed.messageId,
+      // The sources the replayed turn's presentation cites: the same ones live chat stores with this reply.
+      ...answerSources(replayed),
       turnTrace: replayed.turnTrace,
       continuation: replayed.continuation,
       ...(replayed.blocks?.length ? { blocks: replayed.blocks } : {}),

@@ -16,10 +16,8 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  ChatMessageThread,
-  type ChatThreadMessage,
-} from "@/components/dashboard/chat-message-thread";
+import { ChatMessageThread } from "@/components/dashboard/chat-message-thread";
+import { testChatThreadMessages } from "@/components/dashboard/test-chat-thread-messages";
 import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/assistant-identity";
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
@@ -39,6 +37,8 @@ import { getPrimaryLeafTrace } from "@/lib/turn-trace";
 import { getUsageLimitNotice, getUsageLimitNoticeForCode, type UsageLimitNotice as UsageLimitNoticeData } from "@/lib/usage-limit-error";
 import { UsageLimitNotice } from "@/components/dashboard/shared/usage-limit-notice";
 import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
+import { HistoryDocumentDialog } from "@/components/dashboard/history/history-document-dialog";
+import { useHistoryDocumentDialogState } from "@/components/dashboard/history/use-chat-history-state";
 import {
   followRoute,
   routeIdForLoaded,
@@ -121,9 +121,6 @@ import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 
-/** A Test Chat message's state as the shared thread shows it. */
-const THREAD_STATUS = { streaming: "streaming", completed: "complete", failed: "error" } as const satisfies Record<string, ChatThreadMessage["status"]>;
-
 const errorMessage = (cause: unknown, fallback: string): string =>
   cause instanceof Error ? cause.message : fallback;
 
@@ -184,6 +181,8 @@ export function AgentRevisionTestChat({
   // as a plain string) because this notice carries a link and is only ever fresh, not resumed.
   const [usageLimitNotice, setUsageLimitNotice] = useState<UsageLimitNoticeData | null>(null);
   const executionLink = useCopyDashboardLink();
+  // A source on a reply opens its document, as it does in the Inbox.
+  const citedDocument = useHistoryDocumentDialogState();
   const resetExecutionLink = executionLink.reset;
   // Clears the stale failure/copy feedback from a previous test before an explicit navigation;
   // a greeting starting on its own does not, so it cannot wipe a link failure it had nothing to do with.
@@ -1701,17 +1700,7 @@ export function AgentRevisionTestChat({
                   </div>
                   {(() => {
                     const side = sideForIndex(index);
-                    const messages: ChatThreadMessage[] =
-                      side?.messages.map((item) => ({
-                        id: item.id,
-                        role: item.role,
-                        content: item.content,
-                        persistedAssistantMessageId: item.persistedAssistantMessageId,
-                        ...(item.spoken ? { spokenLabel: DEFAULT_WEBSITE_EMBED_COPY.publicChatSpokenLabel } : {}),
-                        ...(item.imageInput ? { inputMetadata: { method: "typed" as const, imageInput: item.imageInput } } : {}),
-                        ...(item.blocks ? { blocks: item.blocks } : {}),
-                        status: THREAD_STATUS[item.state],
-                      })) ?? [];
+                    const messages = testChatThreadMessages(side);
                     return (
                       <>
                         <div
@@ -1729,7 +1718,7 @@ export function AgentRevisionTestChat({
                           {messages.length ? <ChatMessageThread
                             messages={messages}
                             visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId, pendingReadingImageIds(side)) : undefined}
-                            onOpenDocument={async () => "unavailable"}
+                            onOpenDocument={citedDocument.handleOpenCitation}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
                             conversationId={side?.conversationId}
@@ -2145,6 +2134,13 @@ export function AgentRevisionTestChat({
           </>
         )}
       </div>
+      <HistoryDocumentDialog
+        open={citedDocument.isDocumentDialogOpen}
+        isLoading={citedDocument.isDocumentLoading}
+        error={citedDocument.documentError}
+        document={citedDocument.documentDetail}
+        onOpenChange={citedDocument.handleDocumentDialogOpenChange}
+      />
     </>
   );
 }

@@ -27369,6 +27369,20 @@
                 "type": "string",
                 "description": "The stored answer. It is authoritative over the message_delta text streamed before it, which the runtime's final presentation may normalize."
               },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Citation"
+                },
+                "description": "The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none."
+              },
+              "answerSegments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AnswerSegment"
+                },
+                "description": "The answer's text runs, each with the indices of the citations it rests on. Present only with citations."
+              },
               "blocks": {
                 "type": "array",
                 "items": {
@@ -27631,6 +27645,20 @@
                   "format": "uuid"
                 },
                 "turnTrace": {},
+                "citations": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Citation"
+                  },
+                  "description": "The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none."
+                },
+                "answerSegments": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnswerSegment"
+                  },
+                  "description": "The answer's text runs, each with the indices of the citations it rests on. Present only with citations."
+                },
                 "attemptId": {
                   "type": "string",
                   "format": "uuid"
@@ -28133,6 +28161,20 @@
                             "format": "uuid"
                           },
                           "turnTrace": {},
+                          "citations": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/Citation"
+                            },
+                            "description": "The sources the answer cites, as live chat attaches them to the same reply. Absent when it cites none."
+                          },
+                          "answerSegments": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AnswerSegment"
+                            },
+                            "description": "The answer's text runs, each with the indices of the citations it rests on. Present only with citations."
+                          },
                           "attemptId": {
                             "type": "string",
                             "format": "uuid"

@@ -3,6 +3,7 @@ import { redactSensitiveValues, type PendingClarification, type RoutineState } f
 import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { DirectiveFiringState } from "../../directives/public.js";
+import { storedAnswerSegments, storedCitations } from "../../../shared/domain/answerCitation.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { carriesSensitiveValue, transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
 import type {
@@ -50,16 +51,23 @@ interface ConversationTestExecutionSeedSourceOptions {
 // continues in a private test. A message of a turn whose routine held a sensitive value (#1543)
 // is copied withheld: the test execution is a stored copy of the conversation. A visitor's photos
 // come with their message, so the copy shows what they typed and their photos; a withheld message
-// leaves them out, since what the visitor typed and the readings are what it withholds.
+// leaves them out, since what the visitor typed and the readings are what it withholds. A reply
+// keeps the sources it cites, as the Inbox shows them; a withheld reply keeps its citations but
+// not its text runs, which repeat the text it withholds.
 const seedMessage = (message: MessageRecord): TestExecutionSeedMessage | null => {
   if (message.role !== "user" && message.role !== "assistant") return null;
-  const imageInput = carriesSensitiveValue(message.metadata) ? undefined : message.inputMetadata?.imageInput;
+  const withheld = carriesSensitiveValue(message.metadata);
+  const imageInput = withheld ? undefined : message.inputMetadata?.imageInput;
+  const citations = message.role === "assistant" ? storedCitations(message.metadata) : undefined;
+  const answerSegments = citations && !withheld ? storedAnswerSegments(message.metadata) : undefined;
   return {
     role: message.role,
     content: transcriptCopyContent(message),
     messageId: message.id,
     createdAt: message.createdAt,
     ...(imageInput ? { imageInput } : {}),
+    ...(citations ? { citations } : {}),
+    ...(answerSegments ? { answerSegments } : {}),
   };
 };
 

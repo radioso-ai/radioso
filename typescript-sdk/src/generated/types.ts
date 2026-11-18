@@ -17692,6 +17692,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentRevisionState"];
                 };
             };
+            /** @description bad_request when a path parameter is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgentGreetingDraft: {
@@ -17712,6 +17721,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentGreetingDraft"];
+                };
+            };
+            /** @description bad_request when a path parameter is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Agent draft not found */
@@ -17749,7 +17767,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentGreetingDraftResponse"];
                 };
             };
-            /** @description bad_request when Exact words is enabled and the content fails validation */
+            /** @description bad_request when the agent id or request body is malformed, or when Exact words is enabled and the content fails validation */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -17782,6 +17800,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionCandidateResponse"];
+                };
+            };
+            /** @description bad_request when the agent id or request body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description revision_conflict when the saved draft generation changed */
@@ -17817,6 +17844,15 @@ export interface operations {
                     "application/json": components["schemas"]["AgentRevisionListResponse"];
                 };
             };
+            /** @description bad_request when a path parameter or query is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgentRevision: {
@@ -17838,6 +17874,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionDetailResponse"];
+                };
+            };
+            /** @description bad_request when a path parameter is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -17865,6 +17910,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionPublishResponse"];
+                };
+            };
+            /** @description bad_request when a path parameter or request body is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description revision_conflict when the revision, draft generation, pointer, or idempotency command is stale */

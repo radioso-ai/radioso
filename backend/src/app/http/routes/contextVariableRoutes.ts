@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
-import { validateBody } from "../middleware/validate.js";
+import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ContextVariableScope } from "../../../modules/context-variables/public.js";
 import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
@@ -133,22 +133,6 @@ type ContextVariableRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
   "accountAccessService" | "contextVariableService" | "env"
 >;
-
-const parseParams = <T extends z.ZodObject>(schema: T, params: unknown): z.infer<T> => {
-  const parsed = schema.safeParse(params);
-  if (!parsed.success) {
-    throw badRequest("Invalid route parameters", parsed.error.flatten());
-  }
-  return parsed.data;
-};
-
-const parseQuery = <T extends z.ZodObject>(schema: T, query: unknown): z.infer<T> => {
-  const parsed = schema.safeParse(query);
-  if (!parsed.success) {
-    throw badRequest("Invalid query parameters", parsed.error.flatten());
-  }
-  return parsed.data;
-};
 
 export const createContextVariableRoutes = (dependencies: ContextVariableRouteDependencies): Router => {
   const router = Router();

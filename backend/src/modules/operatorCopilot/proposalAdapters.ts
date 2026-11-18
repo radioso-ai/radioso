@@ -155,7 +155,7 @@ export interface RoutineMcpApplyPort {
     | { readonly operation: "create"; readonly draft: RoutineDefinitionDraftInput }
     | { readonly operation: "update"; readonly routineId: string; readonly draft: RoutineDefinitionDraftInput; readonly expectedUpdatedAt: Date; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }
     | { readonly operation: "delete"; readonly routineId: string; readonly expectedUpdatedAt: Date; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }
-  )): Promise<{ readonly appliedRef: { readonly agentId: string; readonly routineId: string }; readonly routine?: RoutineDefinition }>;
+  )): Promise<{ readonly appliedRef: { readonly agentId: string; readonly routineId: string }; readonly routine?: RoutineDefinition; /** False when the write restated the stored routine; absent means it wrote. */ readonly changed?: boolean }>;
 }
 // Payloads written before routine edits existed carry no `kind`; an absent one is a new-routine
 // draft. `"lifecycle"` is a retired payload shape (publish/revise/archive/restore, removed with
@@ -980,7 +980,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
             if (!validation.ok) return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "create", draft, proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
             refusalWroteNothing = false;
-            if (settled.routine) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
+            if (settled.routine && settled.changed !== false) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
           const result = await deps.routineDefinitionService.createDraft(workspaceId, targetRef.agentId, draft);
@@ -1030,7 +1030,8 @@ export const createRoutineCopilotProposalAdapter = (deps: {
             });
             refusalWroteNothing = false;
             if (!settled.routine) return { outcome: "failed" as const, reason: "Routine update did not return its saved draft" };
-            await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
+            // An equal write changed nothing: there is no routine update to audit or re-embed.
+            if (settled.changed !== false) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
           await deps.routineDefinitionService.updateDraft(workspaceId, targetRef.agentId, routine.id, payload.draft, { expectedUpdatedAt: routine.updatedAt });

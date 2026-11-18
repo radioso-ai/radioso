@@ -201,4 +201,19 @@ describe("equalScopedAuthoringSnapshots: timestamps (#1765)", () => {
     edited.routines[0].name = "intake v2";
     expect(equalScopedAuthoringSnapshots(withTimes("2026-02-01T00:00:00Z") as never, edited as never)).toBe(false);
   });
+
+  it("reads context-variable enablements as the review diff does: enabled rows by their settings", () => {
+    const enablement = (variableId: string, enabled: boolean, maxAgeSeconds = 60) =>
+      ({ variableId, enabled, source: "resolver", resolverSkillId: "skill-1", maxAgeSeconds, resolverTimeoutMs: 1000, surfacing: "silent" });
+    const snapshot = (rows: unknown[]) => ({ ...baseSnapshot(), contextVariableEnablements: rows });
+
+    expect(equalScopedAuthoringSnapshots(
+      snapshot([enablement("a", true), enablement("b", false)]) as never,
+      snapshot([enablement("a", true)]) as never,
+    )).toBe(true);
+    expect(equalScopedAuthoringSnapshots(
+      snapshot([enablement("a", true, 60)]) as never,
+      snapshot([enablement("a", true, 120)]) as never,
+    )).toBe(false);
+  });
 });

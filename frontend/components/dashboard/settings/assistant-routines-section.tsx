@@ -364,6 +364,8 @@ function RoutineEditorScreen({
   // save, so opening a routine never writes it back (a write bumps updatedAt and dirties the
   // agent draft).
   const loadValidationSupersededRef = useRef(false)
+  // The read-only check on open failed, so the routine has no verdict until a save returns one.
+  const [validationCheckFailed, setValidationCheckFailed] = useState(false)
   const [persistedDraftSignature, setPersistedDraftSignature] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
@@ -436,7 +438,7 @@ function RoutineEditorScreen({
     ? 'invalid'
     : isValidationCurrent && validation?.ok
       ? 'valid'
-      : 'checking'
+      : validationCheckFailed ? 'unchecked' : 'checking'
   const validationDiagnostics = useMemo(
     () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
     [isValidationCurrent, validation?.diagnostics],
@@ -549,6 +551,7 @@ function RoutineEditorScreen({
           // Opening does not save, so no save response carries the verdict: read it instead. A
           // save that lands first has the newer verdict and keeps it.
           loadValidationSupersededRef.current = false
+          setValidationCheckFailed(false)
           void routinesApi.validateRoutine(agentId, response.routine.id)
             .then((checked) => {
               if (!active || loadValidationSupersededRef.current) return
@@ -556,7 +559,9 @@ function RoutineEditorScreen({
               setValidatedDraftSignature(storedSignature)
             })
             .catch((validateError) => {
-              if (active) setError(getApiErrorMessage(validateError, 'Failed to check routine.'))
+              if (!active || loadValidationSupersededRef.current) return
+              setValidationCheckFailed(true)
+              setError(getApiErrorMessage(validateError, 'Failed to check routine.'))
             })
         })
         .catch((loadError) => {
@@ -649,6 +654,7 @@ function RoutineEditorScreen({
         setDocumentDraft(null)
       }
       loadValidationSupersededRef.current = true
+      setValidationCheckFailed(false)
       setValidation(response.validation)
       setValidatedDraftSignature(draftSignature)
       markSaved()
@@ -788,6 +794,8 @@ function RoutineEditorScreen({
       const nextSignature = JSON.stringify(response.draft)
       setDraftHeader(nextHeader)
       setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
+      loadValidationSupersededRef.current = true
+      setValidationCheckFailed(false)
       setValidation(response.validation)
       setValidatedDraftSignature(nextSignature)
       setDocumentDraft(null)

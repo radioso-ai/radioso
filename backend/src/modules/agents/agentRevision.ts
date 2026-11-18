@@ -138,14 +138,9 @@ export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapsho
 export { readAgentRevisionGreeting };
 
 /**
- * The authorable release surface deliberately excludes cutover-only retained
- * pins. It also gives routine arrays the same priority-first ordering used by
- * draft selection, so equivalent published and draft closures compare cleanly.
- */
-/**
  * A directive or routine as an operator authored it. `createdAt`/`updatedAt` record when a row was
  * written, not what it says: a save that restores earlier content moves them without changing
- * anything publishable, so every draft-versus-release comparison reads this view.
+ * anything publishable, so the draft-dirty check and the review diff both compare without them.
  */
 export const withoutWriteTimestamps = <T extends { createdAt: Date; updatedAt: Date }>(
   value: T,
@@ -154,6 +149,13 @@ export const withoutWriteTimestamps = <T extends { createdAt: Date; updatedAt: D
   return authored;
 };
 
+/**
+ * The authorable release surface deliberately excludes cutover-only retained
+ * pins. It also gives routine arrays the same priority-first ordering used by
+ * draft selection, so equivalent published and draft closures compare cleanly.
+ * Context-variable enablements compare as the review diff reads them: enabled
+ * rows only, by their settings.
+ */
 const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
   customInstruction: snapshot.customInstruction,
   directives: snapshot.directives.map(withoutWriteTimestamps),
@@ -162,7 +164,11 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
     right.activation.priority - left.activation.priority ||
     left.createdAt.getTime() - right.createdAt.getTime() ||
     left.id.localeCompare(right.id)).map(withoutWriteTimestamps),
-  contextVariableEnablements: snapshot.contextVariableEnablements,
+  contextVariableEnablements: snapshot.contextVariableEnablements
+    .filter((enablement) => enablement.enabled)
+    .map(({ variableId, source, resolverSkillId, maxAgeSeconds, resolverTimeoutMs, surfacing }) =>
+      ({ variableId, source, resolverSkillId, maxAgeSeconds, resolverTimeoutMs, surfacing }))
+    .sort((left, right) => left.variableId.localeCompare(right.variableId)),
   greeting: canonicalGreeting(snapshot),
 });
 

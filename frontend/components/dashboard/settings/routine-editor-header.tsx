@@ -25,14 +25,16 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-export type RoutineValidationStatus = 'checking' | 'invalid' | 'valid'
+export type RoutineValidationStatus = 'checking' | 'invalid' | 'unchecked' | 'valid'
 
 function RoutineValidationStatusIcon({ state }: { state: RoutineValidationStatus }) {
   const label = state === 'valid'
     ? 'Routine valid'
     : state === 'invalid'
       ? 'Routine has validation issues'
-      : 'Checking routine'
+      : state === 'unchecked'
+        ? 'Routine could not be checked'
+        : 'Checking routine'
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -42,6 +44,7 @@ function RoutineValidationStatusIcon({ state }: { state: RoutineValidationStatus
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
         >
           {state === 'valid' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : null}
+          {state === 'unchecked' ? <AlertTriangle className="h-4 w-4" /> : null}
           {state === 'invalid' ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
           {state === 'checking' ? <Spinner className="h-4 w-4" /> : null}
         </span>

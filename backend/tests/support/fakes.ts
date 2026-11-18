@@ -128,6 +128,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
+  routineMatchesDraft,
   type RoutineDefinitionDraftUpdate,
   type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
@@ -1880,6 +1881,9 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return definition;
   }
   async updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDraftUpdate> {
+    const existing = await this.findById(agentId, id);
+    const guardMatches = options?.expectedUpdatedAt === undefined || existing?.updatedAt.getTime() === options.expectedUpdatedAt.getTime();
+    if (existing && guardMatches && routineMatchesDraft(existing, input)) return { routine: existing, changed: false };
     const definition = await this.updateDraft(agentId, id, input, options);
     await this.onDraftChanged?.(workspaceId, agentId);
     return { routine: definition, changed: true };

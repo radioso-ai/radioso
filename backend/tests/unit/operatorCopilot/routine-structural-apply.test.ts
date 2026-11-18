@@ -146,6 +146,24 @@ describe("structural routine proposal adapter", () => {
     await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context)).rejects.toThrow("unexpected post-commit failure");
   });
 
+  it("leaves the routine's own audit and re-embed out when an applied write restated the stored routine (#1819)", async () => {
+    const apply = vi.fn(async () => ({ appliedRef: { agentId, routineId }, routine: routine as never, changed: false }));
+    const completeExternalDraftMutation = vi.fn();
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })), completeExternalDraftMutation } as never,
+      routineMcpApply: { apply },
+    });
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const draft = { name: "Created", enabled: true, activation: routine.activation, steps: routine.steps, terminals: routine.terminals, slots: [], transitions: routine.transitions };
+
+    const applied = await adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context);
+
+    expect(applied).toMatchObject({ outcome: "applied" });
+    expect(completeExternalDraftMutation).not.toHaveBeenCalled();
+  });
+
   it("applies the prepared authoring draft once through owner CAS and rejects a stale fence", async () => {
     const get = vi.fn(async () => routine);
     const updateDraft = vi.fn(async () => ({ routine: { ...routine, enabled: false } }));

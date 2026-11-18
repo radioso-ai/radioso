@@ -35,7 +35,7 @@ const applyOn = async (
   db: Db,
   input: Parameters<RoutineMcpApplyPort["apply"]>[0],
   deps: Parameters<typeof createRoutineMcpApplyPort>[1],
-): Promise<{ readonly appliedRef: { readonly agentId: string; readonly routineId: string }; readonly routine?: RoutineDefinition }> => {
+): Promise<{ readonly appliedRef: { readonly agentId: string; readonly routineId: string }; readonly routine?: RoutineDefinition; readonly changed?: boolean }> => {
   // Directive writers and every routine draft mutation use this same lock. Acquiring it before
   // the scoped-tag read makes the check and the owner write one serializable authoring decision.
   await transactionAdvisoryLock(agentRevisionLockKey(input.workspaceId, input.agentId)).execute(db);
@@ -54,10 +54,13 @@ const applyOn = async (
     await deps.validateScopedReferences({ workspaceId: input.workspaceId, agentId: input.agentId, routineId: input.routineId, removedNodeIds: input.removedNodeIds, removedSlotIds: input.removedSlotIds }, db);
   }
   let saved: RoutineDefinition;
+  let changed = true;
   try {
-    saved = input.operation === "create"
-      ? await routines.createDraftWithAgentDraft(input.workspaceId, input.agentId, input.draft)
-      : (await routines.updateDraftWithAgentDraft(input.workspaceId, input.agentId, input.routineId, input.draft, { expectedUpdatedAt: input.expectedUpdatedAt })).routine;
+    if (input.operation === "create") {
+      saved = await routines.createDraftWithAgentDraft(input.workspaceId, input.agentId, input.draft);
+    } else {
+      ({ routine: saved, changed } = await routines.updateDraftWithAgentDraft(input.workspaceId, input.agentId, input.routineId, input.draft, { expectedUpdatedAt: input.expectedUpdatedAt }));
+    }
   } catch (error) {
     // The repository raises raw write conflicts; the routine owner translates them to domain ones.
     throw translateRoutineDefinitionWriteConflict(error) ?? error;
@@ -73,5 +76,5 @@ const applyOn = async (
     now: new Date(),
   }, db);
   if (!settled) throw new Error("reviewed_proposal_receipt_conflict");
-  return { appliedRef, routine: saved };
+  return { appliedRef, routine: saved, changed };
 };

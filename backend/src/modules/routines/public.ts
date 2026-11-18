@@ -77,6 +77,7 @@ export {
   RoutineDefinitionService,
   translateRoutineDefinitionWriteConflict,
   type RoutineDefinitionDeleteDraftResult,
+  type RoutineDefinitionDraftUpdate,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
 } from "./service.js";

@@ -555,12 +555,24 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
 
     const rewritten = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, base);
 
-    expect(rewritten.updatedAt.getTime()).toBe(created.updatedAt.getTime());
+    expect(rewritten.changed).toBe(false);
+    expect(rewritten.routine.updatedAt.getTime()).toBe(created.updatedAt.getTime());
     expect(await generationOf()).toBe(before);
 
     const renamed = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, { ...base, name: "equal-write renamed" });
-    expect(renamed.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
+    expect(renamed.changed).toBe(true);
+    expect(renamed.routine.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
     expect(await generationOf()).toBe((before ?? 0) + 1);
+  });
+
+  it("still conflicts on a stale write guard when the content is equal (#1819)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("equal-stale");
+    const created = await repository.createDraftWithAgentDraft(workspaceId, agentId, base);
+
+    await expect(repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, base, {
+      expectedUpdatedAt: new Date(created.updatedAt.getTime() - 5_000),
+    })).rejects.toThrow(`routine_definition_update_conflict:${created.id}`);
   });
 
   it("round-trips a routine's consents into its agent draft, and reads a routine without them back without the field (#1544)", async () => {
@@ -588,7 +600,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     );
     expect(draft?.snapshot.routines.find((routine) => routine.id === created.id)?.consents).toEqual(consents);
 
-    const cleared = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, { ...base, consents: [] });
+    const { routine: cleared } = await repository.updateDraftWithAgentDraft(workspaceId, agentId, created.id, { ...base, consents: [] });
     expect(cleared).not.toHaveProperty("consents");
     const plain = await repository.createDraft(agentId, draftInput("consent-absent"));
     expect(plain).not.toHaveProperty("consents");

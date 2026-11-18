@@ -10,6 +10,7 @@ import {
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
+  routineMatchesDraft,
 } from "../../src/modules/routines/public.js";
 import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/modules/skills/public.js";
 import type { AgentContextVariableEnablement, ContextVariable } from "../../src/modules/context-variables/public.js";
@@ -36,6 +37,8 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
   readonly items = new Map<string, RoutineDefinition>();
   createDraftError: Error | undefined = undefined;
   updateDraftError: Error | undefined = undefined;
+  /** Mirrors the real repository, which writes nothing for a save that restates the stored routine. */
+  skipsEqualWrites = false;
 
   /** One row per lineage — its highest version — mirroring the SQL repository's read surface. */
   private canonical(inputAgentId: string): RoutineDefinition[] {
@@ -149,7 +152,10 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return this.createDraft(inputAgentId, input);
   }
   updateDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard) {
-    return this.updateDraft(inputAgentId, id, input, options);
+    const existing = this.items.get(id);
+    const guardMatches = options?.expectedUpdatedAt === undefined || existing?.updatedAt.getTime() === options.expectedUpdatedAt.getTime();
+    if (this.skipsEqualWrites && existing && guardMatches && routineMatchesDraft(existing, input)) return Promise.resolve({ routine: existing, changed: false });
+    return this.updateDraft(inputAgentId, id, input, options).then((routine) => ({ routine, changed: true }));
   }
   deleteDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, options?: RoutineDefinitionWriteGuard) {
     return this.deleteDraft(inputAgentId, id, options);
@@ -682,6 +688,21 @@ describe("RoutineDefinitionService", () => {
         activation: expect.objectContaining({ triggerDescription: "When the user reports a broken order" }),
       }),
     }));
+  });
+
+  it("neither audits nor re-embeds a save that restates the stored routine (#1819)", async () => {
+    const persistPublished = vi.fn().mockResolvedValue(undefined);
+    const { auditService, repository, service } = createService({ triggerEmbeddingService: { persistPublished } });
+    repository.skipsEqualWrites = true;
+    const created = await service.createDraft(workspaceId, agentId, validDraft());
+    persistPublished.mockClear();
+    vi.mocked(auditService.record).mockClear();
+
+    const saved = await service.updateDraft(workspaceId, agentId, created.routine.id, validDraft());
+
+    expect(saved.routine.updatedAt).toEqual(created.routine.updatedAt);
+    expect(persistPublished).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
   });
 
   it("emits create and update audit events carrying the routine's authoring identity", async () => {

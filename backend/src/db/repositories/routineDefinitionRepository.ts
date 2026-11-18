@@ -6,6 +6,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineMatchesDraft,
   type RoutineDefinition,
+  type RoutineDefinitionDraftUpdate,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDeleteDraftResult,
 } from "../../modules/routines/public.js";
@@ -272,9 +273,9 @@ export class RoutineDefinitionRepository {
     id: string,
     input: RoutineDefinitionDraftInput,
     options: { expectedUpdatedAt?: Date } = {},
-  ): Promise<RoutineDefinition> {
+  ): Promise<RoutineDefinitionDraftUpdate> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
-    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+    return this.mutateAgentDraft<RoutineDefinitionDraftUpdate>(workspaceId, agentId, async (trx) => {
       // Writes target the canonical row whatever its stored status says, so a routine authored
       // before the collapse stays editable through the id its lineage is addressed by.
       const current = await this.findByIdOn(trx, agentId, id);
@@ -284,7 +285,7 @@ export class RoutineDefinitionRepository {
       // write guard still conflicts: the caller's view of the routine is out of date either way.
       const guardMatches = options.expectedUpdatedAt === undefined
         || current.updatedAt.getTime() === options.expectedUpdatedAt.getTime();
-      if (guardMatches && routineMatchesDraft(current, draft)) return new UnchangedWrite(current);
+      if (guardMatches && routineMatchesDraft(current, draft)) return new UnchangedWrite({ routine: current, changed: false });
       const updated = await trx.updateTable("routine_definition")
         .set({
           name: draft.name,
@@ -304,7 +305,7 @@ export class RoutineDefinitionRepository {
         .executeTakeFirst();
       if (!updated) throw new Error(`routine_definition_update_conflict:${id}`);
       await this.replaceChildren(trx, current.id, draft);
-      return this.requireDefinition(trx, agentId, current.id);
+      return { routine: await this.requireDefinition(trx, agentId, current.id), changed: true };
     });
   }
 

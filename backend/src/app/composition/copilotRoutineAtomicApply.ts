@@ -57,7 +57,7 @@ const applyOn = async (
   try {
     saved = input.operation === "create"
       ? await routines.createDraftWithAgentDraft(input.workspaceId, input.agentId, input.draft)
-      : await routines.updateDraftWithAgentDraft(input.workspaceId, input.agentId, input.routineId, input.draft, { expectedUpdatedAt: input.expectedUpdatedAt });
+      : (await routines.updateDraftWithAgentDraft(input.workspaceId, input.agentId, input.routineId, input.draft, { expectedUpdatedAt: input.expectedUpdatedAt })).routine;
   } catch (error) {
     // The repository raises raw write conflicts; the routine owner translates them to domain ones.
     throw translateRoutineDefinitionWriteConflict(error) ?? error;

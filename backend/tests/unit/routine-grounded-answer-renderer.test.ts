@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { RoutineStep, TurnContext, TurnOutcome } from "@radioso/conversation-contract";
+import { RoutineStepRenderer } from "@radioso/conversation-defaults";
 
 import {
   createRoutineGroundedAnswerRenderer,
   presentRoutineRenderableAnswer,
 } from "../../src/modules/chat/services/routines/routineGroundedAnswerRenderer.js";
 import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
+import { retrievalMissHandoffForTurn } from "../../src/modules/chat/services/handoffOwnership.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
@@ -18,6 +20,7 @@ import {
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import { renderSteeringBlock } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import type { TurnRenderContext, TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
@@ -246,6 +249,63 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     expect(systemPrompt).not.toContain("govern the visible answer");
   });
 
+  // The search found listings, then the booking tool failed: grounded on the listings alone, an
+  // ending said the viewing was booked. The grounded answer hears what the run did (#1820).
+  it("composes a grounded ending's prompt with what the run did among the step instructions", async () => {
+    const systemPrompts: string[] = [];
+    const gateway: ChatGateway = {
+      async answer(input) {
+        systemPrompts.push(input.systemPrompt ?? "");
+        return JSON.stringify({
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "booking a viewing",
+          outcome: "answer",
+          answer: "Valmora is introduced in the first module[[1]].",
+          v: 2,
+          claims: [[1]],
+          suggestions: [],
+          grounding: "grounded",
+        });
+      },
+      async *streamAnswer() {
+        throw new Error("routine grounded rendering uses the non-streaming path");
+      },
+    };
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      gateway,
+      new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+      { async composeNoContext() { throw new Error("the staged retrieval has context"); } },
+    );
+    const stepRenderer = new RoutineStepRenderer({ complete: async () => ({ text: "unused" }) }, {
+      stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
+      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
+        session: { ...session(), directiveSteering: { rules: [], matches: [], omissions: [] } },
+        turnSkills: [createRetrievalTurnSkill(composer)],
+        chatAnswerPresenter: chatAnswerPresenter(),
+      }),
+    });
+    const endingAction = "Tell them their viewing is booked and a scout will meet them there.";
+
+    await stepRenderer.render({
+      step: { id: "booked", kind: "terminal", action: endingAction },
+      steering: [{ action: endingAction, source: "routine", lifespan: "response" }],
+      turn: turnWithRetrieval(retrievalResult()),
+      ending: {
+        requestPassedOn: false,
+        skillOutcomes: [{ skillName: "search_listings", status: "found" }, { skillName: "book_viewing", status: "failed" }],
+      },
+    });
+
+    const systemPrompt = systemPrompts[0] ?? "";
+    expect(systemPrompts).toHaveLength(1);
+    const instructionsAt = systemPrompt.indexOf("Step instruction(s) — the controlling instruction");
+    expect(instructionsAt).toBeGreaterThanOrEqual(0);
+    expect(systemPrompt.indexOf("This message ends the flow.")).toBeGreaterThan(instructionsAt);
+    expect(systemPrompt).toContain("`search_listings` → `found`; `book_viewing` → `failed`");
+    expect(systemPrompt).toContain("outside this chat: no");
+  });
+
   it("declines when no staged retrieval result is available", async () => {
     const renderer = createRoutineGroundedAnswerRenderer({
       session: session(),
@@ -296,8 +356,9 @@ describe("createRoutineGroundedAnswerRenderer", () => {
       const emptyRetrieval = (): RetrievalPipelineResult => ({ ...retrievalResult(), contexts: [] });
       const renderer = () => createRoutineGroundedAnswerRenderer({ session: session(), turnSkills: [], chatAnswerPresenter: chatAnswerPresenter() });
 
-      it("leaves an ending to the step reply when the retrieval found nothing", () => {
+      it("leaves an ending to the step reply when the retrieval found nothing, whatever the host reports of the run", () => {
         expect(renderer().prepare!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()), ending: endingRun })).toBeNull();
+        expect(renderer().prepare!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()) })).toBeNull();
       });
 
       it("grounds an ending on the evidence the retrieval found", () => {
@@ -306,6 +367,37 @@ describe("createRoutineGroundedAnswerRenderer", () => {
 
       it("still grounds a chat step on a retrieval that found nothing, so it declines and leads back", () => {
         expect(renderer().prepare!({ step, steering: [], turn: turnWithRetrieval(emptyRetrieval()) })).not.toBeNull();
+      });
+
+      it("marks only the step reply of an ending on a retrieval that found nothing", () => {
+        expect(renderer().stepReplyMetadata!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()) })).toBeDefined();
+        expect(renderer().stepReplyMetadata!({ step: ending, steering: [], turn: turnWithRetrieval(retrievalResult()) })).toBeUndefined();
+        expect(renderer().stepReplyMetadata!({ step, steering: [], turn: turnWithRetrieval(emptyRetrieval()) })).toBeUndefined();
+        expect(renderer().stepReplyMetadata!({ step: ending, steering: [], turn: { ...turnWithRetrieval(emptyRetrieval()), stagedContext: [] } })).toBeUndefined();
+      });
+
+      it("presents that reply as the turn's retrieval miss, the way a chat step's decline on the same miss is, so the miss hand-off runs", () => {
+        const presenter = chatAnswerPresenter();
+        const metadata = renderer().stepReplyMetadata!({ step: ending, steering: [], turn: turnWithRetrieval(emptyRetrieval()) });
+
+        const presentation = presentRoutineRenderableAnswer(presenter, { answer: "No listing matched your brief.", ...(metadata ? { metadata } : {}) });
+        const chatStepDecline = presenter.presentRetrievalDeclineAnswer("Nothing here covers that.", "content_gap");
+
+        expect(presentation).toMatchObject({
+          answer: "No listing matched your brief.",
+          skillName: chatStepDecline.skillName,
+          skillOutcome: chatStepDecline.skillOutcome,
+          skillStatus: chatStepDecline.skillStatus,
+          answerOutcome: chatStepDecline.answerOutcome,
+        });
+        const handoffSession = { ...session(), agent: { ...session().agent, handoffOnRetrievalMiss: true } } as PreparedSession;
+        expect(retrievalMissHandoffForTurn({ session: handoffSession, presentation, workspaceId: "workspace_1" }).ownershipHandoff)
+          .toEqual({ reason: "retrieval_miss" });
+        expect(retrievalMissHandoffForTurn({
+          session: handoffSession,
+          presentation: presentRoutineRenderableAnswer(presenter, { answer: "Thanks, we're done." }),
+          workspaceId: "workspace_1",
+        }).ownershipHandoff).toBeNull();
       });
     });
 

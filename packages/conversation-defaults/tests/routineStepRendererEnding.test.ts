@@ -4,6 +4,7 @@ import type {
   ConversationModelGateway,
   ConversationModelRequest,
   RoutineEndingRun,
+  RoutineGroundedAnswerRenderer,
   RoutineStep,
   RoutineStepReplyInput,
   SteeringRule,
@@ -142,5 +143,78 @@ describe("RoutineStepRenderer tells an ending's reply what the run did (#1820)",
     const request = await requestFor({ ending: emptySearch });
 
     expect(request.systemPrompt).not.toContain("two-bedroom");
+  });
+});
+
+describe("RoutineStepRenderer and the host's grounded answer on an ending (#1820)", () => {
+  // The search found homes, then the booking tool failed: grounded on the listings alone, the
+  // reply said the viewing was booked.
+  const bookingFailed: RoutineEndingRun = {
+    requestPassedOn: false,
+    skillOutcomes: [
+      { skillName: "search_listings", status: "found" },
+      { skillName: "book_viewing", status: "failed" },
+    ],
+  };
+  const groundedReply = { answer: "grounded" };
+
+  const rendererWith = (grounded: RoutineGroundedAnswerRenderer, gateway?: ConversationModelGateway) =>
+    new RoutineStepRenderer(gateway ?? { complete: vi.fn(async () => ({ text: "step reply" })) }, {
+      stepEndingPromptTemplate: ENDING_TEMPLATE,
+      groundedAnswerRenderer: grounded,
+    });
+
+  it("gives a grounded ending what the run did as one more step instruction", async () => {
+    const prepare = vi.fn(() => ({ render: async () => groundedReply }));
+
+    await rendererWith({ render: vi.fn(), prepare }).render({ step: finishEnding, steering: [routineRule(ENDING_TEXT)], turn, ending: bookingFailed });
+
+    expect(prepare).toHaveBeenCalledWith(expect.objectContaining({
+      steering: [
+        routineRule(ENDING_TEXT),
+        expect.objectContaining({
+          action: "ENDING[passed=no,outcomes=`search_listings` → `found`; `book_viewing` → `failed`]",
+          source: "routine",
+          lifespan: "response",
+        }),
+      ],
+    }));
+  });
+
+  it("gives a grounded chat step, or an ending the host reports nothing for, its steering as it is", async () => {
+    const prepare = vi.fn((_input: RoutineStepReplyInput) => null);
+    const renderer = rendererWith({ render: vi.fn(), prepare });
+
+    await renderer.render({ step: briefStep, steering: [routineRule(briefStep.action ?? "")], turn });
+    await renderer.render({ step: finishEnding, steering: [routineRule(ENDING_TEXT)], turn });
+
+    expect(prepare.mock.calls.map(([input]) => input.steering)).toEqual([
+      [routineRule(briefStep.action ?? "")],
+      [routineRule(ENDING_TEXT)],
+    ]);
+  });
+
+  it("puts the host's metadata on a step reply it did not ground, whole or streamed", async () => {
+    const grounded: RoutineGroundedAnswerRenderer = {
+      render: vi.fn(),
+      prepare: () => null,
+      stepReplyMetadata: (input) => (input.step.kind === "terminal" ? { retrievalMiss: true } : undefined),
+    };
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async () => ({ text: "No listing matched." })),
+      async *stream() {
+        yield "No listing matched.";
+      },
+    };
+    const input: RoutineStepReplyInput = { step: finishEnding, steering: [routineRule(ENDING_TEXT)], turn, ending: emptySearch };
+
+    expect(await rendererWith(grounded, gateway).render(input)).toEqual({ answer: "No listing matched.", metadata: { retrievalMiss: true } });
+    const streamed = rendererWith(grounded, gateway).prepare(input).stream!();
+    let settled = await streamed.next();
+    while (!settled.done) {
+      settled = await streamed.next();
+    }
+    expect(settled.value).toEqual({ answer: "No listing matched.", metadata: { retrievalMiss: true } });
+    expect(await rendererWith(grounded, gateway).render({ step: briefStep, steering: [], turn })).toEqual({ answer: "No listing matched." });
   });
 });

@@ -530,8 +530,9 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     }
 
     const groundedAnswerRenderer = this.options.groundedAnswerRenderer;
+    const groundedInput = this.groundedInput(input);
     if (groundedAnswerRenderer?.prepare) {
-      return groundedAnswerRenderer.prepare(input) ?? this.stepReply(input);
+      return groundedAnswerRenderer.prepare(groundedInput) ?? this.stepReply(input);
     }
     if (groundedAnswerRenderer) {
       // Whether the step is groundable is known only once the host renders it, so this
@@ -540,18 +541,32 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       return {
         render: async () => {
           await this.options.responseLanguage;
-          return (await groundedAnswerRenderer.render(input)) ?? stepReply.render();
+          return (await groundedAnswerRenderer.render(groundedInput)) ?? stepReply.render();
         },
       };
     }
     return this.stepReply(input);
   }
 
+  /**
+   * The step as the host's grounded answer gets it. An ending grounded on evidence is told what the
+   * run did as one more step instruction (#1820): grounded on the listings a search found, a reply
+   * whose booking tool then failed still said the viewing was booked.
+   */
+  private groundedInput(input: RoutineStepReplyInput): RoutineStepReplyInput {
+    const endingRun = endingRunBlock(input.ending, this.stepEndingPromptTemplate);
+    return endingRun
+      ? { ...input, steering: [...input.steering, { action: endingRun, source: "routine", lifespan: "response", description: "routine ending run" }] }
+      : input;
+  }
+
   /** The reply that follows the step's own instruction, generated through the model gateway. */
   private stepReply(input: RoutineStepReplyInput): PendingRenderableTurn {
+    // What the host puts on a reply it did not ground, such as the turn's retrieval miss (#1820).
+    const metadata = this.options.groundedAnswerRenderer?.stepReplyMetadata?.(input);
     const finish = (answer: string): RenderableTurn => {
       const citations = citationsFromStagedContext(input.turn);
-      return { answer, ...(citations.length > 0 ? { citations } : {}) };
+      return { answer, ...(citations.length > 0 ? { citations } : {}), ...(metadata ? { metadata } : {}) };
     };
     return {
       render: async () => {

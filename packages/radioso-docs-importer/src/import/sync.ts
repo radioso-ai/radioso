@@ -1,7 +1,7 @@
 import type { DocumentInput } from "./buildDocuments.ts";
 import type { ExistingDocument, RadiosoDocsClient } from "../radioso/client.ts";
 
-export interface SyncOptions {
+interface SyncOptions {
   prune: boolean;
   /**
    * Sections eligible for pruning — exactly the sections that were imported this
@@ -18,7 +18,7 @@ export interface SyncOptions {
   supersede?: Array<{ citationUrl: string; keepExternalDocumentId: string }>;
 }
 
-export interface SyncReport {
+interface SyncReport {
   upserted: number;
   pruned: number;
   prunedIds: string[];

@@ -19,7 +19,7 @@ export interface DocumentInput {
   metadata: Record<string, string>;
 }
 
-export interface BuildDocumentsOptions {
+interface BuildDocumentsOptions {
   contentDir: string;
   openApiPath: string;
   repoRoot: string;

@@ -7,7 +7,7 @@ export interface WebsitePageSpec {
   citationUrl: string;
 }
 
-export type FetchLike = (url: string) => Promise<Pick<Response, "ok" | "status" | "statusText" | "text">>;
+type FetchLike = (url: string) => Promise<Pick<Response, "ok" | "status" | "statusText" | "text">>;
 
 /**
  * Parse `--website-page <markdownUrl>=<citationUrl>`. Both must be absolute http(s)

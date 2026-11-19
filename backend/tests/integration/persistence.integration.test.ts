@@ -30,6 +30,7 @@ import { IngestionSettingsService } from "../../src/modules/settings/services/in
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -150,7 +151,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("enforces a single open skill intake state for concurrent starts in one conversation", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
     const account = await accountRepository.create({
       name: "Concurrent Intake Organization",
       email: `concurrent-intake-${randomUUID()}@example.com`,
@@ -199,7 +200,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("paginates conversations without skipping rows when updated_at ties", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
 
     const account = await accountRepository.create({
       name: "Conversation Cursor Organization",
@@ -273,7 +274,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("atomically binds concurrent first asks to one anonymous-session conversation", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
     const account = await accountRepository.create({
       name: "Concurrent Conversation Organization",
       email: `conversation-binding-${randomUUID()}@example.com`,

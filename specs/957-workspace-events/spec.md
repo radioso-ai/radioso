@@ -1,8 +1,8 @@
 # Feature Specification: Workspace event log and push subscriptions
 
-**Branch**: `spec/workspace-events`
+**Branch**: `feat/workspace-event-log` (PR 1)
 **Created**: 2026-11-19
-**Status**: Draft, for orchestrator review before any code
+**Status**: Approved with changes (orchestrator review, 2026-11-19); see "Review outcome" below
 **Issues**: #1851 (event log + cursor API), #1852 (subscriptions + push delivery + Settings list), epic #1849
 **Input**: Automations need to hear that something happened in a workspace. Record business events durably, list them by a complete cursor, and push them to subscribed URLs.
 
@@ -20,6 +20,49 @@
 | D8 | Delivery runs one ordered drain job per subscription on the existing background-job substrate. Retry state lives on the subscription row. No AMQP and no new queue | 10 |
 | D9 | Subscriptions are separate from webhook destinations. They share the signer, URL guard and secret encryption | 10, 11 |
 | D10 | Each push re-checks the creating credential, so revoking a token stops its subscriptions | 7, 10 |
+
+## Review outcome
+
+D1–D10 are accepted. The orchestrator's answers and changes, as built:
+
+- **`conversation.started` stays in `ConversationRepository`, with the recorder required.** The constructor takes `(db, events)`. The read-only constructions (15 in production) use `ConversationRepository.forExistingConversations(db)`. It returns the repository typed without its three start methods, and is backed by a recorder that refuses. The three constructions that start conversations pass `postgresWorkspaceEventRecorder` explicitly. `createWithInitialAssistantMessage` had no caller and is removed.
+- **When a conversation row is created** (verified in code):
+  - Opening the widget or fetching its greeting creates no row. `ChatBootstrapService.startConversation` (`chat/services/chatBootstrapService.ts:97`) reads and writes only the greeting cache and holds no conversation repository.
+  - The web, embed, public link and agent API row is created in `ChatSessionPreparer.prepare` (`chatSessionPreparer.ts:460`). That is the same call that stores the caller's message (`:529`), and it runs only for a chat turn.
+  - MCP and A2A rows are created in `askAgent` (`agentConverseService.ts:109`), a caller turn.
+  - Slack rows are created on an inbound message (`slackPersistence.ts:203`). Email and ingested rows are created with the ingested message (`conversationIngestService.ts:95`).
+  - The rule: **`conversation.started` fires when the first message a person or calling agent sends creates the conversation.**
+- **`decision.pending.reason` is kept.** It is the authored step metadata, read from the un-rendered step (`packages/conversation-engine/src/routineRunner.ts:1016`) and copied by `buildPendingDecisionTransition` (`modules/approvals/decisionProposal.ts:72`). It is never rendered with the run's values, so it carries no slot value to mask.
+- **PR order:** PR 1 (log, API, conversation events), then PR 3 (subscriptions, delivery, Settings), then PR 2 (document events). PR 1's contract and OpenAPI declare only the five conversation types. The document types and their docs ship with PR 2, and PR 2 closes #1851.
+- **Defaults** (cap 25, 30 days, disable after 24 h), the shared queue, the 60 s sweep and the DSAR exclusion are accepted. `source.synced` is cut. `decision.pending` stays a notification: the resolve route is session-only.
+
+Changes made while building PR 1:
+
+- **`contact_request.created` data is `{ contactRequestId, values }`.** `routineId` and `sensitiveSlotKeys` are dropped. A queued `contact.send` payload carries neither, and which keys are sensitive must never be inferred from a value's text. The engine already masks the values (`outboundVariables`).
+- **`routine.completed`'s idempotency key is the run plus a digest of its masked values.** A retried turn records nothing new. A visitor's correction to an ended run (a completed-routine slot correction re-saves the completed state) records the run again with the corrected values and the same `executionId`.
+- **The ended run is captured where the routine-state transition is captured** (`DeferredRoutineStore.save`, `approvalResumeTransition`), as an `ending` on the `save` transition. The values come from the routines module's `endedRunValues`, which uses the engine's own `declaredSlotVariables`.
+- **Consent withdrawal removes the conversation's events whose values state a withdrawn value**, as the audit withholder removes its copies, rather than rewriting them.
+- **Every production activity recorder goes through the handoff bridge**, including the email send handler's own recorder.
+- **`createConversationActivityComposition` takes `{ repositories, teammateLabels }`** and wires the Postgres recorder into the bridge itself. This keeps the baselined `dependencies.ts` from growing (1451 → 1449).
+- **The turn persistence's outbox writes moved to `modules/chat/infra/turnOutboxWrites.ts`**, which also records the turn's events. The persistence went from 657 to 593 lines.
+
+## Horizon stall analysis (PR 1)
+
+A read returns only rows whose transaction is older than every transaction still running in the cluster. A write transaction that stays open therefore holds back every workspace's newer events until it ends. Read-only transactions hold no xid and do not count.
+
+| Writer | Bound |
+|---|---|
+| Every app statement | `statement_timeout` = `DB_STATEMENT_TIMEOUT_MS` (15 s default) on the pool (`shared/infra/database.ts:88`, `app/server/builders/infra.ts:99`), plus a 20 s client-side `query_timeout`. |
+| Chat turn persistence, activity, ownership, email units of work, consent withdrawal, erasure | Short sequences of DB statements, with no network call inside the transaction in the units read. Bounded by their statement count × 15 s; in practice milliseconds. |
+| Chunk and vector publish (`chunkRepository.publishForDocumentRevision`), vector index work, embedding backfill batches | One document revision or one bounded batch per transaction, each statement ≤ 15 s. |
+| Conversation erasure and DSAR erasure | At most 200 conversations per request (DSAR pages), each statement ≤ 15 s. |
+| Retention sweep | Bounded batches, one transaction each. |
+| Workspace or organization deletion (`personalCredentialLifecycleRepository.deleteWorkspace`) | One transaction cascading a whole workspace, in a handful of statements, each ≤ 15 s. The largest bounded writer: under a minute for a statement count this size. |
+| **Decision resolution** (`pendingDecisionRepository.resolveInTransaction`) | Holds its transaction, with an xid from the decision update, while the resumed routine turn runs: the reply's model call and any skill dispatch (webhooks time out at 10 s). Bounded by the model and skill timeouts, typically seconds. The longest *routine* staller. |
+| **Migrations at deploy** (`db/runMigrations.ts:110-111`) | `SET LOCAL statement_timeout = 0`: unbounded per migration. A long migration delays events for its duration. |
+| **A transaction left open** | No `idle_in_transaction_session_timeout` is set on the pool (`database.ts:82-92`) or as a Cloud SQL flag (`infra/terraform/database.tf:60-69`, which sets only IAM and pgAudit flags). A connection idle inside an open transaction is bounded only by its process ending: a bug, or a Cloud Run instance whose CPU is throttled after its response while a detached promise holds the transaction. **Worst case unbounded.** |
+
+Not done in PR 1: setting `idle_in_transaction_session_timeout` on the app pool. It would kill a decision resolution whose model call outlasts it. That resolution holds its transaction idle while the model answers, so the timeout needs a value above the longest model call, or the resume moved out of the transaction. Proposed as a follow-up. PR 3's `workspace_event_delivery_lag_ms` (now − `occurredAt` at delivery) makes a stall visible as a rising lag across every subscription at once.
 
 ## 1. Placement
 
@@ -147,7 +190,7 @@ Rules:
 | Type | Type-specific `data` |
 |---|---|
 | `conversation.started` | none |
-| `contact_request.created` | `contactRequestId`, `routineId \| null`, `values` (the `contact.send` payload as queued; the engine already masks sensitive slots, `outboundVariables`, `routineSlotValues.ts:82`), `sensitiveSlotKeys` |
+| `contact_request.created` | `contactRequestId`, `values` (the `contact.send` payload as queued; the engine already masks sensitive slots, `outboundVariables`, `routineSlotValues.ts:82`) |
 | `handoff.requested` | `reason` (the handoff reason code) |
 | `routine.completed` | `routineId`, `executionId \| null`, `outcome` (`complete` \| `handoff` \| `stuck` \| `consent_declined`), `values` (declared slots, sensitive ones as `[redacted]`), `sensitiveSlotKeys` |
 | `decision.pending` | `decisionHandle`, `routineId`, `stepId`, `options: [{ id, label }]`, `deadline \| null`, `reason \| null` (see open question 5) |
@@ -241,7 +284,7 @@ Both are added to `AccountPermission` and to the member list in `workspaceRoleAl
 - The port's own documentation names cascading keys as the default and erasers as the fallback for rows a key cannot reach. No event row is out of reach: document events carry no person.
 - `conversation-erasure-coverage.integration.test.ts` passes on the cascading key.
 
-**Consent withdrawal (#1544):** `WorkspaceEventValueWithholder` implements `MessageCopyWithholder`. It redacts any `values` entry in the conversation's events that `containsValueText` matches, or whose key is a withdrawn slot key, to `[redacted]`. It is registered in `app/composition/consentWithdrawal.ts`.
+**Consent withdrawal (#1544):** `WorkspaceEventValueWithholder` implements `MessageCopyWithholder`. It removes the conversation's events whose strings contain a withdrawn value (`jsonbStringContainsAnyValueText`), as the audit withholder removes its copies. It is registered in `app/composition/consentWithdrawal.ts`.
 
 **Data subject export:** `data-subject-export-coverage.integration.test.ts` gets `workspace_events: excluded(...)` with this reason: a 30-day copy of facts the export already carries (the conversation, and its routine actions as they left). See open question 3.
 
@@ -430,7 +473,7 @@ Migration numbers are as of `origin/main` (latest `263`). Each PR runs `db:types
 - Contract: `workspace-events.contract.test.ts` (permissions, 403, 410, OpenAPI parse).
 - Schema coverage tests (§8).
 
-### PR 2: #1851 document events
+### PR 2: #1851 document events (merges after PR 3; closes #1851)
 
 Split out to keep PR 1 reviewable. It touches only documents:
 - `db/repositories/documentProcessingJobRepository.ts` (shrinks: extract `documentProcessingJobOutcomes.ts`);
@@ -438,7 +481,7 @@ Split out to keep PR 1 reviewable. It touches only documents:
 - composition wiring;
 - worker integration tests (processed once per revision under a lease takeover; failed carries the code, not the message).
 
-### PR 3: #1852 subscriptions, delivery and Settings
+### PR 3: #1852 subscriptions, delivery and Settings (follows PR 1; its `scheduler.tf` entry needs a Terraform apply per stack before the image deploy)
 
 **Migration** `265_workspace_event_subscriptions.sql`:
 - `id`, `workspace_id` (cascade), `label` (check), `target_url_ciphertext`, `target_host`, `secret_ciphertext`, `event_types text[]`;

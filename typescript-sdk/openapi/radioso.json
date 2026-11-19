@@ -33,6 +33,9 @@
       "name": "Workspace"
     },
     {
+      "name": "Workspace Events"
+    },
+    {
       "name": "Realtime"
     },
     {
@@ -24979,6 +24982,581 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "ConversationStartedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "conversation.started"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation is with; null once that agent is deleted."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belongs to, when the channel identifies one."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "ContactRequestCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "contact_request.created"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation is with; null once that agent is deleted."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belongs to, when the channel identifies one."
+              },
+              "contactRequestId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The contact request, as `GET /api/v1/history/contact/{requestId}` reads it."
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "contactRequestId",
+              "values"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "HandoffRequestedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "handoff.requested"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation is with; null once that agent is deleted."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belongs to, when the channel identifies one."
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why the agent handed the conversation to a person, as a handoff reason code such as `routine_handoff` or `retrieval_miss`."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "RoutineCompletedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "routine.completed"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation is with; null once that agent is deleted."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belongs to, when the channel identifies one."
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "executionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The routine run. A visitor's later correction to the run's values records the run again under the same id."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "handoff",
+                  "action",
+                  "stuck",
+                  "consent_declined"
+                ],
+                "description": "How the run ended: at an authored `complete`, `handoff` or `action` ending, `stuck` past its re-ask limit, or `consent_declined`."
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`."
+              },
+              "sensitiveSlotKeys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The keys in `values` that are sensitive, whose values are masked."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "routineId",
+              "executionId",
+              "outcome",
+              "values",
+              "sensitiveSlotKeys"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "DecisionPendingEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "decision.pending"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation is with; null once that agent is deleted."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belongs to, when the channel identifies one."
+              },
+              "decisionHandle": {
+                "type": "string"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "stepId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The reason the routine's author wrote on the decision step."
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                }
+              },
+              "deadline": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "decisionHandle",
+              "routineId",
+              "stepId",
+              "reason",
+              "options",
+              "deadline"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "WorkspaceEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ConversationStartedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ContactRequestCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/HandoffRequestedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineCompletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionPendingEvent"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "conversation.started": "#/components/schemas/ConversationStartedEvent",
+            "contact_request.created": "#/components/schemas/ContactRequestCreatedEvent",
+            "handoff.requested": "#/components/schemas/HandoffRequestedEvent",
+            "routine.completed": "#/components/schemas/RoutineCompletedEvent",
+            "decision.pending": "#/components/schemas/DecisionPendingEvent"
+          }
+        }
+      },
+      "WorkspaceEventPage": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceEvent"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place."
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "True when more events follow `nextCursor` now."
+          }
+        },
+        "required": [
+          "events",
+          "nextCursor",
+          "hasMore"
         ]
       },
       "ConversationConsent": {
@@ -53197,6 +53775,111 @@
           },
           "403": {
             "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspace/events": {
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "List workspace events",
+        "description": "Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.",
+        "operationId": "listWorkspaceEvents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent."
+            },
+            "required": false,
+            "description": "Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent.",
+            "name": "types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "description": "A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log."
+            },
+            "required": false,
+            "description": "A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log.",
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Events per page, 1 to 100. Defaults to 50."
+            },
+            "required": false,
+            "description": "Events per page, 1 to 100. Defaults to 50.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of workspace events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid query, an unknown event type, or a cursor issued for different types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Event log read permission required, or a requested type the caller may not read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The cursor is older than the log's retention window; start again without one",
             "content": {
               "application/json": {
                 "schema": {

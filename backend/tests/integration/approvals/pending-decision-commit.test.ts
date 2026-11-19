@@ -14,6 +14,7 @@ import { ConversationActivityRepository } from "../../../src/db/repositories/con
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -98,9 +99,9 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
-    conversations = new ConversationRepository(database.kysely);
+    conversations = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
     pendingDecisions = new PendingDecisionRepository(database.kysely);
-    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000);
   });
 
   afterAll(async () => {

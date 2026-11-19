@@ -74,6 +74,38 @@ describe("DeferredRoutineStore", () => {
     expect(unaware.getTransition()).not.toHaveProperty("asksConsent");
   });
 
+  it("captures an ended run for the workspace event log, its sensitive slots masked (#1851)", async () => {
+    const booking: Routine = {
+      id: "booking",
+      rootStepId: "ask_name",
+      steps: [],
+      transitions: [],
+      slots: [
+        { id: "slot-name", key: "name", type: "text", required: true },
+        { id: "slot-phone", key: "phone", type: "text", required: true, sensitivity: "sensitive" },
+      ],
+    };
+    const store = new DeferredRoutineStore(innerStore(), undefined, [booking]);
+    const variables = { name: "Ada", phone: "+44 20 7946 0000", toolOutput: { score: 7 } };
+
+    await store.save(state({ routineId: "booking", executionId: "run-1", variables, status: "completed", metadata: { terminalKind: "handoff" } }));
+    expect(store.getTransition()).toMatchObject({
+      ending: {
+        routineId: "booking",
+        executionId: "run-1",
+        outcome: "handoff",
+        values: { name: "Ada", phone: "[redacted]" },
+        sensitiveSlotKeys: ["phone"],
+      },
+    });
+
+    // A run still going, or a routine the turn does not know, ends nothing the log can describe.
+    await store.save(state({ routineId: "booking", variables }));
+    expect(store.getTransition()).not.toHaveProperty("ending");
+    await store.save(state({ routineId: "unknown", status: "completed" }));
+    expect(store.getTransition()).not.toHaveProperty("ending");
+  });
+
   it("reads through loadActive but defers save until commit", async () => {
     const inner = innerStore();
     const deferred = new DeferredRoutineStore(inner);

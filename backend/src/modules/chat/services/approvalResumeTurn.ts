@@ -28,6 +28,7 @@ import {
 } from "./routines/routineGroundedAnswerRenderer.js";
 import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import { asksConsentField, type CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
+import { endedRoutineRunField } from "./routines/endedRoutineRun.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
 import {
@@ -107,7 +108,12 @@ const approvalResumeTransition = (
   if (!keptState) {
     throw new Error("approval_resume_without_routine_state");
   }
-  return { kind: "save", state: keptState, ...asksConsentField(routines, keptState.routineId) };
+  return {
+    kind: "save",
+    state: keptState,
+    ...asksConsentField(routines, keptState.routineId),
+    ...endedRoutineRunField(routines, keptState),
+  };
 };
 
 export class ApprovalResumeTurn {

@@ -262,6 +262,7 @@ const voiceRecordingAudio = permanent("Permanent exclusion: the response is the 
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
+const automationEventFeed = permanent("Permanent exclusion: the workspace event log is a feed automations poll by cursor. Ray reads the same facts where they live: conversation_transcript and conversation_history_search for conversations, contact requests, handoffs and routine endings, and pending decisions through needs_attention.");
 // A context variable *value* is data written for one session, customer, agent, or workspace scope
 // at runtime (by a resolver skill, a pushed API call, or the browser SDK) — it is what a visitor's
 // conversation carries, not a setting an operator tunes. propose_context_variable covers the
@@ -320,6 +321,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], neverListExclusion("machine_access")),
 
   streamWorkspaceEvents: ambientOperatorRuntime,
+  listWorkspaceEvents: automationEventFeed,
 
   ...coverage([
     "getHealth",

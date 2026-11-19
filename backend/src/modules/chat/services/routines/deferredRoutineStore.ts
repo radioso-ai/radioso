@@ -1,13 +1,16 @@
 import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
 
+import { endedRoutineRunField, type EndedRoutineRun } from "./endedRoutineRun.js";
+
 /**
  * `startedFrom` is the state the turn first read: the step it ran on, which can differ from the
  * one session preparation saw when another instance advanced the routine in between (#1543).
  * `asksConsent` says whether the saved routine asks consent (#1544), so a withdrawal can close
  * slots in the state; absent when the producer cannot tell, which persistence reads as asking.
+ * `ending` is the ended run the workspace event log records (#1851), when the save ends one.
  */
 export type CapturedRoutineTransition =
-  | { kind: "save"; state: RoutineState; startedFrom?: RoutineState; asksConsent?: boolean }
+  | { kind: "save"; state: RoutineState; startedFrom?: RoutineState; asksConsent?: boolean; ending?: EndedRoutineRun }
   | { kind: "clear"; sessionId: string; startedFrom?: RoutineState };
 
 /**
@@ -64,6 +67,7 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
       state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId },
       ...this.startedFromField(),
       ...asksConsentField(this.routines, state.routineId),
+      ...endedRoutineRunField(this.routines, state),
     };
   }
 

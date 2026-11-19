@@ -137,6 +137,7 @@ import { createConversationOperatorDirectory } from "../composition/conversation
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
+import { buildWorkspaceEventLog } from "../composition/workspaceEvents.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
@@ -344,11 +345,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
   });
   const teammateLabels = createTeammateLabelReader({ users: repositories.userRepository });
-  const conversationActivity = createConversationActivityComposition({
-    store: repositories.conversationActivityRepository,
-    teammateLabels,
-    messages: repositories.messageRepository,
-  });
+  const conversationActivity = createConversationActivityComposition({ repositories, teammateLabels });
   // Photos visitors and API callers attach: stored under the workspace, read with the agent's chat model.
   const visitorImages = wireVisitorImages({ infrastructure, storage: documents.documentStorage, agents: repositories.agentRepository, resolver: llmCapabilityResolver, logger });
   const chat = buildChatServices({
@@ -1410,6 +1407,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     operatorNoticeDestinations,
     notificationDeliveries,
+    workspaceEventLog: buildWorkspaceEventLog(infrastructure.database.kysely),
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

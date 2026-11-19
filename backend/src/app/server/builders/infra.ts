@@ -58,6 +58,7 @@ import { CustomerEmailConnectionRepository } from "../../../db/repositories/cust
 import { EmailSkillDefinitionRepository } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkillActivityRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webhookSkillDefinitionRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../db/repositories/workspaceEventRepository.js";
 import { IntegrationConnectionRepository } from "../../../modules/integrationConnections/public.js";
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
@@ -232,7 +233,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
   documentImageRepository: new DocumentImageRepository(database.kysely),
-  conversationRepository: new ConversationRepository(database.kysely),
+  conversationRepository: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),

@@ -154,7 +154,7 @@ export const createPostgresReviewHandoffs = (deps: {
     const { outcome, changed } = await runTransactionWithDeadlockRetry(deps.db, async (trx) => {
       const ownership = new ConversationOwnershipRepository(trx);
       // A conversation gone by now has no one to hand to.
-      if (!(await new ConversationRepository(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
+      if (!(await ConversationRepository.forExistingConversations(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
         return { outcome: "requested" as const, changed: false };
       }
       await ownership.loadForUpdate(input.conversationId);

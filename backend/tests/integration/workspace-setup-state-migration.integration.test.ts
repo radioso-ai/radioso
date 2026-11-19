@@ -11,6 +11,7 @@ import { WorkspaceSetupStateRepository } from "../../src/db/repositories/workspa
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { testMigrationsPath } from "../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
@@ -58,7 +59,7 @@ describeIfDatabase("migration 231 workspace setup state", () => {
   it("grandfathers a pre-existing workspace with documents out of first run", async () => {
     const service = new WorkspaceSummaryService(
       new DocumentRepository(database.kysely),
-      new ConversationRepository(database.kysely),
+      new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       new WorkspaceSetupStateRepository(database.kysely),
     );
 

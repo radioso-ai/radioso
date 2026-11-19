@@ -9,6 +9,7 @@ import { WorkspaceRepository } from "../../src/db/repositories/workspaceReposito
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -43,7 +44,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
-    conversations = new ConversationRepository(database.kysely);
+    conversations = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
     messages = new MessageRepository(database.kysely);
   });
 

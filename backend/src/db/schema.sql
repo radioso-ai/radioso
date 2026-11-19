@@ -4527,6 +4527,46 @@ CREATE TABLE public.workspace_embedding_transitions (
 
 
 --
+-- Name: workspace_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    "position" bigint NOT NULL,
+    tx_id xid8 DEFAULT pg_current_xact_id() NOT NULL,
+    type text NOT NULL,
+    version smallint NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text,
+    conversation_id uuid,
+    agent_id uuid,
+    channel text,
+    caller_kind text,
+    visitor_id uuid,
+    data jsonb NOT NULL,
+    CONSTRAINT workspace_events_data_check CHECK ((jsonb_typeof(data) = 'object'::text)),
+    CONSTRAINT workspace_events_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 300)))),
+    CONSTRAINT workspace_events_type_check CHECK ((type ~ '^[a-z_]+\.[a-z_]+$'::text)),
+    CONSTRAINT workspace_events_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: workspace_events_position_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.workspace_events ALTER COLUMN "position" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.workspace_events_position_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: workspace_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6931,6 +6971,14 @@ ALTER TABLE ONLY public.workspace_embedding_transitions
 
 ALTER TABLE ONLY public.workspace_embedding_transitions
     ADD CONSTRAINT workspace_embedding_transitions_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: workspace_events workspace_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -9816,6 +9864,41 @@ CREATE INDEX voice_sessions_conversation_id_idx ON public.voice_sessions USING b
 --
 
 CREATE UNIQUE INDEX voice_sessions_vendor_conversation_uniq ON public.voice_sessions USING btree (vendor, vendor_region, vendor_conversation_id) WHERE (vendor_conversation_id IS NOT NULL);
+
+
+--
+-- Name: workspace_events_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_conversation_idx ON public.workspace_events USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
+-- Name: workspace_events_idempotency_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspace_events_idempotency_idx ON public.workspace_events USING btree (workspace_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+
+--
+-- Name: workspace_events_log_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_log_idx ON public.workspace_events USING btree (workspace_id, tx_id, "position");
+
+
+--
+-- Name: workspace_events_occurred_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_occurred_at_idx ON public.workspace_events USING btree (occurred_at);
+
+
+--
+-- Name: workspace_events_type_log_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_type_log_idx ON public.workspace_events USING btree (workspace_id, type, tx_id, "position");
 
 
 --
@@ -13509,6 +13592,22 @@ ALTER TABLE ONLY public.workspace_embedding_transitions
 
 ALTER TABLE ONLY public.workspace_embedding_transitions
     ADD CONSTRAINT workspace_embedding_transitions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_events workspace_events_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_events workspace_events_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

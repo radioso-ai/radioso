@@ -116,9 +116,12 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         verified_customer_id UUID,
         visitor_id UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (workspace_id, id)
       )
     `);
+    // A new conversation records its start in the workspace event log, in the same transaction.
+    await client.query(await readFile(path.join(testMigrationsPath, "264_workspace_events.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));

@@ -326,3 +326,26 @@ export const timestampMatchOrAbsent = (
   expected === null
     ? sql`false`
     : sql`date_trunc('milliseconds', ${column}) = date_trunc('milliseconds', ${expected}::timestamptz)`;
+
+/**
+ * `pg_snapshot_xmin(pg_current_snapshot())` as text: the oldest transaction id still running when
+ * the snapshot was taken (in a repeatable-read transaction, the transaction's own snapshot). Every
+ * transaction below it has finished, so no row one of them writes can appear later.
+ */
+export const snapshotHorizon = (): RawBuilder<string> =>
+  sql`pg_snapshot_xmin(pg_current_snapshot())::text`;
+
+/** `<transaction column> < <horizon>::xid8`: the row's transaction finished before the horizon. */
+export const finishedBefore = (txColumn: Expression<unknown>, horizon: string): RawBuilder<boolean> =>
+  sql`${txColumn} < ${horizon}::xid8`;
+
+/**
+ * `(<transaction column>, <position column>) > (<tx>::xid8, <position>::bigint)`: the row comes
+ * after a log cursor in (transaction, position) order.
+ */
+export const logRowAfter = (
+  txColumn: Expression<unknown>,
+  positionColumn: Expression<unknown>,
+  cursor: { tx: string; position: string },
+): RawBuilder<boolean> =>
+  sql`(${txColumn}, ${positionColumn}) > (${cursor.tx}::xid8, ${cursor.position}::bigint)`;

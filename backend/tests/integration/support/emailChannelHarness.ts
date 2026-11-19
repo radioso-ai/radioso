@@ -72,6 +72,7 @@ import { Database } from "../../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 import { passingReviewChecks } from "../../support/inMemoryEmailReview.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
 
 // Shared by the email channel's Postgres suites (thread protocol, inbound end to end, crash
 // recovery): a disposable database per file, seeded workspaces and mailboxes, the committed `.eml`
@@ -382,7 +383,7 @@ const createHostOwnership = (database: Database): ConversationOwnershipService =
   const actionDrain = { requestDrain: async () => undefined };
   const logger = { warn: () => undefined };
   return new ConversationOwnershipService({
-    conversations: new ConversationRepository(db),
+    conversations: new ConversationRepository(db, postgresWorkspaceEventRecorder),
     ownership: new ConversationOwnershipRepository(db),
     changes: createPostgresOwnershipChangeUnitOfWork({ db, activity, actionDrain, logger }),
     replyWrites: createPostgresOwnershipReplyUnitOfWork({ db, activity, actionDrain, logger }),
@@ -416,7 +417,7 @@ const createWorkerHeldReplies = (database: Database, guard: Guard) => {
   const records = new HeldReplyRepository(db);
   const email = createEmailHeldReplyChannelRegistration({ autoSend: true, provider: "local" });
   const service = new HeldReplyService({
-    conversations: new ConversationRepository(db),
+    conversations: new ConversationRepository(db, postgresWorkspaceEventRecorder),
     writes: createPostgresHeldReplyUnitOfWork({
       db,
       channels: [{ policyRefPrefix: email.policyRefPrefix, bind: (trx) => guard("heldReplyChannel", email.bind(trx)) }],

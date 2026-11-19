@@ -3,6 +3,7 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import { sql } from "kysely";
 
 import { ConversationRepository } from "../../../../db/repositories/conversationRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../../db/repositories/workspaceEventRepository.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../../shared/background-jobs/index.js";
 import type {
   DataSubjectIdentityFinder,
@@ -200,7 +201,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           return { link: mapLink(existing), created: false };
         }
 
-        const conversation = await new ConversationRepository(trx).create({
+        const conversation = await new ConversationRepository(trx, postgresWorkspaceEventRecorder).create({
           workspaceId: input.workspaceId,
           agentId: input.agentId,
           sourceChannel: input.sourceChannel,

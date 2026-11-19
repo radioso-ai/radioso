@@ -6,6 +6,7 @@ import { ConversationSummaryRetention } from "../../db/repositories/conversation
 import { ConsentRecordRetention, ConsentWordingVersionRetention } from "../../db/repositories/routineConsentRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
+import { WorkspaceEventRetention } from "../../db/repositories/workspaceEventRepository.js";
 import { A2aMessageReceiptRetention, A2aTaskRetention } from "../../modules/a2a/public.js";
 import { EmailRawMimeRetention } from "../../modules/emailChannel/public.js";
 import { UnboundToolImageRetention } from "../../modules/toolImages/composition.js";
@@ -45,6 +46,8 @@ const defaultConversationDataRetentionRules = (
   (db) => new UnboundVisitorImageRetention(db, (trx) => new BackgroundJobRepository(trx)),
   // Pictures a skill's cards showed that no message carries, a day after they were written.
   (db) => new UnboundToolImageRetention(db, (trx) => new BackgroundJobRepository(trx)),
+  // The workspace event log's 30 days, across every workspace; an event goes sooner with its conversation.
+  (db) => new WorkspaceEventRetention(db),
   (db) => new AuditEventRetention(db, audit),
 ];
 

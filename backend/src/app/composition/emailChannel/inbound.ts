@@ -33,7 +33,7 @@ export const createPostgresThreadProtocolUnitOfWork = (deps: {
     threads: new EmailThreadRepository(trx),
     conversations: {
       ownershipOf: (input) => readConversationOwnershipState({
-        conversations: new ConversationRepository(trx),
+        conversations: ConversationRepository.forExistingConversations(trx),
         ownership: new ConversationOwnershipRepository(trx),
       }, input),
     },

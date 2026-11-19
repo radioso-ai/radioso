@@ -7,6 +7,7 @@ import type { Kysely } from "kysely";
 
 import type { Env } from "../../config/env.js";
 import { ConversationActivityRepository } from "../../../db/repositories/conversationActivityRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../db/repositories/workspaceEventRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import type { ActionDrainDispatcherPort } from "../../../modules/chat/composition.js";
@@ -20,6 +21,7 @@ import {
   type EmailReviewInferenceFactory,
 } from "../../../modules/connectors/plugins/index.js";
 import type { ConversationActivityRecorder } from "../../../modules/conversationActivity/contracts/index.js";
+import { publishingWorkspaceEvents } from "../../../modules/conversationActivity/public.js";
 import type { CustomerChannelReplyDeliverer, DeliveryFailureResolverPort } from "../../../modules/customerReplyDelivery/public.js";
 import {
   EMAIL_EVENT_RETENTION_DAYS,
@@ -308,7 +310,7 @@ export const createEmailChannelApplicationModule = (input: {
           provider: channelProviderOf(config, input.options?.localSpoolDir),
           heldReplyChannel: heldReplyChannelFor(config),
           db,
-          activity: new ConversationActivityRepository(db),
+          activity: publishingWorkspaceEvents(new ConversationActivityRepository(db), postgresWorkspaceEventRecorder),
           drains: input.drainDispatcherFor(env, config),
           audit: auditService,
           metrics: metrics ?? null,

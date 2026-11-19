@@ -8,6 +8,7 @@ import { MessageRepository } from "../../src/db/repositories/messageRepository.j
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -58,7 +59,7 @@ describeIfDatabase("message source integration", () => {
 
     const accountRepository = new AccountRepository(database.kysely);
     const workspaceRepository = new WorkspaceRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
     const messageRepository = new MessageRepository(database.kysely);
 
     const account = await accountRepository.create({

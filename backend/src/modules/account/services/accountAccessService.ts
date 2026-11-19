@@ -32,6 +32,7 @@ export type AccountPermission =
   | "workspace.retrieval.query"
   | "workspace.history.read"
   | "workspace.history.delete"
+  | "workspace.events.read"
   | "workspace.quality.read"
   | "workspace.quality.manage"
   | "workspace.skills.read"
@@ -170,6 +171,7 @@ export const workspaceRoleAllows = (role: AccountMembershipRole, permission: Per
     "workspace.conversation.takeover",
     "workspace.retrieval.query",
     "workspace.history.read",
+    "workspace.events.read",
     "workspace.skills.read",
     "workspace.agents.read",
     "workspace.agents.manage",

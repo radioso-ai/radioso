@@ -28,6 +28,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { seedConversations } from "./support/conversationSeed.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -66,7 +67,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
   const persistence = new PostgresAssistantTurnPersistence(
     database.kysely,
     new ConversationActivityRepository(database.kysely),
-    60_000,
+    postgresWorkspaceEventRecorder, 60_000,
     undefined,
     undefined,
     undefined,
@@ -76,7 +77,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     store,
   );
   const history = new ChatHistoryService(
-    new ConversationRepository(database.kysely),
+    new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
     new MessageRepository(database.kysely),
     new AuditEventRepository(database.kysely),
     new HistoryItemsRepository(database.kysely),

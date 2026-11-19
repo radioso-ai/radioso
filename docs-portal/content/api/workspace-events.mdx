@@ -1,0 +1,112 @@
+---
+title: "Workspace events"
+description: "Poll the workspace event log for conversations started, contact requests, handoffs, routine endings and pending decisions, by a cursor that never skips an event."
+last_updated: 2026-11-19
+---
+
+# Workspace events
+
+The workspace event log tells an automation that something happened: a visitor started a conversation, left their contact details, was handed to a person, finished a routine, or is waiting on a decision. Each event carries the ids and values an automation acts on, so a row lands in a sheet or a lead appears in a CRM without anyone copying it across.
+
+Read it with a personal token or a service-account credential that holds `workspace.events.read`. Every role that reads history holds it.
+
+## How it works
+
+1. Call `GET /api/v1/workspace/events` without a cursor. You get the newest events, oldest first, and a `nextCursor` that points at the end of the log.
+2. Store `nextCursor`. On your next poll, send it back as `after` and you get everything that happened since, oldest first.
+3. Keep the `nextCursor` from every response, even an empty one. It moves forward on its own, so a quiet log costs one cheap request.
+
+This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching the host where the credential was issued.
+
+```bash
+curl -sS "https://api.radioso.ai/api/v1/workspace/events?types=contact_request.created,routine.completed" \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN"
+```
+
+```json
+{
+  "events": [
+    {
+      "id": "6f1c2d4e-8a90-4b1c-9d2e-3f4a5b6c7d8e",
+      "type": "routine.completed",
+      "version": 1,
+      "occurredAt": "2026-11-19T14:02:11.482Z",
+      "workspaceId": "4d7293c8-d241-4f8f-a4db-3df5b88da44c",
+      "data": {
+        "conversationId": "0b9e6a52-6c1f-4a8e-9f3d-2c7b1e5d4a90",
+        "agentId": "a3f0c9d1-2b4e-4f6a-8c7d-9e0f1a2b3c4d",
+        "channel": "website_embed",
+        "callerKind": "human",
+        "visitorId": "c81d4e2a-7f3b-4c9e-a1d5-6b2e8f0c3a7d",
+        "routineId": "table-booking",
+        "executionId": "5e2d9c1b-3a4f-4e8d-b7c6-1f0a9e8d7c6b",
+        "outcome": "complete",
+        "values": { "name": "Ada Example", "partySize": 4, "phone": "[redacted]" },
+        "sensitiveSlotKeys": ["phone"]
+      }
+    }
+  ],
+  "nextCursor": "eyJ2ZXJzaW9uIjoxLCJrZXlzIjp7InR4IjoiOTQ4MjEi...",
+  "hasMore": false
+}
+```
+
+`types` narrows the list to the types you name, comma-separated. Leave it out and you get every type you may read. A cursor belongs to the `types` it was issued for: send it with the same filter, or start again without one.
+
+`limit` takes 1 to 100 and defaults to 50. When `hasMore` is `true`, more events are waiting right now: send `nextCursor` again straight away.
+
+## Paging never skips an event
+
+Two turns can write events at the same moment and finish in either order. The log holds an event back until every transaction that started before it has finished, so an event that commits late still arrives after your cursor instead of behind it. Usually that wait is too short to notice. A write that runs long, such as a database migration during a deploy or a decision whose resumed routine is still answering, delays newer events until it ends; nothing is lost.
+
+Deduplicate on `id` when your automation might read the same page twice, for example after it crashed before storing `nextCursor`.
+
+## Event types
+
+Every event has the same envelope: `id`, `type`, `version` (the version of that type's `data` schema), `occurredAt`, `workspaceId` and `data`. Every type's `data` starts with the conversation it is about: `conversationId`, `agentId`, `channel`, `callerKind` (`human` or `agent`) and `visitorId`.
+
+| Type | Recorded when | What `data` adds |
+|---|---|---|
+| `conversation.started` | A conversation is created, which happens with the first message a person or calling agent sends. Opening the chat widget or showing its greeting records nothing. | Nothing beyond the conversation. |
+| `contact_request.created` | A visitor leaves contact details through a contact request. | `contactRequestId`, and `values`: what the visitor gave, keyed by field, such as `email` and `message`. |
+| `handoff.requested` | The agent hands a conversation to a person: a routine's hand-off ending, a routine stuck past its re-ask limit, a retrieval miss, or a mailbox rule. | `reason`, the handoff reason code, such as `routine_handoff` or `retrieval_miss`. |
+| `routine.completed` | A routine run ends, whichever way it ends. | `routineId`, `executionId`, `outcome` (`complete`, `handoff`, `action`, `stuck` or `consent_declined`), `values` (the routine's declared slots) and `sensitiveSlotKeys`. A visitor who corrects a value after the run ended records the run again, with the corrected values and the same `executionId`. |
+| `decision.pending` | A routine stops at a decision step and waits for a teammate. | `decisionHandle`, `routineId`, `stepId`, `reason` (the text the routine's author wrote on the step), `options` (`id` and `label`) and `deadline`. |
+
+A slot the routine's author marked sensitive reads `[redacted]` in `values`, as it does in every notice and export. `sensitiveSlotKeys` names the masked keys.
+
+No event carries a transcript or the agent's reply. When an automation needs the conversation itself, it reads it with [conversation history](/api/chat-and-history#conversation-history) and a credential that holds `workspace.history.read`.
+
+Conversations a teammate runs to test an agent (Test Chat, workbench replays, Ray's test turns) record no events, as they stay out of history's lists.
+
+## Who can read what
+
+The log shows a type only to a caller who may read the same facts elsewhere:
+
+- `workspace.events.read` lets a credential list the log at all.
+- Every conversation type also needs `workspace.history.read`.
+- `decision.pending` also needs `workspace.conversation.takeover`, as the decision list does.
+
+Without a `types` filter you get the types you may read. Naming one you may not read returns `403` with `event_type_not_permitted`.
+
+## How long events are kept
+
+The log keeps an event for 30 days. An event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the events that state a value the consent covered are removed.
+
+A cursor stays usable for 29 days. An older one returns `410` with `cursor_expired`, because events after it may already be gone: start again without a cursor.
+
+## Common failure modes
+
+| Response | What happened | What to do |
+|---|---|---|
+| `400` `cursor_filter_mismatch` | The cursor was issued for a different `types` filter. | Send it with the filter it came from, or start again without a cursor. |
+| `400` `invalid_cursor` | The cursor is truncated or was not issued by this log. | Send back `nextCursor` exactly as you received it. |
+| `400` with `types` in the details | A name in `types` is not an event type. | Check the spelling against the table above. |
+| `403` `event_type_not_permitted` | The credential cannot read one of the requested types. | Use a credential whose role holds the permission, or drop the type. |
+| `410` `cursor_expired` | The cursor is older than 29 days. | Start again without a cursor. |
+
+## Read next
+
+- [Personal tokens and service accounts](/api/workspaces-and-tokens) for the credential an automation uses.
+- [Chat and history](/api/chat-and-history) to read the conversation an event names.
+- The [API Reference](/api-reference) for the full schema of every event type.

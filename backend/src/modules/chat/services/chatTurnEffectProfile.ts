@@ -59,9 +59,6 @@ const createEphemeralConversationRepository = (conversationId?: string): Convers
       purpose: input.purpose ?? "operator_test",
     };
   },
-  async createWithInitialAssistantMessage() {
-    throw new Error("ephemeral_turn_unexpected_initial_assistant_message");
-  },
   async listPageByWorkspaceId() {
     return { conversations: [], total: 0, nextCursor: null, hasMore: false };
   },

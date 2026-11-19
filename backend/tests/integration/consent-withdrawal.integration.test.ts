@@ -16,6 +16,7 @@ import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsR
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 import { CONSENT_ROUTINE_ID, classBooking, createRoutineConsentChatHarness } from "./support/routineConsentChatHarness.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -422,7 +423,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
           consentKey: "health",
           recordId: seeded.recordId,
           withheldMessageCount: 5,
-          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2 },
+          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2, "workspace-events": 0 },
         }),
       }]);
       expect(JSON.stringify(audits)).not.toContain("sore knee");
@@ -455,7 +456,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
 
     it("keeps the erased value out of the state a turn still running saves", async () => {
       // The turn read the value before the withdrawal committed and saves it after.
-      await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+      await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000).completeAssistantTurn({
         workspaceId: seeded.workspaceId,
         conversationId: seeded.conversationId,
         routineStateTransition: {
@@ -485,7 +486,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       const persistence = new PostgresAssistantTurnPersistence(
         database.kysely,
         new ConversationActivityRepository(database.kysely),
-        60_000,
+        postgresWorkspaceEventRecorder, 60_000,
         undefined,
         undefined,
         undefined,
@@ -545,7 +546,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       const receipt = await new PostgresAssistantTurnPersistence(
         database.kysely,
         new ConversationActivityRepository(database.kysely),
-        60_000,
+        postgresWorkspaceEventRecorder, 60_000,
         undefined,
         undefined,
         undefined,

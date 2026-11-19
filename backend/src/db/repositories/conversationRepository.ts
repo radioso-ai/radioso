@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
-import type { MessageRecord } from "./messageRepository.js";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import {
@@ -12,6 +11,7 @@ import {
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
+import type { WorkspaceEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEvents.js";
 import type { ConversationOwnershipScope } from "../../modules/handoff/ownershipState.js";
 import {
   currentTimestamp,
@@ -95,17 +95,6 @@ export interface ConversationRepositoryPort {
     sourceOrigin?: string | null;
   }): Promise<GetOrCreateConversationResult>;
   create(input: CreateConversationInput): Promise<ConversationRecord>;
-  createWithInitialAssistantMessage(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    sourceChannel?: string | null;
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    verifiedCustomerId?: string | null;
-    entryPageUrl?: string | null;
-    content: string;
-  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
     workspaceId: string,
     input: {
@@ -195,15 +184,6 @@ interface ConversationRow {
   updated_at: Date;
 }
 
-interface MessageRow {
-  id: string;
-  conversation_id: string;
-  workspace_id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  created_at: Date;
-}
-
 const conversationColumns = [
   "id",
   "workspace_id",
@@ -248,15 +228,6 @@ const conversationSelectColumns = [
   "c.title as title",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
-] as const;
-
-const initialAssistantMessageColumns = [
-  "id",
-  "conversation_id",
-  "workspace_id",
-  "role",
-  "content",
-  "created_at",
 ] as const;
 
 // Kysely `$if` predicates for the source-scope filter. The count query is unaliased
@@ -311,8 +282,42 @@ const conversationInsertValues = (id: string, input: CreateConversationInput) =>
   privacy_notice_version: input.privacyNoticeVersion ?? null,
 });
 
+/** The event a new conversation row records, once per conversation however many paths try. */
+const conversationStarted = (row: { id: string; workspace_id: string }): WorkspaceEventDraft => ({
+  type: "conversation.started",
+  workspaceId: row.workspace_id,
+  conversationId: row.id,
+  idempotencyKey: `conversation.started:${row.id}`,
+  detail: {},
+});
+
+/** Refuses a start through a repository built for existing conversations only. */
+const noConversationStarts: WorkspaceEventRecorder = {
+  record: () => Promise.reject(new Error("conversation_start_needs_event_recorder")),
+};
+
+type ConversationStartMethod = "create" | "createIfAbsent" | "getOrCreateByAnonymousSession";
+
+/** The repository without the methods that start a conversation. */
+type ExistingConversationRepository = Omit<ConversationRepository, ConversationStartMethod>;
+
+/**
+ * Every new conversation row records `conversation.started` in the transaction that inserts it, so
+ * the repository takes the event recorder: the insert methods below are the only way a conversation
+ * starts, whichever channel it arrives on.
+ */
 export class ConversationRepository implements ConversationRepositoryPort {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly events: WorkspaceEventRecorder) {}
+
+  /** For a unit of work that reads, locks or updates conversations and never starts one. */
+  static forExistingConversations(db: Db): ExistingConversationRepository {
+    return new ConversationRepository(db, noConversationStarts);
+  }
+
+  /** Runs `work` in the repository's transaction, or in a new one: a row and its event commit together. */
+  private inTransaction<T>(work: (db: Db) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? work(this.db) : this.db.transaction().execute(work);
+  }
 
   async getOrCreateByAnonymousSession(input: {
     workspaceId: string;
@@ -359,18 +364,21 @@ export class ConversationRepository implements ConversationRepositoryPort {
         })
         .returning(conversationColumns)
         .executeTakeFirstOrThrow();
+      await this.events.record(trx, conversationStarted(created));
       return { record: mapConversation(created as ConversationRow), created: true };
     });
   }
 
   async create(input: CreateConversationInput): Promise<ConversationRecord> {
-    const row = await this.db
-      .insertInto("conversations")
-      .values(conversationInsertValues(randomUUID(), input))
-      .returning(conversationColumns)
-      .executeTakeFirstOrThrow();
-
-    return mapConversation(row as ConversationRow);
+    return this.inTransaction(async (db) => {
+      const row = await db
+        .insertInto("conversations")
+        .values(conversationInsertValues(randomUUID(), input))
+        .returning(conversationColumns)
+        .executeTakeFirstOrThrow();
+      await this.events.record(db, conversationStarted(row));
+      return mapConversation(row as ConversationRow);
+    });
   }
 
   /**
@@ -382,13 +390,16 @@ export class ConversationRepository implements ConversationRepositoryPort {
     // The table has two unique indexes that both contain `id` (the primary key and
     // `(workspace_id, id)`); a concurrent creator of the same id can trip either one first,
     // so the arbiter is left open: any duplicate of this id means "already exists".
-    const row = await this.db
-      .insertInto("conversations")
-      .values(conversationInsertValues(input.id, input))
-      .onConflict((conflict) => conflict.doNothing())
-      .returning("id")
-      .executeTakeFirst();
-    return row !== undefined;
+    return this.inTransaction(async (db) => {
+      const row = await db
+        .insertInto("conversations")
+        .values(conversationInsertValues(input.id, input))
+        .onConflict((conflict) => conflict.doNothing())
+        .returning(["id", "workspace_id"])
+        .executeTakeFirst();
+      if (row) await this.events.record(db, conversationStarted(row));
+      return row !== undefined;
+    });
   }
 
   async bindAgentRevision(input: {
@@ -410,62 +421,6 @@ export class ConversationRepository implements ConversationRepositoryPort {
       return mapConversation(bound as ConversationRow);
     }
     return this.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
-  }
-
-  async createWithInitialAssistantMessage(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    sourceChannel?: string | null;
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    verifiedCustomerId?: string | null;
-    entryPageUrl?: string | null;
-    content: string;
-  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    return this.db.transaction().execute(async (trx) => {
-      const conversationId = randomUUID();
-      const messageId = randomUUID();
-      const conversationRow = await trx
-        .insertInto("conversations")
-        .values({
-          id: conversationId,
-          workspace_id: input.workspaceId,
-          agent_id: input.agentId ?? null,
-          source_channel: input.sourceChannel ?? null,
-          caller_kind: callerKindForSourceChannel(input.sourceChannel),
-          source_origin: input.sourceOrigin ?? null,
-          channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
-          anonymous_session_id: input.anonymousSessionId ?? null,
-          verified_customer_id: input.verifiedCustomerId ?? null,
-          entry_page_url: input.entryPageUrl ?? null,
-        })
-        .returning(conversationColumns)
-        .executeTakeFirstOrThrow();
-      const messageRow = await trx
-        .insertInto("messages")
-        .values({
-          id: messageId,
-          conversation_id: conversationId,
-          workspace_id: input.workspaceId,
-          role: "assistant",
-          content: input.content,
-        })
-        .returning(initialAssistantMessageColumns)
-        .executeTakeFirstOrThrow() as MessageRow;
-
-      return {
-        conversation: mapConversation(conversationRow as ConversationRow),
-        assistantMessage: {
-          id: messageRow.id,
-          conversationId: messageRow.conversation_id,
-          workspaceId: messageRow.workspace_id,
-          role: messageRow.role,
-          content: messageRow.content,
-          createdAt: new Date(messageRow.created_at),
-        },
-      };
-    });
   }
 
   async listPageByWorkspaceId(

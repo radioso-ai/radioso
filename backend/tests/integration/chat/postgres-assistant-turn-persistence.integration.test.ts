@@ -16,6 +16,7 @@ import { DefaultBackgroundJobQueue, type BackgroundJobWakePort } from "../../../
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -85,8 +86,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
-    conversations = new ConversationRepository(database.kysely);
-    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
+    conversations = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000);
   });
 
   afterAll(async () => {
@@ -460,7 +461,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const assistantMessageId = randomUUID();
     const failing = new PostgresAssistantTurnPersistence(database.kysely, {
       record: async () => { throw new Error("activity unavailable"); },
-    }, 60_000);
+    }, postgresWorkspaceEventRecorder, 60_000);
 
     await expect(failing.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -971,7 +972,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         calls.push(`requestDrain:${row.status}`);
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -1006,7 +1007,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const assistantMessageId = randomUUID();
     const requestDrain = { called: 0 };
     const actionDrainDispatcher = { requestDrain: async () => { requestDrain.called += 1; } };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -1037,7 +1038,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         throw new Error("cloud tasks unreachable");
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000, undefined, actionDrainDispatcher);
 
     const { message } = await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -1170,7 +1171,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       new PostgresAssistantTurnPersistence(
         database.kysely,
         new ConversationActivityRepository(database.kysely),
-        60_000,
+        postgresWorkspaceEventRecorder, 60_000,
         undefined,
         undefined,
         undefined,

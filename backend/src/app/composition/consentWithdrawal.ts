@@ -6,6 +6,7 @@ import { AuditEventRepository, ConversationAuditWithholder } from "../../db/repo
 import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ConsentWithdrawalRepository } from "../../db/repositories/consentWithdrawalRepository.js";
 import { ConversationSummaryWithholder } from "../../db/repositories/conversationSummaryRepository.js";
+import { WorkspaceEventValueWithholder } from "../../db/repositories/workspaceEventRepository.js";
 import { conversationSummaryRefreshRequest } from "../../modules/chat/composition.js";
 import { EmailMessageWithholder } from "../../modules/emailChannel/public.js";
 import { ConsentWithdrawalService, type ConsentWithdrawalUnitOfWork } from "../../modules/privacy/public.js";
@@ -36,6 +37,8 @@ const defaultMessageCopyWithholders: readonly MessageCopyWithholderBinding[] = [
   (trx) => new VisitorImageWithholder(trx, new BackgroundJobRepository(trx)),
   // The summary and title written from the transcript: cleared, and queued to be written again.
   (trx) => new ConversationSummaryWithholder(trx, new BackgroundJobRepository(trx), conversationSummaryRefreshRequest),
+  // The workspace event log's copies of a withdrawn value: the events that state one are removed.
+  (trx) => new WorkspaceEventValueWithholder(trx),
 ];
 
 /**

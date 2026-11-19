@@ -259,41 +259,46 @@ export class ApprovalResumeTurn {
       actions: routineEnding.actions,
     });
 
-    this.beginTurnEmission(coordination);
-    const completed = await this.options.chatTurnLifecycle.completeAssistantTurn({
-      workspaceId: input.record.workspaceId,
-      accountId: input.decidedBy,
-      session,
-      presentation,
-      requestReceivedAt,
-      answerStartedAt,
-      stream: false,
-      engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
-      modelCallTrace,
-      actions: decisionEffects.actions,
-      ownershipHandoff: routineEnding.ownershipHandoff,
-      routineStateTransition,
-      // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
-      routineReporter: routineTurnPorts.reporter,
-      pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
-      // A walk on from the decision can show the next consent, or pass one the channel never asks.
-      consentEvents: result.hostEffects?.consentEvents,
-      suspended: Boolean(result.hostEffects?.awaitingDecision),
-      additionalAuditEvent: {
-        accountId: input.decidedBy,
+    // The decision's transaction takes its id here, after every model call and skill dispatch: an
+    // open one holds back the workspace event log. `commit` writes the resolution before the turn's
+    // writes, which may open the same gate's next decision (#1460).
+    const completed = await input.commit((transaction) => {
+      this.beginTurnEmission(coordination);
+      return this.options.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.record.workspaceId,
-        eventType: "hitl.decision",
-        eventStatus: "success",
-        metadata: {
-          handle: input.record.handle,
-          conversationId: input.record.conversationId,
-          agentId: input.record.agentId,
-          routineId: input.record.routineId,
-          stepId: input.record.stepId,
-          optionId: input.optionId,
+        accountId: input.decidedBy,
+        session,
+        presentation,
+        requestReceivedAt,
+        answerStartedAt,
+        stream: false,
+        engineTrace: result.trace ? conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
+        modelCallTrace,
+        actions: decisionEffects.actions,
+        ownershipHandoff: routineEnding.ownershipHandoff,
+        routineStateTransition,
+        // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
+        routineReporter: routineTurnPorts.reporter,
+        pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
+        // A walk on from the decision can show the next consent, or pass one the channel never asks.
+        consentEvents: result.hostEffects?.consentEvents,
+        suspended: Boolean(result.hostEffects?.awaitingDecision),
+        additionalAuditEvent: {
+          accountId: input.decidedBy,
+          workspaceId: input.record.workspaceId,
+          eventType: "hitl.decision",
+          eventStatus: "success",
+          metadata: {
+            handle: input.record.handle,
+            conversationId: input.record.conversationId,
+            agentId: input.record.agentId,
+            routineId: input.record.routineId,
+            stepId: input.record.stepId,
+            optionId: input.optionId,
+          },
         },
-      },
-      transaction: input.transaction,
+        transaction,
+      });
     });
 
     return {

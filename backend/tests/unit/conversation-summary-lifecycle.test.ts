@@ -143,7 +143,9 @@ describe("ChatTurnLifecycle conversation summary refresh (#866)", () => {
     const completed = await lifecycle.completeAssistantTurn({ ...turnInput(), transaction: {} as never });
 
     expect(wake).not.toHaveBeenCalled();
-    expect(completed).toMatchObject({ kind: "persisted", postCommitWake: wake });
+    expect(completed).toMatchObject({ kind: "persisted", postCommitWake: expect.any(Function) });
+    completed.postCommitWake?.();
+    expect(wake).toHaveBeenCalledTimes(1);
   });
 
   it("asks for no refresh on a safe-test turn", async () => {

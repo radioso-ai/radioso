@@ -2582,7 +2582,7 @@ export const createTestDependencies = (overrides: {
     {
       listPending: async () => [],
       loadByHandle: async () => null,
-      resolveInTransaction: async () => null,
+      claimInTransaction: async () => null,
     },
     {
       resume: async () => {

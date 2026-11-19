@@ -57,7 +57,7 @@ curl -sS "https://api.radioso.ai/api/v1/workspace/events?types=contact_request.c
 
 ## Paging never skips an event
 
-Two turns can write events at the same moment and finish in either order. The log holds an event back until every transaction that started before it has finished, so an event that commits late still arrives after your cursor instead of behind it. Usually that wait is too short to notice. A write that runs long, such as a database migration during a deploy or a decision whose resumed routine is still answering, delays newer events until it ends; nothing is lost.
+Two turns can write events at the same moment and finish in either order. The log holds an event back until every transaction that started before it has finished, so an event that commits late still arrives after your cursor instead of behind it. Usually that wait is too short to notice. A write that runs long, such as a database migration during a deploy, delays newer events until it ends; nothing is lost.
 
 Deduplicate on `id` when your automation might read the same page twice, for example after it crashed before storing `nextCursor`.
 

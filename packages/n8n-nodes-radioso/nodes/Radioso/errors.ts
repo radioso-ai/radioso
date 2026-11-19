@@ -27,7 +27,7 @@ function serverMessage(body: unknown): string | undefined {
 	return typeof record.message === 'string' ? record.message : undefined;
 }
 
-function errorCode(body: unknown): string | undefined {
+export function errorCode(body: unknown): string | undefined {
 	const parsed = parseBody(body);
 	if (typeof parsed !== 'object' || parsed === null) return undefined;
 	const nested = (parsed as Record<string, unknown>).error;
@@ -44,7 +44,11 @@ function retryAfterSeconds(body: unknown): number | undefined {
 }
 
 /** Turns a non-2xx Radioso response into the message and hint an n8n user sees on the node. */
-export function describeApiError(statusCode: number, body: unknown): DescribedApiError {
+export function describeApiError(
+	statusCode: number,
+	body: unknown,
+	scope: 'action' | 'events' = 'action',
+): DescribedApiError {
 	const detail = serverMessage(body);
 	const withDetail = (hint: string) => (detail ? `${detail} ${hint}`.trim() : hint);
 
@@ -58,12 +62,6 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 					description: withDetail(
 						'Radioso needs a public https:// webhook URL for n8n. Set WEBHOOK_URL on n8n to its public address, or use the Radioso Poll Trigger node instead.',
 					),
-				};
-			}
-			if (code === 'cursor_filter_mismatch' || code === 'invalid_cursor') {
-				return {
-					message: 'Radioso did not accept the saved position in the event log',
-					description: withDetail('Deactivate and reactivate the workflow to start from the newest event.'),
 				};
 			}
 			return {
@@ -92,6 +90,14 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 				),
 			};
 		case 404:
+			if (scope === 'events') {
+				return {
+					message: 'This Radioso instance has no event API',
+					description: withDetail(
+						'Upgrade the instance, or check the API URL in the credential: a self-hosted URL often ends in /backend.',
+					),
+				};
+			}
 			return {
 				message: 'Radioso could not find it',
 				description: withDetail('Check the agent or conversation id belongs to this workspace.'),
@@ -108,11 +114,6 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 			return {
 				message: 'Radioso could not apply the request right now',
 				description: withDetail('Another change got there first. Run the step again.'),
-			};
-		case 410:
-			return {
-				message: 'The saved position in the Radioso event log has expired',
-				description: 'The node starts again from the newest events.',
 			};
 		case 503:
 			if (code === 'encryption_not_configured') {

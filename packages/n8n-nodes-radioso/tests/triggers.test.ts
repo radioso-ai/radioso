@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IHookFunctions, INode, IPollFunctions, IWebhookFunctions } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { isRadiosoEvent } from '../nodes/Radioso/events';
 import { RadiosoPollTrigger } from '../nodes/RadiosoPollTrigger/RadiosoPollTrigger.node';
@@ -31,15 +31,17 @@ function http(replies: Reply[]) {
 
 function hookContext(staticData: Record<string, unknown>, replies: Reply[], events = ['routine.completed']) {
 	const request = http(replies);
+	const warn = vi.fn();
 	const context = {
 		getNode: () => node,
 		getCredentials: async () => CREDENTIALS,
 		getNodeParameter: () => events,
 		getNodeWebhookUrl: () => WEBHOOK_URL,
 		getWorkflowStaticData: () => staticData,
+		logger: { warn },
 		helpers: { httpRequestWithAuthentication: request },
 	};
-	return { context: context as unknown as IHookFunctions, request };
+	return { context: context as unknown as IHookFunctions, request, warn };
 }
 
 const methods = new RadiosoTrigger().webhookMethods.default;
@@ -121,6 +123,55 @@ describe('Radioso Trigger lifecycle', () => {
 		expect(staticData.subscription).toBeUndefined();
 	});
 
+	it('checkExists never deletes: a copied workflow with another URL just resubscribes', async () => {
+		const staticData: Record<string, unknown> = {
+			subscription: {
+				subscriptionId: 'sub-prod',
+				signingSecret: 'x',
+				targetUrl: 'https://prod.example/webhook/abc/webhook',
+				eventTypes: ['routine.completed'],
+			},
+		};
+		const { context, request } = hookContext(staticData, []);
+
+		expect(await methods.checkExists.call(context)).toBe(false);
+		expect(request).not.toHaveBeenCalled();
+		expect(staticData.subscription).toBeUndefined();
+	});
+
+	it('checkExists keeps a matching subscription through a server error', async () => {
+		const staticData = {
+			subscription: { subscriptionId: 'sub-1', signingSecret: 'x', targetUrl: WEBHOOK_URL, eventTypes: ['routine.completed'] },
+		};
+		const { context } = hookContext(staticData, [{ statusCode: 503, body: {} }]);
+		expect(await methods.checkExists.call(context)).toBe(true);
+		expect(staticData.subscription).toBeDefined();
+	});
+
+	it('explains a 404 on the event routes as an instance without the event API', async () => {
+		const staticData = {
+			subscription: { subscriptionId: 'sub-1', signingSecret: 'x', targetUrl: WEBHOOK_URL, eventTypes: ['routine.completed'] },
+		};
+		const { context } = hookContext(staticData, [{ statusCode: 400, body: {} }]);
+		const failure = await methods.checkExists.call(context).catch((error: unknown) => error);
+		expect(failure).toBeInstanceOf(NodeApiError);
+
+		const created = hookContext({}, [{ statusCode: 404, body: {} }]);
+		const notFound = await methods.create.call(created.context).catch((error: unknown) => error);
+		expect((notFound as NodeApiError).message).toBe('This Radioso instance has no event API');
+	});
+
+	it('a failed delete is logged and reported as false without throwing', async () => {
+		const staticData: Record<string, unknown> = {
+			subscription: { subscriptionId: 'sub-1', signingSecret: 'x', targetUrl: WEBHOOK_URL, eventTypes: [] },
+		};
+		const { context, warn } = hookContext(staticData, [{ statusCode: 500, body: {} }]);
+
+		expect(await methods.delete.call(context)).toBe(false);
+		expect(warn).toHaveBeenCalled();
+		expect(staticData.subscription).toBeDefined();
+	});
+
 	it('requires at least one event', async () => {
 		const { context, request } = hookContext({}, [], []);
 		await expect(methods.create.call(context)).rejects.toThrow('Choose at least one event');
@@ -194,6 +245,51 @@ describe('Radioso Trigger webhook', () => {
 		}
 	});
 
+	it('emits a signed body that is not an event envelope as received', async () => {
+		vi.useFakeTimers({ now: now * 1000 });
+		try {
+			const rawBody = JSON.stringify({ hello: 'world' });
+			const { context, status } = webhookContext({
+				rawBody,
+				headers: {
+					'x-radioso-timestamp': TIMESTAMP,
+					'x-radioso-signature': await sign(rawBody, SECRET, TIMESTAMP),
+				},
+			});
+
+			const result = await new RadiosoTrigger().webhook.call(context);
+
+			expect(status).not.toHaveBeenCalled();
+			expect(result.workflowData?.[0][0].json).toEqual({ hello: 'world' });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('accepts a push exactly 300 seconds old and refuses one second more', async () => {
+		const rawBody = JSON.stringify(ENVELOPE);
+		const headers = {
+			'x-radioso-timestamp': TIMESTAMP,
+			'x-radioso-signature': await sign(rawBody, SECRET, TIMESTAMP),
+		};
+		vi.useFakeTimers({ now: (now + 300) * 1000 });
+		try {
+			const edge = webhookContext({ rawBody, headers });
+			expect((await new RadiosoTrigger().webhook.call(edge.context)).workflowData).toHaveLength(1);
+			expect(edge.status).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+		vi.useFakeTimers({ now: (now + 301) * 1000 });
+		try {
+			const late = webhookContext({ rawBody, headers });
+			await new RadiosoTrigger().webhook.call(late.context);
+			expect(late.status).toHaveBeenCalledWith(401);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('answers 401 and does not trigger on a bad signature', async () => {
 		vi.useFakeTimers({ now: now * 1000 });
 		try {
@@ -261,6 +357,7 @@ function pollContext(options: { mode: 'manual' | 'trigger'; staticData: Record<s
 	return { context: context as unknown as IPollFunctions, request };
 }
 
+const BASE = 'https://radioso.example.com/backend';
 const logEvent = (id: string) => ({ ...ENVELOPE, id });
 
 describe('Radioso Poll Trigger', () => {
@@ -286,7 +383,7 @@ describe('Radioso Poll Trigger', () => {
 	});
 
 	it('emits new events as items and advances the cursor', async () => {
-		const staticData: Record<string, unknown> = { cursor: 'c1', types: 'routine.completed', seen: [] };
+		const staticData: Record<string, unknown> = { cursor: 'c1', types: 'routine.completed', baseUrl: BASE, seen: [] };
 		const { context } = pollContext({
 			mode: 'trigger',
 			staticData,
@@ -300,21 +397,52 @@ describe('Radioso Poll Trigger', () => {
 		expect(staticData.cursor).toBe('c3');
 	});
 
-	it('restarts after a 410 cursor_expired', async () => {
-		const staticData: Record<string, unknown> = { cursor: 'old', types: 'routine.completed', seen: [] };
+	it.each([
+		[410, { error: { code: 'cursor_expired' } }],
+		[400, { error: { code: 'invalid_cursor' } }],
+		[400, { error: { code: 'cursor_filter_mismatch' } }],
+	])('starts over from the end of the log when the cursor is refused (%s)', async (statusCode, body) => {
+		const staticData: Record<string, unknown> = { cursor: 'old', types: 'routine.completed', baseUrl: BASE, seen: [] };
 		const { context } = pollContext({
 			mode: 'trigger',
 			staticData,
 			replies: [
-				{ statusCode: 410, body: { error: { code: 'cursor_expired' } } },
+				{ statusCode, body },
 				{ statusCode: 200, body: { events: [logEvent('e9')], nextCursor: 'c9', hasMore: false } },
 			],
 		});
 
-		const result = await new RadiosoPollTrigger().poll.call(context);
-
-		expect(result?.[0]).toHaveLength(1);
+		expect(await new RadiosoPollTrigger().poll.call(context)).toBeNull();
 		expect(staticData.cursor).toBe('c9');
+	});
+
+	it('starts over when the credential points at another instance', async () => {
+		const staticData: Record<string, unknown> = {
+			cursor: 'c1',
+			types: 'routine.completed',
+			baseUrl: 'https://elsewhere.example',
+			seen: [],
+		};
+		const { context, request } = pollContext({
+			mode: 'trigger',
+			staticData,
+			replies: [{ statusCode: 200, body: { events: [logEvent('e1')], nextCursor: 'c5', hasMore: false } }],
+		});
+
+		expect(await new RadiosoPollTrigger().poll.call(context)).toBeNull();
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(staticData).toMatchObject({ cursor: 'c5', baseUrl: BASE });
+	});
+
+	it('refuses a response that is not an event page, with the /backend hint', async () => {
+		const html = pollContext({ mode: 'trigger', staticData: { cursor: 'c1', types: 'routine.completed', baseUrl: BASE }, replies: [{ statusCode: 200, body: '<html></html>' }] });
+		const htmlFailure = await new RadiosoPollTrigger().poll.call(html.context).catch((error: unknown) => error);
+		expect(htmlFailure).toBeInstanceOf(NodeOperationError);
+
+		const odd = pollContext({ mode: 'trigger', staticData: { cursor: 'c1', types: 'routine.completed', baseUrl: BASE }, replies: [{ statusCode: 200, body: { events: 'nope' } }] });
+		const oddFailure = await new RadiosoPollTrigger().poll.call(odd.context).catch((error: unknown) => error);
+		expect(oddFailure).toBeInstanceOf(NodeOperationError);
+		expect((oddFailure as NodeOperationError).description).toContain('/backend');
 	});
 
 	it('emits a sample on a manual run without touching the saved cursor', async () => {

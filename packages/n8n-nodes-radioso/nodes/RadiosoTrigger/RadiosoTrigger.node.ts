@@ -14,7 +14,6 @@ import {
 	createSubscription,
 	deleteSubscription,
 	EVENT_TYPES,
-	isRadiosoEvent,
 	readStored,
 	selectedEventTypes,
 	subscriptionExists,
@@ -77,7 +76,7 @@ export class RadiosoTrigger implements INodeType {
 				const stored = readStored(this.getWorkflowStaticData('node').subscription);
 				const result = await subscriptionExists(sender(this), stored, wanted(this));
 				if (result.failure) {
-					throw apiError(this.getNode(), result.failure.statusCode, result.failure.body);
+					throw apiError(this.getNode(), result.failure.statusCode, result.failure.body, undefined, 'events');
 				}
 				if (!result.exists) delete this.getWorkflowStaticData('node').subscription;
 				return result.exists;
@@ -85,7 +84,7 @@ export class RadiosoTrigger implements INodeType {
 
 			async create(this: IHookFunctions): Promise<boolean> {
 				const { stored, failure } = await createSubscription(sender(this), wanted(this));
-				if (failure) throw apiError(this.getNode(), failure.statusCode, failure.body);
+				if (failure) throw apiError(this.getNode(), failure.statusCode, failure.body, undefined, 'events');
 				// The signing secret is returned once, here; the webhook needs it to verify each push.
 				this.getWorkflowStaticData('node').subscription = stored as unknown as IDataObject;
 				return true;
@@ -96,7 +95,13 @@ export class RadiosoTrigger implements INodeType {
 				const stored = readStored(data.subscription);
 				if (!stored) return true;
 				const failure = await deleteSubscription(sender(this), stored);
-				if (failure) throw apiError(this.getNode(), failure.statusCode, failure.body);
+				if (failure) {
+					// Like n8n's own trigger nodes: a failed cleanup must not block deactivation.
+					this.logger.warn(
+						`Radioso Trigger could not delete subscription ${stored.subscriptionId} (HTTP ${failure.statusCode}); remove it in Radioso if it is still listed.`,
+					);
+					return false;
+				}
 				delete data.subscription;
 				return true;
 			},
@@ -124,8 +129,7 @@ export class RadiosoTrigger implements INodeType {
 			return { noWebhookResponse: true };
 		}
 
-		const event = this.getBodyData();
-		if (!isRadiosoEvent(event)) return { webhookResponse: { ok: true } };
-		return { workflowData: [this.helpers.returnJsonArray(event as unknown as IDataObject)] };
+		// The body is authenticated, so it is emitted as received even if it is not an event envelope.
+		return { workflowData: [this.helpers.returnJsonArray(this.getBodyData() as IDataObject)] };
 	}
 }

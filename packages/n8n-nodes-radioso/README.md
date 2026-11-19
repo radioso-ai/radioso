@@ -77,8 +77,8 @@ The polling alternative, for an n8n instance Radioso can't reach: behind a firew
 
 - The first run records where the log ends and emits nothing, so the workflow does not start on old events. **Fetch Test Event** emits the newest three events as sample data.
 - Each later run emits the events since the saved position, oldest first, and skips any id it has already emitted.
-- Radioso keeps events for 30 days. After a long pause the saved position expires, and the node starts again from the newest events.
-- Changing the chosen events restarts from the end of the log.
+- Radioso keeps events for 30 days. When the saved position has expired, or Radioso no longer accepts it, the node starts over like a first run: it records where the log ends and emits nothing, so events from the gap are not delivered.
+- Changing the chosen events, or pointing the credential at another instance, starts over the same way.
 
 Polling adds delay up to the poll interval; the webhook trigger is immediate.
 

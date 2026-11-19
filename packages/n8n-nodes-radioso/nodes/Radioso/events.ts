@@ -112,7 +112,9 @@ export function readStored(raw: unknown): StoredSubscription | undefined {
 /**
  * True while the stored subscription is still active for this URL and these types. A 404, a
  * disabled subscription, or one made for another URL or type list counts as gone, so n8n creates a
- * fresh one. Any other answer is an error, not a reason to subscribe again.
+ * fresh one; Radioso replaces a subscription for the same URL, so nothing is deleted here (a
+ * workflow copied with its static data must not remove the original's subscription). A 5xx or 429
+ * leaves a matching subscription alone. Any other answer is an error.
  */
 export async function subscriptionExists(
 	send: Send,
@@ -121,8 +123,6 @@ export async function subscriptionExists(
 ): Promise<{ exists: boolean; failure?: HttpResult }> {
 	if (!stored) return { exists: false };
 	if (stored.targetUrl !== wanted.targetUrl || !sameTypes(stored.eventTypes, wanted.eventTypes)) {
-		// Drop the old one so it stops pushing to a URL this node no longer listens on.
-		await send({ method: 'DELETE', path: `${SUBSCRIPTIONS_PATH}/${encodeURIComponent(stored.subscriptionId)}` });
 		return { exists: false };
 	}
 	const response = await send({
@@ -130,6 +130,7 @@ export async function subscriptionExists(
 		path: `${SUBSCRIPTIONS_PATH}/${encodeURIComponent(stored.subscriptionId)}`,
 	});
 	if (response.statusCode === 404) return { exists: false };
+	if (response.statusCode === 429 || response.statusCode >= 500) return { exists: true };
 	if (response.statusCode < 200 || response.statusCode >= 300) return { exists: false, failure: response };
 	const subscription = (response.body as { subscription?: { status?: string } } | null)?.subscription;
 	return { exists: subscription?.status === 'active' };
@@ -176,6 +177,8 @@ export interface PollState {
 	cursor?: string;
 	/** The event types the cursor was issued for; a cursor only works with the filter it came from. */
 	types?: string;
+	/** The API origin the cursor was issued by; another instance cannot read it. */
+	baseUrl?: string;
 	/** Recent event ids, newest last, so a page read twice emits once. */
 	seen?: string[];
 }
@@ -200,14 +203,14 @@ function validEvents(events: unknown[]): RadiosoEvent[] {
 /**
  * One poll of the event log. The first run stores the log's end and emits nothing, so a workflow
  * does not wake up to old events; a manual run emits the newest few as sample data and stores
- * nothing. After that each run emits what happened since the stored cursor, oldest first. A
- * `410 cursor_expired` starts again without a cursor. Returns the events to emit and the state to
- * keep.
+ * nothing. After that each run emits what happened since the stored cursor, oldest first. A cursor
+ * the log no longer accepts (expired, or issued for other types) starts over like a first run.
+ * Returns the events to emit and the state to keep.
  */
 export async function pollEvents(
 	fetchPage: FetchPage,
 	state: PollState,
-	options: { types: string[]; manual: boolean },
+	options: { types: string[]; manual: boolean; baseUrl: string },
 ): Promise<{ events: RadiosoEvent[]; state: PollState }> {
 	const typesKey = [...options.types].sort().join(',');
 	const base = { types: typesKey };
@@ -217,20 +220,22 @@ export async function pollEvents(
 		return { events: validEvents(sample.page?.events ?? []), state };
 	}
 
-	let cursor = state.types === typesKey ? state.cursor : undefined;
-	if (cursor === undefined) {
+	const startOver = async (events: RadiosoEvent[], seen: string[]) => {
 		const head = await fetchPage({ ...base, limit: 1 });
-		return { events: [], state: { cursor: head.page?.nextCursor ?? undefined, types: typesKey, seen: [] } };
-	}
+		return {
+			events,
+			state: { cursor: head.page?.nextCursor ?? undefined, types: typesKey, baseUrl: options.baseUrl, seen },
+		};
+	};
+
+	let cursor = state.types === typesKey && state.baseUrl === options.baseUrl ? state.cursor : undefined;
+	if (cursor === undefined) return startOver([], []);
 
 	const seen = new Set(state.seen ?? []);
 	const emitted: RadiosoEvent[] = [];
 	for (let pageNumber = 0; pageNumber < MAX_PAGES_PER_POLL; pageNumber++) {
-		let result = await fetchPage({ ...base, limit: PAGE_SIZE, ...(cursor ? { after: cursor } : {}) });
-		if (result.expired) {
-			cursor = undefined;
-			result = await fetchPage({ ...base, limit: PAGE_SIZE });
-		}
+		const result = await fetchPage({ ...base, limit: PAGE_SIZE, after: cursor });
+		if (result.expired) return startOver(emitted, [...seen].slice(-SEEN_LIMIT));
 		const page = result.page;
 		if (!page) break;
 		for (const event of validEvents(page.events)) {
@@ -243,6 +248,6 @@ export async function pollEvents(
 	}
 	return {
 		events: emitted,
-		state: { cursor, types: typesKey, seen: [...seen].slice(-SEEN_LIMIT) },
+		state: { cursor, types: typesKey, baseUrl: options.baseUrl, seen: [...seen].slice(-SEEN_LIMIT) },
 	};
 }

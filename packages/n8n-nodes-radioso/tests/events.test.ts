@@ -101,10 +101,10 @@ describe('subscription lifecycle', () => {
 		expect((await subscriptionExists(disabled, stored, wanted)).exists).toBe(false);
 	});
 
-	it('does not resubscribe on a server error, it surfaces it', async () => {
-		const send: Send = async () => ({ statusCode: 500, body: {} });
+	it('does not resubscribe on a refusal, it surfaces it', async () => {
+		const send: Send = async () => ({ statusCode: 403, body: {} });
 		const result = await subscriptionExists(send, stored, wanted);
-		expect(result.failure?.statusCode).toBe(500);
+		expect(result.failure?.statusCode).toBe(403);
 	});
 
 	it('has nothing to check without stored data', async () => {
@@ -113,11 +113,20 @@ describe('subscription lifecycle', () => {
 		expect(send).not.toHaveBeenCalled();
 	});
 
-	it('replaces a subscription made for another URL or other types', async () => {
-		const send = vi.fn<Send>(async () => ({ statusCode: 204, body: undefined }));
-		const result = await subscriptionExists(send, stored, { ...wanted, eventTypes: ['handoff.requested'] });
-		expect(result.exists).toBe(false);
-		expect(send).toHaveBeenCalledWith({ method: 'DELETE', path: '/api/v1/workspace/event-subscriptions/sub-1' });
+	it('treats a subscription made for another URL or types as gone without deleting anything', async () => {
+		const send = vi.fn<Send>();
+		const otherTypes = await subscriptionExists(send, stored, { ...wanted, eventTypes: ['handoff.requested'] });
+		const otherUrl = await subscriptionExists(send, stored, { ...wanted, targetUrl: 'https://other.example/hook' });
+		expect(otherTypes.exists).toBe(false);
+		expect(otherUrl.exists).toBe(false);
+		expect(send).not.toHaveBeenCalled();
+	});
+
+	it('keeps a matching subscription through a transient failure', async () => {
+		for (const statusCode of [429, 500, 503]) {
+			const result = await subscriptionExists(async () => ({ statusCode, body: {} }), stored, wanted);
+			expect(result).toEqual({ exists: true });
+		}
 	});
 
 	it('deletes, and treats 404 as success', async () => {
@@ -154,12 +163,13 @@ function pages(...results: Array<{ page?: EventsPage; expired?: boolean }>) {
 
 const TYPES = ['routine.completed', 'handoff.requested'];
 const KEY = 'handoff.requested,routine.completed';
+const BASE = 'https://radioso.example.com/backend';
 
 describe('polling', () => {
 	it('stores the end of the log on the first run and emits nothing', async () => {
 		const { fetchPage, queries } = pages({ page: { events: [event('e1')], nextCursor: 'c1', hasMore: false } });
 
-		const result = await pollEvents(fetchPage, {}, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, {}, { types: TYPES, manual: false, baseUrl: BASE });
 
 		expect(result.events).toEqual([]);
 		expect(result.state).toMatchObject({ cursor: 'c1', types: KEY });
@@ -172,7 +182,7 @@ describe('polling', () => {
 		});
 		const state: PollState = {};
 
-		const result = await pollEvents(fetchPage, state, { types: TYPES, manual: true });
+		const result = await pollEvents(fetchPage, state, { types: TYPES, manual: true, baseUrl: BASE });
 
 		expect(result.events.map((e) => e.id)).toEqual(['e1', 'e2']);
 		expect(result.state).toBe(state);
@@ -184,7 +194,7 @@ describe('polling', () => {
 			page: { events: [event('e2'), event('e3')], nextCursor: 'c2', hasMore: false },
 		});
 
-		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, seen: ['e1'] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: ['e1'] }, { types: TYPES, manual: false, baseUrl: BASE });
 
 		expect(queries[0]).toMatchObject({ after: 'c1', types: KEY });
 		expect(result.events.map((e) => e.id)).toEqual(['e2', 'e3']);
@@ -193,7 +203,7 @@ describe('polling', () => {
 
 	it('keeps the cursor of an empty page, which moves on its own', async () => {
 		const { fetchPage } = pages({ page: { events: [], nextCursor: 'c5', hasMore: false } });
-		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, seen: [] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
 		expect(result.events).toEqual([]);
 		expect(result.state.cursor).toBe('c5');
 	});
@@ -204,32 +214,68 @@ describe('polling', () => {
 			{ page: { events: [event('e3')], nextCursor: 'c3', hasMore: false } },
 		);
 
-		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, seen: [] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
 
 		expect(queries[1]).toMatchObject({ after: 'c2' });
 		expect(result.events.map((e) => e.id)).toEqual(['e2', 'e3']);
 		expect(result.state.cursor).toBe('c3');
 	});
 
-	it('restarts without a cursor on 410 cursor_expired', async () => {
+	it('starts over like a first run when the cursor is expired', async () => {
 		const { fetchPage, queries } = pages(
 			{ expired: true },
 			{ page: { events: [event('e7')], nextCursor: 'c7', hasMore: false } },
 		);
 
-		const result = await pollEvents(fetchPage, { cursor: 'old', types: KEY, seen: [] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'old', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
 
 		expect(queries[0]).toMatchObject({ after: 'old' });
-		expect(queries[1]).not.toHaveProperty('after');
-		expect(result.events.map((e) => e.id)).toEqual(['e7']);
+		expect(queries[1]).toEqual({ types: KEY, limit: 1 });
+		expect(result.events).toEqual([]);
 		expect(result.state.cursor).toBe('c7');
+	});
+
+	it('starts over when the credential points at another instance', async () => {
+		const { fetchPage, queries } = pages({ page: { events: [], nextCursor: 'c9', hasMore: false } });
+		const result = await pollEvents(
+			fetchPage,
+			{ cursor: 'c1', types: KEY, baseUrl: 'https://other.example', seen: ['x'] },
+			{ types: TYPES, manual: false, baseUrl: BASE },
+		);
+		expect(queries).toHaveLength(1);
+		expect(queries[0]).not.toHaveProperty('after');
+		expect(result.state).toMatchObject({ cursor: 'c9', baseUrl: BASE, seen: [] });
+	});
+
+	it('stops after ten pages and keeps the cursor of the last one while more are waiting', async () => {
+		const results = Array.from({ length: 10 }, (_, index) => ({
+			page: { events: [event(`p${index}`)], nextCursor: `c${index + 2}`, hasMore: true },
+		}));
+		const { fetchPage, queries } = pages(...results);
+
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
+
+		expect(queries).toHaveLength(10);
+		expect(result.events).toHaveLength(10);
+		expect(result.state.cursor).toBe('c11');
+	});
+
+	it('keeps only the newest 500 ids', async () => {
+		const seen = Array.from({ length: 500 }, (_, index) => `old${index}`);
+		const { fetchPage } = pages({ page: { events: [event('fresh')], nextCursor: 'c2', hasMore: false } });
+
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen }, { types: TYPES, manual: false, baseUrl: BASE });
+
+		expect(result.state.seen).toHaveLength(500);
+		expect(result.state.seen?.[0]).toBe('old1');
+		expect(result.state.seen?.[499]).toBe('fresh');
 	});
 
 	it('does not emit an id it has already emitted, across runs', async () => {
 		const first = pages({ page: { events: [event('e2')], nextCursor: 'c2', hasMore: false } });
-		const run1 = await pollEvents(first.fetchPage, { cursor: 'c1', types: KEY, seen: [] }, { types: TYPES, manual: false });
+		const run1 = await pollEvents(first.fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
 		const second = pages({ page: { events: [event('e2'), event('e3')], nextCursor: 'c3', hasMore: false } });
-		const run2 = await pollEvents(second.fetchPage, run1.state, { types: TYPES, manual: false });
+		const run2 = await pollEvents(second.fetchPage, run1.state, { types: TYPES, manual: false, baseUrl: BASE });
 
 		expect(run1.events.map((e) => e.id)).toEqual(['e2']);
 		expect(run2.events.map((e) => e.id)).toEqual(['e3']);
@@ -237,16 +283,16 @@ describe('polling', () => {
 
 	it('starts over from the end of the log when the chosen types change', async () => {
 		const { fetchPage } = pages({ page: { events: [event('e1')], nextCursor: 'c9', hasMore: false } });
-		const result = await pollEvents(fetchPage, { cursor: 'c1', types: 'other', seen: ['x'] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: 'other', baseUrl: BASE, seen: ['x'] }, { types: TYPES, manual: false, baseUrl: BASE });
 		expect(result.events).toEqual([]);
-		expect(result.state).toMatchObject({ cursor: 'c9', types: KEY, seen: [] });
+		expect(result.state).toMatchObject({ cursor: 'c9', types: KEY, baseUrl: BASE, seen: [] });
 	});
 
 	it('emits only envelopes that match the contract', async () => {
 		const { fetchPage } = pages({
 			page: { events: [event('e2'), { id: 'bad' }, null], nextCursor: 'c2', hasMore: false },
 		});
-		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, seen: [] }, { types: TYPES, manual: false });
+		const result = await pollEvents(fetchPage, { cursor: 'c1', types: KEY, baseUrl: BASE, seen: [] }, { types: TYPES, manual: false, baseUrl: BASE });
 		expect(result.events).toHaveLength(1);
 		expect(result.events.every(isRadiosoEvent)).toBe(true);
 	});

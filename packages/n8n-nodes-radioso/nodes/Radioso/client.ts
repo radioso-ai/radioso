@@ -60,8 +60,14 @@ export async function sendRadioso(
 }
 
 /** The NodeApiError an n8n user sees for a non-2xx Radioso answer. */
-export function apiError(node: INode, statusCode: number, body: unknown, itemIndex?: number): NodeApiError {
-	const { message, description } = describeApiError(statusCode, body);
+export function apiError(
+	node: INode,
+	statusCode: number,
+	body: unknown,
+	itemIndex?: number,
+	scope: 'action' | 'events' = 'action',
+): NodeApiError {
+	const { message, description } = describeApiError(statusCode, body, scope);
 	return new NodeApiError(node, (body ?? {}) as JsonObject, {
 		message,
 		description,
@@ -85,6 +91,15 @@ export async function callRadioso(
 	if (response.statusCode < 200 || response.statusCode >= 300) {
 		throw apiError(node, response.statusCode, response.body, itemIndex);
 	}
+	return requireJsonObject(node, response, itemIndex);
+}
+
+/** A 2xx that is not a JSON object (an HTML page from the wrong URL) is a setup problem. */
+export function requireJsonObject(
+	node: INode,
+	response: RadiosoResponse,
+	itemIndex?: number,
+): Record<string, unknown> {
 	if (typeof response.body !== 'object' || response.body === null) {
 		throw new NodeOperationError(node, 'Radioso answered with something other than JSON', {
 			itemIndex,
@@ -92,6 +107,18 @@ export async function callRadioso(
 		});
 	}
 	return response.body as Record<string, unknown>;
+}
+
+/** The API origin the credential names, or a setup error. */
+export async function instanceUrl(context: Context): Promise<string> {
+	const credentials = (await context.getCredentials('radiosoApi')) as RadiosoCredentials;
+	try {
+		return resolveBaseUrl(credentials);
+	} catch (error) {
+		// resolveBaseUrl only throws RadiosoConfigError: a credential that names no usable instance.
+		const message = error instanceof RadiosoConfigError ? error.message : String(error);
+		throw new NodeOperationError(context.getNode(), message);
+	}
 }
 
 function sentence(text: string): string {

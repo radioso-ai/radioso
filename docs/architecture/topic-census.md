@@ -273,6 +273,52 @@ Census membership-integrity failures return the `census` unavailability reason
 and record the same outcome in refresh audit metadata. Model response failures
 use the separate `validation` reason.
 
+## Report counts and the content queue
+
+Beside its topics, a refresh counts the whole window with the same
+per-question answer status the topic rows use. `totals` holds every eligible
+question by answer status, the distinct conversations they came from, and how
+many had no answer in the workspace's content, with an `unclassified` block
+for the questions no topic claimed. Each topic's own counts plus that block
+add up to the totals, bucket by bucket. `dailyVolume` has one entry per UTC
+day the window touches, zero-filled, and `channels` counts by the
+conversation's source channel, the largest first. A report still waiting on
+facets carries all three, with every question unclassified.
+
+`previousPeriod` counts the 30 days before the window by the same rule. The
+history source's `readPeriodOutcomes` classifies each question in that window
+and returns one text-free outcome per question, and Audience Pulse sums them
+with the function it uses for the window itself. The comparison only runs
+when the workspace can see all 30 days: a workspace created during them, or
+one whose conversation retention reaches past their start (a workspace
+keeping 45 days has swept half of days 31 to 60), gets a null
+`previousPeriod`, since counting what survived would read as growth. The read
+starts once usage is reserved and runs beside the census, so a refresh refused
+for usage does none of it. It roughly doubles a refresh's per-question reads
+and logs `audience_pulse_previous_period_read` once with the question count
+and duration. A failed read leaves `previousPeriod` null, logs
+`audience_pulse_previous_period_read_failed`, and the refresh completes and
+bills as it would have; a cancelled refresh stops like any other. When those 30 days had no eligible question,
+`previousPeriod` is null too. `previousGeneratedAt` names the saved report each
+topic's `previousMemberCount` and `previousShare` come from, and is null when
+that report gave no topic a previous count. Reports saved before these fields
+existed return without them.
+
+The content queue keeps operator state apart from the snapshot, which a
+refresh overwrites. `PUT /api/v1/quality/audience-pulse/topics/:topicId/dismissal`
+marks a topic "not for us" in `audience_pulse_topic_dismissals`, and `DELETE`
+on the same path restores it; both need `workspace.quality.manage`. A
+dismissal changes no count. `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`
+with `{ "documentId": "…" }` records a document drafted from the topic in
+`audience_pulse_topic_drafts` and needs both `workspace.quality.manage` and
+`workspace.documents.manage`. Every
+read joins this state onto each content gap as `dismissedAt` and
+`latestDraft`. A surviving topic keeps its id across runs, so its state
+carries from one refresh to the next. Deleting the topic, the document, or the
+workspace deletes the rows, and each change that took effect writes an
+`audience_pulse.topic_dismissed`, `audience_pulse.topic_restored`, or
+`audience_pulse.topic_draft_linked` audit event.
+
 ## Backfill
 
 `backend/scripts/dev/backfillFacetExtractionJobs.ts` enqueues facet

@@ -8,10 +8,10 @@ import {
 } from "../../../src/modules/audiencePulse/domain/censusTopicTarget.js";
 import {
   AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
   AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP,
-} from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+} from "../../../src/modules/audiencePulse/services/narrativeReuse.js";
+import { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT } from "../../../src/modules/audiencePulse/domain/report.js";
 import { AUDIENCE_PULSE_SUMMARY_MAX_TOPICS } from "../../../src/modules/audiencePulse/services/prompt.js";
 
 const topicCensusDocUrl = new URL(

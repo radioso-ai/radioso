@@ -491,6 +491,21 @@ export interface AudiencePulseSnapshots {
   workspace_id: string;
 }
 
+export interface AudiencePulseTopicDismissals {
+  created_at: Generated<Timestamp>;
+  dismissed_by_user_id: string | null;
+  topic_id: string;
+  workspace_id: string;
+}
+
+export interface AudiencePulseTopicDrafts {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  document_id: string;
+  topic_id: string;
+  workspace_id: string;
+}
+
 export interface AuditEvents {
   account_id: string | null;
   created_at: Generated<Timestamp>;
@@ -2344,6 +2359,8 @@ export interface DB {
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audience_pulse_snapshots: AudiencePulseSnapshots;
+  audience_pulse_topic_dismissals: AudiencePulseTopicDismissals;
+  audience_pulse_topic_drafts: AudiencePulseTopicDrafts;
   audit_events: AuditEvents;
   background_jobs: BackgroundJobs;
   bootstrap_greeting_cache: BootstrapGreetingCache;

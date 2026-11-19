@@ -25,6 +25,7 @@ const evidence = (overrides: Partial<AudiencePulseEvidence> = {}): AudiencePulse
   },
   question: "How do I change my plan?",
   weekStart: "2026-06-29T00:00:00.000Z",
+  day: "2026-07-01",
   channel: null,
   grounding: "no_support",
   contentGapEligible: true,
@@ -705,6 +706,7 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
         visitorQuestionCount: 104,
         conversationCount: 90,
       }],
+      population: buildPopulation(104),
     });
 
     // No model ever ran, so there is nothing to narrate -- `summary` stays absent

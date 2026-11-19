@@ -3,6 +3,13 @@ import type { AnswerCoverageAssessment } from "@radioso/conversation-contract";
 
 import type { TopicTransition } from "../contracts/topicCensus.js";
 import {
+  summarizeAudiencePulsePopulation,
+  type AudiencePulseChannelVolume,
+  type AudiencePulseDailyVolume,
+  type AudiencePulsePreviousPeriod,
+  type AudiencePulseReportTotals,
+} from "./periodTotals.js";
+import {
   answerStatus,
   isShortfallStatus,
   summarizeAnswerStatuses,
@@ -35,6 +42,8 @@ export interface AudiencePulseEvidence {
   /** The photos the question's message carried; absent reads as none. */
   questionPhotoCount?: number;
   weekStart: string;
+  /** The UTC calendar day the question was asked, `YYYY-MM-DD`. */
+  day: string;
   channel: string | null;
   grounding: AudiencePulseGroundingSignal;
   /** Recorded semantic assessment. Absent records are legacy, never inferred. */
@@ -220,6 +229,19 @@ export interface AudiencePulseStoredReport {
   }>;
   recommendations: AudiencePulseStoredRecommendation[];
   caveats: string[];
+  /*
+   * The fields below are absent from snapshots saved before they existed, and are computed from
+   * the whole population at refresh, with or without topics.
+   */
+  totals?: AudiencePulseReportTotals;
+  /** One entry per UTC day the period touches, zero-filled and ascending. */
+  dailyVolume?: AudiencePulseDailyVolume[];
+  /** The 30 days immediately before `period.start`; null when they had no eligible question. */
+  previousPeriod?: AudiencePulsePreviousPeriod | null;
+  /** By the conversation's source channel, the largest first. */
+  channels?: AudiencePulseChannelVolume[];
+  /** `generatedAt` of the snapshot each theme's `previousMemberCount` and `previousShare` come from. */
+  previousGeneratedAt?: string | null;
 }
 
 export const AUDIENCE_PULSE_MODEL_TEXT_LIMITS = {
@@ -427,6 +449,8 @@ export const buildAudiencePulseCensusReport = (input: {
   dissolvedTopics?: AudiencePulseDissolvedTopic[];
   previousThemeMemberCounts?: Map<string, number>;
   previousThemeShares?: Map<string, number>;
+  previousPeriod?: AudiencePulsePreviousPeriod | null;
+  previousGeneratedAt?: string | null;
 }): AudiencePulseCensusReport => {
   const evidenceById = new Map(input.population.map((item) => [item.id, item]));
   if (evidenceById.size !== input.population.length) {
@@ -475,6 +499,11 @@ export const buildAudiencePulseCensusReport = (input: {
   });
 
   const unclassifiedQuestionCount = populationSize - claimedTopicEvidence.size;
+  const { totals, dailyVolume, channels } = summarizeAudiencePulsePopulation({
+    period: input.period,
+    population: input.population,
+    classifiedIds: claimedTopicEvidence,
+  });
 
   const contentGaps = themes.flatMap((theme) => {
     const memberEvidenceIds = memberEvidenceIdsByTopicId.get(theme.id) ?? [];
@@ -515,6 +544,11 @@ export const buildAudiencePulseCensusReport = (input: {
       contentGaps,
       recommendations: [],
       caveats: [],
+      totals,
+      dailyVolume,
+      previousPeriod: input.previousPeriod ?? null,
+      channels,
+      previousGeneratedAt: input.previousGeneratedAt ?? null,
     },
     recommendationEvidenceIdsByThemeId,
   };
@@ -572,6 +606,8 @@ export const buildAudiencePulseReport = (input: {
   dissolvedTopics?: AudiencePulseDissolvedTopic[];
   previousThemeMemberCounts?: Map<string, number>;
   previousThemeShares?: Map<string, number>;
+  previousPeriod?: AudiencePulsePreviousPeriod | null;
+  previousGeneratedAt?: string | null;
   model: AudiencePulseModelOutput;
 }): AudiencePulseStoredReport => applyAudiencePulseNarrative({
   census: buildAudiencePulseCensusReport(input),
@@ -595,6 +631,8 @@ export const buildAudiencePulseComputingReport = (input: {
   isFirstCensus: boolean;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
+  population: AudiencePulseEvidence[];
+  previousPeriod?: AudiencePulsePreviousPeriod | null;
 }): AudiencePulseStoredReport => ({
   period: {
     start: input.period.start.toISOString(),
@@ -613,6 +651,11 @@ export const buildAudiencePulseComputingReport = (input: {
   contentGaps: [],
   recommendations: [],
   caveats: [],
+  // No topic claimed anything, so every question counts as unclassified.
+  ...summarizeAudiencePulsePopulation({ period: input.period, population: input.population, classifiedIds: new Set() }),
+  previousPeriod: input.previousPeriod ?? null,
+  // No topic was compared against an earlier snapshot.
+  previousGeneratedAt: null,
 });
 
 export const parseAudiencePulseModelOutput = (value: unknown): AudiencePulseModelOutput =>

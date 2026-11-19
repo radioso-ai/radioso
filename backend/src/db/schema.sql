@@ -1180,6 +1180,31 @@ CREATE TABLE public.audience_pulse_snapshots (
 
 
 --
+-- Name: audience_pulse_topic_dismissals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audience_pulse_topic_dismissals (
+    workspace_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    dismissed_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: audience_pulse_topic_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audience_pulse_topic_drafts (
+    workspace_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: audit_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5253,6 +5278,22 @@ ALTER TABLE ONLY public.audience_pulse_snapshots
 
 
 --
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_pkey PRIMARY KEY (workspace_id, topic_id);
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_pkey PRIMARY KEY (workspace_id, topic_id, document_id);
+
+
+--
 -- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7052,6 +7093,27 @@ CREATE INDEX answer_coverage_reaction_traces_assessment_idx ON public.answer_cov
 --
 
 CREATE INDEX approval_resume_effect_decisions_created_at_idx ON public.approval_resume_effect_decisions USING btree (created_at);
+
+
+--
+-- Name: audience_pulse_topic_dismissals_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_dismissals_user_idx ON public.audience_pulse_topic_dismissals USING btree (dismissed_by_user_id) WHERE (dismissed_by_user_id IS NOT NULL);
+
+
+--
+-- Name: audience_pulse_topic_drafts_document_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_drafts_document_idx ON public.audience_pulse_topic_drafts USING btree (document_id);
+
+
+--
+-- Name: audience_pulse_topic_drafts_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_drafts_user_idx ON public.audience_pulse_topic_drafts USING btree (created_by_user_id) WHERE (created_by_user_id IS NOT NULL);
 
 
 --
@@ -11479,6 +11541,62 @@ ALTER TABLE ONLY public.assistant_answer_triage
 
 ALTER TABLE ONLY public.audience_pulse_snapshots
     ADD CONSTRAINT audience_pulse_snapshots_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_dismissed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_dismissed_by_user_id_fkey FOREIGN KEY (dismissed_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
 
 
 --

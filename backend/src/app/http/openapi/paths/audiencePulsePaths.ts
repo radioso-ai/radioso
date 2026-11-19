@@ -74,4 +74,51 @@ export const registerAudiencePulsePaths = (
       503: { description: "Workspace inference capability is unavailable", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
+
+  const topicStateResponses = (permission: string) => ({
+    204: { description: "Done; a repeated call that changes nothing also answers 204" },
+    400: { description: "Malformed topic id or request body", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    401: { description: "Browser dashboard session required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    403: { description: `Caller lacks ${permission}`, content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    404: { description: "The topic, or the document, is not in the selected workspace", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+  });
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/quality/audience-pulse/topics/{topicId}/dismissal",
+    tags: ["Audience Pulse"],
+    summary: "Mark a topic \"not for us\"",
+    description: "Takes the topic out of the report's content queue: the content gap reads back with dismissedAt set. No count changes, and the dismissal outlasts a refresh while the topic survives. Requires a browser dashboard session and workspace.quality.manage.",
+    operationId: "dismissAudiencePulseTopic",
+    security: security.workspaceAdminSecurity,
+    request: { params: schemas.audiencePulseTopicParamsSchema },
+    responses: topicStateResponses("workspace.quality.manage"),
+  });
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/quality/audience-pulse/topics/{topicId}/dismissal",
+    tags: ["Audience Pulse"],
+    summary: "Return a dismissed topic to the content queue",
+    description: "Clears the topic's dismissal. Requires a browser dashboard session and workspace.quality.manage.",
+    operationId: "restoreAudiencePulseTopic",
+    security: security.workspaceAdminSecurity,
+    request: { params: schemas.audiencePulseTopicParamsSchema },
+    responses: topicStateResponses("workspace.quality.manage"),
+  });
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/quality/audience-pulse/topics/{topicId}/drafts",
+    tags: ["Audience Pulse"],
+    summary: "Record a document drafted from a topic",
+    description: "Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session, workspace.quality.manage and workspace.documents.manage.",
+    operationId: "linkAudiencePulseTopicDraft",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params: schemas.audiencePulseTopicParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AudiencePulseTopicDraftLinkRequestSchema } },
+      },
+    },
+    responses: topicStateResponses("workspace.quality.manage or workspace.documents.manage"),
+  });
 };

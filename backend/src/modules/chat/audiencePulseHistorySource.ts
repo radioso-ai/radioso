@@ -1,4 +1,4 @@
-import type { MessageSource } from "@radioso/conversation-contract";
+import type { AnswerCoverageAssessment, MessageSource } from "@radioso/conversation-contract";
 import { sql } from "kysely";
 
 import {
@@ -9,6 +9,7 @@ import {
   AudiencePulseHistorySource,
   AudiencePulseHydratedEvidence,
   AudiencePulsePromptEvidenceReference,
+  type AudiencePulseQuestionOutcome,
   type AudiencePulseWeeklyVolume,
 } from "../audiencePulse/contracts/history.js";
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
@@ -21,7 +22,8 @@ import {
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { visibleMessagePhotoCountSql, visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import { audiencePulseCoverageGapEligible } from "../../shared/domain/audiencePulseContentGap.js";
-import type { AnswerCoverageRepositoryPort } from "../answerCoverage/public.js";
+import { audiencePulseUtcDay } from "../../shared/domain/audiencePulseUtcDay.js";
+import type { AnswerCoverageRecord, AnswerCoverageRepositoryPort } from "../answerCoverage/public.js";
 
 interface AudiencePulseEligibleQuestionMetadataRow {
   id: string;
@@ -342,10 +344,16 @@ const AUDIENCE_PULSE_ANSWER_WINDOW_QUERY_CONCURRENCY = 8;
 
 const readAudiencePulseAnswerWindows = async (
   db: Db,
-  input: { workspaceId: string; analysisEnd: Date; questions: AudiencePulseEligibleQuestionRow[] },
+  input: {
+    workspaceId: string;
+    analysisEnd: Date;
+    questions: AudiencePulseEligibleQuestionMetadataRow[];
+    signal?: AbortSignal;
+  },
 ): Promise<Map<string, AudiencePulseConversationMessageRow[]>> => {
   const windows = new Map<string, AudiencePulseConversationMessageRow[]>();
   for (let index = 0; index < input.questions.length; index += AUDIENCE_PULSE_ANSWER_WINDOW_QUERY_CONCURRENCY) {
+    input.signal?.throwIfAborted();
     const batch = input.questions.slice(index, index + AUDIENCE_PULSE_ANSWER_WINDOW_QUERY_CONCURRENCY);
     const results = await Promise.all(batch.map(async (question) => ({
       questionId: question.id,
@@ -360,6 +368,64 @@ const readAudiencePulseAnswerWindows = async (
     }
   }
   return windows;
+};
+
+/**
+ * How many ids one IN-list carries. A window can hold more eligible questions than Postgres's
+ * 65,535 bind parameters, so an id list built from all of them is asked for in chunks.
+ */
+export const AUDIENCE_PULSE_ID_LIST_CHUNK_SIZE = 10_000;
+
+export const listAudiencePulseAssessmentsInChunks = async (
+  repository: Pick<AnswerCoverageRepositoryPort, "listByRequestMessageIds">,
+  input: { workspaceId: string; requestMessageIds: readonly string[]; chunkSize?: number; signal?: AbortSignal },
+): Promise<Map<string, AnswerCoverageRecord>> => {
+  const chunkSize = input.chunkSize ?? AUDIENCE_PULSE_ID_LIST_CHUNK_SIZE;
+  const assessments = new Map<string, AnswerCoverageRecord>();
+  for (let index = 0; index < input.requestMessageIds.length; index += chunkSize) {
+    input.signal?.throwIfAborted();
+    const chunk = await repository.listByRequestMessageIds({
+      workspaceId: input.workspaceId,
+      requestMessageIds: input.requestMessageIds.slice(index, index + chunkSize),
+    });
+    for (const [requestMessageId, record] of chunk) assessments.set(requestMessageId, record);
+  }
+  return assessments;
+};
+
+/** The verdict alone: an outcome leaves the window without the request an assessment restates. */
+const textFreeAssessment = (assessment: AnswerCoverageAssessment): AnswerCoverageAssessment =>
+  assessment.availability === "assessed"
+    ? {
+        availability: "assessed",
+        coverage: assessment.coverage,
+        reason: assessment.reason,
+        schemaVersion: assessment.schemaVersion,
+        producer: assessment.producer,
+      }
+    : { availability: assessment.availability };
+
+type AudiencePulseQuestionClassification = Omit<AudiencePulseQuestionOutcome, "reference">;
+
+/**
+ * A confirmed semantic assessment decides; an unconfirmed one leaves the question unassessed; with
+ * no assessment record the paired answer's grounding decides, as it did before assessments existed.
+ */
+const classifyAudiencePulseQuestionOutcome = (
+  answerWindow: AudiencePulseConversationMessageRow[],
+  assessment: AnswerCoverageRecord | undefined,
+): AudiencePulseQuestionClassification => {
+  const answer = classifyAudiencePulseAnswerWindow(answerWindow);
+  const confirmedAssessment = assessment?.assistantMessageId ? assessment : undefined;
+  return {
+    grounding: answer.grounding,
+    ...(confirmedAssessment
+      ? { answerCoverage: confirmedAssessment, legacyCoverage: false }
+      : assessment ? { legacyCoverage: false } : { legacyCoverage: true }),
+    contentGapEligible: confirmedAssessment
+      ? audiencePulseCoverageGapEligible(confirmedAssessment)
+      : assessment ? false : answer.contentGapEligible,
+  };
 };
 
 const presentAudiencePulseAnchorMessage = (
@@ -439,42 +505,22 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
 
     const rows = await buildAudiencePulseEligibleQuestionContentQuery(this.db, input)
       .execute() as AudiencePulseEligibleQuestionRow[];
-    const answerWindows = await readAudiencePulseAnswerWindows(this.db, {
-      workspaceId: input.workspaceId,
-      analysisEnd: input.analysisEnd,
-      questions: rows,
-    });
-    const assessments = this.answerCoverageRepository
-      ? await this.answerCoverageRepository.listByRequestMessageIds({
-          workspaceId: input.workspaceId,
-          requestMessageIds: rows.map((row) => row.id),
-        })
-      : new Map();
+    const outcomes = await this.classifyQuestions(input, rows);
 
     // The message id doubles as the evidence id: the census's own membership is
     // keyed by message id, so a topic's member ids resolve directly against this
     // population with no separate translation table.
-    const evidence: AudiencePulseEvidence[] = rows.map((question) => {
-      const answer = classifyAudiencePulseAnswerWindow(answerWindows.get(question.id) ?? []);
-      const assessment = assessments.get(question.id);
-      const confirmedAssessment = assessment?.assistantMessageId ? assessment : undefined;
-      return {
-        id: question.id,
-        reference: { messageId: question.id, conversationId: question.conversation_id },
-        question: question.content,
-        displayQuestion: question.display_content ?? question.content,
-        questionPhotoCount: Number(question.photo_count ?? 0),
-        weekStart: audiencePulseWeekStartUtc(question.created_at),
-        channel: question.source_channel,
-        grounding: answer.grounding,
-        ...(confirmedAssessment
-          ? { answerCoverage: confirmedAssessment, legacyCoverage: false }
-          : assessment ? { legacyCoverage: false } : { legacyCoverage: true }),
-        contentGapEligible: confirmedAssessment
-          ? audiencePulseCoverageGapEligible(confirmedAssessment)
-          : assessment ? false : answer.contentGapEligible,
-      };
-    });
+    const evidence: AudiencePulseEvidence[] = rows.map((question) => ({
+      id: question.id,
+      reference: { messageId: question.id, conversationId: question.conversation_id },
+      question: question.content,
+      displayQuestion: question.display_content ?? question.content,
+      questionPhotoCount: Number(question.photo_count ?? 0),
+      weekStart: audiencePulseWeekStartUtc(question.created_at),
+      day: audiencePulseUtcDay(new Date(question.created_at)),
+      channel: question.source_channel,
+      ...outcomes.get(question.id)!,
+    }));
 
     return {
       period: { start: input.analysisStart, end: input.analysisEnd },
@@ -486,6 +532,60 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
       weeklyVolume,
       evidence,
     };
+  }
+
+  async readPeriodOutcomes(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulseQuestionOutcome[]> {
+    input.signal?.throwIfAborted();
+    // Metadata only: an outcome needs who asked and what happened, never what was asked.
+    const rows = await buildAudiencePulseEligibleQuestionQuery(this.db, input)
+      .select([
+        "m.id as id",
+        "m.conversation_id as conversation_id",
+        "m.created_at as created_at",
+        "c.source_channel as source_channel",
+      ])
+      .orderBy("m.created_at", "asc")
+      .orderBy("m.id", "asc")
+      .execute() as AudiencePulseEligibleQuestionMetadataRow[];
+    if (rows.length === 0) return [];
+    const classifications = await this.classifyQuestions(input, rows);
+    return rows.map((question) => {
+      const { answerCoverage, ...classification } = classifications.get(question.id)!;
+      return {
+        reference: { conversationId: question.conversation_id },
+        ...classification,
+        ...(answerCoverage ? { answerCoverage: textFreeAssessment(answerCoverage) } : {}),
+      };
+    });
+  }
+
+  /** Pairs each question with its answer and its recorded assessment, bounded by the window's end. */
+  private async classifyQuestions(
+    input: { workspaceId: string; analysisEnd: Date; signal?: AbortSignal },
+    questions: AudiencePulseEligibleQuestionMetadataRow[],
+  ): Promise<Map<string, AudiencePulseQuestionClassification>> {
+    const answerWindows = await readAudiencePulseAnswerWindows(this.db, {
+      workspaceId: input.workspaceId,
+      analysisEnd: input.analysisEnd,
+      questions,
+      signal: input.signal,
+    });
+    const assessments = this.answerCoverageRepository
+      ? await listAudiencePulseAssessmentsInChunks(this.answerCoverageRepository, {
+          workspaceId: input.workspaceId,
+          requestMessageIds: questions.map((question) => question.id),
+          signal: input.signal,
+        })
+      : new Map<string, AnswerCoverageRecord>();
+    return new Map(questions.map((question) => [
+      question.id,
+      classifyAudiencePulseQuestionOutcome(answerWindows.get(question.id) ?? [], assessments.get(question.id)),
+    ]));
   }
 
   async rehydrate(input: {

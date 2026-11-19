@@ -119,6 +119,12 @@ const groundedAnswerDuplicatesTurnProbe = deferred(
 const audiencePulseMaintenance = deferred(
   "Deferred: refreshing the audience pulse and resolving its evidence anchors are analytics maintenance acts that need their own cost and freshness guards.",
 );
+// Dismissing a topic and recording a drafted document are the dashboard's own bookkeeping for the
+// Pulse content queue: they change no count and steer no agent behaviour Ray tunes. The deferred
+// backlog is ratcheted, and nothing here waits on a missing guard, so the exclusion is permanent.
+const audiencePulseQueueBookkeeping = permanent(
+  "Permanent exclusion: operator UI bookkeeping for the Pulse queue. \"Not for us\" is the operator's own call on their audience, and a draft link is recorded by the dashboard after it creates a document; neither changes a count or the agent's behaviour.",
+);
 // `replay_eval_case` reaches this operation only through a case: it derives the snapshot from one
 // and never attaches the run. Replaying a bare snapshot, and replaying one *into* a case's record,
 // are still uncovered, so the operation stays on the ratchet rather than reading as done.
@@ -543,6 +549,11 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
   ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
   ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
+  ...coverage([
+    "dismissAudiencePulseTopic",
+    "restoreAudiencePulseTopic",
+    "linkAudiencePulseTopicDraft",
+  ], audiencePulseQueueBookkeeping),
   // Who is answerable to a waiting customer is the operator's decision. Ray reads the queue and
   // drafts a reply; the person holding the conversation claims and releases it.
   ...coverage([

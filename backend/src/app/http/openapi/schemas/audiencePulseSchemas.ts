@@ -5,6 +5,8 @@ import {
   AUDIENCE_PULSE_ANSWER_STATUSES,
   AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   audiencePulseEvidenceAnchorRequestSchema,
+  audiencePulseTopicDraftRequestSchema,
+  audiencePulseTopicParamsSchema,
 } from "../../../../modules/audiencePulse/contracts.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
@@ -114,11 +116,59 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     answers: AudiencePulseAnswerSummarySchema,
     evidence: z.array(AudiencePulseEvidenceSchema),
   }));
+  const AudiencePulseTopicDraftSchema = registry.register("AudiencePulseTopicDraft", z.object({
+    documentId: z.string().uuid(),
+    createdAt: z.string().datetime(),
+  }).openapi({ description: "A document drafted from the topic. It disappears with the document." }));
   const AudiencePulseContentGapSchema = registry.register("AudiencePulseContentGap", z.object({
     themeId: z.string(),
     eligibleEvidenceCount: z.number().int().min(0),
     distinctConversationCount: z.number().int().min(0),
+    dismissedAt: z.union([z.string().datetime(), z.null()]).openapi({
+      description: "When an operator marked the topic \"not for us\", read at request time. A dismissal changes no count; null while the topic is in the queue.",
+    }),
+    latestDraft: z.union([AudiencePulseTopicDraftSchema, z.null()]).openapi({
+      description: "The newest document drafted from the topic that still exists, read at request time.",
+    }),
   }));
+  const AudiencePulseAnswerTallySchema = registry.register("AudiencePulseAnswerTally", z.object({
+    questionCount: z.number().int().min(0),
+    answers: AudiencePulseAnswerSummarySchema,
+    contentGapEligibleCount: z.number().int().min(0),
+  }));
+  const AudiencePulseReportTotalsSchema = registry.register("AudiencePulseReportTotals", z.object({
+    questionCount: z.number().int().min(0).openapi({ description: "Every eligible question in the period; equals coverage.populationSize." }),
+    conversationCount: z.number().int().min(0).openapi({ description: "Distinct conversations with at least one eligible question." }),
+    answers: AudiencePulseAnswerSummarySchema,
+    contentGapEligibleCount: z.number().int().min(0).openapi({ description: "Questions with no answer in the workspace's content." }),
+    unclassified: AudiencePulseAnswerTallySchema.openapi({
+      description: "The questions no topic claimed. With every topic's own counts, they make up the totals.",
+    }),
+  }));
+  const periodTotals = {
+    questionCount: z.number().int().min(0),
+    conversationCount: z.number().int().min(0),
+    answeredCount: z.number().int().min(0),
+    contentGapEligibleCount: z.number().int().min(0),
+  };
+  const AudiencePulseDailyVolumeSchema = registry.register("AudiencePulseDailyVolume", z.object({
+    day: z.string().date().openapi({ description: "A UTC calendar day." }),
+    ...periodTotals,
+  }));
+  const AudiencePulsePreviousPeriodSchema = registry.register("AudiencePulsePreviousPeriod", z.object({
+    period: z.object({ start: z.string().datetime(), end: z.string().datetime() }),
+    ...periodTotals,
+  }).openapi({ description: "The 30 days immediately before the report's period, counted by the same rule." }));
+  const AudiencePulseChannelVolumeSchema = registry.register("AudiencePulseChannelVolume", z.object({
+    channel: z.union([z.string(), z.null()]).openapi({ description: "The conversation's source channel; null when it records none." }),
+    questionCount: z.number().int().min(0),
+    answeredCount: z.number().int().min(0),
+    contentGapEligibleCount: z.number().int().min(0),
+  }));
+  const AudiencePulseTopicDraftLinkRequestSchema = registry.register(
+    "AudiencePulseTopicDraftLinkRequest",
+    audiencePulseTopicDraftRequestSchema,
+  );
   const AudiencePulseDissolvedTopicSchema = registry.register("AudiencePulseDissolvedTopic", z.object({
     id: z.string(),
     title: z.string(),
@@ -148,6 +198,20 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     contentGaps: z.array(AudiencePulseContentGapSchema),
     recommendations: z.array(AudiencePulseRecommendationSchema),
     caveats: z.array(z.string()),
+    // Absent from a report saved before they existed.
+    totals: AudiencePulseReportTotalsSchema.optional(),
+    dailyVolume: z.array(AudiencePulseDailyVolumeSchema).optional().openapi({
+      description: "One entry per UTC day the period touches, zero-filled and ascending.",
+    }),
+    previousPeriod: z.union([AudiencePulsePreviousPeriodSchema, z.null()]).optional().openapi({
+      description: "Null when the 30 days before the period had no eligible question.",
+    }),
+    channels: z.array(AudiencePulseChannelVolumeSchema).optional().openapi({
+      description: "By the conversation's source channel, the largest first.",
+    }),
+    previousGeneratedAt: z.union([z.string().datetime(), z.null()]).optional().openapi({
+      description: "generatedAt of the earlier report each topic's previousMemberCount and previousShare come from.",
+    }),
   }));
   const AudiencePulseReadResponseSchema = registry.register("AudiencePulseReadResponse", z.union([
     z.object({ kind: z.literal("not_generated") }),
@@ -173,4 +237,6 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
   schemas.AudiencePulseRefreshStatusResponseSchema = AudiencePulseRefreshStatusResponseSchema;
   schemas.AudiencePulseEvidenceAnchorRequestSchema = AudiencePulseEvidenceAnchorRequestSchema;
   schemas.AudiencePulseEvidenceAnchorResponseSchema = AudiencePulseEvidenceAnchorResponseSchema;
+  schemas.AudiencePulseTopicDraftLinkRequestSchema = AudiencePulseTopicDraftLinkRequestSchema;
+  schemas.audiencePulseTopicParamsSchema = audiencePulseTopicParamsSchema;
 };

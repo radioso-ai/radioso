@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Response } from "express";
 
 import { badRequest, notFound } from "../../shared/domain/errors.js";
 import {
@@ -6,7 +6,32 @@ import {
   type DashboardWorkspaceSessionDependencies,
 } from "../../app/http/middleware/requireDashboardWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
-import { audiencePulseEvidenceAnchorRequestSchema, type AudiencePulsePort } from "./contracts.js";
+import {
+  audiencePulseEvidenceAnchorRequestSchema,
+  audiencePulseTopicDraftRequestSchema,
+  audiencePulseTopicParamsSchema,
+  type AudiencePulsePort,
+  type AudiencePulseTopicDraftLink,
+} from "./contracts.js";
+
+interface SessionLocals {
+  accountId: string;
+  userId: string;
+  workspaceId: string;
+}
+
+/** Writes are idempotent: a repeated call that changes nothing still succeeds. */
+const answerTopicWrite = (result: AudiencePulseTopicDraftLink, res: Response, next: NextFunction): void => {
+  if (result === "topic_not_found") {
+    next(notFound("Audience Pulse topic was not found"));
+    return;
+  }
+  if (result === "document_not_found") {
+    next(notFound("Document was not found"));
+    return;
+  }
+  res.status(204).end();
+};
 
 export type AudiencePulseRouteDependencies = DashboardWorkspaceSessionDependencies;
 
@@ -18,6 +43,45 @@ export const createAudiencePulseRoutes = (
   const dashboardSession = requireDashboardWorkspaceSession(dependencies);
   const qualityRead = requireWorkspacePermission(dependencies, "workspace.quality.read");
   const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
+  const qualityManage = requireWorkspacePermission(dependencies, "workspace.quality.manage");
+  const documentsManage = requireWorkspacePermission(dependencies, "workspace.documents.manage");
+
+  // "Not for us": takes a topic out of the content queue; no count changes.
+  for (const [method, action] of [["put", "dismissTopic"], ["delete", "restoreTopic"]] as const) {
+    router[method]("/topics/:topicId/dismissal", dashboardSession, qualityManage, async (req, res, next) => {
+      try {
+        const params = audiencePulseTopicParamsSchema.safeParse(req.params);
+        if (!params.success) {
+          next(badRequest("Invalid Audience Pulse topic", params.error.flatten()));
+          return;
+        }
+        const { accountId, userId, workspaceId } = res.locals as SessionLocals;
+        answerTopicWrite(await service[action]({ accountId, userId, workspaceId, ...params.data }), res, next);
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+
+  // Writing Pulse state needs the Pulse permission; naming a document needs the documents one.
+  router.post("/topics/:topicId/drafts", dashboardSession, qualityManage, documentsManage, async (req, res, next) => {
+    try {
+      const params = audiencePulseTopicParamsSchema.safeParse(req.params);
+      const body = audiencePulseTopicDraftRequestSchema.safeParse(req.body ?? {});
+      if (!params.success || !body.success) {
+        next(badRequest("Invalid Audience Pulse draft link", (params.error ?? body.error)?.flatten()));
+        return;
+      }
+      const { accountId, userId, workspaceId } = res.locals as SessionLocals;
+      answerTopicWrite(
+        await service.linkTopicDraft({ accountId, userId, workspaceId, ...params.data, ...body.data }),
+        res,
+        next,
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.get("/", dashboardSession, qualityRead, async (_req, res, next) => {
     try {

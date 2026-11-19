@@ -1,13 +1,17 @@
 /**
- * Transient handoff for opening the canonical document composer from an Audience
- * Pulse recommendation. Lives in `sessionStorage` — never in the URL — so the
- * recommendation title and questions do not leak into browser history, sharing,
- * or analytics. Scoped by account + workspace so a mismatched read clears itself.
+ * Transient handoff for opening the canonical document composer from Audience
+ * Pulse's content queue. Lives in `sessionStorage` — never in the URL — so the
+ * draft title and questions do not leak into browser history, sharing, or
+ * analytics. Scoped by account + workspace so a mismatched read clears itself.
  */
+
+import { audiencePulseApi } from '@/lib/api-audience-pulse'
 
 export interface AudiencePulseDraftSeed {
   title: string
   questions: string[]
+  /** The topic the draft answers, recorded against the document once it is saved. */
+  topicId?: string
 }
 
 interface StoredSeed extends AudiencePulseDraftSeed {
@@ -40,6 +44,7 @@ export function writeAudiencePulseDraftSeed(scope: {
     workspaceId: scope.workspaceId,
     title: scope.seed.title,
     questions: [...scope.seed.questions],
+    ...(scope.seed.topicId ? { topicId: scope.seed.topicId } : {}),
     writtenAt: new Date().toISOString(),
   }
   try {
@@ -71,6 +76,7 @@ function parseStoredSeed(raw: string | null): StoredSeed | null {
       && typeof (parsed as StoredSeed).title === 'string'
       && Array.isArray((parsed as StoredSeed).questions)
       && (parsed as StoredSeed).questions.every((question) => typeof question === 'string')
+      && ['string', 'undefined'].includes(typeof (parsed as StoredSeed).topicId)
     ) {
       return parsed as StoredSeed
     }
@@ -114,7 +120,26 @@ export function consumeAudiencePulseDraftSeed(scope: {
   if (stored.accountId !== scope.accountId || stored.workspaceId !== scope.workspaceId) {
     return null
   }
-  return { title: stored.title, questions: stored.questions }
+  return {
+    title: stored.title,
+    questions: stored.questions,
+    ...(stored.topicId ? { topicId: stored.topicId } : {}),
+  }
+}
+
+/**
+ * Records that a document was saved from a seed's topic, so the content queue says when it was
+ * added instead of offering Draft again. The save awaits it so a quick return to Audience Pulse
+ * reads the link; it never rejects, because the document is already saved and a failed link is
+ * bookkeeping the operator need not see.
+ */
+export async function linkAudiencePulseDraft(seed: AudiencePulseDraftSeed | null, documentId: string): Promise<void> {
+  if (!seed?.topicId) return
+  try {
+    await audiencePulseApi.linkTopicDraft({ topicId: seed.topicId, documentId })
+  } catch {
+    // Best-effort, see above.
+  }
 }
 
 /**

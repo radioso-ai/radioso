@@ -16,18 +16,18 @@ const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", ".next", "build",
  * someone decides it is product-facing. Paths are repo-relative, POSIX, and
  * compared case-insensitively (the repo mixes README.md and readme.md).
  */
-export const PRODUCT_README_PATHS: ReadonlySet<string> = new Set([
+const PRODUCT_README_PATHS: ReadonlySet<string> = new Set([
   "readme.md", // product overview and quick start
   "typescript-sdk/readme.md", // published SDK
   "packages/radioso-mcp-server/readme.md", // MCP server setup and client configuration
   "packages/wordpress-companion/readme.md", // WordPress plugin install
 ]);
 
-export function isProductReadme(relPath: string): boolean {
+function isProductReadme(relPath: string): boolean {
   return PRODUCT_README_PATHS.has(relPath.toLowerCase());
 }
 
-export interface BuildReadmeDocumentsOptions {
+interface BuildReadmeDocumentsOptions {
   repoRoot: string;
   commonSourceUrl: string;
   repoSourceBase: string;

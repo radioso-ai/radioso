@@ -88,6 +88,13 @@ export interface AudiencePulseContentGap {
   themeId: string
   eligibleEvidenceCount: number
   distinctConversationCount: number
+  /**
+   * When an operator marked the topic "not for us"; null while it is in the queue. Read at request
+   * time and changes no count. Absent from an API deploy that predates it.
+   */
+  dismissedAt?: string | null
+  /** The newest document drafted from the topic that still exists. Absent from an older API deploy. */
+  latestDraft?: ApiSchemas['AudiencePulseTopicDraft'] | null
 }
 
 export interface AudiencePulseRecommendation {
@@ -119,6 +126,16 @@ export interface AudiencePulseHydratedReport {
   recommendations: AudiencePulseRecommendation[]
   caveats: string[]
   unclassifiedQuestionCount: number
+  /* Whole-window counts. Absent from a report saved before they existed, and then hidden. */
+  totals?: ApiSchemas['AudiencePulseReportTotals']
+  /** One entry per UTC day the period touches, zero-filled and ascending. */
+  dailyVolume?: ApiSchemas['AudiencePulseDailyVolume'][]
+  /** The 30 days before `period.start`; null when they had no eligible question. */
+  previousPeriod?: ApiSchemas['AudiencePulsePreviousPeriod'] | null
+  /** By the conversation's source channel, the largest first. */
+  channels?: ApiSchemas['AudiencePulseChannelVolume'][]
+  /** `generatedAt` of the earlier report each topic's previous count comes from. */
+  previousGeneratedAt?: string | null
 }
 
 type AudiencePulseMessageSource =

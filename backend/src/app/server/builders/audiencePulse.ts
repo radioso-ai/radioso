@@ -8,6 +8,7 @@ import {
   PostgresAudiencePulseRunGate,
 } from "../../../modules/audiencePulse/composition.js";
 import { AudiencePulseSnapshotRepository } from "../../../db/repositories/audiencePulseSnapshotRepository.js";
+import { AudiencePulseTopicStateRepository } from "../../../db/repositories/audiencePulseTopicStateRepository.js";
 import { MessageFacetRepository } from "../../../db/repositories/messageFacetRepository.js";
 import { TopicRepository } from "../../../db/repositories/topicRepository.js";
 import { AnswerCoverageRepository } from "../../../db/repositories/answerCoverageRepository.js";
@@ -54,6 +55,7 @@ export const buildAudiencePulseService = (input: AudiencePulseBuilderInput): Aud
     inferenceFactory: new ContextualStructuredInferenceFactory({ resolver: input.llmCapabilityResolver }, input.usageEventRecorder),
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
+    topicStateStore: new AudiencePulseTopicStateRepository(input.kysely),
     logger: input.logger,
     censusServiceFactory: new ContextualCensusServiceFactory({
       historySource,

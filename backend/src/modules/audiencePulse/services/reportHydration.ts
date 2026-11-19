@@ -1,7 +1,11 @@
 import { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT, AudiencePulseReportValidationError } from "../domain/report.js";
 import type { AudiencePulseStoredReport } from "../domain/report.js";
 import type { AudiencePulseAnswerStatus, AudiencePulseAnswerSummary } from "../domain/answerStatus.js";
-import type { AudiencePulseHydratedEvidence, AudiencePulseHydratedReport } from "../contracts.js";
+import type {
+  AudiencePulseHydratedEvidence,
+  AudiencePulseHydratedReport,
+  AudiencePulseTopicState,
+} from "../contracts.js";
 import { hydrateThemeEvidence } from "./themeEvidence.js";
 
 /*
@@ -93,9 +97,42 @@ const themeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
   return { answers: theme.answers, statusOf: (evidenceId) => statuses?.[evidenceId] };
 };
 
+/** The whole-window counts, copied when the snapshot has them and left absent when it predates them. */
+const hydrateWholeWindowCounts = (report: AudiencePulseStoredReport): Pick<
+  AudiencePulseHydratedReport,
+  "totals" | "dailyVolume" | "previousPeriod" | "channels" | "previousGeneratedAt"
+> => ({
+  ...(report.totals ? { totals: report.totals } : {}),
+  ...(report.dailyVolume ? { dailyVolume: report.dailyVolume } : {}),
+  ...(report.previousPeriod !== undefined ? { previousPeriod: report.previousPeriod } : {}),
+  ...(report.channels ? { channels: report.channels } : {}),
+  ...(report.previousGeneratedAt !== undefined ? { previousGeneratedAt: report.previousGeneratedAt } : {}),
+});
+
+const hydrateContentGaps = (
+  contentGaps: AudiencePulseStoredReport["contentGaps"],
+  topicStates: ReadonlyMap<string, AudiencePulseTopicState>,
+): AudiencePulseHydratedReport["contentGaps"] => contentGaps.map((gap) => {
+  const state = topicStates.get(gap.themeId);
+  return {
+    themeId: gap.themeId,
+    eligibleEvidenceCount: gap.eligibleEvidenceCount,
+    distinctConversationCount: gap.distinctConversationCount,
+    dismissedAt: state?.dismissedAt?.toISOString() ?? null,
+    latestDraft: state?.latestDraft
+      ? { documentId: state.latestDraft.documentId, createdAt: state.latestDraft.createdAt.toISOString() }
+      : null,
+  };
+});
+
+/**
+ * `topicStates` is the operator's state on the report's content-gap topics, read at request time:
+ * the snapshot never stores it, so a refresh cannot drop it.
+ */
 export const hydrateReport = (
   report: AudiencePulseStoredReport,
   evidenceById: Map<string, AudiencePulseHydratedEvidence>,
+  topicStates: ReadonlyMap<string, AudiencePulseTopicState>,
 ): AudiencePulseHydratedReport => {
   const resolve = (evidenceId: string): AudiencePulseHydratedEvidence => {
     const evidence = evidenceById.get(evidenceId);
@@ -156,7 +193,7 @@ export const hydrateReport = (
         answers,
       };
     }),
-    contentGaps: report.contentGaps,
+    contentGaps: hydrateContentGaps(report.contentGaps, topicStates),
     recommendations: report.recommendations.map((recommendation) => ({
       id: recommendation.id,
       themeId: recommendation.themeId,
@@ -170,5 +207,6 @@ export const hydrateReport = (
       },
     })),
     caveats: report.caveats,
+    ...hydrateWholeWindowCounts(report),
   };
 };

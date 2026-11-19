@@ -514,6 +514,61 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
     expect(evidence.get(confirmedQuestionId)).toMatchObject({ legacyCoverage: false, contentGapEligible: true, answerCoverage: { assistantMessageId: confirmedAssistantMessageId } });
   });
 
+  it("dates each question by its UTC day and files it under its conversation's channel", async () => {
+    const webConversation = await createConversation("web");
+    const legacyConversation = await createConversation();
+    const lateQuestionId = await createMessage({ conversationId: webConversation, role: "user", content: "Late question", createdAt: "2026-07-14T23:59:59.000Z", source: "customer" });
+    const earlyQuestionId = await createMessage({ conversationId: legacyConversation, role: "user", content: "Early question", createdAt: "2026-07-15T00:00:00.000Z", source: null });
+
+    const snapshot = await source.read({ workspaceId, analysisStart: new Date("2026-07-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-31T00:00:00.000Z") });
+    const evidence = new Map(snapshot.evidence.map((item) => [item.id, item]));
+
+    expect(evidence.get(lateQuestionId)).toMatchObject({ day: "2026-07-14", channel: "web" });
+    expect(evidence.get(earlyQuestionId)).toMatchObject({ day: "2026-07-15", channel: null });
+  });
+
+  it("totals another window with the same eligibility and per-question classification, and nothing else", async () => {
+    const conversationId = await createConversation("web");
+    const secondConversationId = await createConversation();
+    const operatorConversationId = await createConversation("authenticated_chat");
+    const answeredId = await createMessage({ conversationId, role: "user", content: "Answered question", createdAt: "2026-06-10T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "assistant", content: "Grounded answer", createdAt: "2026-06-10T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "grounded", grounding: "grounded" });
+    await createMessage({ conversationId, role: "user", content: "Unsupported question", createdAt: "2026-06-11T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "assistant", content: "No context", createdAt: "2026-06-11T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "no_context", grounding: "no_support" });
+    const assessedId = await createMessage({ conversationId: secondConversationId, role: "user", content: "Assessed question", createdAt: "2026-06-12T10:00:00.000Z", source: null });
+    const assessedReplyId = await createMessage({ conversationId: secondConversationId, role: "assistant", content: "Answer", createdAt: "2026-06-12T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "grounded", grounding: "degraded" });
+    await database.query(
+      `INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, assistant_message_id, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Assessed question', $5, 'assessed', 'answered', 'sufficient_evidence', 1)`,
+      [randomUUID(), workspaceId, secondConversationId, assessedId, assessedReplyId],
+    );
+    // Not counted: an operator test channel, a teammate's message, and a question outside the window.
+    await createMessage({ conversationId: operatorConversationId, role: "user", content: "Operator probe", createdAt: "2026-06-13T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "user", content: "Teammate note", createdAt: "2026-06-14T10:00:00.000Z", source: "human_agent" });
+    await createMessage({ conversationId, role: "user", content: "Current window question", createdAt: "2026-07-02T10:00:00.000Z", source: "customer" });
+
+    const historySource = new PostgresAudiencePulseHistorySource(database.kysely, new AnswerCoverageRepository(database.kysely));
+    const window = { workspaceId, analysisStart: new Date("2026-06-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-01T00:00:00.000Z") };
+    const totals = await historySource.readPeriodTotals(window);
+    const snapshot = await historySource.read(window);
+
+    expect(totals).toEqual({
+      questionCount: 3,
+      conversationCount: 2,
+      answeredCount: 2,
+      contentGapEligibleCount: 1,
+    });
+    expect(snapshot.evidence.map((item) => item.id)).toEqual(expect.arrayContaining([answeredId, assessedId]));
+    expect(totals.questionCount).toBe(snapshot.coverage.populationSize);
+  });
+
+  it("totals an empty window as zeros", async () => {
+    await expect(source.readPeriodTotals({
+      workspaceId,
+      analysisStart: new Date("2026-05-01T00:00:00.000Z"),
+      analysisEnd: new Date("2026-06-01T00:00:00.000Z"),
+    })).resolves.toEqual({ questionCount: 0, conversationCount: 0, answeredCount: 0, contentGapEligibleCount: 0 });
+  });
+
   it("reads an exact bounded anchor from its workspace and conversation after a long history", async () => {
     const conversationId = await createConversation();
     const otherConversationId = await createConversation();

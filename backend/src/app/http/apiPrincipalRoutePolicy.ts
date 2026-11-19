@@ -212,6 +212,9 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/quality/audience-pulse/refresh-status", "workspace.quality.read"),
   sessionOnly("POST", "/api/v1/quality/audience-pulse/evidence-anchor", "workspace.history.read"),
   sessionOnly("POST", "/api/v1/quality/audience-pulse", "workspace.quality.read"),
+  sessionOnly("PUT", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
+  sessionOnly("DELETE", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
+  sessionOnly("POST", "/api/v1/quality/audience-pulse/topics/:topicId/drafts", "workspace.documents.manage"),
 
   ...["/snapshots", "/cases", "/cases/run", "/cases/:id/runs", "/runs"]
     .map((path) => allow("POST", `/api/v1/evals${path}`, "workspace.retrieval.query")),

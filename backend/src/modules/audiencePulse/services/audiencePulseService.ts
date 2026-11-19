@@ -12,6 +12,7 @@ import type {
   AudiencePulseReportCoverage,
   AudiencePulseStoredReport,
 } from "../domain/report.js";
+import { audiencePulsePreviousPeriod, type AudiencePulsePreviousPeriod } from "../domain/periodTotals.js";
 import {
   applyAudiencePulseNarrative,
   AudiencePulseReportValidationError,
@@ -33,6 +34,10 @@ import type {
   AudiencePulseRefreshResult,
   AudiencePulseRunGate,
   AudiencePulseSnapshotStore,
+  AudiencePulseTopicDraftLink,
+  AudiencePulseTopicState,
+  AudiencePulseTopicStateStore,
+  AudiencePulseTopicStateWrite,
 } from "../contracts.js";
 import { AUDIENCE_PULSE_ANALYSIS_DAYS } from "../contracts.js";
 import type { CensusServiceFactory } from "../infra/censusServiceFactory.js";
@@ -71,6 +76,8 @@ export interface AudiencePulseServiceDependencies {
   inferenceFactory: AudiencePulseInferenceFactory;
   usageLimitPolicy: UsageLimitPolicy;
   auditService: AudiencePulseAuditPort;
+  /** Dismissals and draft links, read beside every report and never stored in a snapshot. */
+  topicStateStore: AudiencePulseTopicStateStore;
   logger?: SafeLogger;
   now?: () => Date;
   /**
@@ -87,6 +94,10 @@ const safeAudit = async (
 ): Promise<void> => {
   await auditService.record(input).catch(() => undefined);
 };
+
+const ANALYSIS_WINDOW_MS = AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000;
+
+type AudiencePulseTopicActionInput = { accountId: string; userId: string; workspaceId: string; topicId: string };
 
 const isAbortError = (error: unknown): boolean =>
   Boolean(error && typeof error === "object" && "name" in error && (error as { name?: unknown }).name === "AbortError");
@@ -288,7 +299,8 @@ export class AudiencePulseService implements AudiencePulsePort {
         references: snapshot.promptEvidenceRefs,
       });
       if (hydrated.size === snapshot.promptEvidenceRefs.length) {
-        return { kind: "completed", report: hydrateReport(snapshot.report, hydrated) };
+        const topicStates = await this.readTopicStates(input.workspaceId, snapshot.report);
+        return { kind: "completed", report: hydrateReport(snapshot.report, hydrated, topicStates) };
       }
 
       const invalidated = await this.deps.snapshotStore.invalidate({
@@ -314,9 +326,38 @@ export class AudiencePulseService implements AudiencePulsePort {
     });
   }
 
+  async dismissTopic(input: AudiencePulseTopicActionInput): Promise<AudiencePulseTopicStateWrite> {
+    const result = await this.deps.topicStateStore.dismiss({
+      workspaceId: input.workspaceId,
+      topicId: input.topicId,
+      userId: input.userId,
+    });
+    if (result === "changed") await this.recordTopicAction(input, "audience_pulse.topic_dismissed", {});
+    return result;
+  }
+
+  async restoreTopic(input: AudiencePulseTopicActionInput): Promise<AudiencePulseTopicStateWrite> {
+    const result = await this.deps.topicStateStore.restore({ workspaceId: input.workspaceId, topicId: input.topicId });
+    if (result === "changed") await this.recordTopicAction(input, "audience_pulse.topic_restored", {});
+    return result;
+  }
+
+  async linkTopicDraft(input: AudiencePulseTopicActionInput & { documentId: string }): Promise<AudiencePulseTopicDraftLink> {
+    const result = await this.deps.topicStateStore.linkDraft({
+      workspaceId: input.workspaceId,
+      topicId: input.topicId,
+      documentId: input.documentId,
+      userId: input.userId,
+    });
+    if (result === "changed") {
+      await this.recordTopicAction(input, "audience_pulse.topic_draft_linked", { documentId: input.documentId });
+    }
+    return result;
+  }
+
   async refreshStatus(input: { workspaceId: string }): Promise<{ pending: boolean }> {
     const analysisEnd = this.now();
-    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    const analysisStart = new Date(analysisEnd.getTime() - ANALYSIS_WINDOW_MS);
     return {
       pending: await this.deps.facetDrain?.hasPendingWorkspaceWork({
         workspaceId: input.workspaceId,
@@ -334,7 +375,7 @@ export class AudiencePulseService implements AudiencePulsePort {
   }): Promise<AudiencePulseRefreshResult> {
     const startedAt = this.now();
     const analysisEnd = startedAt;
-    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    const analysisStart = new Date(analysisEnd.getTime() - ANALYSIS_WINDOW_MS);
     await safeAudit(this.deps.auditService, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -440,6 +481,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         ...history.coverage,
         facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
       };
+      const previousPeriod = await this.readPreviousPeriod(input.workspaceId, analysisStart);
       const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
 
       if (censusResult.facetReadyQuestionCount === 0) {
@@ -457,6 +499,8 @@ export class AudiencePulseService implements AudiencePulsePort {
             isFirstCensus: censusResult.isFirstCensus,
             coverage: reportCoverage,
             weeklyVolume: history.weeklyVolume,
+            population: history.evidence,
+            previousPeriod,
           }),
           censusRunId: censusResult.runId,
         };
@@ -467,7 +511,8 @@ export class AudiencePulseService implements AudiencePulsePort {
           report,
           promptEvidenceRefs: [],
         });
-        const hydrated = hydrateReport(report, new Map());
+        // A report with no topics has no content gap to carry operator state.
+        const hydrated = hydrateReport(report, new Map(), new Map());
         await this.recordOutcome(input, "completed", startedAt, {
           populationSize: history.coverage.populationSize,
           sampleSize: history.coverage.sampleSize,
@@ -498,6 +543,8 @@ export class AudiencePulseService implements AudiencePulsePort {
           dissolvedTopics: censusResult.dissolvedTopics,
           previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
           previousThemeShares: previousThemeShares(priorSnapshot),
+          previousPeriod,
+          previousGeneratedAt: priorSnapshot?.report.generatedAt ?? null,
         });
         censusReport = {
           ...computedCensusReport,
@@ -669,7 +716,11 @@ export class AudiencePulseService implements AudiencePulsePort {
         report,
         promptEvidenceRefs: promptEvidenceReferences(referencedEvidence),
       });
-      const hydrated = hydrateReport(report, createHydratedEvidence(referencedEvidence));
+      const hydrated = hydrateReport(
+        report,
+        createHydratedEvidence(referencedEvidence),
+        await this.readTopicStates(input.workspaceId, report),
+      );
       await this.recordOutcome(input, "completed", startedAt, {
         populationSize: history.coverage.populationSize,
         sampleSize: history.coverage.sampleSize,
@@ -707,6 +758,49 @@ export class AudiencePulseService implements AudiencePulsePort {
         await this.recordOutcome(input, deferredFailureOutcome, startedAt, { narrativeReused });
       }
     }
+  }
+
+  /**
+   * The previous window's totals, read with the same classification as the report's own window.
+   * It roughly doubles the per-question reads of a refresh, so its cost is logged.
+   */
+  private async readPreviousPeriod(workspaceId: string, currentStart: Date): Promise<AudiencePulsePreviousPeriod | null> {
+    const period = { start: new Date(currentStart.getTime() - ANALYSIS_WINDOW_MS), end: currentStart };
+    const startedAt = this.now();
+    const totals = await this.deps.historySource.readPeriodTotals({
+      workspaceId,
+      analysisStart: period.start,
+      analysisEnd: period.end,
+    });
+    this.deps.logger?.info?.({
+      workspaceId,
+      questionCount: totals.questionCount,
+      durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
+    }, "audience_pulse_previous_period_read");
+    return audiencePulsePreviousPeriod({ period, totals });
+  }
+
+  private async readTopicStates(
+    workspaceId: string,
+    report: AudiencePulseStoredReport,
+  ): Promise<Map<string, AudiencePulseTopicState>> {
+    const topicIds = report.contentGaps.map((gap) => gap.themeId);
+    if (topicIds.length === 0) return new Map();
+    return this.deps.topicStateStore.readTopicStates({ workspaceId, topicIds });
+  }
+
+  private async recordTopicAction(
+    input: AudiencePulseTopicActionInput,
+    eventType: string,
+    metadata: Record<string, string>,
+  ): Promise<void> {
+    await safeAudit(this.deps.auditService, {
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType,
+      eventStatus: "success",
+      metadata: { userId: input.userId, topicId: input.topicId, ...metadata },
+    });
   }
 
   private async recordOutcome(

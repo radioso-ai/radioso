@@ -21,9 +21,9 @@ it("keeps provisional coverage unassessed and reserves legacy for absent assessm
     coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
     weeklyVolume: [],
     population: [
-      { id: "a", reference: { messageId: "a", conversationId: "c1" }, question: "A", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "grounded", contentGapEligible: false, answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1, producer: "answer_head" } },
-      { id: "b", reference: { messageId: "b", conversationId: "c2" }, question: "B", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "no_support", contentGapEligible: true, legacyCoverage: true },
-      { id: "c", reference: { messageId: "c", conversationId: "c3" }, question: "C", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "grounded", contentGapEligible: false, legacyCoverage: false },
+      { id: "a", reference: { messageId: "a", conversationId: "c1" }, question: "A", weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null, grounding: "grounded", contentGapEligible: false, answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1, producer: "answer_head" } },
+      { id: "b", reference: { messageId: "b", conversationId: "c2" }, question: "B", weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null, grounding: "no_support", contentGapEligible: true, legacyCoverage: true },
+      { id: "c", reference: { messageId: "c", conversationId: "c3" }, question: "C", weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null, grounding: "grounded", contentGapEligible: false, legacyCoverage: false },
     ],
     topics: [{ id: "topic", title: "Topic", description: "Topic", evidenceIds: ["a", "b", "c"] }],
     model: { summary: "Summary", themes: [], recommendations: [], caveats: [] },
@@ -33,7 +33,7 @@ it("keeps provisional coverage unassessed and reserves legacy for absent assessm
 
 it("keeps scope-boundary declines in coverage and counts them as out of scope among the topic's answers", () => {
   const assessed = (id: string, coverage: "answered" | "partial" | "unanswered", reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "intentional_scope_boundary") => ({
-    id, reference: { messageId: id, conversationId: `c-${id}` }, question: id, weekStart: "2026-01-01T00:00:00.000Z", channel: null,
+    id, reference: { messageId: id, conversationId: `c-${id}` }, question: id, weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null,
     grounding: "grounded" as const, contentGapEligible: false, legacyCoverage: false,
     answerCoverage: { availability: "assessed" as const, coverage, reason, schemaVersion: 1, producer: "answer_head" as const },
   });
@@ -48,7 +48,7 @@ it("keeps scope-boundary declines in coverage and counts them as out of scope am
       assessed("c", "unanswered", "insufficient_evidence"),
       assessed("d", "partial", "conflicting_evidence"),
       assessed("e", "answered", "sufficient_evidence"),
-      { id: "f", reference: { messageId: "f", conversationId: "c-f" }, question: "f", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "no_support" as const, contentGapEligible: true, legacyCoverage: true },
+      { id: "f", reference: { messageId: "f", conversationId: "c-f" }, question: "f", weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null, grounding: "no_support" as const, contentGapEligible: true, legacyCoverage: true },
     ],
     topics: [{ id: "topic", title: "Topic", description: "Topic", evidenceIds: ["a", "b", "c", "d", "e", "f"] }],
     model: { summary: "Summary", themes: [], recommendations: [], caveats: [] },
@@ -64,7 +64,7 @@ it("never persists unresolved visitor text in a Pulse report", () => {
   const report = buildAudiencePulseReport({
     period: { start: new Date("2026-01-01T00:00:00.000Z"), end: new Date("2026-02-01T00:00:00.000Z") }, generatedAt: new Date(), isFirstCensus: false,
     coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 }, weeklyVolume: [],
-    population: ["a", "b"].map((id) => ({ id, reference: { messageId: id, conversationId: id }, question: id, weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "no_support" as const, contentGapEligible: true, answerCoverage: { availability: "assessed" as const, coverage: "unanswered" as const, reason: "insufficient_evidence" as const, unresolvedRequest: "email me at visitor@example.test", schemaVersion: 1, producer: "answer_head" as const } })),
+    population: ["a", "b"].map((id) => ({ id, reference: { messageId: id, conversationId: id }, question: id, weekStart: "2026-01-01T00:00:00.000Z", day: "2026-01-01", channel: null, grounding: "no_support" as const, contentGapEligible: true, answerCoverage: { availability: "assessed" as const, coverage: "unanswered" as const, reason: "insufficient_evidence" as const, unresolvedRequest: "email me at visitor@example.test", schemaVersion: 1, producer: "answer_head" as const } })),
     topics: [{ id: "topic", title: "Topic", description: "Topic", evidenceIds: ["a", "b"] }], model: { summary: "Summary", themes: [], recommendations: [], caveats: [] },
   });
   expect(JSON.stringify(report)).not.toContain("visitor@example.test");

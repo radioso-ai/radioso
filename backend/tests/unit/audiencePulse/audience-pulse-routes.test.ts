@@ -7,11 +7,20 @@ import {
   type AudiencePulseRouteDependencies,
 } from "../../../src/modules/audiencePulse/routes.js";
 import type { AudiencePulseEvidenceAnchor, AudiencePulsePort } from "../../../src/modules/audiencePulse/contracts.js";
-import type { AudiencePulseReadResult, AudiencePulseRefreshResult } from "../../../src/modules/audiencePulse/contracts.js";
+import type {
+  AudiencePulseReadResult,
+  AudiencePulseRefreshResult,
+  AudiencePulseTopicDraftLink,
+  AudiencePulseTopicStateWrite,
+} from "../../../src/modules/audiencePulse/contracts.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
 const USER_ID = "33333333-3333-3333-8333-333333333333";
 const WORKSPACE_ID = "11111111-1111-1111-8111-111111111111";
+const TOPIC_ID = "66666666-6666-4666-8666-666666666666";
+const DOCUMENT_ID = "77777777-7777-4777-8777-777777777777";
+
+type TopicAction = { accountId: string; userId: string; workspaceId: string; topicId: string; documentId?: string };
 
 class CapturingService implements AudiencePulsePort {
   reads = 0;
@@ -19,6 +28,24 @@ class CapturingService implements AudiencePulsePort {
   refreshStatuses = 0;
   refreshSignalAborted: boolean | undefined;
   anchors: Array<{ accountId: string; userId: string; workspaceId: string; conversationId: string; messageId: string }> = [];
+  topicActions: Array<{ action: "dismiss" | "restore" | "draft"; input: TopicAction }> = [];
+  topicWrite: AudiencePulseTopicStateWrite = "changed";
+  draftLink: AudiencePulseTopicDraftLink = "changed";
+
+  async dismissTopic(input: TopicAction): Promise<AudiencePulseTopicStateWrite> {
+    this.topicActions.push({ action: "dismiss", input });
+    return this.topicWrite;
+  }
+
+  async restoreTopic(input: TopicAction): Promise<AudiencePulseTopicStateWrite> {
+    this.topicActions.push({ action: "restore", input });
+    return this.topicWrite;
+  }
+
+  async linkTopicDraft(input: TopicAction & { documentId: string }): Promise<AudiencePulseTopicDraftLink> {
+    this.topicActions.push({ action: "draft", input });
+    return this.draftLink;
+  }
 
   async read(): Promise<AudiencePulseReadResult> {
     this.reads += 1;
@@ -290,5 +317,112 @@ describe("Audience Pulse routes", () => {
 
     expect(response.status).toBe(404);
     expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.history.read"] });
+  });
+
+  describe("operator state on topics", () => {
+    const session = (test: request.Test) => test
+      .set("Cookie", "radioso_session=valid-session")
+      .set("X-Workspace-Id", WORKSPACE_ID);
+
+    it.each([
+      ["put", "dismiss"],
+      ["delete", "restore"],
+    ] as const)("answers %s on a topic's dismissal with 204 under the quality manage permission", async (method, action) => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+
+      const response = await session(request(createApp(service, calls))[method](`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/dismissal`));
+
+      expect(response.status).toBe(204);
+      expect(response.body).toEqual({});
+      expect(calls.permissions).toEqual(["workspace.quality.manage"]);
+      expect(service.topicActions).toEqual([{
+        action,
+        input: { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, topicId: TOPIC_ID },
+      }]);
+    });
+
+    it("answers a repeated dismissal with 204 too", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+      service.topicWrite = "unchanged";
+
+      const response = await session(request(createApp(service, calls)).put(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/dismissal`));
+
+      expect(response.status).toBe(204);
+    });
+
+    it("answers a malformed topic id with 400 before any service work", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+
+      const dismiss = await session(request(createApp(service, calls)).put("/api/v1/quality/audience-pulse/topics/not-a-uuid/dismissal"));
+      const draft = await session(request(createApp(service, calls)).post("/api/v1/quality/audience-pulse/topics/not-a-uuid/drafts"))
+        .send({ documentId: DOCUMENT_ID });
+
+      expect(dismiss.status).toBe(400);
+      expect(draft.status).toBe(400);
+      expect(service.topicActions).toEqual([]);
+    });
+
+    it("answers a topic outside the workspace with 404", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+      service.topicWrite = "topic_not_found";
+      service.draftLink = "topic_not_found";
+
+      const restore = await session(request(createApp(service, calls)).delete(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/dismissal`));
+      const draft = await session(request(createApp(service, calls)).post(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/drafts`))
+        .send({ documentId: DOCUMENT_ID });
+
+      expect(restore.status).toBe(404);
+      expect(draft.status).toBe(404);
+    });
+
+    it("links a draft document with 204 under the documents manage permission", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+
+      const response = await session(request(createApp(service, calls)).post(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/drafts`))
+        .send({ documentId: DOCUMENT_ID });
+
+      expect(response.status).toBe(204);
+      expect(calls.permissions).toEqual(["workspace.documents.manage"]);
+      expect(service.topicActions).toEqual([{
+        action: "draft",
+        input: { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID },
+      }]);
+    });
+
+    it("answers a malformed draft body with 400 and a document outside the workspace with 404", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+      const app = createApp(service, calls);
+
+      const missing = await session(request(app).post(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/drafts`)).send({});
+      const extra = await session(request(app).post(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/drafts`))
+        .send({ documentId: DOCUMENT_ID, title: "Opening hours" });
+      expect(missing.status).toBe(400);
+      expect(extra.status).toBe(400);
+      expect(service.topicActions).toEqual([]);
+
+      service.draftLink = "document_not_found";
+      const foreign = await session(request(app).post(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/drafts`))
+        .send({ documentId: DOCUMENT_ID });
+      expect(foreign.status).toBe(404);
+    });
+
+    it("rejects bearer access before authorization or service work", async () => {
+      const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+      const service = new CapturingService();
+
+      const response = await request(createApp(service, calls))
+        .put(`/api/v1/quality/audience-pulse/topics/${TOPIC_ID}/dismissal`)
+        .set("Authorization", "Bearer api-token");
+
+      expect(response.status).toBe(401);
+      expect(calls).toEqual({ bearer: 0, permission: 0, rate: 0, permissions: [] });
+      expect(service.topicActions).toEqual([]);
+    });
   });
 });

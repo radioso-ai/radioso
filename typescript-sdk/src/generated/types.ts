@@ -4442,6 +4442,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/audience-pulse/topics/{topicId}/dismissal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark a topic "not for us"
+         * @description Takes the topic out of the report's content queue: the content gap reads back with dismissedAt set. No count changes, and the dismissal outlasts a refresh while the topic survives. Requires a browser dashboard session and workspace.quality.manage.
+         */
+        put: operations["dismissAudiencePulseTopic"];
+        post?: never;
+        /**
+         * Return a dismissed topic to the content queue
+         * @description Clears the topic's dismissal. Requires a browser dashboard session and workspace.quality.manage.
+         */
+        delete: operations["restoreAudiencePulseTopic"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse/topics/{topicId}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a document drafted from a topic
+         * @description Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session and workspace.documents.manage.
+         */
+        post: operations["linkAudiencePulseTopicDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/availability": {
         parameters: {
             query?: never;
@@ -10979,10 +11023,71 @@ export interface components {
             answers: components["schemas"]["AudiencePulseAnswerSummary"];
             evidence: components["schemas"]["AudiencePulseEvidence"][];
         };
+        /** @description A document drafted from the topic. It disappears with the document. */
+        AudiencePulseTopicDraft: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         AudiencePulseContentGap: {
             themeId: string;
             eligibleEvidenceCount: number;
             distinctConversationCount: number;
+            /** @description When an operator marked the topic "not for us", read at request time. A dismissal changes no count; null while the topic is in the queue. */
+            dismissedAt: string | null;
+            /** @description The newest document drafted from the topic that still exists, read at request time. */
+            latestDraft: components["schemas"]["AudiencePulseTopicDraft"] | null;
+        };
+        AudiencePulseAnswerTally: {
+            questionCount: number;
+            answers: components["schemas"]["AudiencePulseAnswerSummary"];
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseReportTotals: {
+            /** @description Every eligible question in the period; equals coverage.populationSize. */
+            questionCount: number;
+            /** @description Distinct conversations with at least one eligible question. */
+            conversationCount: number;
+            answers: components["schemas"]["AudiencePulseAnswerSummary"];
+            /** @description Questions with no answer in the workspace's content. */
+            contentGapEligibleCount: number;
+            unclassified: components["schemas"]["AudiencePulseAnswerTally"] & unknown;
+        };
+        AudiencePulseDailyVolume: {
+            /**
+             * Format: date
+             * @description A UTC calendar day.
+             */
+            day: string;
+            questionCount: number;
+            conversationCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        /** @description The 30 days immediately before the report's period, counted by the same rule. */
+        AudiencePulsePreviousPeriod: {
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            questionCount: number;
+            conversationCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseChannelVolume: {
+            /** @description The conversation's source channel; null when it records none. */
+            channel: string | null;
+            questionCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseTopicDraftLinkRequest: {
+            /** Format: uuid */
+            documentId: string;
         };
         AudiencePulseDissolvedTopic: {
             id: string;
@@ -11023,6 +11128,15 @@ export interface components {
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];
             caveats: string[];
+            totals?: components["schemas"]["AudiencePulseReportTotals"];
+            /** @description One entry per UTC day the period touches, zero-filled and ascending. */
+            dailyVolume?: components["schemas"]["AudiencePulseDailyVolume"][];
+            /** @description Null when the 30 days before the period had no eligible question. */
+            previousPeriod?: components["schemas"]["AudiencePulsePreviousPeriod"] | null;
+            /** @description By the conversation's source channel, the largest first. */
+            channels?: components["schemas"]["AudiencePulseChannelVolume"][];
+            /** @description generatedAt of the earlier report each topic's previousMemberCount and previousShare come from. */
+            previousGeneratedAt?: string | null;
         };
         AudiencePulseReadResponse: {
             /** @enum {string} */
@@ -31065,6 +31179,178 @@ export interface operations {
                 };
             };
             /** @description Exact source was not found in the selected workspace conversation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    dismissAudiencePulseTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restoreAudiencePulseTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    linkAudiencePulseTopicDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudiencePulseTopicDraftLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.documents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
             404: {
                 headers: {
                     [name: string]: unknown;

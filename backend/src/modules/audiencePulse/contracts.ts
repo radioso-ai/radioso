@@ -70,6 +70,35 @@ export interface AudiencePulseInferenceFactory {
   }): Promise<ModelInferencePipeline>;
 }
 
+/** An operator's state on one topic, read beside the snapshot rather than stored in it. */
+export interface AudiencePulseTopicState {
+  /** Set while the operator has marked the topic "not for us". */
+  dismissedAt: Date | null;
+  /** The newest document drafted from the topic that still exists. */
+  latestDraft: { documentId: string; createdAt: Date } | null;
+}
+
+export type AudiencePulseTopicStateWrite = "changed" | "unchanged" | "topic_not_found";
+export type AudiencePulseTopicDraftLink = AudiencePulseTopicStateWrite | "document_not_found";
+
+/**
+ * Operator state on Audience Pulse topics: dismissals and draft links. It lives apart from the
+ * overwrite-only snapshot so a refresh keeps it, and goes with the topic, the document or the
+ * workspace it names. A write answers `topic_not_found` for a topic outside the workspace.
+ */
+export interface AudiencePulseTopicStateStore {
+  /** Only topics with a dismissal or a draft appear. */
+  readTopicStates(input: { workspaceId: string; topicIds: readonly string[] }): Promise<Map<string, AudiencePulseTopicState>>;
+  dismiss(input: { workspaceId: string; topicId: string; userId: string }): Promise<AudiencePulseTopicStateWrite>;
+  restore(input: { workspaceId: string; topicId: string }): Promise<AudiencePulseTopicStateWrite>;
+  linkDraft(input: {
+    workspaceId: string;
+    topicId: string;
+    documentId: string;
+    userId: string;
+  }): Promise<AudiencePulseTopicDraftLink>;
+}
+
 export interface AudiencePulseAuditPort {
   record(input: {
     accountId?: string | null;
@@ -97,6 +126,19 @@ const answerSummarySchema = z.object({
   outOfScope: z.number().int().min(0),
   notAssessed: z.number().int().min(0),
 });
+
+const periodTotalsShape = {
+  questionCount: z.number().int().min(0),
+  conversationCount: z.number().int().min(0),
+  answeredCount: z.number().int().min(0),
+  contentGapEligibleCount: z.number().int().min(0),
+};
+
+const answerTallyShape = {
+  questionCount: z.number().int().min(0),
+  answers: answerSummarySchema,
+  contentGapEligibleCount: z.number().int().min(0),
+};
 
 const topicTransitionSchema = z.object({
   kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
@@ -170,6 +212,9 @@ export const audiencePulseReportResponseSchema = z.object({
     themeId: z.string(),
     eligibleEvidenceCount: z.number().int().min(0),
     distinctConversationCount: z.number().int().min(0),
+    // Operator state, read at request time: a dismissal changes no count.
+    dismissedAt: dateTime.nullable(),
+    latestDraft: z.object({ documentId: z.string().uuid(), createdAt: dateTime }).nullable(),
   })),
   recommendations: z.array(z.object({
     id: z.string(),
@@ -181,6 +226,21 @@ export const audiencePulseReportResponseSchema = z.object({
     startDraft: z.object({ title: z.string(), questions: z.array(z.string()) }),
   })),
   caveats: z.array(z.string()),
+  // Absent from a report saved before they existed.
+  totals: z.object({
+    ...answerTallyShape,
+    conversationCount: z.number().int().min(0),
+    unclassified: z.object(answerTallyShape),
+  }).optional(),
+  dailyVolume: z.array(z.object({ day: z.string().date(), ...periodTotalsShape })).optional(),
+  previousPeriod: z.object({ period: z.object({ start: dateTime, end: dateTime }), ...periodTotalsShape }).nullable().optional(),
+  channels: z.array(z.object({
+    channel: z.string().nullable(),
+    questionCount: z.number().int().min(0),
+    answeredCount: z.number().int().min(0),
+    contentGapEligibleCount: z.number().int().min(0),
+  })).optional(),
+  previousGeneratedAt: dateTime.nullable().optional(),
 });
 
 export type AudiencePulseHydratedReport = z.infer<typeof audiencePulseReportResponseSchema>;
@@ -216,6 +276,20 @@ export const audiencePulseEvidenceAnchorInputSchema = audiencePulseReadInputSche
   audiencePulseEvidenceAnchorRequestSchema.shape,
 ).strict();
 
+export const audiencePulseTopicParamsSchema = z.object({
+  topicId: z.string().uuid(),
+}).strict();
+
+export const audiencePulseTopicDraftRequestSchema = z.object({
+  documentId: z.string().uuid(),
+}).strict();
+
+const audiencePulseTopicInputSchema = audiencePulseReadInputSchema.extend(audiencePulseTopicParamsSchema.shape).strict();
+
+const audiencePulseTopicDraftInputSchema = audiencePulseTopicInputSchema.extend(
+  audiencePulseTopicDraftRequestSchema.shape,
+).strict();
+
 export interface AudiencePulsePort {
   read(input: z.infer<typeof audiencePulseReadInputSchema>): Promise<AudiencePulseReadResult>;
   refresh(input: z.infer<typeof audiencePulseRefreshInputSchema>): Promise<AudiencePulseRefreshResult>;
@@ -223,4 +297,9 @@ export interface AudiencePulsePort {
   readEvidenceAnchor(
     input: z.infer<typeof audiencePulseEvidenceAnchorInputSchema>,
   ): Promise<AudiencePulseEvidenceAnchor | null>;
+  /** Takes a topic out of the "Content to write" queue. Changes no count. */
+  dismissTopic(input: z.infer<typeof audiencePulseTopicInputSchema>): Promise<AudiencePulseTopicStateWrite>;
+  restoreTopic(input: z.infer<typeof audiencePulseTopicInputSchema>): Promise<AudiencePulseTopicStateWrite>;
+  /** Records a document drafted from a topic, so the queue can show it was written. */
+  linkTopicDraft(input: z.infer<typeof audiencePulseTopicDraftInputSchema>): Promise<AudiencePulseTopicDraftLink>;
 }

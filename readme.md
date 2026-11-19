@@ -258,9 +258,10 @@ Found a security vulnerability? Report it privately — see [SECURITY.md](./SECU
 
 ## License
 
-Radioso is dual-licensed:
+Radioso is licensed in three parts:
 
 - The open-source edition is licensed under the [Apache License, Version 2.0](./LICENSE).
 - The files under [`ee/`](./ee) are Radioso Enterprise Edition, commercial source-available software governed by [`ee/LICENSE`](./ee/LICENSE), and are **not** covered by Apache 2.0. We are happy for everyone to run Radioso for business and personal purposes; `ee/` holds the features and setups we need to run Radioso as a cloud service, and using them requires a commercial license. Contact us for inquiries!
+- The files under [`packages/n8n-nodes-radioso/`](./packages/n8n-nodes-radioso) are the n8n community node, licensed under the [MIT License](./packages/n8n-nodes-radioso/LICENSE), which n8n requires of verified community nodes.
 
-See [NOTICE](./NOTICE) for attribution and the Enterprise Edition.
+See [NOTICE](./NOTICE) for attribution and these carve-outs.

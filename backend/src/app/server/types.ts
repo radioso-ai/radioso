@@ -4,6 +4,7 @@ import type {
   DataSubjectAccess,
   PrivacySettingsService,
 } from "../../modules/privacy/public.js";
+import type { WorkspaceEventLog } from "../../modules/workspaceEventLog/public.js";
 import type {
   AgentStarterPromptReader,
   AssistantChatService,
@@ -454,6 +455,8 @@ export interface AppDependencies {
   operatorNoticeDestinations: Pick<OperatorNoticeDestinationsReader, "read">;
   /** What happened to each address of each notice; names recipient emails, so it serves workspace sessions only. */
   notificationDeliveries: NotificationDeliveryReaderPort;
+  /** The workspace event log (#1851): business events listed by a commit-safe cursor. */
+  workspaceEventLog: Pick<WorkspaceEventLog, "list">;
   notificationRecipientPolicy: NotificationRecipientPolicyPort;
   notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;

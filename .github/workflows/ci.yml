@@ -36,9 +36,11 @@ jobs:
       mcp_server: ${{ steps.filter.outputs.mcp_server }}
       crawler: ${{ steps.filter.outputs.crawler }}
       census: ${{ steps.filter.outputs.census }}
+      zapier: ${{ steps.filter.outputs.zapier }}
       ee: ${{ steps.filter.outputs.ee }}
       terraform: ${{ steps.filter.outputs.terraform }}
       wordpress_companion: ${{ steps.filter.outputs.wordpress_companion }}
+      n8n_node: ${{ steps.filter.outputs.n8n_node }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -61,9 +63,11 @@ jobs:
           mcp_server=false
           crawler=false
           census=false
+          zapier=false
           ee=false
           terraform=false
           wordpress_companion=false
+          n8n_node=false
 
           mark_all() {
             backend=true
@@ -73,9 +77,11 @@ jobs:
             mcp_server=true
             crawler=true
             census=true
+            zapier=true
             ee=true
             terraform=true
             wordpress_companion=true
+            n8n_node=true
           }
 
           if [ "$EVENT_NAME" = "push" ]; then
@@ -153,11 +159,17 @@ jobs:
               packages/census/*)
                 census=true
                 ;;
+              packages/zapier/*)
+                zapier=true
+                ;;
               packages/document-parser/*|packages/connector-api/*)
                 backend=true
                 ;;
               packages/wordpress-companion/*)
                 wordpress_companion=true
+                ;;
+              packages/n8n-nodes-radioso/*)
+                n8n_node=true
                 ;;
               ee/*)
                 ee=true
@@ -178,9 +190,11 @@ jobs:
             echo "mcp_server=${mcp_server}"
             echo "crawler=${crawler}"
             echo "census=${census}"
+            echo "zapier=${zapier}"
             echo "ee=${ee}"
             echo "terraform=${terraform}"
             echo "wordpress_companion=${wordpress_companion}"
+            echo "n8n_node=${n8n_node}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -303,8 +317,11 @@ jobs:
       - name: Typecheck backend tests
         # `pnpm run build` just built the workspace packages tests import, so this only needs
         # the wide project (src + tests + vitest.config.ts); vitest strips types at runtime and
-        # never catches drift here on its own.
+        # never catches drift here on its own. The wide project's check peaks near Node's default
+        # 4 GB heap, so it gets the same 8 GB the dead-code and lint gates run with.
         working-directory: backend
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: pnpm exec tsc --noEmit -p tsconfig.json
 
       - name: Upload backend OpenAPI artifacts
@@ -726,6 +743,69 @@ jobs:
         working-directory: packages/census
         run: pnpm test
 
+  n8n-node:
+    name: n8n Community Node
+    needs: changes
+    if: needs.changes.outputs.n8n_node == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/n8n-nodes-radioso/package-lock.json
+
+      # The package installs on its own with npm, outside the pnpm workspace, so its tooling
+      # advisories stay out of the root lockfile.
+      - name: Install n8n node dependencies
+        working-directory: packages/n8n-nodes-radioso
+        run: npm ci --ignore-scripts
+
+      # n8n's verification rules are the lint gate; the root ESLint config does not cover this package.
+      - name: Lint n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: npm run lint
+
+      - name: Typecheck n8n node and its tests
+        working-directory: packages/n8n-nodes-radioso
+        run: npm run typecheck
+
+      - name: Build n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: npm run build
+
+      - name: Test n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: npm test
+
+  zapier:
+    name: Zapier Integration
+    needs: changes
+    if: needs.changes.outputs.zapier == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Zapier integration dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/zapier...
+
+      # Local schema validation and the nock tests only. `zapier-platform validate` without
+      # `--without-style` and `build` call Zapier's servers; the owner runs those before a push.
+      - name: Validate and test Zapier integration
+        working-directory: packages/zapier
+        run: pnpm test
+
   wordpress-companion:
     name: WordPress Companion Plugin
     needs: changes
@@ -852,7 +932,9 @@ jobs:
       - mcp-server
       - crawler
       - census
+      - zapier
       - wordpress-companion
+      - n8n-node
       - ee
       - terraform
     if: always()
@@ -875,8 +957,12 @@ jobs:
       CRAWLER_RESULT: ${{ needs.crawler.result }}
       CENSUS_SELECTED: ${{ needs.changes.outputs.census }}
       CENSUS_RESULT: ${{ needs.census.result }}
+      ZAPIER_SELECTED: ${{ needs.changes.outputs.zapier }}
+      ZAPIER_RESULT: ${{ needs.zapier.result }}
       WORDPRESS_COMPANION_SELECTED: ${{ needs.changes.outputs.wordpress_companion }}
       WORDPRESS_COMPANION_RESULT: ${{ needs['wordpress-companion'].result }}
+      N8N_NODE_SELECTED: ${{ needs.changes.outputs.n8n_node }}
+      N8N_NODE_RESULT: ${{ needs['n8n-node'].result }}
       EE_SELECTED: ${{ needs.changes.outputs.ee }}
       EE_RESULT: ${{ needs.ee.result }}
       TERRAFORM_SELECTED: ${{ needs.changes.outputs.terraform }}
@@ -921,6 +1007,8 @@ jobs:
           check_selected_job "MCP Server" "$MCP_SERVER_SELECTED" "$MCP_SERVER_RESULT"
           check_selected_job "Crawler Package" "$CRAWLER_SELECTED" "$CRAWLER_RESULT"
           check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
+          check_selected_job "Zapier Integration" "$ZAPIER_SELECTED" "$ZAPIER_RESULT"
           check_selected_job "WordPress Companion Plugin" "$WORDPRESS_COMPANION_SELECTED" "$WORDPRESS_COMPANION_RESULT"
+          check_selected_job "n8n Community Node" "$N8N_NODE_SELECTED" "$N8N_NODE_RESULT"
           check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"
           check_selected_job "Terraform" "$TERRAFORM_SELECTED" "$TERRAFORM_RESULT"

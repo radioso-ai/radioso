@@ -18,6 +18,7 @@ import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/sla
 import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
@@ -116,9 +117,12 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         verified_customer_id UUID,
         visitor_id UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (workspace_id, id)
       )
     `);
+    // A new conversation records its start in the workspace event log, in the same transaction.
+    await client.query(await readFile(path.join(testMigrationsPath, "264_workspace_events.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
@@ -175,7 +179,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       chat: {
         answer: async (input) => {
           chatInputs.push({
@@ -300,7 +304,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {
@@ -443,7 +447,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {

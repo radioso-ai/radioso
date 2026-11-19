@@ -1,4 +1,5 @@
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { WorkspaceEventRecorder } from "../../../../shared/domain/workspaceEventLog.js";
 
 import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
 import type { ChatAnswerPort, ConversationIngestPort } from "../../../chat/contracts/index.js";
@@ -36,12 +37,14 @@ export const buildSlackInboundJobComposition = (input: {
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
   starterPrompts?: SlackStarterPromptsPort;
   conversationLinks?: ConversationLinkResolver;
+  /** Records the start of a conversation a new Slack thread opens. */
+  workspaceEvents: WorkspaceEventRecorder;
   /** Override for tests that want to drive a real dispatch without a Postgres connection. */
   persistence?: SlackPersistencePort;
   /** Override for tests that want to drive a real dispatch without calling the Slack Web API. */
   clientFactory?: SlackWebApiClientFactory;
 }): { backgroundJobHandlers: readonly BackgroundJobHandlerRegistration[] } => {
-  const persistence = input.persistence ?? new PostgresSlackPersistence(input.db);
+  const persistence = input.persistence ?? new PostgresSlackPersistence(input.db, input.workspaceEvents);
   const messageHandler = new SlackMessageHandler({
     logger: input.logger,
     chat: createConnectorChatPort(input.chatService, input.conversationIngestService),

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { TurnContext } from "@radioso/conversation-contract";
+import { REDACTED_VALUE, type TurnContext } from "@radioso/conversation-contract";
 
 import type { EnqueueActionRequestInput } from "../../db/repositories/actionRequestRepository.js";
 import type { AgentSkillRepositoryPort } from "../agentSkills/public.js";
@@ -31,6 +31,12 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const payloadHash = (payload: Record<string, unknown>): string =>
   createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+
+/** The skill inputs a routine bound to a sensitive slot, as the routine skill dispatcher reports them. */
+const sensitiveInputKeysOf = (invocation: SkillInvocation): string[] => {
+  const keys = invocation.context?.sensitiveInputKeys;
+  return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
+};
 
 const isTurnContext = (value: unknown): value is TurnContext =>
   typeof value === "object" && value !== null && "inputEvent" in value;
@@ -79,6 +85,11 @@ export class NotifyExecutor implements SkillExecutorPort {
       message: message.trim(),
       ...(isNonEmptyString(email) ? { email: email.trim() } : {}),
     };
+    // The request is delivered whole; a copy kept beyond the delivery reads a sensitive input masked.
+    const sensitiveInputKeys = sensitiveInputKeysOf(invocation);
+    const maskedPayload = Object.keys(payload).some((key) => sensitiveInputKeys.includes(key))
+      ? Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, sensitiveInputKeys.includes(key) ? REDACTED_VALUE : value]))
+      : undefined;
     // An approval resume supplies the decision-scoped key because its database transaction may
     // roll back after this enqueue; prefer that stable identity so the retry is a no-op. Every
     // other routine turn uses the message/payload fallback below.
@@ -130,6 +141,7 @@ export class NotifyExecutor implements SkillExecutorPort {
       // delivery resolver can prefer this named skill's own config (see
       // ConfiguredContactDeliveryResolver) without inferring it from an idempotency key.
       skillName: invocation.skill.name,
+      ...(maskedPayload ? { maskedPayload } : {}),
     });
 
     return settled("delivered", {

@@ -61,6 +61,7 @@ Deleting a conversation removes:
 - the WhatsApp message log of the number whose latest conversation it is (see below);
 - routine actions and notices queued for it and not yet sent;
 - the [delivery log](/api/agents-and-skills#delivery-log) entries for the notices it raised, with the recipient addresses they name;
+- its events in the [workspace event log](/api/workspace-event-log), with the contact details and routine values they carry;
 - email skill activity, including its recipient summary;
 - session-scoped context values for a chat session no other conversation uses;
 - the visitor record, when this was an anonymous visitor's last conversation;
@@ -90,7 +91,7 @@ Two copies outside the conversation stay until their own lifecycle removes them:
 Deletion reaches what Radioso stores. It cannot reach what already left:
 
 - operator notices already sent by email or posted to Slack;
-- webhook payloads already delivered to another system;
+- webhook payloads already delivered to another system, and workspace events an automation already read;
 - emails your agent already sent to the visitor;
 - anything a model provider received while answering, under that provider's own terms.
 

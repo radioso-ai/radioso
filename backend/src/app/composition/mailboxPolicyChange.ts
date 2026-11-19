@@ -82,7 +82,7 @@ export const createPostgresMailboxPolicyChangeUnitOfWork = (deps: {
             // draft was born after the change locked its conversations is locked only now, out of
             // order; a deadlock that meets is retried whole. One gone by now has no one to hand to.
             if (!locked.has(input.conversationId)
-              && !(await new ConversationRepository(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
+              && !(await ConversationRepository.forExistingConversations(trx).lockForUpdate(input.conversationId, input.workspaceId))) {
               return { changed: false };
             }
             const { changed } = await deps.ownership.requestHumanOwnership({

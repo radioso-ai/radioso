@@ -20,6 +20,7 @@ import {
   type EmailReviewInferenceFactory,
 } from "../../../modules/connectors/plugins/index.js";
 import type { ConversationActivityRecorder } from "../../../modules/conversationActivity/contracts/index.js";
+import { withWorkspaceEvents } from "../workspaceEventLog.js";
 import type { CustomerChannelReplyDeliverer, DeliveryFailureResolverPort } from "../../../modules/customerReplyDelivery/public.js";
 import {
   EMAIL_EVENT_RETENTION_DAYS,
@@ -308,7 +309,7 @@ export const createEmailChannelApplicationModule = (input: {
           provider: channelProviderOf(config, input.options?.localSpoolDir),
           heldReplyChannel: heldReplyChannelFor(config),
           db,
-          activity: new ConversationActivityRepository(db),
+          activity: withWorkspaceEvents(new ConversationActivityRepository(db)),
           drains: input.drainDispatcherFor(env, config),
           audit: auditService,
           metrics: metrics ?? null,

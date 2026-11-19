@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import { pgVectorCosineDistance, pgVectorText, serializePgVector, toPgVector } from "../../src/shared/infra/kysely/pgVectorSql.js";
-import { anyOf, castText, clockTimestamp, containsAnyValueText, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, containsAnyValueText, finishedBefore, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, logRowAfter, optionalTimestampMatch, setLocal, snapshotHorizon, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -29,6 +29,18 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toBe("set local statement_timeout = 0");
     expect(compiled.parameters).toEqual([]);
+  });
+
+  it("emits the event log's snapshot horizon and (transaction, position) cursor comparisons", () => {
+    expect(snapshotHorizon().compile(db).sql).toBe("pg_snapshot_xmin(pg_current_snapshot())::text");
+    expect(finishedBefore(sql.ref("tx_id"), "742").compile(db)).toMatchObject({
+      sql: '"tx_id" < $1::xid8',
+      parameters: ["742"],
+    });
+    expect(logRowAfter(sql.ref("tx_id"), sql.ref("position"), { tx: "742", position: "9" }).compile(db)).toMatchObject({
+      sql: '("tx_id", "position") > ($1::xid8, $2::bigint)',
+      parameters: ["742", "9"],
+    });
   });
 
   it("transactionAdvisoryLock emits a parameterized text-key transaction lock", () => {

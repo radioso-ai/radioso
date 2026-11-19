@@ -20,12 +20,16 @@ export { buildSlackInboundJobComposition } from "./slack/slackInboundJobComposit
 export { SlackUserIdentityFinder } from "./slack/slackPersistence.js";
 export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
 
+import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
+
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
     encryptionKey?: FieldEncryptionKeyRing;
     /** The webhook's enqueue port. Required wherever the Slack connector actually registers. */
     backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+    /** Records the start of a conversation a new Slack thread opens. */
+    workspaceEvents: WorkspaceEventRecorder;
   };
   /** The email channel's plugin, built by its composition only when an email provider is configured. */
   email?: ConnectorPlugin | null;
@@ -47,6 +51,7 @@ export const registerBuiltInConnectors = (registry: ConnectorRegistry, options: 
       signingSecret: options.slack!.SLACK_SIGNING_SECRET ?? options.slack!.signingSecret!,
       encryptionKey: options.slack!.encryptionKey,
       backgroundJobs: options.slack!.backgroundJobs!,
+      workspaceEvents: options.slack!.workspaceEvents,
     }));
   }
   if (options.email) {

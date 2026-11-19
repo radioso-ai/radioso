@@ -9,6 +9,34 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.34.0] - 2026-11-19
+
+### Added
+
+- **events:** record workspace business events and list them by cursor ([#1863](https://github.com/radioso-ai/radioso/pull/1863))
+- **n8n:** add a Radioso community node with agent, knowledge and document actions ([#1857](https://github.com/radioso-ai/radioso/pull/1857))
+- **zapier:** add a Zapier app with agent, knowledge, document and conversation steps ([#1856](https://github.com/radioso-ai/radioso/pull/1856))
+- **audience-pulse:** put the stats first and turn suggestions into a ranked content queue ([#1848](https://github.com/radioso-ai/radioso/pull/1848))
+
+### Fixed
+
+- **infra:** keep the live-eu database on db-custom-1-3840 ([#1861](https://github.com/radioso-ai/radioso/pull/1861))
+- **docs-portal:** rebrand the docs link preview card and its copy ([#1858](https://github.com/radioso-ai/radioso/pull/1858))
+- docs and API reference carry version 1 instead of the 0.1 preview label ([#1847](https://github.com/radioso-ai/radioso/pull/1847))
+
+### Documentation
+
+- connect n8n, Zapier and Make to Radioso ([#1855](https://github.com/radioso-ai/radioso/pull/1855))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `263_audience_pulse_topic_state.sql`
+- `264_workspace_events.sql`
+
+[1.34.0]: https://github.com/radioso-ai/radioso/compare/v1.33.0...v1.34.0
+
 ## [1.33.0] - 2026-11-19
 
 ### Added

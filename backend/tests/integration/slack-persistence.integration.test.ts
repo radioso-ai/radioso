@@ -8,6 +8,7 @@ import { PostgresSlackInboundEventRetention } from "../../src/modules/slack/rete
 import { BackgroundJobRepository } from "../../src/db/repositories/backgroundJobRepository.js";
 import { DefaultBackgroundJobQueue, NoopBackgroundJobWake } from "../../src/shared/background-jobs/index.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of PostgresSlackPersistence after the Kysely migration.
@@ -25,7 +26,7 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
     wake: new NoopBackgroundJobWake(),
     logger: { warn: () => undefined },
   });
-  const persistence = new PostgresSlackPersistence(database.kysely, backgroundJobs);
+  const persistence = new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder, backgroundJobs);
   const retention = new PostgresSlackInboundEventRetention(database.kysely);
 
   const accountId = randomUUID();

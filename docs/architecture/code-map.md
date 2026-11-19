@@ -936,15 +936,33 @@ Owns the generic approval-gate primitive a routine step or Operator Copilot
 tool call pauses on: a pending decision proposal, its content hash, and the
 resume path once an operator decides.
 
+Resolving claims the decision (`PendingDecisionRepository.claimInTransaction`:
+an advisory lock on the handle and a plain read), then runs the `ResumeRunner`
+(`chat/services/approvalResumeTurn.ts`). The runner reaches the claim's
+transaction only through `commit(work)`, which it calls after its model calls
+and skill dispatches. `commit` locks the conversation row, writes the
+resolution and the `approval_decided` activity, then runs the turn's writes in
+the same transaction. So the transaction takes its transaction id only to
+commit, and the workspace event log keeps serving events while the routine
+resumes. Every write that changes a decision's status holds the
+`pending-decision:<handle>` advisory lock.
+
+The claim locks no rows while the routine resumes. An erasure, including the
+inactivity retention sweep, can therefore remove the conversation mid-resume.
+A skill that already acted has acted once, and the resolve returns `404`
+with nothing of the turn written.
+
 Public surfaces and key files:
 
 - `backend/src/modules/approvals/public.ts`
 - `backend/src/modules/approvals/decisionProposal.ts`
 - `backend/src/modules/approvals/service.ts`
+- `backend/src/db/repositories/pendingDecisionRepository.ts`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts tests/unit/approval-resume-time-zone.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/approvals --no-file-parallelism` (needs `INTEGRATION_DATABASE_URL`)
 - `cd backend && pnpm exec vitest run tests/integration/operatorMcp/operator-mcp-reviewed-approval.integration.test.ts`
 
 ## Operator Notifications
@@ -2555,6 +2573,62 @@ Related docs:
 - `docs/human-takeover.md#conversation-activity`
 - `docs/human-takeover.md#held-replies`
 
+## Workspace Event Log
+
+Owns the workspace event log (#1851): business events an automation acts on
+(`conversation.started`, `contact_request.created`, `handoff.requested`,
+`routine.completed`, `decision.pending`), each written in the transaction of the
+change it records and listed at `GET /api/v1/workspace/events` by a cursor that
+never passes a row still being committed. It is not the dashboard's
+`GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
+module builds each event from its own facts and records it through the
+`WorkspaceEventRecorder` that `app/composition/workspaceEventLog.ts`, the one
+seam, hands it; the log copies the conversation's agent, channel, caller kind
+and visitor from the conversation row in the same statement, and records
+nothing for a conversation history's default lists leave out (operator testing).
+
+Where each type is recorded:
+
+- `conversation.started`: `ConversationRepository`'s insert methods, which take
+  the recorder in their constructor (`forExistingConversations(db)` builds one
+  that cannot start a conversation)
+- `contact_request.created`, `decision.pending`, `routine.completed`: the chat
+  turn's transaction (`modules/chat/infra/turnOutboxWrites.ts`), and a notify
+  step's `contact.send` through `ContactRequestRecordingOutbox`, with an input
+  bound to a sensitive slot masked (`maskedPayload`); an ended run's masked
+  values and the routine's declared slots are captured with the routine-state
+  transition (`modules/chat/services/routines/routineRunEvents.ts`)
+- `handoff.requested`: every `handoff_requested` conversation activity, through
+  `withWorkspaceEvents` in the composition seam
+
+Reads run in one repeatable-read snapshot and stop at
+`pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
+long write transaction delays newer events until it ends; every pool sets
+`idle_in_transaction_session_timeout` to five minutes (`shared/infra/database.ts`)
+so one left open cannot hold the horizon for long, and the `workspace_events.list`
+span reports `workspace_events.horizon_xid_lag`. Events are kept 30 days (a
+`ConversationDataRetentionRule`), go with their conversation by a cascading key,
+and a withdrawn consent's events leave through a `MessageCopyWithholder` that
+removes them by routine and slot keys as well as by value.
+
+Public surfaces and key files:
+
+- `backend/src/shared/domain/workspaceEventLog.ts` (types, versions, data schemas, recorder and store ports)
+- `backend/src/modules/workspaceEventLog/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions)
+- `backend/src/db/repositories/workspaceEventLogRepository.ts` (recorder, snapshot reads, retention, withholder)
+- `backend/src/app/composition/workspaceEventLog.ts` (the recorder seam, the bridged activity recorder, the log)
+- `backend/src/app/http/routes/workspaceEventLogRoutes.ts` (`GET /api/v1/workspace/events`, `workspace.events.read`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/unit/deferred-routine-store.test.ts tests/contract/workspace-event-log.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
+
+Related docs:
+
+- [Workspace event log](../../docs-portal/content/api/workspace-event-log.mdx)
+- `specs/957-workspace-events/spec.md`
+
 ## Audience Pulse
 
 Owns the saved 30-day dashboard analysis that groups recurring conversation
@@ -2978,6 +3052,34 @@ Related docs and specs:
 - `packages/radioso-mcp-server/README.md`
 - `specs/043-mcp-context-server/`
 - `specs/061-mcp-deployment-modes/`
+
+## n8n Community Node
+
+Owns the `@radioso/n8n-nodes-radioso` package: the Radioso API credential and the
+Radioso action node (ask an agent, search and answer from knowledge, add a
+document, get a conversation), usable as an AI Agent tool.
+
+Should not import the TypeScript SDK or any runtime dependency: n8n verifies
+community nodes only when the package has none, so requests go through n8n's own
+HTTP helpers. Backend and frontend never import it. Its linter is `n8n-node lint`
+(the root ESLint config ignores it); it installs with npm and its own
+`package-lock.json` outside the pnpm workspace, so n8n's tooling advisories stay
+out of the root lockfile. It has its own CI job and provenance publish workflow.
+
+Primary paths:
+
+- `packages/n8n-nodes-radioso/nodes/Radioso/requests.ts` (operation to request mapping)
+- `packages/n8n-nodes-radioso/nodes/Radioso/errors.ts` (HTTP status to n8n error text)
+- `packages/n8n-nodes-radioso/credentials/RadiosoApi.credentials.ts`
+- `.github/workflows/publish-n8n-node.yml`
+
+Focused checks:
+
+- `cd packages/n8n-nodes-radioso && npm ci && npm run lint && npm test && npm run build`
+
+Every route the node calls must stay machine-eligible in
+`backend/src/app/http/apiPrincipalRoutePolicy.ts`; operator reply and decision
+routes are session-only, so the node does not expose them.
 
 ## TypeScript SDK
 

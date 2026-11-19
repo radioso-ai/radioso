@@ -266,6 +266,7 @@ radioso/
 |   |-- edge-proof/             # generic HMAC envelope + request-facts schema shared by frontend and backend
 |   |-- integration-test-support/ # shared disposable integration-database policy
 |   |-- mcp-source-proof/       # signed source provenance shared by MCP edge and backend
+|   |-- n8n-nodes-radioso/      # n8n community node (credential and Radioso action node), npm-installed outside the pnpm workspace, own linter and CI job
 |   |-- operator-mcp-contract/  # operator MCP protocol constants, scopes, and wire types shared by edge and backend
 |   |-- product-docs/           # published documentation compiled for Ray and MCP
 |   |-- radioso-docs-importer/  # imports the docs portal and API reference into a workspace as grounding documents
@@ -276,7 +277,8 @@ radioso/
 |   |-- ui/                     # shared shadcn primitives (frontend + docs-portal)
 |   |-- usage-contract/         # shared usage-event types for billing and metering
 |   |-- wordpress-companion/    # WordPress plugin that pushes site content to a workspace via signed webhook
-|   `-- workspace-invalidation-contract/ # workspace cache-invalidation envelope schema shared by backend and frontend realtime
+|   |-- workspace-invalidation-contract/ # workspace cache-invalidation envelope schema shared by backend and frontend realtime
+|   `-- zapier/                 # Zapier Platform CLI app: actions, search, and agent dropdown over the bearer API
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |   `-- architecture/            # durable architecture maps and boundaries

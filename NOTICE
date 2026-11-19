@@ -2,8 +2,13 @@ Radioso
 Copyright 2026 Radioso AI
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE),
-with the following exception:
+with the following exceptions:
 
   The files under the ee/ directory are Radioso Enterprise Edition, commercial
   source-available software governed by ee/LICENSE. They are NOT licensed under
   the Apache License, Version 2.0.
+
+  The files under the packages/n8n-nodes-radioso/ directory are the Radioso n8n
+  community node, licensed under the MIT License (see
+  packages/n8n-nodes-radioso/LICENSE). They are NOT licensed under the Apache
+  License, Version 2.0.

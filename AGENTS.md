@@ -277,7 +277,8 @@ radioso/
 |   |-- ui/                     # shared shadcn primitives (frontend + docs-portal)
 |   |-- usage-contract/         # shared usage-event types for billing and metering
 |   |-- wordpress-companion/    # WordPress plugin that pushes site content to a workspace via signed webhook
-|   `-- workspace-invalidation-contract/ # workspace cache-invalidation envelope schema shared by backend and frontend realtime
+|   |-- workspace-invalidation-contract/ # workspace cache-invalidation envelope schema shared by backend and frontend realtime
+|   `-- zapier/                 # Zapier Platform CLI app: actions, search, and agent dropdown over the bearer API
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |   `-- architecture/            # durable architecture maps and boundaries

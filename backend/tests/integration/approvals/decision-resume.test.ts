@@ -128,16 +128,20 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await adminDatabase?.close();
   });
 
+  // A resumed turn writes the decision's resolution before its own writes, as the chat module's does.
   const okRunner = (): ResumeRunner => ({
-    resume: vi.fn(async () => ({
-      conversationId,
-      resumed: true as const,
-      assistantMessageId: randomUUID(),
-      postCommitReceipt: {
-        workspaceId,
-        changeKinds: ["conversation.turn_committed"] as const,
-      },
-    })),
+    resume: vi.fn<ResumeRunner["resume"]>(async ({ writeResolution }) => {
+      await writeResolution();
+      return {
+        conversationId,
+        resumed: true as const,
+        assistantMessageId: randomUUID(),
+        postCommitReceipt: {
+          workspaceId,
+          changeKinds: ["conversation.turn_committed"] as const,
+        },
+      };
+    }),
   });
 
   it("lists only this workspace's pending decisions newest first through the service", async () => {
@@ -290,7 +294,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     );
     let attempts = 0;
     const runner: ResumeRunner = {
-      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume }) => {
+      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume, writeResolution }) => {
         const result = await resumeAwaitingDecision({
           suspendedReader: { loadSuspended: vi.fn(async () => state) },
           routineRunner,
@@ -308,6 +312,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
           optionId: "approve",
           payloadDigest: expect.any(String),
         });
+        // The refund has gone out; the resolution is written, then the turn fails to persist once.
+        await writeResolution();
         attempts += 1;
         if (attempts === 1) {
           throw new Error("assistant_turn_persist_failed");
@@ -379,7 +385,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await repository.create(input);
     const next = decisionInput({ agentId: input.agentId, sessionId: input.sessionId });
     const runner: ResumeRunner = {
-      resume: vi.fn(async ({ transaction }) => {
+      resume: vi.fn(async ({ transaction, writeResolution }) => {
+        await writeResolution();
         await new PendingDecisionRepository(transaction).create(next);
         return {
           conversationId,
@@ -582,7 +589,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     });
   });
 
-  it("leaves the decision pending, and resumes nothing, when its activity cannot be recorded", async () => {
+  it("leaves the decision pending, and commits no resumed turn, when its activity cannot be recorded", async () => {
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
@@ -598,6 +605,9 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     })).rejects.toThrow("activity unavailable");
 
     expect(await statusOf(input.handle)).toBe("pending");
-    expect(runner.resume).not.toHaveBeenCalled();
+    // The resumed turn stops at the resolution, before any write of its own.
+    expect(vi.mocked(runner.resume).mock.settledResults).toEqual([
+      { type: "rejected", value: expect.objectContaining({ message: "activity unavailable" }) },
+    ]);
   });
 });

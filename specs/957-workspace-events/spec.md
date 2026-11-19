@@ -29,7 +29,7 @@
 - **Naming (H2, L8).** The SSE contract suite is restored to main's `workspace-events.contract.test.ts`. New files use "event log" (`workspaceEventLog*`, `workspace-event-log.*`).
 - **Horizon (M1).** The five-minute idle-in-transaction timeout and the span lag are in (see the horizon section). The approvals restructure is the next small PR.
 - **Withholding by structure (M2).** See §8.
-- **Tests (M3, M4).** They separate xid order from position order, page one transaction's events across a page boundary, move a narrow filter's cursor to the horizon, and record through `resolveInTransaction` and `getOrCreateByAnonymousSession`. Every served event is parsed against its schema. The contract suite covers the takeover deny case and a 410 on an aged cursor.
+- **Tests (M3, M4).** They separate xid order from position order, page one transaction's events across a page boundary, move a narrow filter's cursor to the horizon, and record through `claimInTransaction` and `getOrCreateByAnonymousSession`. Every served event is parsed against its schema. The contract suite covers the takeover deny case and a 410 on an aged cursor.
 - **One seam (M5).** `app/composition/workspaceEventLog.ts` owns `workspaceEventRecorder` and `withWorkspaceEvents(activity)`. Every construction gets them injected, `PostgresSlackPersistence` included (through `SlackPlugin` and `buildSlackInboundJobComposition`).
 - **Descriptions (M6, M7, L4).**
   - `decision.pending` is described as a notification tokens cannot act on.
@@ -83,7 +83,7 @@ A read returns only rows whose transaction is older than every transaction still
 | Conversation erasure and DSAR erasure | At most 200 conversations per request (DSAR pages), each statement ≤ 15 s. |
 | Retention sweep | Bounded batches, one transaction each. |
 | Workspace or organization deletion (`personalCredentialLifecycleRepository.deleteWorkspace`) | One transaction cascading a whole workspace, in a handful of statements, each ≤ 15 s. The largest bounded writer: under a minute for a statement count this size. |
-| **Decision resolution** (`pendingDecisionRepository.resolveInTransaction`) | Holds its transaction, with an xid from the decision update, while the resumed routine turn runs: the reply's model call and any skill dispatch (webhooks time out at 10 s). Bounded by the model and skill timeouts, typically seconds. The longest *routine* staller. |
+| **Decision resolution** (`pendingDecisionRepository.claimInTransaction`) | Claims the decision with an advisory lock and a plain read, neither of which takes an xid, so the resumed routine turn's model calls and skill dispatches run under no xid. The decision update, its activity row and the turn are written last, in milliseconds. Not a staller. |
 | **Migrations at deploy** (`db/runMigrations.ts:110-111`) | `SET LOCAL statement_timeout = 0`: unbounded per migration. A long migration delays events for its duration. |
 | **A transaction left open** | No `idle_in_transaction_session_timeout` is set on the pool (`database.ts:82-92`) or as a Cloud SQL flag (`infra/terraform/database.tf:60-69`, which sets only IAM and pgAudit flags). A connection idle inside an open transaction is bounded only by its process ending: a bug, or a Cloud Run instance whose CPU is throttled after its response while a detached promise holds the transaction. **Worst case unbounded.** |
 
@@ -95,7 +95,7 @@ Done in the review round:
 - The `workspace_events.list` span carries `workspace_events.horizon_xid_lag` (`pg_snapshot_xmax − pg_snapshot_xmin` from the read's own snapshot).
 - PR 3's `workspace_event_delivery_lag_ms` (now − `occurredAt` at delivery) shows a stall as a rising lag across every subscription at once.
 
-Follow-up PR, before PR 3: `fix(approvals): …`. It claims the decision with `pg_advisory_xact_lock(handle)` plus a plain `status = 'pending'` read, so no xid is taken while the routine resumes. It moves the `pending_decisions` UPDATE and the `approval_decided` activity insert to just before `completeAssistantTurn`, in the same transaction. The horizon stays global.
+Follow-up PR, before PR 3: `fix(approvals): resolve a decision without holding back the event log`. It claims the decision with `pg_advisory_xact_lock(hashtextextended('pending-decision:' || handle, 0))` plus a plain `status = 'pending'` read, so no xid is taken while the routine resumes. The resume runner calls the port's `writeResolution()` just before `completeAssistantTurn`; that writes the `pending_decisions` UPDATE and the `approval_decided` activity insert in the same transaction. The horizon stays global.
 
 ## 1. Placement
 
@@ -264,6 +264,7 @@ Consumers fetch a transcript with `workspace.history.read`.
 
 **Cost:** a long-running write transaction anywhere on the database delays (never drops) newer events until it ends.
 - Read-only transactions hold no xid and do not count.
+- Decision resolution does not pin the horizon. Its transaction holds no xid while the resumed routine calls models and skills, and writes the decision and the turn only at the end (see the horizon stall analysis).
 - Delivery lag is measured (§12).
 
 **Rejected alternatives:**

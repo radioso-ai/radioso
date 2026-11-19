@@ -936,15 +936,25 @@ Owns the generic approval-gate primitive a routine step or Operator Copilot
 tool call pauses on: a pending decision proposal, its content hash, and the
 resume path once an operator decides.
 
+Resolving claims the decision (`PendingDecisionRepository.claimInTransaction`:
+an advisory lock on the handle and a plain read), then hands the claim's
+transaction to the `ResumeRunner` (`chat/services/approvalResumeTurn.ts`). The
+runner calls `writeResolution()` after its model calls and skill dispatches and
+before it persists the turn, so the transaction takes its transaction id only
+to commit and the workspace event log keeps serving events while the routine
+resumes.
+
 Public surfaces and key files:
 
 - `backend/src/modules/approvals/public.ts`
 - `backend/src/modules/approvals/decisionProposal.ts`
 - `backend/src/modules/approvals/service.ts`
+- `backend/src/db/repositories/pendingDecisionRepository.ts`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts tests/unit/approval-resume-time-zone.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/approvals --no-file-parallelism` (needs `INTEGRATION_DATABASE_URL`)
 - `cd backend && pnpm exec vitest run tests/integration/operatorMcp/operator-mcp-reviewed-approval.integration.test.ts`
 
 ## Operator Notifications

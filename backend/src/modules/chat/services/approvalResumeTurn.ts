@@ -259,6 +259,10 @@ export class ApprovalResumeTurn {
       actions: routineEnding.actions,
     });
 
+    // The decision's transaction takes its id here, after every model call and skill dispatch: an
+    // open one holds back the workspace event log. The resolution precedes the turn's writes, which
+    // may open the same gate's next decision (#1460).
+    await input.writeResolution();
     this.beginTurnEmission(coordination);
     const completed = await this.options.chatTurnLifecycle.completeAssistantTurn({
       workspaceId: input.record.workspaceId,

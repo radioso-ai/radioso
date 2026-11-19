@@ -143,14 +143,29 @@ const setup = async (input: {
     createdAt: now,
     updatedAt: now,
   };
+  const writeResolution = vi.fn(async () => undefined);
   const resume = async () => {
-    await turn.resume({ record, optionId: "approve", decidedBy: "account-1", transaction: {} as never });
+    await turn.resume({ record, optionId: "approve", decidedBy: "account-1", transaction: {} as never, writeResolution });
     const engineTurn: TurnContext = resumeAwaitingDecision.mock.calls[0][0].turn;
     const engineTrace = (completeAssistantTurn.mock.calls[0] as unknown as [{ engineTrace: { stages: Stage[] } }])[0].engineTrace;
     return { engineTurn, engineTrace, readWorkspaceTimeZone };
   };
-  return { resume, forTurn };
+  return { resume, forTurn, resumeAwaitingDecision, writeResolution, completeAssistantTurn };
 };
+
+// The decision's transaction must hold no transaction id while the routine calls the model, or it
+// holds back the workspace event log (spec 957 §6).
+describe("an approval resume's decision", () => {
+  it("is resolved once the routine has walked on from it, and before the resumed reply is written", async () => {
+    const { resume, resumeAwaitingDecision, writeResolution, completeAssistantTurn } = await setup({ workspaceTimeZone: null });
+
+    await resume();
+
+    expect(writeResolution).toHaveBeenCalledTimes(1);
+    expect(resumeAwaitingDecision.mock.invocationCallOrder[0]).toBeLessThan(writeResolution.mock.invocationCallOrder[0]);
+    expect(writeResolution.mock.invocationCallOrder[0]).toBeLessThan(completeAssistantTurn.mock.invocationCallOrder[0]);
+  });
+});
 
 // #1763: an approval that leads to a search and a step that shows its results writes that step
 // from the results, as a live turn does.

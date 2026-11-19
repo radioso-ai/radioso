@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
 import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,7 +35,7 @@ const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe
 
 const createClientBackedDatabase = (client: PoolClient): Database => {
   // A one-connection pool that always hands back the same open client so the Kysely
-  // transaction opened by `resolveInTransaction` runs on the same per-test schema + client
+  // transaction opened by `claimInTransaction` runs on the same per-test schema + client
   // as the verification queries; `release` is neutered so Kysely cannot reclaim it.
   const pool = {
     async connect() {
@@ -137,25 +138,26 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
     }
   });
 
-  it("runs the pending-decision CAS and caller resume work on the same transaction", async () => {
+  it("claims a pending decision without a transaction id, then resolves it on the claim's transaction", async () => {
     const input = decisionInput();
     await repository.create(input);
+    const transactionId = async (db: Db): Promise<string | null> =>
+      (await sql<{ xid: string | null }>`SELECT pg_current_xact_id_if_assigned()::text AS xid`.execute(db)).rows[0].xid;
 
-    const result = await repository.resolveInTransaction({
+    const result = await repository.claimInTransaction({
       handle: input.handle,
-      status: "resolved",
-      decision: { optionId: "approve" },
-      decidedBy: null,
       contentHash: input.contentHash,
     }, async (record, db: Db) => {
-      // The caller's work runs on the same transaction `db`: it observes the just-flipped
-      // row (still uncommitted at this point) by reading it back through the same handle.
-      const seen = await db
-        .selectFrom("pending_decisions")
-        .select(["handle", "status"])
-        .where("handle", "=", record.handle)
-        .executeTakeFirstOrThrow();
-      expect(seen.status).toBe("resolved");
+      expect(record).toMatchObject({ handle: input.handle, status: "pending" });
+      expect(await transactionId(db)).toBeNull();
+      await repository.resolve({
+        handle: record.handle,
+        status: "resolved",
+        decision: { optionId: "approve" },
+        decidedBy: null,
+        contentHash: record.contentHash,
+      }, db);
+      expect(await transactionId(db)).not.toBeNull();
       return record.sessionId;
     });
 
@@ -163,21 +165,18 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
     expect(await repository.loadByHandle(input.handle)).toMatchObject({ status: "resolved" });
   });
 
-  it("skips caller resume work when the CAS does not resolve a pending row", async () => {
+  it("skips the caller's work when the decision is not pending with this content", async () => {
     const input = decisionInput();
     await repository.create(input);
-    const onResolved = vi.fn(async () => "should_not_run");
+    const onClaimed = vi.fn(async () => "should_not_run");
 
-    const result = await repository.resolveInTransaction({
+    const result = await repository.claimInTransaction({
       handle: input.handle,
-      status: "resolved",
-      decision: { optionId: "approve" },
-      decidedBy: null,
       contentHash: "sha256:stale",
-    }, onResolved);
+    }, onClaimed);
 
     expect(result).toBeNull();
-    expect(onResolved).not.toHaveBeenCalled();
+    expect(onClaimed).not.toHaveBeenCalled();
     expect(await repository.loadByHandle(input.handle)).toMatchObject({ status: "pending" });
   });
 });

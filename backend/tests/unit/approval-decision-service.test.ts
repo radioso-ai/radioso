@@ -7,6 +7,7 @@ import type {
 } from "../../src/db/repositories/pendingDecisionRepository.js";
 import {
   ApprovalDecisionService,
+  type ApprovalResumeResult,
   type ResumeRunner,
 } from "../../src/modules/approvals/public.js";
 
@@ -37,28 +38,37 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   ...overrides,
 });
 
+type DecisionStore = Pick<PendingDecisionRepository, "loadByHandle" | "claimInTransaction" | "resolve" | "listPending">;
+
 const createRepository = (record: PendingDecisionRecord) => ({
   listPending: vi.fn(async () => [record]),
   loadByHandle: vi.fn(async (handle: string) => handle === record.handle ? record : null),
-  resolveInTransaction: vi.fn(async (_input, callback) => {
+  claimInTransaction: vi.fn(async (_input, callback) => {
     const resume = await callback(record, {});
     return resume;
   }),
-}) as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
+  resolve: vi.fn(async () => ({ ...record, status: "resolved" as const })),
+}) as unknown as DecisionStore;
 
 const noActivity = () => ({ record: vi.fn(async () => undefined) });
 
-const runner = (): ResumeRunner => ({
-  resume: vi.fn(async () => ({
-    conversationId: "conversation_1",
-    resumed: true as const,
-    assistantMessageId: "assistant_message_1",
-    postCommitReceipt: {
-      workspaceId: "workspace_1",
-      changeKinds: ["conversation.turn_committed"] as const,
-    },
-  })),
-});
+/** A resumed turn: it writes the decision's resolution, then commits `result`. */
+const resumedTurn = (result: Partial<ApprovalResumeResult> = {}): ResumeRunner["resume"] =>
+  vi.fn<ResumeRunner["resume"]>(async ({ writeResolution }) => {
+    await writeResolution();
+    return {
+      conversationId: "conversation_1",
+      resumed: true as const,
+      assistantMessageId: "assistant_message_1",
+      postCommitReceipt: {
+        workspaceId: "workspace_1",
+        changeKinds: ["conversation.turn_committed"] as const,
+      },
+      ...result,
+    };
+  });
+
+const runner = (): ResumeRunner => ({ resume: resumedTurn() });
 
 describe("ApprovalDecisionService role-scoped decisions", () => {
   it("requires every successful resume to return its committed message and invalidation receipt", () => {
@@ -108,17 +118,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
   it("publishes the resumed assistant message after the decision transaction resolves", async () => {
     const pending = decision();
     const repository = createRepository(pending);
-    const resumeRunner: ResumeRunner = {
-      resume: vi.fn(async () => ({
-        conversationId: pending.conversationId,
-        resumed: true as const,
-        assistantMessageId: "assistant_message_1",
-        postCommitReceipt: {
-          workspaceId: pending.workspaceId,
-          changeKinds: ["conversation.turn_committed"] as const,
-        },
-      })),
-    };
+    const resumeRunner = runner();
     const publishMessageCreated = vi.fn();
     const service = new ApprovalDecisionService(
       repository,
@@ -136,7 +136,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       caller: { accountId: "account_1", workspaceId: pending.workspaceId },
     });
 
-    expect(vi.mocked(repository.resolveInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
+    expect(vi.mocked(repository.claimInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
       publishMessageCreated.mock.invocationCallOrder[0],
     );
     expect(publishMessageCreated).toHaveBeenCalledWith({
@@ -150,17 +150,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
   it("carries the nested resume receipt to the outer approval transaction owner", async () => {
     const pending = decision();
     const repository = createRepository(pending);
-    const resumeRunner: ResumeRunner = {
-      resume: vi.fn(async () => ({
-        conversationId: pending.conversationId,
-        resumed: true as const,
-        assistantMessageId: "assistant_message_1",
-        postCommitReceipt: {
-          workspaceId: pending.workspaceId,
-          changeKinds: ["conversation.turn_committed"] as const,
-        },
-      })),
-    };
+    const resumeRunner = runner();
     const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
     const service = new ApprovalDecisionService(
       repository,
@@ -191,27 +181,16 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const order: string[] = [];
     const repository = {
       ...createRepository(pending),
-      resolveInTransaction: vi.fn(async (_input, callback: (record: PendingDecisionRecord, trx: unknown) => Promise<unknown>) => {
+      claimInTransaction: vi.fn(async (_input, callback: (record: PendingDecisionRecord, trx: unknown) => Promise<unknown>) => {
         const resume = await callback(pending, {});
         order.push("committed");
         return resume;
       }),
-    } as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
+    } as unknown as DecisionStore;
     const postCommitWake = vi.fn(() => {
       order.push("woke");
     });
-    const resumeRunner: ResumeRunner = {
-      resume: vi.fn(async () => ({
-        conversationId: pending.conversationId,
-        resumed: true as const,
-        assistantMessageId: "assistant_message_1",
-        postCommitReceipt: {
-          workspaceId: pending.workspaceId,
-          changeKinds: ["conversation.turn_committed"] as const,
-        },
-        postCommitWake,
-      })),
-    };
+    const resumeRunner: ResumeRunner = { resume: resumedTurn({ postCommitWake }) };
     const service = new ApprovalDecisionService(
       repository,
       resumeRunner,
@@ -239,17 +218,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     });
     const service = new ApprovalDecisionService(
       repository,
-      {
-        resume: vi.fn(async () => ({
-          conversationId: pending.conversationId,
-          resumed: true as const,
-          assistantMessageId: "assistant_message_1",
-          postCommitReceipt: {
-            workspaceId: pending.workspaceId,
-            changeKinds: ["conversation.turn_committed"] as const,
-          },
-        })),
-      },
+      runner(),
       noActivity(),
       { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
       { publishMessageCreated },
@@ -299,11 +268,28 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     }));
   });
 
-  it("records who decided which option before resuming the routine, in the decision's transaction", async () => {
+  it("records who decided which option in the decision's transaction, once the resumed turn's model work is done and before its reply", async () => {
     const pending = decision();
     const repository = createRepository(pending);
-    const resumeRunner = runner();
     const activity = noActivity();
+    const order: string[] = [];
+    vi.mocked(repository.resolve).mockImplementation(async () => {
+      order.push("decision resolved");
+      return { ...pending, status: "resolved" };
+    });
+    activity.record.mockImplementation(async () => {
+      order.push("decider recorded");
+    });
+    const resumeRunner: ResumeRunner = {
+      resume: async (input) => {
+        order.push("model answered");
+        await input.writeResolution();
+        // Asking again writes nothing more.
+        await input.writeResolution();
+        order.push("reply written");
+        return resumedTurn()(input);
+      },
+    };
     const service = new ApprovalDecisionService(repository, resumeRunner, activity, {
       resolveWorkspaceRole: vi.fn(async () => "admin" as const),
     });
@@ -316,8 +302,11 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       caller: { accountId: "account_1", workspaceId: pending.workspaceId, userId: "user_bea" },
     });
 
-    const transaction = vi.mocked(repository.resolveInTransaction).mock.calls[0]?.[0];
-    expect(transaction).toMatchObject({ decidedBy: "account_1", decidedByUserId: "user_bea" });
+    expect(order).toEqual(["model answered", "decision resolved", "decider recorded", "reply written"]);
+    expect(repository.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ handle: pending.handle, decidedBy: "account_1", decidedByUserId: "user_bea" }),
+      {},
+    );
     expect(activity.record).toHaveBeenCalledWith({}, {
       kind: "approval_decided",
       conversationId: pending.conversationId,
@@ -325,8 +314,49 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       actorUserId: "user_bea",
       detail: { handle: pending.handle, decision: { optionId: "reject", label: "Reject" } },
     });
-    expect(activity.record.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(resumeRunner.resume).mock.invocationCallOrder[0],
-    );
+  });
+
+  it("fails the resume, leaving the decision pending, when the resumed turn never writes the resolution", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    const resumeRunner: ResumeRunner = {
+      resume: vi.fn(async () => ({
+        conversationId: pending.conversationId,
+        resumed: true as const,
+        assistantMessageId: "assistant_message_1",
+        postCommitReceipt: { workspaceId: pending.workspaceId, changeKinds: ["conversation.turn_committed"] as const },
+      })),
+    };
+    const service = new ApprovalDecisionService(repository, resumeRunner, noActivity(), {
+      resolveWorkspaceRole: vi.fn(async () => "admin" as const),
+    });
+
+    await expect(service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    })).rejects.toThrow("approval_resume_resolution_unwritten");
+    expect(repository.resolve).not.toHaveBeenCalled();
+  });
+
+  it("reports a concurrent resolution when the decision is gone by the time the resumed turn resolves it", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    vi.mocked(repository.resolve).mockResolvedValue(null);
+    const activity = noActivity();
+    const service = new ApprovalDecisionService(repository, runner(), activity, {
+      resolveWorkspaceRole: vi.fn(async () => "admin" as const),
+    });
+
+    await expect(service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    })).rejects.toMatchObject({ reason: "concurrent_resolution" });
+    expect(activity.record).not.toHaveBeenCalled();
   });
 });

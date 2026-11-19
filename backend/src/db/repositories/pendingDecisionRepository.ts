@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 // A gate is `pending` until an operator picks a choice, then `resolved` (the routine
@@ -65,6 +65,11 @@ interface PendingDecisionResolveInput {
   decision: unknown;
   decidedBy: string | null;
   decidedByUserId?: string | null;
+  contentHash: string;
+}
+
+interface PendingDecisionClaimInput {
+  handle: string;
   contentHash: string;
 }
 
@@ -252,7 +257,7 @@ export class PendingDecisionRepository {
     return row ? mapRecord(row) : null;
   }
 
-  // `db` lets the caller run the CAS inside an open transaction (the turn-commit
+  // `db` lets the caller run the CAS inside a claim's transaction (the turn-commit
   // fence) so the decision flip, the routine resume, and the assistant-turn persistence
   // all commit or roll back together. A crash before COMMIT leaves the row `pending`, so
   // a retried resolve re-runs cleanly (crash-safe; spec 091 review finding P1(b)).
@@ -278,19 +283,39 @@ export class PendingDecisionRepository {
     return row ? mapRecord(row) : null;
   }
 
-  async resolveInTransaction<T>(
-    input: PendingDecisionResolveInput,
-    onResolved: (
+  /**
+   * Claims a pending decision for one transaction and runs `onClaimed` inside it. Resolves null,
+   * running nothing, when the decision is no longer pending with this content.
+   *
+   * The claim takes no transaction id: a transaction-scoped advisory lock on the handle, then a
+   * plain read. So the transaction does not hold back the workspace event log (spec 957 §6) while
+   * `onClaimed` resumes a routine that calls models and skills. A second claimant waits on the lock
+   * until the first commits or rolls back, then reads what it left. `onClaimed` writes the
+   * resolution with `resolve(input, db)` before its own first write, which is when the transaction
+   * takes its id. Every resolution goes through a claim, so the lock is what keeps it to one.
+   */
+  async claimInTransaction<T>(
+    input: PendingDecisionClaimInput,
+    onClaimed: (
       record: PendingDecisionRecord,
       db: Db,
     ) => Promise<T>,
   ): Promise<T | null> {
     return this.db.transaction().execute(async (trx) => {
-      const resolved = await this.resolve(input, trx);
-      if (!resolved) {
+      await transactionAdvisoryLock(`pending-decision:${input.handle}`).execute(trx);
+      // Its own statement, after the lock: its snapshot sees what an earlier claimant committed.
+      const result = await sql<PendingDecisionRow>`
+        SELECT ${pendingDecisionColumns}
+          FROM pending_decisions
+         WHERE handle = ${input.handle}
+           AND status = 'pending'
+           AND content_hash = ${input.contentHash}
+      `.execute(trx);
+      const row = result.rows[0];
+      if (!row) {
         return null;
       }
-      return onResolved(resolved, trx);
+      return onClaimed(mapRecord(row), trx);
     });
   }
 

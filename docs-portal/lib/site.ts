@@ -6,7 +6,7 @@ export const site = {
   // The radioso.ai hero line, so a shared docs link reads like the site.
   tagline: 'Customer service, handled by agents you own.',
   description:
-    'Guides and API reference for agents that answer your customers, act for them, and hand off to a person, inside rules you author.',
+    'Build agents that answer your customers, get things done, and know when to bring in a person. You set the rules.',
   appUrl: process.env.RADIOSO_APP_URL ?? 'https://app.radioso.ai',
   docsUrl: process.env.DOCS_SITE_URL ?? 'https://docs.radioso.ai',
   embedToken: process.env.RADIOSO_EMBED_TOKEN ?? '6teSuTrkFZGiKOyPMWoJCA',

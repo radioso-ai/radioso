@@ -5,8 +5,8 @@
 	"categories": ["Communication", "Development"],
 	"resources": {
 		"credentialDocumentation": [
-			{ "url": "https://docs.radioso.ai/guides/n8n#create-the-credential" }
+			{ "url": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme" }
 		],
-		"primaryDocumentation": [{ "url": "https://docs.radioso.ai/guides/n8n" }]
+		"primaryDocumentation": [{ "url": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme" }]
 	}
 }

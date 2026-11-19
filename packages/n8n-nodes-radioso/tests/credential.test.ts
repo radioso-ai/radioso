@@ -46,7 +46,19 @@ describe('resolveBaseUrl', () => {
 		);
 	});
 
+	it('keeps the /backend path of a self-hosted URL and strips every trailing slash', () => {
+		expect(
+			resolveBaseUrl({ environment: 'custom', customUrl: ' https://r.example.com/backend/// ' }),
+		).toBe('https://r.example.com/backend');
+	});
+
 	it('does not fall back to a cloud when a custom URL is empty', () => {
-		expect(() => resolveBaseUrl({ environment: 'custom', customUrl: ' ' })).toThrow('no URL');
+		expect(() => resolveBaseUrl({ environment: 'custom', customUrl: ' / ' })).toThrow('no API URL');
+	});
+
+	it('refuses a URL that would send the token over plain http', () => {
+		expect(() =>
+			resolveBaseUrl({ environment: 'custom', customUrl: 'http://r.example.com' }),
+		).toThrow('https://');
 	});
 });

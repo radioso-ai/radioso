@@ -70,17 +70,19 @@ export function buildRequest(
 	read: ParameterReader,
 ): RadiosoRequest {
 	switch (`${resource}:${operation}`) {
-		case 'agent:ask':
+		case 'agent:ask': {
+			const optional = optionalFields(read, ['conversationId', 'userExpectedLocale', 'userTimeZone']);
+			// A conversation keeps its agent; naming a different one makes the API answer 404.
+			const agent = optional.conversationId
+				? {}
+				: { agentId: required(node, read, 'agentId', 'Agent (needed to start a conversation)') };
 			return {
 				method: 'POST',
 				path: '/api/v1/assistant/chat',
 				timeoutMs: ASK_TIMEOUT_MS,
-				body: {
-					agentId: required(node, read, 'agentId', 'Agent'),
-					message: required(node, read, 'message', 'Message'),
-					...optionalFields(read, ['conversationId', 'userExpectedLocale', 'userTimeZone']),
-				},
+				body: { ...agent, message: required(node, read, 'message', 'Message'), ...optional },
 			};
+		}
 		case 'knowledge:search': {
 			const fields = (read('additionalFields', {}) ?? {}) as Record<string, unknown>;
 			const topK = typeof fields.topK === 'number' ? fields.topK : undefined;
@@ -147,6 +149,12 @@ export function shapeResponse(
 			processing: 'asynchronous',
 			note: 'The document was accepted. Radioso chunks and embeds it in the background; it is searchable once its status is ready.',
 		};
+	}
+	if (resource === 'agent' && operation === 'ask') {
+		const ownership = json.ownership as { state?: string } | undefined;
+		// With a teammate in the conversation, `answer` is the waiting message shown to the visitor
+		// and `assistantMessageId` is empty: the agent did not answer.
+		return { ...json, humanOwned: ownership?.state === 'human_owned' };
 	}
 	return json;
 }

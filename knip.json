@@ -5,6 +5,7 @@
     "**/public/**",
     "packages/radioso-mcp-server/src/generated/**",
     "typescript-sdk/src/generated/**",
+    "packages/n8n-nodes-radioso/**",
     "frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**"
   ],
   "ignoreBinaries": [
@@ -74,13 +75,6 @@
         "src/index.ts",
         "tests/**/*.test.ts",
         "scripts/**/*.{ts,mjs}"
-      ]
-    },
-    "packages/n8n-nodes-radioso": {
-      "entry": [
-        "credentials/*.credentials.ts",
-        "nodes/**/*.node.ts",
-        "tests/**/*.test.ts"
       ]
     },
     "packages/*": {

@@ -2,8 +2,6 @@
 
 The Radioso community node for [n8n](https://n8n.io). A workflow can ask a Radioso agent a question, search your knowledge, add a document, or read a conversation, and the node doubles as a tool for n8n's AI Agent node.
 
-Full guide: [docs.radioso.ai/guides/n8n](https://docs.radioso.ai/guides/n8n).
-
 ## Install
 
 On a self-hosted n8n, open **Settings → Community Nodes → Install** and enter `@radioso/n8n-nodes-radioso`.
@@ -12,7 +10,7 @@ On a self-hosted n8n, open **Settings → Community Nodes → Install** and ente
 
 Create a **Radioso API** credential:
 
-- **Instance**: EU Cloud (`https://api.radioso.ai`), US Cloud (`https://api-us.radioso.ai`), or Self-Hosted with the origin of your backend API.
+- **Instance**: EU Cloud (`https://api.radioso.ai`), US Cloud (`https://api-us.radioso.ai`), or Self-Hosted with the `https://` origin of your backend API, which often ends in `/backend`, for example `https://radioso.example.com/backend`.
 - **Service Account Token**: a `radioso_svc_v1_...` token from **Settings → API access** in Radioso. The `member` role covers every operation.
 
 n8n tests the credential with `GET /api/v1/workspace/summary`.
@@ -27,7 +25,9 @@ n8n tests the credential with `GET /api/v1/workspace/summary`.
 | Document | Create | `POST /api/v1/document` |
 | Conversation | Get | `GET /api/v1/history/chat/{conversationId}` |
 
-The agent field loads from `GET /api/v1/agents`. Document processing is asynchronous: **Create** returns once Radioso accepts the document, and it is searchable when its status is ready.
+The agent field loads from `GET /api/v1/agents`. To continue a conversation, set **Conversation ID** from an earlier reply; the conversation keeps its agent, so the node sends no agent then.
+
+When a teammate owns the conversation, the agent does not answer: `answer` is the waiting message, `assistantMessageId` is empty, and the node adds `humanOwned: true`. Check it before you post `answer` anywhere. Document processing is asynchronous: **Create** returns once Radioso accepts the document, and it is searchable when its status is ready.
 
 Replying as an operator and resolving decisions need a signed-in dashboard session in Radioso, so a service-account token can't call them and the node does not include them.
 
@@ -74,12 +74,12 @@ An n8n workflow that answers a question and keeps the conversation going. Import
 ## Development
 
 ```bash
-pnpm install              # from the repo root
 cd packages/n8n-nodes-radioso
-pnpm run lint             # n8n's node linter
-pnpm test
-pnpm run build
-pnpm run dev              # a local n8n with the node loaded
+npm ci                    # installs on its own, outside the repo's pnpm workspace
+npm run lint              # n8n's node linter
+npm test
+npm run build
+npm run dev               # a local n8n with the node loaded
 ```
 
 Releases publish from GitHub Actions with an npm provenance statement (`.github/workflows/publish-n8n-node.yml`), which n8n requires for verified community nodes.

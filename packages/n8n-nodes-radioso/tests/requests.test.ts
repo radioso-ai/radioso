@@ -49,12 +49,48 @@ describe('Ask an agent', () => {
 			}),
 		);
 		expect(request.body).toEqual({
-			agentId: AGENT_ID,
 			message: 'And tomorrow?',
 			conversationId: 'c-1',
 			userExpectedLocale: 'de-DE',
 			userTimeZone: 'Europe/Berlin',
 		});
+	});
+
+	it('omits the agent when continuing a conversation, which keeps its own agent', () => {
+		const request = buildRequest(
+			node,
+			'agent',
+			'ask',
+			reader({
+				agentId: AGENT_ID,
+				message: 'And tomorrow?',
+				additionalFields: { conversationId: 'c-1' },
+			}),
+		);
+		expect(request.body).toEqual({ message: 'And tomorrow?', conversationId: 'c-1' });
+	});
+
+	it('needs no agent when continuing a conversation', () => {
+		expect(() =>
+			buildRequest(
+				node,
+				'agent',
+				'ask',
+				reader({ message: 'Hi', additionalFields: { conversationId: 'c-1' } }),
+			),
+		).not.toThrow();
+	});
+
+	it('flags a reply that a teammate owns, where the answer is a waiting message', () => {
+		const output = shapeResponse('agent', 'ask', {
+			conversationId: 'c-1',
+			assistantMessageId: '',
+			answer: 'A teammate will answer shortly.',
+			ownership: { state: 'human_owned', suppressed: true },
+		});
+		expect(output).toMatchObject({ humanOwned: true, assistantMessageId: '' });
+		expect(shapeResponse('agent', 'ask', { answer: 'Hi', ownership: { state: 'ai_owned' } }))
+			.toMatchObject({ humanOwned: false });
 	});
 
 	it('leaves out an empty conversation id so a new conversation starts', () => {
@@ -69,7 +105,7 @@ describe('Ask an agent', () => {
 
 	it('refuses to send without an agent or a message', () => {
 		expect(() => buildRequest(node, 'agent', 'ask', reader({ message: 'Hi' }))).toThrow(
-			'Agent is required.',
+			'Agent (needed to start a conversation) is required.',
 		);
 		expect(() => buildRequest(node, 'agent', 'ask', reader({ agentId: AGENT_ID }))).toThrow(
 			'Message is required.',

@@ -44,7 +44,6 @@ export const radiosoProperties: INodeProperties[] = [
 	},
 	{
 		...agentOption(),
-		required: true,
 		displayOptions: { show: { resource: ['agent'], operation: ['ask'] } },
 	},
 	{
@@ -71,7 +70,7 @@ export const radiosoProperties: INodeProperties[] = [
 				type: 'string',
 				default: '',
 				description:
-					'Continue an existing conversation. Leave empty to start a new one; reuse the conversationId from a previous reply for follow-ups.',
+					'Continue an existing conversation with the conversationId from a previous reply. The conversation keeps its agent, so Agent is ignored. Leave empty to start a new one, which needs an Agent.',
 			},
 			{
 				displayName: 'Language',

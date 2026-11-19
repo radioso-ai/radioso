@@ -13,7 +13,7 @@ export class RadiosoApi implements ICredentialType {
 
 	icon: Icon = { light: 'file:../icons/radioso.svg', dark: 'file:../icons/radioso.dark.svg' };
 
-	documentationUrl = 'https://docs.radioso.ai/guides/n8n';
+	documentationUrl = 'https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme';
 
 	properties: INodeProperties[] = [
 		{
@@ -34,7 +34,7 @@ export class RadiosoApi implements ICredentialType {
 			type: 'string',
 			default: '',
 			placeholder: 'https://radioso.example.com/backend',
-			description: 'The origin of your self-hosted Radioso API, without a trailing slash',
+			description: 'The https:// origin of your self-hosted Radioso API, often ending in /backend, without a trailing slash',
 			displayOptions: { show: { environment: ['custom'] } },
 		},
 		{
@@ -61,7 +61,7 @@ export class RadiosoApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL:
-				'={{$credentials.environment === "custom" ? $credentials.customUrl.trim().replace(/\\/+$/, "") : ($credentials.environment === "us" ? "https://api-us.radioso.ai" : "https://api.radioso.ai")}}',
+				'={{$credentials.environment === "custom" ? $credentials.customUrl.trim() : ($credentials.environment === "us" ? "https://api-us.radioso.ai" : "https://api.radioso.ai")}}',
 			url: '/api/v1/workspace/summary',
 			method: 'GET',
 		},

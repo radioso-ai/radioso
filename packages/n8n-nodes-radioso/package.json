@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "n8n community node for Radioso: ask an agent, search knowledge, add documents and read conversations from a workflow.",
   "license": "MIT",
-  "homepage": "https://docs.radioso.ai/guides/n8n",
+  "homepage": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme",
   "keywords": [
     "n8n-community-node-package",
     "radioso",

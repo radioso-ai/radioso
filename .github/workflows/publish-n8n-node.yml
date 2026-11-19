@@ -31,14 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
-
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: npm
+          cache-dependency-path: packages/n8n-nodes-radioso/package-lock.json
           registry-url: https://registry.npmjs.org
 
       - name: Verify tag matches package version
@@ -53,19 +50,20 @@ jobs:
           fi
 
       - name: Install n8n node dependencies
-        run: pnpm install --frozen-lockfile --filter @radioso/n8n-nodes-radioso...
+        working-directory: packages/n8n-nodes-radioso
+        run: npm ci
 
       - name: Lint
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Test
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm test
+        run: npm test
 
       - name: Build
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm run build
+        run: npm run build
 
       - name: Inspect package contents
         working-directory: packages/n8n-nodes-radioso

@@ -741,33 +741,30 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Enable pnpm for dependency cache
-        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
-
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: npm
+          cache-dependency-path: packages/n8n-nodes-radioso/package-lock.json
 
-      - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
-
+      # The package installs on its own with npm, outside the pnpm workspace: n8n's tooling
+      # carries advisories that must not reach the root lockfile.
       - name: Install n8n node dependencies
-        run: pnpm install --frozen-lockfile --filter @radioso/n8n-nodes-radioso...
+        working-directory: packages/n8n-nodes-radioso
+        run: npm ci
 
       # n8n's own linter is the verified-node gate; the root ESLint config does not cover this package.
       - name: Lint n8n node
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Build n8n node
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm run build
+        run: npm run build
 
       - name: Test n8n node
         working-directory: packages/n8n-nodes-radioso
-        run: pnpm test
+        run: npm test
 
   wordpress-companion:
     name: WordPress Companion Plugin

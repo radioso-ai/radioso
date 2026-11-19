@@ -3,9 +3,10 @@
 // the real docs origin rather than poisoning canonical/OG tags with localhost.
 export const site = {
   name: 'Radioso Docs',
-  tagline: 'All your conversational agents. One platform.',
+  // The radioso.ai hero line, so a shared docs link reads like the site.
+  tagline: 'Customer service, handled by agents you own.',
   description:
-    'Conversational agents grounded in your own documents and steered by your rules — on the app, API, SDK, MCP, and website.',
+    'Guides and API reference for agents that answer your customers, act for them, and hand off to a person, inside rules you author.',
   appUrl: process.env.RADIOSO_APP_URL ?? 'https://app.radioso.ai',
   docsUrl: process.env.DOCS_SITE_URL ?? 'https://docs.radioso.ai',
   embedToken: process.env.RADIOSO_EMBED_TOKEN ?? '6teSuTrkFZGiKOyPMWoJCA',

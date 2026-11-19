@@ -5,6 +5,7 @@ import type {
   EventDeliveryOutcome,
   EventSubscriptionCreator,
   EventSubscriptionCreatorKind,
+  EventSubscriptionDeliveryStore,
   EventSubscriptionDisabledReason,
   EventSubscriptionLabel,
   EventSubscriptionStatus,
@@ -12,7 +13,7 @@ import type {
   StoredEventSubscription,
   WorkspaceEventSubscriptionStore,
 } from "../../shared/domain/workspaceEventSubscriptions.js";
-import type { WorkspaceEventType } from "../../shared/domain/workspaceEventLog.js";
+import type { LogPosition, WorkspaceEventType } from "../../shared/domain/workspaceEventLog.js";
 import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -22,8 +23,6 @@ interface SubscriptionRow {
   workspace_id: string;
   label: string;
   target_host: string;
-  target_url_ciphertext: string;
-  secret_ciphertext: string;
   event_types: string[];
   status: string;
   disabled_reason: string | null;
@@ -43,6 +42,31 @@ interface SubscriptionRow {
   failing_since: Date | null;
   next_attempt_at: Date | null;
 }
+
+/** Every column a subscription is read with, the sealed target URL and secret aside. */
+const subscriptionColumns = [
+  "id",
+  "workspace_id",
+  "label",
+  "target_host",
+  "event_types",
+  "status",
+  "disabled_reason",
+  "disabled_at",
+  "created_at",
+  "created_by_kind",
+  "created_by_credential_id",
+  "created_by_service_account_id",
+  "created_by_user_id",
+  "cursor_tx",
+  "cursor_position",
+  "last_delivery_at",
+  "last_delivery_outcome",
+  "last_delivery_status_code",
+  "consecutive_failures",
+  "failing_since",
+  "next_attempt_at",
+] as const;
 
 const date = (value: Date | string | null): Date | null => (value === null ? null : new Date(value));
 
@@ -74,7 +98,8 @@ const mapSubscription = (row: SubscriptionRow): StoredEventSubscription => ({
 
 /**
  * The creator's name as it reads now, so a rename shows: the service account's, the personal
- * token's, or the teammate's display name or email.
+ * token's, or the teammate's display name. A teammate's email is never read: the list is served to
+ * API credentials.
  */
 const creatorLabel = (eb: ExpressionBuilder<DB, "workspace_event_subscriptions">) => sql<string | null>`
   CASE ${eb.ref("workspace_event_subscriptions.created_by_kind")}
@@ -85,35 +110,80 @@ const creatorLabel = (eb: ExpressionBuilder<DB, "workspace_event_subscriptions">
       SELECT c.label FROM api_credentials c
       WHERE c.id = ${eb.ref("workspace_event_subscriptions.created_by_credential_id")})
     ELSE (
-      SELECT coalesce(u.display_name, u.email) FROM users u
+      SELECT u.display_name FROM users u
       WHERE u.id = ${eb.ref("workspace_event_subscriptions.created_by_user_id")})
   END`;
 
-/** Serializes a workspace's creates, so counting and inserting under the cap never race. */
+/** The log's horizon now, the place a new or reactivated subscription starts from. */
+const horizonTx = sql<string>`pg_snapshot_xmin(pg_current_snapshot())`;
+
+/** `(cursor_tx, cursor_position) < (tx, position)`: the cursor is behind `position`. */
+const cursorBefore = (position: LogPosition) =>
+  sql<boolean>`(cursor_tx, cursor_position) < (${position.tx}::xid8, ${position.position}::bigint)`;
+
+/**
+ * An event of one of the subscription's types after its cursor whose transaction has finished: the
+ * horizon the log's reader stops at. Probed type by type with equality, so each probe is a range
+ * scan of `workspace_events_type_log_idx`.
+ */
+const hasEventWaiting = sql<boolean>`EXISTS (
+  SELECT 1 FROM unnest(s.event_types) AS subscribed(type)
+  WHERE EXISTS (
+    SELECT 1 FROM workspace_events e
+    WHERE e.workspace_id = s.workspace_id
+      AND e.type = subscribed.type
+      AND (e.tx_id, e.position) > (s.cursor_tx, s.cursor_position)
+      AND e.tx_id < pg_snapshot_xmin(pg_current_snapshot())
+  )
+)`;
+
+/** Serializes a workspace's creates, so finding, counting and inserting never race. */
 const capLockKey = (workspaceId: string): string => `workspace-event-subscriptions:${workspaceId}`;
 
-/** The Postgres store of workspace event subscriptions (#1852). */
-export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubscriptionStore {
+const creatorColumns = (creator: EventSubscriptionCreator) => ({
+  created_by_kind: creator.kind,
+  created_by_credential_id: creator.kind === "teammate" ? null : creator.credentialId,
+  created_by_service_account_id: creator.kind === "service_account" ? creator.serviceAccountId : null,
+  created_by_user_id: creator.kind === "service_account" ? null : creator.userId,
+});
+
+/** The Postgres store of workspace event subscriptions (#1852), for their lifecycle and their delivery. */
+export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubscriptionStore, EventSubscriptionDeliveryStore {
   constructor(private readonly db: Db) {}
 
   private selectSubscriptions(db: Db = this.db) {
     return db
       .selectFrom("workspace_event_subscriptions")
-      .selectAll("workspace_event_subscriptions")
+      .select(subscriptionColumns)
       .select((eb) => creatorLabel(eb).as("creator_label"));
   }
 
-  async createWithinCap(input: Parameters<WorkspaceEventSubscriptionStore["createWithinCap"]>[0]): Promise<StoredEventSubscription | null> {
+  async upsertWithinCap(input: Parameters<WorkspaceEventSubscriptionStore["upsertWithinCap"]>[0]): Promise<{ subscription: StoredEventSubscription; replacedSubscriptionId: string | null } | null> {
     return this.db.transaction().execute(async (trx) => {
       await transactionAdvisoryLock(capLockKey(input.workspaceId)).execute(trx);
-      const held = await trx
+      const existing = await trx
         .selectFrom("workspace_event_subscriptions")
-        .select((eb) => eb.fn.countAll<string>().as("count"))
+        .select(["id", "status", "cursor_tx", "cursor_position"])
         .where("workspace_id", "=", input.workspaceId)
-        .executeTakeFirstOrThrow();
-      if (Number(held.count) >= input.cap) {
-        return null;
+        .where("target_url_hash", "in", [...input.targetUrlHashes])
+        .forUpdate()
+        .executeTakeFirst();
+      if (existing) {
+        // The replacement takes the target's place in the cap and under the unique target index.
+        await trx.deleteFrom("workspace_event_subscriptions").where("id", "=", existing.id).execute();
+      } else {
+        const held = await trx
+          .selectFrom("workspace_event_subscriptions")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("workspace_id", "=", input.workspaceId)
+          .executeTakeFirstOrThrow();
+        if (Number(held.count) >= input.cap) {
+          return null;
+        }
       }
+      // A replaced active subscription's place carries over, so nothing is skipped or sent twice;
+      // a new one, or one replacing a disabled one, starts at the newest events.
+      const keepsPlace = existing?.status === "active";
       const inserted = await trx
         .insertInto("workspace_event_subscriptions")
         .values({
@@ -121,17 +191,17 @@ export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubsc
           label: input.label,
           target_host: input.targetHost,
           target_url_ciphertext: input.targetUrlCiphertext,
+          target_url_hash: input.targetUrlHashes[0],
           secret_ciphertext: input.secretCiphertext,
           event_types: [...input.eventTypes],
           ...creatorColumns(input.createdBy),
-          // The log's horizon now: every event a still-running transaction writes comes after it.
-          cursor_tx: sql<string>`pg_snapshot_xmin(pg_current_snapshot())`,
-          cursor_position: "0",
+          cursor_tx: keepsPlace ? existing.cursor_tx : horizonTx,
+          cursor_position: keepsPlace ? existing.cursor_position : "0",
         })
         .returning("id")
         .executeTakeFirstOrThrow();
-      const created = await this.selectSubscriptions(trx).where("id", "=", inserted.id).executeTakeFirstOrThrow();
-      return mapSubscription(created);
+      const stored = await this.selectSubscriptions(trx).where("id", "=", inserted.id).executeTakeFirstOrThrow();
+      return { subscription: mapSubscription(stored), replacedSubscriptionId: existing?.id ?? null };
     });
   }
 
@@ -141,25 +211,26 @@ export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubsc
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .execute();
-    return (rows as SubscriptionRow[]).map(mapSubscription);
+    return rows.map(mapSubscription);
   }
 
   async find(workspaceId: string, subscriptionId: string): Promise<StoredEventSubscription | null> {
-    return this.findSealed(workspaceId, subscriptionId);
-  }
-
-  async findSealed(workspaceId: string, subscriptionId: string): Promise<SealedEventSubscription | null> {
     const row = await this.selectSubscriptions()
       .where("workspace_id", "=", workspaceId)
       .where("id", "=", subscriptionId)
       .executeTakeFirst();
-    if (!row) return null;
-    const subscription = row as SubscriptionRow;
-    return {
-      ...mapSubscription(subscription),
-      targetUrlCiphertext: subscription.target_url_ciphertext,
-      secretCiphertext: subscription.secret_ciphertext,
-    };
+    return row ? mapSubscription(row) : null;
+  }
+
+  async findSealed(workspaceId: string, subscriptionId: string): Promise<SealedEventSubscription | null> {
+    const row = await this.selectSubscriptions()
+      .select(["target_url_ciphertext", "secret_ciphertext"])
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", subscriptionId)
+      .executeTakeFirst();
+    return row
+      ? { ...mapSubscription(row), targetUrlCiphertext: row.target_url_ciphertext, secretCiphertext: row.secret_ciphertext }
+      : null;
   }
 
   async delete(workspaceId: string, subscriptionId: string): Promise<StoredEventSubscription | null> {
@@ -175,8 +246,9 @@ export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubsc
     });
   }
 
-  async recordDelivered(input: Parameters<WorkspaceEventSubscriptionStore["recordDelivered"]>[0]): Promise<boolean> {
-    const result = await this.activeSubscription(input.workspaceId, input.subscriptionId)
+  async recordDelivered(input: Parameters<EventSubscriptionDeliveryStore["recordDelivered"]>[0]): Promise<boolean> {
+    const result = await this.activeSubscription(this.db, input.workspaceId, input.subscriptionId)
+      .where(cursorBefore(input.position))
       .set({
         cursor_tx: input.position.tx,
         cursor_position: input.position.position,
@@ -192,67 +264,70 @@ export class WorkspaceEventSubscriptionRepository implements WorkspaceEventSubsc
     return Number(result.numUpdatedRows) > 0;
   }
 
-  async recordFailed(input: Parameters<WorkspaceEventSubscriptionStore["recordFailed"]>[0]): Promise<boolean> {
-    const result = await this.activeSubscription(input.workspaceId, input.subscriptionId)
-      .set({
-        last_delivery_at: input.at,
-        last_delivery_outcome: "failed",
-        last_delivery_status_code: input.statusCode,
-        consecutive_failures: input.consecutiveFailures,
-        failing_since: input.failingSince,
-        next_attempt_at: input.nextAttemptAt,
-        updated_at: input.at,
-        ...(input.disable ? { status: "disabled", disabled_reason: "delivery_failing", disabled_at: input.at } : {}),
-      })
-      .executeTakeFirst();
-    return Number(result.numUpdatedRows) > 0;
+  async advanceCursor(input: Parameters<EventSubscriptionDeliveryStore["advanceCursor"]>[0]): Promise<void> {
+    await this.activeSubscription(this.db, input.workspaceId, input.subscriptionId)
+      .where(cursorBefore(input.position))
+      .set({ cursor_tx: input.position.tx, cursor_position: input.position.position })
+      .execute();
   }
 
-  async disable(input: Parameters<WorkspaceEventSubscriptionStore["disable"]>[0]): Promise<boolean> {
-    const result = await this.activeSubscription(input.workspaceId, input.subscriptionId)
+  async recordFailed(input: Parameters<EventSubscriptionDeliveryStore["recordFailed"]>[0]): ReturnType<EventSubscriptionDeliveryStore["recordFailed"]> {
+    return this.db.transaction().execute(async (trx) => {
+      // Counted in the row, so a run abandoned by its lease and the run that replaced it never
+      // write over each other's count.
+      const counted = await this.activeSubscription(trx, input.workspaceId, input.subscriptionId)
+        .set({
+          consecutive_failures: sql<number>`consecutive_failures + 1`,
+          failing_since: sql<Date>`coalesce(failing_since, ${input.at}::timestamptz)`,
+          last_delivery_at: input.at,
+          last_delivery_outcome: "failed",
+          last_delivery_status_code: input.statusCode,
+          updated_at: input.at,
+        })
+        .returning(["consecutive_failures", "failing_since"])
+        .executeTakeFirst();
+      if (!counted?.failing_since) return null;
+      const streak = { consecutiveFailures: counted.consecutive_failures, failingSince: new Date(counted.failing_since) };
+      const { nextAttemptAt, disable } = input.schedule(streak);
+      await trx
+        .updateTable("workspace_event_subscriptions")
+        .set({
+          next_attempt_at: nextAttemptAt,
+          ...(disable ? { status: "disabled", disabled_reason: "delivery_failing", disabled_at: input.at } : {}),
+        })
+        .where("id", "=", input.subscriptionId)
+        .execute();
+      return { ...streak, disabled: disable };
+    });
+  }
+
+  async disable(input: Parameters<EventSubscriptionDeliveryStore["disable"]>[0]): Promise<boolean> {
+    const result = await this.activeSubscription(this.db, input.workspaceId, input.subscriptionId)
       .set({ status: "disabled", disabled_reason: input.reason, disabled_at: input.at, updated_at: input.at })
       .executeTakeFirst();
     return Number(result.numUpdatedRows) > 0;
   }
 
-  /**
-   * Active subscriptions that are due and have an event after their cursor whose transaction has
-   * finished: the same horizon the log's reader stops at, so a drain is not started for an event
-   * it could not yet read.
-   */
-  async findDue(input: { workspaceId?: string; limit: number }): Promise<DueEventSubscription[]> {
+  async findDue(input: { workspaceId?: string; afterSubscriptionId?: string; limit: number }): Promise<DueEventSubscription[]> {
     const rows = await this.db
       .selectFrom("workspace_event_subscriptions as s")
       .select(["s.workspace_id", "s.id"])
       .where("s.status", "=", "active")
       .where((eb) => eb.or([eb("s.next_attempt_at", "is", null), eb("s.next_attempt_at", "<=", sql<Date>`now()`)]))
       .$if(input.workspaceId !== undefined, (query) => query.where("s.workspace_id", "=", input.workspaceId!))
-      .where(({ exists, selectFrom }) => exists(
-        selectFrom("workspace_events as e")
-          .select(sql`1`.as("one"))
-          .whereRef("e.workspace_id", "=", "s.workspace_id")
-          .where(sql<boolean>`e.type = ANY(s.event_types)`)
-          .where(sql<boolean>`(e.tx_id, e.position) > (s.cursor_tx, s.cursor_position)`)
-          .where(sql<boolean>`e.tx_id < pg_snapshot_xmin(pg_current_snapshot())`),
-      ))
-      .orderBy("s.next_attempt_at", "asc")
+      .$if(input.afterSubscriptionId !== undefined, (query) => query.where("s.id", ">", input.afterSubscriptionId!))
+      .where(hasEventWaiting)
+      .orderBy("s.id", "asc")
       .limit(input.limit)
       .execute();
     return rows.map((row) => ({ workspaceId: row.workspace_id, subscriptionId: row.id }));
   }
 
-  private activeSubscription(workspaceId: string, subscriptionId: string) {
-    return this.db
+  private activeSubscription(db: Db, workspaceId: string, subscriptionId: string) {
+    return db
       .updateTable("workspace_event_subscriptions")
       .where("workspace_id", "=", workspaceId)
       .where("id", "=", subscriptionId)
       .where("status", "=", "active");
   }
 }
-
-const creatorColumns = (creator: EventSubscriptionCreator) => ({
-  created_by_kind: creator.kind,
-  created_by_credential_id: creator.kind === "teammate" ? null : creator.credentialId,
-  created_by_service_account_id: creator.kind === "service_account" ? creator.serviceAccountId : null,
-  created_by_user_id: creator.kind === "service_account" ? null : creator.userId,
-});

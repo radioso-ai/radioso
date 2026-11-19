@@ -2611,12 +2611,13 @@ span reports `workspace_events.horizon_xid_lag`. Events are kept 30 days (a
 and a withdrawn consent's events leave through a `MessageCopyWithholder` that
 removes them by routine and slot keys as well as by value.
 
-Event subscriptions (#1852) push the same events to URLs that automation
-clients (Zapier REST hooks, n8n triggers) create and delete at
+Event subscriptions (#1852) push the same events to URLs that receivers
+subscribe and unsubscribe over the API at
 `/api/v1/workspace/event-subscriptions` under
 `workspace.event_subscriptions.manage`. One `workspace_events.deliver`
-background job per subscription (`rerun`, keyed by the subscription) drains its
-events in log order through the log's own reader, one signed POST per event
+background job per subscription (`rerun`, keyed by the subscription) drains up
+to ten of its events per run, in log order through the log's own reader, and
+moves its cursor to the read's horizon when it catches up; one signed POST per event
 (`createSignedWebhookHeaders`, `Idempotency-Key` = event id), after re-checking
 the creating credential or teammate (`EventSubscriptionOwnerCheck`, adapted from
 machine access and account access in the composition seam). A `2xx` advances the
@@ -2628,7 +2629,9 @@ periodic task (every minute; Cloud Scheduler `workspace_event_delivery` in
 `afterCommit` wakes its workspace's drains sooner. Target URLs pass the outbound
 URL rule (`normalizeWebhookTargetUrl` in `shared/infra/http/signedWebhook.ts`,
 shared with webhook destinations) at create and the DNS-pinned guard at every
-hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`. Settings
+hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`, and a keyed
+hash of the URL makes a create of a subscribed URL replace its subscription with a
+new id (carrying an active one's cursor). Settings
 lists and deletes them on the API access tab; Ray reads them with
 `list_event_subscriptions`.
 

@@ -69,7 +69,7 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       {
         id: 'event-subscriptions',
         label: 'Event subscriptions',
-        summary: 'Where Zapier, n8n and your code receive workspace events.',
+        summary: 'URLs subscribed over the API to workspace events.',
       },
     ],
   },

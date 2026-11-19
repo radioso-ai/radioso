@@ -1,39 +1,34 @@
 import { randomUUID } from "node:crypto";
 
+import { Ajv } from "ajv";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 
 import { apiPrincipalRoutePolicy } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
-import { EventSubscriptionService } from "../../src/modules/workspaceEventLog/public.js";
-import { WORKSPACE_EVENT_TYPES } from "../../src/shared/domain/workspaceEventLog.js";
+import { connectorKeySealer, EventSubscriptionService, type EventSubscriptionView } from "../../src/modules/workspaceEventLog/public.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
 import { InMemoryWorkspaceEventSubscriptionStore, taggingSealer } from "../support/inMemoryWorkspaceEventSubscriptions.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
-/** The subscription view the API publishes as `EventSubscription`. */
-const subscriptionView = z.object({
-  id: z.string().uuid(),
-  label: z.enum(["zapier", "n8n", "custom"]),
-  targetHost: z.string(),
-  eventTypes: z.array(z.enum(WORKSPACE_EVENT_TYPES)),
-  status: z.enum(["active", "disabled"]),
-  disabledReason: z.enum(["delivery_failing", "creator_revoked"]).nullable(),
-  createdAt: z.string().datetime(),
-  createdBy: z.object({ kind: z.enum(["service_account", "personal_token", "teammate"]), label: z.string().nullable() }).strict(),
-  lastDelivery: z.object({ at: z.string().datetime(), outcome: z.enum(["delivered", "failed"]), statusCode: z.number().int().nullable() }).strict().nullable(),
-  failingSince: z.string().datetime().nullable(),
-}).strict();
+/** Every served subscription must validate against the `EventSubscription` component the API publishes. */
+const publishedSubscription = new Ajv({ strict: false, validateFormats: false })
+  .compile(createOpenApiDocument().components?.schemas?.EventSubscription as object);
+const subscriptionView = {
+  parse: (value: unknown): EventSubscriptionView => {
+    if (!publishedSubscription(value)) throw new Error(JSON.stringify(publishedSubscription.errors));
+    return value as EventSubscriptionView;
+  },
+};
 
 const PRIVATE_HOST = "internal.example";
 
-const harness = async () => {
+const harness = async (options: { sealer?: typeof taggingSealer } = {}) => {
   const store = new InMemoryWorkspaceEventSubscriptionStore();
   const audit = { record: vi.fn(async () => undefined) };
   const service = new EventSubscriptionService({
     store,
-    sealer: taggingSealer,
+    sealer: options.sealer ?? taggingSealer,
     audit,
     // Stands in for the DNS-resolving guard: one host resolves to a private address.
     assertPublicUrl: async (url) => {
@@ -126,13 +121,85 @@ describe("workspace event subscriptions contract", () => {
     const h = await harness();
     for (let index = 0; index < 25; index += 1) {
       await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
-        .send({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier" }).expect(201);
+        .send({ targetUrl: `${zapierHook}/${index}`, eventTypes: ["handoff.requested"], label: "zapier" }).expect(201);
     }
 
     const full = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
-      .send({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier" }).expect(409);
-
+      .send({ targetUrl: `${zapierHook}/25`, eventTypes: ["handoff.requested"], label: "zapier" }).expect(409);
     expect(full.body.error.code).toBe("event_subscription_limit_reached");
+
+    // A URL the workspace already subscribed replaces its subscription, so a full workspace still takes it.
+    await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: `${zapierHook}/3`, eventTypes: ["routine.completed"], label: "zapier" }).expect(201);
+    expect(h.store.rows.size).toBe(25);
+  });
+
+  it("replaces the subscription with a new one when a client subscribes the same URL again", async () => {
+    const h = await harness();
+    const post = (eventTypes: string[]) => request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: zapierHook, eventTypes, label: "zapier" }).expect(201);
+
+    const first = await post(["handoff.requested"]);
+    const second = await post(["handoff.requested", "routine.completed"]);
+
+    expect(second.body.subscription.id).not.toBe(first.body.subscription.id);
+    expect(second.body.subscription.eventTypes).toEqual(["handoff.requested", "routine.completed"]);
+    expect(second.body.signingSecret).not.toBe(first.body.signingSecret);
+    // A late unsubscribe of the replaced subscription finds nothing, and the new one stays.
+    await request(h.app).delete(`/api/v1/workspace/event-subscriptions/${first.body.subscription.id}`).set(h.bearer).expect(404);
+    const listed = await request(h.app).get("/api/v1/workspace/event-subscriptions").set(h.bearer).expect(200);
+    expect(listed.body.subscriptions.map((item: { id: string }) => item.id)).toEqual([second.body.subscription.id]);
+    expect(h.audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "workspace_event_subscription.replaced",
+      metadata: expect.objectContaining({ subscriptionId: second.body.subscription.id, previousSubscriptionId: first.body.subscription.id }),
+    }));
+  });
+
+  it("refuses a target URL that carries a username or password", async () => {
+    const h = await harness();
+
+    const refused = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: "https://user:secret@hooks.zapier.example/hook", eventTypes: ["handoff.requested"], label: "custom" })
+      .expect(400);
+
+    expect(refused.body.error.code).toBe("invalid_target_url");
+    expect(h.store.rows.size).toBe(0);
+  });
+
+  it("refuses every type to a caller without the event log's read permission, as each push would", async () => {
+    const h = await harness();
+    vi.spyOn(h.dependencies.accountAccessService, "hasPermission")
+      .mockImplementation(async ({ permission }) => permission !== "workspace.events.read");
+
+    const refused = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier" }).expect(403);
+
+    expect(refused.body.error).toMatchObject({ code: "event_type_not_permitted", details: { types: ["handoff.requested"] } });
+  });
+
+  it("answers 404 to another workspace's token, and leaves the subscription in place", async () => {
+    const h = await harness();
+    const created = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier" }).expect(201);
+    const other = await issueTestToken(h.app, `event-subscriptions-other-${randomUUID()}@example.com`);
+    const path = `/api/v1/workspace/event-subscriptions/${created.body.subscription.id}`;
+
+    await request(h.app).get(path).set({ Authorization: `Bearer ${other.token}` }).expect(404);
+    await request(h.app).delete(path).set({ Authorization: `Bearer ${other.token}` }).expect(404);
+    const listed = await request(h.app).get("/api/v1/workspace/event-subscriptions").set({ Authorization: `Bearer ${other.token}` }).expect(200);
+
+    expect(listed.body.subscriptions).toEqual([]);
+    expect(h.store.rows.has(created.body.subscription.id)).toBe(true);
+  });
+
+  it("answers 503 when the deployment has no key to seal the secret", async () => {
+    const h = await harness({ sealer: connectorKeySealer(undefined) });
+
+    const refused = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier" }).expect(503);
+
+    expect(refused.body.error.code).toBe("encryption_not_configured");
+    expect(h.store.rows.size).toBe(0);
   });
 
   it("refuses a type the caller may not read from the event log", async () => {

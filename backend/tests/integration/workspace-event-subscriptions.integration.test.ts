@@ -34,6 +34,7 @@ import {
   workspaceEventDataSchema,
   type WorkspaceEventType,
 } from "../../src/shared/domain/workspaceEventLog.js";
+import type { EventSubscriptionCreator } from "../../src/shared/domain/workspaceEventSubscriptions.js";
 import { verifyWebhookSignature } from "../../src/shared/infra/http/signedWebhook.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -172,16 +173,25 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
 
   const subscribe = (
     seeded: Seeded,
-    options: { targetUrl?: string; eventTypes?: WorkspaceEventType[]; via?: typeof delivery } = {},
+    options: { targetUrl?: string; eventTypes?: WorkspaceEventType[]; via?: typeof delivery; createdBy?: EventSubscriptionCreator } = {},
   ) => (options.via ?? delivery).subscriptions.create({
     workspaceId: seeded.workspaceId,
     actor: { accountId: seeded.accountId },
-    createdBy: seeded.createdBy,
+    createdBy: options.createdBy ?? seeded.createdBy,
     targetUrl: options.targetUrl ?? receiver.url,
     eventTypes: options.eventTypes ?? ["handoff.requested", "conversation.started"],
     label: "zapier",
-    readableTypes: [...WORKSPACE_EVENT_TYPES],
+    permits: async () => true,
   });
+
+  /** A teammate of the seeded workspace, a member, as a session that subscribes would be. */
+  const seedMember = async (seeded: Seeded) => {
+    const userId = randomUUID();
+    const membershipId = randomUUID();
+    await database.query("INSERT INTO users (id, email, password_hash, display_name) VALUES ($1, $2, 'hash', 'Ada Example')", [userId, `member-${userId}@example.com`]);
+    await database.query("INSERT INTO account_memberships (id, account_id, user_id, role, status) VALUES ($1, $2, $3, 'member', 'active')", [membershipId, seeded.accountId, userId]);
+    return { userId, membershipId };
+  };
 
   /** Waits until every transaction that had begun has finished, so the log's horizon is past this file's writes. */
   const settle = async (): Promise<void> => {
@@ -214,7 +224,9 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
       failing_since: Date | null;
       last_delivery_outcome: string | null;
       last_delivery_status_code: number | null;
-    }>("SELECT status, disabled_reason, consecutive_failures, next_attempt_at, failing_since, last_delivery_outcome, last_delivery_status_code FROM workspace_event_subscriptions WHERE id = $1", [subscriptionId]);
+      cursor_tx: string;
+      cursor_position: string;
+    }>("SELECT status, disabled_reason, consecutive_failures, next_attempt_at, failing_since, last_delivery_outcome, last_delivery_status_code, cursor_tx::text, cursor_position::text FROM workspace_event_subscriptions WHERE id = $1", [subscriptionId]);
     return row ?? null;
   };
 
@@ -307,7 +319,12 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
       [seeded.workspaceId],
     );
     expect(pushes.slice(2).map((push) => push.id)).toEqual(log.map((row) => row.id));
-    expect(await subscriptionRow(subscription.id)).toMatchObject({ consecutive_failures: 0, next_attempt_at: null, failing_since: null, last_delivery_outcome: "delivered" });
+    const caughtUp = await subscriptionRow(subscription.id);
+    expect(caughtUp).toMatchObject({ consecutive_failures: 0, next_attempt_at: null, failing_since: null, last_delivery_outcome: "delivered" });
+    // The read was short, so the cursor moved on to the horizon, past every event of any type.
+    const [{ newest }] = await database.query<{ newest: string }>("SELECT max(tx_id)::text AS newest FROM workspace_events WHERE workspace_id = $1", [seeded.workspaceId]);
+    expect(BigInt(caughtUp.cursor_tx)).toBeGreaterThan(BigInt(newest));
+    expect(caughtUp.cursor_position).toBe("0");
   });
 
   it("deletes a subscription whose target answers 410 Gone, and audits it", async () => {
@@ -357,7 +374,7 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
     expect(pushesFor(seeded)).toHaveLength(1);
   });
 
-  it("disables a subscription once the token that created it is revoked, without sending", async () => {
+  it("disables a subscription once the service account token that created it is revoked, without sending", async () => {
     const seeded = await seedWorkspace();
     const { subscription } = await subscribe(seeded, { eventTypes: ["handoff.requested"] });
     const conversation = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed" });
@@ -389,9 +406,137 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
     expect(await subscriptionRow(subscription.id)).toMatchObject({ status: "active", consecutive_failures: 1, last_delivery_outcome: "failed", last_delivery_status_code: null });
   });
 
+  it("disables a subscription once the personal token that created it is revoked", async () => {
+    const seeded = await seedWorkspace();
+    const member = await seedMember(seeded);
+    const personal = await machineAccess.createPersonalWithinLimit({
+      accountId: seeded.accountId,
+      workspaceId: seeded.workspaceId,
+      ownerUserId: member.userId,
+      accessTenureMembershipId: member.membershipId,
+      roleCeiling: "member",
+      label: "n8n on the office server",
+      expiresAt: new Date(Date.now() + 86_400_000),
+      createdByUserId: member.userId,
+      now: new Date(),
+      limit: 10,
+      issueSecret: () => ({ secret: "unused", tokenPrefix: "radioso_pat_v1_test", tokenHash: `hash-${randomUUID()}` }),
+    });
+    if (!personal) throw new Error("Expected a personal token");
+    const { subscription } = await subscribe(seeded, {
+      eventTypes: ["handoff.requested"],
+      createdBy: { kind: "personal_token", credentialId: personal.credential.id, userId: member.userId },
+    });
+    const conversation = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed" });
+    await recordHandoff(seeded, conversation.id);
+    await deliverNow();
+    expect(pushesFor(seeded)).toHaveLength(1);
+    expect((await delivery.subscriptions.get(seeded.workspaceId, subscription.id)).createdBy).toEqual({ kind: "personal_token", label: "n8n on the office server" });
+
+    await machineAccess.revokeCredential({ id: personal.credential.id, actorUserId: member.userId, now: new Date() });
+    await recordHandoff(seeded, conversation.id);
+    await deliverNow();
+
+    expect(pushesFor(seeded)).toHaveLength(1);
+    expect(await subscriptionRow(subscription.id)).toMatchObject({ status: "disabled", disabled_reason: "creator_revoked" });
+  });
+
+  it("disables a teammate's subscription once their membership ends, and names them by display name only", async () => {
+    const seeded = await seedWorkspace();
+    const member = await seedMember(seeded);
+    const { subscription } = await subscribe(seeded, { eventTypes: ["handoff.requested"], createdBy: { kind: "teammate", userId: member.userId } });
+    const { subscription: owners } = await subscribe(seeded, {
+      targetUrl: `${receiver.url}/owner`,
+      eventTypes: ["handoff.requested"],
+      createdBy: { kind: "teammate", userId: seeded.userId },
+    });
+    expect(subscription.createdBy).toEqual({ kind: "teammate", label: "Ada Example" });
+    // The owner set no display name; their email is never shown in its place.
+    expect(owners.createdBy).toEqual({ kind: "teammate", label: null });
+    await database.query("DELETE FROM workspace_event_subscriptions WHERE id = $1", [owners.id]);
+    const conversation = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed" });
+    await recordHandoff(seeded, conversation.id);
+    await deliverNow();
+    expect(pushesFor(seeded)).toHaveLength(1);
+
+    await database.query("DELETE FROM account_memberships WHERE id = $1", [member.membershipId]);
+    await recordHandoff(seeded, conversation.id);
+    await deliverNow();
+
+    expect(pushesFor(seeded)).toHaveLength(1);
+    expect(await subscriptionRow(subscription.id)).toMatchObject({ status: "disabled", disabled_reason: "creator_revoked" });
+  });
+
+  it("replaces the subscription with a new id when its client subscribes the same URL again, keeping an active one's place", async () => {
+    const seeded = await seedWorkspace();
+    const first = await subscribe(seeded, { eventTypes: ["handoff.requested"] });
+    const conversation = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed" });
+    await recordHandoff(seeded, conversation.id);
+    await settle();
+    const before = await subscriptionRow(first.subscription.id);
+
+    // The same URL subscribed again, as a retried create or a republished workflow does.
+    const second = await subscribe(seeded, { eventTypes: ["handoff.requested"] });
+    expect(second.subscription.id).not.toBe(first.subscription.id);
+    expect(second.signingSecret).not.toBe(first.signingSecret);
+    expect(await subscriptionRow(second.subscription.id)).toMatchObject({ status: "active", cursor_tx: before.cursor_tx, cursor_position: before.cursor_position });
+    expect(audited).toContainEqual(expect.objectContaining({
+      eventType: "workspace_event_subscription.replaced",
+      metadata: expect.objectContaining({ subscriptionId: second.subscription.id, previousSubscriptionId: first.subscription.id }),
+    }));
+
+    // The old version's late unsubscribe finds nothing; the new subscription stays and delivers.
+    await expect(delivery.subscriptions.delete(seeded.workspaceId, first.subscription.id, { accountId: seeded.accountId }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect((await delivery.subscriptions.list(seeded.workspaceId)).map(({ id }) => id)).toEqual([second.subscription.id]);
+    await deliverNow();
+    // The event recorded before the replacement still arrives, once, signed with the new secret.
+    const pushes = pushesFor(seeded);
+    expect(pushes).toHaveLength(1);
+    const [push] = pushes;
+    const signed = { rawBody: push.rawBody, timestamp: String(push.headers["x-radioso-timestamp"]), signatureHeader: String(push.headers["x-radioso-signature"]) };
+    expect(verifyWebhookSignature({ ...signed, secret: second.signingSecret })).toBe(true);
+    expect(verifyWebhookSignature({ ...signed, secret: first.signingSecret })).toBe(false);
+    expect(await subscriptionRow(second.subscription.id)).toMatchObject({ status: "active", last_delivery_outcome: "delivered" });
+  });
+
+  it("replaces a disabled subscription subscribed again with an active one at the newest events", async () => {
+    const seeded = await seedWorkspace();
+    const { subscription } = await subscribe(seeded, { eventTypes: ["handoff.requested"] });
+    const conversation = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed" });
+    await recordHandoff(seeded, conversation.id);
+    await database.query(
+      "UPDATE workspace_event_subscriptions SET consecutive_failures = 4, failing_since = now() - interval '25 hours', last_delivery_outcome = 'failed', last_delivery_at = now() WHERE id = $1",
+      [subscription.id],
+    );
+    receiver.answerWith(502);
+    await deliverNow();
+    expect(await subscriptionRow(subscription.id)).toMatchObject({ status: "disabled", disabled_reason: "delivery_failing" });
+    await settle();
+
+    const again = await subscribe(seeded, { eventTypes: ["handoff.requested"] });
+
+    expect(again.subscription).toMatchObject({ status: "active", disabledReason: null, failingSince: null, lastDelivery: null });
+    expect(again.subscription.id).not.toBe(subscription.id);
+    expect(await subscriptionRow(subscription.id)).toBeNull();
+    expect(await subscriptionRow(again.subscription.id)).toMatchObject({ consecutive_failures: 0, next_attempt_at: null });
+    // The event it failed on was before the new start: only what happens next is sent.
+    await deliverNow();
+    expect(pushesFor(seeded)).toHaveLength(1);
+    await recordHandoff(seeded, conversation.id);
+    await deliverNow();
+    expect(pushesFor(seeded)).toHaveLength(2);
+  });
+
+  it("keeps one subscription per URL when creates of the same URL race", async () => {
+    const seeded = await seedWorkspace();
+    await Promise.all(Array.from({ length: 5 }, () => subscribe(seeded)));
+    expect(await delivery.subscriptions.list(seeded.workspaceId)).toHaveLength(1);
+  });
+
   it("holds a workspace to 25 subscriptions, even when creates race", async () => {
     const seeded = await seedWorkspace();
-    const attempts = await Promise.allSettled(Array.from({ length: 30 }, () => subscribe(seeded)));
+    const attempts = await Promise.allSettled(Array.from({ length: 30 }, (_, index) => subscribe(seeded, { targetUrl: `${receiver.url}/${index}` })));
     expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(25);
     for (const refused of attempts.filter((attempt) => attempt.status === "rejected")) {
       expect(refused.reason).toMatchObject({ statusCode: 409, code: "event_subscription_limit_reached" });

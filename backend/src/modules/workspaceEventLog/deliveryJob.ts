@@ -10,7 +10,7 @@ import {
 import type {
   DueEventSubscription,
   WorkspaceEventDeliveryWake,
-  WorkspaceEventSubscriptionStore,
+  EventSubscriptionDeliveryStore,
 } from "../../shared/domain/workspaceEventSubscriptions.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WorkspaceEventDeliveryDrain } from "./deliveryDrain.js";
@@ -46,7 +46,7 @@ export const workspaceEventDeliveryJobHandler = (
     await drain.drain(target, context.signal);
   });
 
-/** How many due subscriptions one sweep starts; the rest wait for the next one. */
+/** How many due subscriptions one search returns; a sweep keeps searching past them until none are left. */
 const SWEEP_BATCH = 500;
 
 /**
@@ -56,19 +56,31 @@ const SWEEP_BATCH = 500;
  */
 export class WorkspaceEventDeliveryScheduler implements WorkspaceEventDeliveryWake {
   constructor(private readonly dependencies: {
-    subscriptions: Pick<WorkspaceEventSubscriptionStore, "findDue">;
+    subscriptions: Pick<EventSubscriptionDeliveryStore, "findDue">;
     queue: Pick<BackgroundJobQueue, "enqueue">;
     logger: Pick<AppLogger, "warn">;
   }) {}
 
   /** Every workspace's due subscriptions. Returns how many drains it started. */
   async sweep(): Promise<number> {
-    return this.start(await this.dependencies.subscriptions.findDue({ limit: SWEEP_BATCH }));
+    return this.startAll({});
   }
 
   /** One workspace's due subscriptions. */
   async deliverWorkspace(workspaceId: string): Promise<number> {
-    return this.start(await this.dependencies.subscriptions.findDue({ workspaceId, limit: SWEEP_BATCH }));
+    return this.startAll({ workspaceId });
+  }
+
+  /** Pages through the due subscriptions in id order, so a backlog past one batch is reached in the same sweep. */
+  private async startAll(scope: { workspaceId?: string }): Promise<number> {
+    let started = 0;
+    let afterSubscriptionId: string | undefined;
+    for (;;) {
+      const due = await this.dependencies.subscriptions.findDue({ ...scope, ...(afterSubscriptionId ? { afterSubscriptionId } : {}), limit: SWEEP_BATCH });
+      started += await this.start(due);
+      if (due.length < SWEEP_BATCH) return started;
+      afterSubscriptionId = due.at(-1)!.subscriptionId;
+    }
   }
 
   requestDelivery(workspaceId: string): void {

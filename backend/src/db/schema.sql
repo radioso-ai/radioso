@@ -4535,6 +4535,7 @@ CREATE TABLE public.workspace_event_subscriptions (
     workspace_id uuid NOT NULL,
     label text NOT NULL,
     target_url_ciphertext text NOT NULL,
+    target_url_hash text NOT NULL,
     target_host text NOT NULL,
     secret_ciphertext text NOT NULL,
     event_types text[] NOT NULL,
@@ -4563,7 +4564,8 @@ CREATE TABLE public.workspace_event_subscriptions (
     CONSTRAINT workspace_event_subscriptions_label_check CHECK ((label = ANY (ARRAY['zapier'::text, 'n8n'::text, 'custom'::text]))),
     CONSTRAINT workspace_event_subscriptions_last_delivery_outcome_check CHECK ((last_delivery_outcome = ANY (ARRAY['delivered'::text, 'failed'::text]))),
     CONSTRAINT workspace_event_subscriptions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text]))),
-    CONSTRAINT workspace_event_subscriptions_target_host_check CHECK (((length(target_host) >= 1) AND (length(target_host) <= 255)))
+    CONSTRAINT workspace_event_subscriptions_target_host_check CHECK (((length(target_host) >= 1) AND (length(target_host) <= 255))),
+    CONSTRAINT workspace_event_subscriptions_target_url_hash_check CHECK ((target_url_hash ~ '^[0-9a-f]{64}$'::text))
 );
 
 
@@ -9920,6 +9922,13 @@ CREATE UNIQUE INDEX voice_sessions_vendor_conversation_uniq ON public.voice_sess
 --
 
 CREATE INDEX workspace_event_subscriptions_due_idx ON public.workspace_event_subscriptions USING btree (next_attempt_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: workspace_event_subscriptions_target_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspace_event_subscriptions_target_idx ON public.workspace_event_subscriptions USING btree (workspace_id, target_url_hash);
 
 
 --

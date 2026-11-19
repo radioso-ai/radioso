@@ -3040,7 +3040,7 @@ export interface paths {
         put?: never;
         /**
          * Subscribe a URL to workspace events
-         * @description Each event of `eventTypes` recorded from now on is POSTed to `targetUrl`, one event per request, in the order `GET /api/v1/workspace/events` lists them. The response carries `signingSecret` once; verify every push's `X-Radioso-Signature` with it. The target must be https on a host that resolves to a public address. A target that answers `410 Gone` is unsubscribed. Each type also needs the permission that reads it from the event log. A workspace holds at most 25 subscriptions. Requires `workspace.event_subscriptions.manage`.
+         * @description Each event of `eventTypes` recorded from now on is POSTed to `targetUrl`, one event per request, in the order `GET /api/v1/workspace/events` lists them. The response carries `signingSecret` once; verify every push's `X-Radioso-Signature` with it. Subscribing a URL the workspace already subscribed replaces that subscription with a new one: a new `id` and a new secret, its place in the log carried over from an active one, the newest events for a disabled one. The replaced `id` answers `404` from then on, so a create retried after a lost response never leaves two subscriptions delivering the same events, and a late unsubscribe of the replaced `id` leaves the new one alone. The target must be https, without a username or password, on a host that resolves to a public address. A target that answers `410 Gone` is unsubscribed. Each type also needs the permission that reads it from the event log. A workspace holds at most 25 subscriptions. Requires `workspace.event_subscriptions.manage`.
          */
         post: operations["createEventSubscription"];
         delete?: never;
@@ -3058,7 +3058,7 @@ export interface paths {
         };
         /**
          * Get an event subscription
-         * @description One subscription, to check it still exists and is `active`. Treat `404` or `disabled` as gone and subscribe again. Requires `workspace.event_subscriptions.manage`.
+         * @description One subscription, to check it still exists and is `active`. Treat `404` or `disabled` as gone and subscribe the URL again. Requires `workspace.event_subscriptions.manage`.
          */
         get: operations["getEventSubscription"];
         put?: never;
@@ -5456,7 +5456,7 @@ export interface webhooks {
         put?: never;
         /**
          * A workspace event pushed to a subscription
-         * @description Radioso POSTs one event per request to the subscription's target, in log order. The body is the same envelope `GET /api/v1/workspace/events` lists. Verify `X-Radioso-Signature` before trusting the body: `sha256=` and the hex HMAC-SHA256, keyed by the subscription's `signingSecret`, of `{X-Radioso-Timestamp}.{raw body}`. Delivery is at-least-once: deduplicate on `Idempotency-Key`, which is the event's `id`. Answer 2xx within 10 seconds to accept it. `410 Gone` deletes the subscription. Any other answer, a timeout or a redirect to another origin is a failure: the event is retried after 30 seconds, doubling to at most an hour, and newer events wait behind it. A subscription failing for 24 hours, after at least 5 attempts, is disabled.
+         * @description Radioso POSTs one event per request to the subscription's target, in log order. The body is the same envelope `GET /api/v1/workspace/events` lists. Verify `X-Radioso-Signature` before trusting the body: `sha256=` and the hex HMAC-SHA256, keyed by the subscription's `signingSecret`, of `{X-Radioso-Timestamp}.{raw body}`. Delivery is at-least-once: deduplicate on `Idempotency-Key`, which is the event's `id`. Answer 2xx within 10 seconds to accept it. `410 Gone` deletes the subscription. Any other answer, a timeout or a redirect to another origin is a failure: the event is retried no sooner than 30 seconds later, the wait doubling after each failure to at most an hour, and newer events wait behind it. A subscription failing for 24 hours, after at least 5 attempts, is disabled.
          */
         post: operations["receiveWorkspaceEvent"];
         delete?: never;
@@ -11885,7 +11885,7 @@ export interface components {
             targetHost: string;
             eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending")[];
             /**
-             * @description `disabled` receives nothing more. Delete it and subscribe again to start over at the newest events.
+             * @description `disabled` receives nothing more until its client subscribes the same URL again.
              * @enum {string}
              */
             status: "active" | "disabled";
@@ -11899,7 +11899,7 @@ export interface components {
             createdBy: {
                 /** @enum {string} */
                 kind: "service_account" | "personal_token" | "teammate";
-                /** @description The service account's or token's name, or the teammate's, as it reads now. */
+                /** @description The service account's or token's name, or the teammate's display name, as it reads now. Null for a teammate without a display name. */
                 label: string | null;
             };
             lastDelivery: {
@@ -11907,7 +11907,7 @@ export interface components {
                 at: string;
                 /** @enum {string} */
                 outcome: "delivered" | "failed";
-                /** @description The target's HTTP status, or null when no response came back (timeout, refused address). */
+                /** @description The target's HTTP status, or null when no response came back (a timeout, a refused or unresolvable host). */
                 statusCode: number | null;
             } | null;
             /**
@@ -11918,11 +11918,11 @@ export interface components {
         };
         EventSubscriptionCreated: {
             subscription: components["schemas"]["EventSubscription"];
-            /** @description Verifies `X-Radioso-Signature` on every push. Returned only here; store it now. */
+            /** @description Verifies `X-Radioso-Signature` on every push. Returned only here; store it now. Subscribing the same URL again issues a new one. */
             signingSecret: string;
         };
         CreateEventSubscriptionRequest: {
-            /** @description The https URL each event is POSTed to. Its host must resolve to a public address. Never returned after this response. */
+            /** @description The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id. */
             targetUrl: string;
             /** @description The event types to receive. Each needs the permission that reads it from the event log. */
             eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending")[];
@@ -26888,7 +26888,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Subscribed. `signingSecret` is shown only here. */
+            /** @description Subscribed, or the existing subscription for this URL replaced by a new one with a new `id`. `signingSecret` is shown only here. */
             201: {
                 headers: {
                     [name: string]: unknown;

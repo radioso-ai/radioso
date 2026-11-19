@@ -38,7 +38,8 @@ export type EventSubscriptionCreator =
 
 /**
  * The creator as stored. An id is null once its row is gone, which the owner check reads as
- * revoked. `label` is the service account's or token's name, or the teammate's, read with the row.
+ * revoked. `label` is the service account's or token's name, or the teammate's display name (never
+ * their email), read with the row; null for a teammate without one.
  */
 export interface StoredEventSubscriptionCreator {
   kind: EventSubscriptionCreatorKind;
@@ -86,31 +87,53 @@ export interface DueEventSubscription {
   subscriptionId: string;
 }
 
-/**
- * Where subscriptions are stored. Delivery writes go to an active subscription only, so a drain
- * that races a delete or a disable writes nothing.
- */
+/** A failure streak as the store counted it: the attempt just recorded included. */
+export interface FailedDeliveryStreak {
+  consecutiveFailures: number;
+  failingSince: Date;
+}
+
+/** Where the subscription lifecycle (create, list, delete) stores subscriptions. */
 export interface WorkspaceEventSubscriptionStore {
   /**
-   * Creates the subscription at the log's horizon, unless the workspace already holds `cap`; null
-   * then. Counting and inserting are serialized per workspace, so two creates never pass the cap.
+   * Subscribes a target, one subscription per target per workspace. `targetUrlHashes` is the
+   * target's keyed hash under every configured key, the current key's first, so a target hashed
+   * before a key rotation is still found.
+   *
+   * Without a subscription for the target, creates one at the log's horizon, unless the workspace
+   * already holds `cap` (null then). With one, replaces it with a new subscription under a new id,
+   * so a late delete of the old id never removes the new one: it takes the old cursor when the old
+   * one was active, so nothing is skipped or sent twice, and starts at the horizon when it was
+   * disabled. `replacedSubscriptionId` names the one replaced. Serialized per workspace.
    */
-  createWithinCap(input: {
+  upsertWithinCap(input: {
     workspaceId: string;
     label: EventSubscriptionLabel;
     targetHost: string;
     targetUrlCiphertext: string;
+    targetUrlHashes: readonly [string, ...string[]];
     secretCiphertext: string;
     eventTypes: readonly WorkspaceEventType[];
     createdBy: EventSubscriptionCreator;
     cap: number;
-  }): Promise<StoredEventSubscription | null>;
+  }): Promise<{ subscription: StoredEventSubscription; replacedSubscriptionId: string | null } | null>;
   list(workspaceId: string): Promise<StoredEventSubscription[]>;
   find(workspaceId: string, subscriptionId: string): Promise<StoredEventSubscription | null>;
-  findSealed(workspaceId: string, subscriptionId: string): Promise<SealedEventSubscription | null>;
   /** Deletes it, and returns what was deleted. */
   delete(workspaceId: string, subscriptionId: string): Promise<StoredEventSubscription | null>;
-  /** Its target accepted the event at `position`: the cursor moves past it and the streak ends. */
+}
+
+/**
+ * What delivery reads and writes. Every write goes to an active subscription only, so a drain that
+ * races a delete, a disable or a newer run writes nothing and learns it from the `false` or `null`.
+ */
+export interface EventSubscriptionDeliveryStore {
+  /** The subscription with its sealed target URL and secret. */
+  findSealed(workspaceId: string, subscriptionId: string): Promise<SealedEventSubscription | null>;
+  /**
+   * Its target accepted the event at `position`: the cursor moves to it and the streak ends. False
+   * when the subscription is no longer active or its cursor is already at or past `position`.
+   */
   recordDelivered(input: {
     workspaceId: string;
     subscriptionId: string;
@@ -118,17 +141,20 @@ export interface WorkspaceEventSubscriptionStore {
     statusCode: number;
     at: Date;
   }): Promise<boolean>;
-  /** A push failed: the streak, when the next attempt is due, and, when the streak is long enough, disabled. */
+  /** Moves the cursor forward to `position` when it is behind it: a read found nothing more below it. */
+  advanceCursor(input: { workspaceId: string; subscriptionId: string; position: LogPosition }): Promise<void>;
+  /**
+   * A push failed. The store counts the attempt into the streak, then `schedule` decides from that
+   * streak when the next attempt is due and whether the subscription is disabled for failing.
+   * Null when the subscription is no longer active.
+   */
   recordFailed(input: {
     workspaceId: string;
     subscriptionId: string;
     statusCode: number | null;
     at: Date;
-    consecutiveFailures: number;
-    failingSince: Date;
-    nextAttemptAt: Date;
-    disable: boolean;
-  }): Promise<boolean>;
+    schedule: (streak: FailedDeliveryStreak) => { nextAttemptAt: Date; disable: boolean };
+  }): Promise<(FailedDeliveryStreak & { disabled: boolean }) | null>;
   disable(input: {
     workspaceId: string;
     subscriptionId: string;
@@ -136,10 +162,10 @@ export interface WorkspaceEventSubscriptionStore {
     at: Date;
   }): Promise<boolean>;
   /**
-   * Active subscriptions that are due and have an event below the log's horizon after their cursor:
-   * across every workspace, or in one.
+   * Active subscriptions that are due and have an event below the log's horizon after their cursor,
+   * across every workspace or in one, in id order after `afterSubscriptionId`.
    */
-  findDue(input: { workspaceId?: string; limit: number }): Promise<DueEventSubscription[]>;
+  findDue(input: { workspaceId?: string; afterSubscriptionId?: string; limit: number }): Promise<DueEventSubscription[]>;
 }
 
 /**

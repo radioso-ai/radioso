@@ -44,10 +44,12 @@ POSTs. This module knows:
 
 - the subscription lifecycle (`subscriptionService.ts`): a type is subscribed only by a caller who
   may read it from the log, the target passes the outbound URL rule
-  (`normalizeWebhookTargetUrl`), the URL and secret are sealed (`subscriptionSecrets.ts`), and a
-  workspace holds at most 25; the view shows the target's host, never its URL;
-- delivery (`deliveryDrain.ts`): one subscription's events in log order, read through the
-  `WorkspaceEventLogStore`, one signed POST each, after `EventSubscriptionOwnerCheck`
+  (`normalizeWebhookTargetUrl`) and carries no userinfo, the URL and secret are sealed
+  (`subscriptionSecrets.ts`), a workspace holds at most 25, and subscribing a URL again replaces
+  its subscription with a new id (matched by a keyed hash of the URL; an active one's cursor carries over); the view (`subscriptionView.ts`, published
+  as `EventSubscription`) shows the target's host, never its URL;
+- delivery (`deliveryDrain.ts`): up to ten of one subscription's events per run, in log order,
+  read through the `WorkspaceEventLogStore`, one signed POST each, after `EventSubscriptionOwnerCheck`
   (`ownerCheck.ts`) confirms the creator may still read them; `2xx` advances the cursor, `410`
   deletes the subscription, anything else records a failure and backs off with newer events behind
   it;
@@ -59,7 +61,7 @@ POSTs. This module knows:
 
 It knows nothing about how credentials are stored or roles resolved (the owner check is a port
 the composition adapts from machine access and account access), nor which change recorded an
-event. The subscription store port and the wake port live in
+event. The subscription store ports (lifecycle and delivery) and the wake port live in
 `backend/src/shared/domain/workspaceEventSubscriptions.ts`; the Postgres store is
 `db/repositories/workspaceEventSubscriptionRepository.ts`. `app/composition/workspaceEventLog.ts`
 builds the service, the drain's job handler, the every-minute `workspace-event-delivery`

@@ -13,19 +13,15 @@ const DISABLE_AFTER_ATTEMPTS = 5;
 export const deliveryBackoffMs = (failures: number): number =>
   Math.min(FIRST_BACKOFF_MS * 2 ** Math.max(0, failures - 1), MAX_BACKOFF_MS);
 
-/** What a failed push does to its subscription's streak. */
-export const failedDeliveryStreak = (input: {
-  previousFailures: number;
-  failingSince: Date | null;
-  at: Date;
-}): { consecutiveFailures: number; failingSince: Date; nextAttemptAt: Date; disable: boolean } => {
-  const consecutiveFailures = input.previousFailures + 1;
-  const failingSince = input.failingSince ?? input.at;
-  return {
-    consecutiveFailures,
-    failingSince,
-    nextAttemptAt: new Date(input.at.getTime() + deliveryBackoffMs(consecutiveFailures)),
-    disable: consecutiveFailures >= DISABLE_AFTER_ATTEMPTS
-      && input.at.getTime() - failingSince.getTime() >= DISABLE_AFTER_FAILING_MS,
-  };
-};
+/**
+ * What a failure streak, the attempt that failed at `at` included, means for its subscription: when
+ * the next attempt is due, and whether it has failed long enough, and often enough, to stop.
+ */
+export const scheduleAfterFailure = (
+  streak: { consecutiveFailures: number; failingSince: Date },
+  at: Date,
+): { nextAttemptAt: Date; disable: boolean } => ({
+  nextAttemptAt: new Date(at.getTime() + deliveryBackoffMs(streak.consecutiveFailures)),
+  disable: streak.consecutiveFailures >= DISABLE_AFTER_ATTEMPTS
+    && at.getTime() - streak.failingSince.getTime() >= DISABLE_AFTER_FAILING_MS,
+});

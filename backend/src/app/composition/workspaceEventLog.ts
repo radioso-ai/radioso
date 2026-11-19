@@ -15,7 +15,6 @@ import type { ApiPrincipalAuthenticator } from "../../modules/machineAccess/publ
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import {
   connectorKeySealer,
-  EventDeliveryTargetRefusedError,
   EventSubscriptionService,
   requestSubscriptionDrain,
   WorkspaceEventDeliveryDrain,
@@ -25,10 +24,11 @@ import {
   type EventSubscriptionOwnerCheck,
 } from "../../modules/workspaceEventLog/public.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
+import { assertPublicHttpUrl, stripIpv6Brackets } from "../../shared/domain/publicNetwork.js";
 import type { WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { WorkspaceEventDeliveryWake } from "../../shared/domain/workspaceEventSubscriptions.js";
 import { FetchWebhookHttpClient, type WebhookUrlGuard } from "../../shared/infra/http/signedWebhook.js";
-import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
+import { fetchPublicUrl, resolvePublicAddresses } from "../../shared/infra/http/publicUrlFetch.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -101,21 +101,23 @@ const WORKSPACE_EVENT_DELIVERY_TASK_ID = "workspace-event-delivery";
 /** Every minute, matching `workspace_event_delivery` in `infra/terraform/scheduler.tf`. */
 const WORKSPACE_EVENT_DELIVERY_INTERVAL_MS = 60_000;
 
-/** The outbound URL guard at delivery, its refusal told apart from a target's own failure. */
-const refusingGuard = (guard: WebhookUrlGuard): WebhookUrlGuard => async (url) => {
-  try {
-    await guard(url);
-  } catch {
-    throw new EventDeliveryTargetRefusedError();
-  }
+/**
+ * The outbound URL guard at every hop of a push: an http(s) URL whose host resolves only to public
+ * addresses. It refuses with `PublicNetworkPolicyError`, and a host that does not resolve with its
+ * `PublicHostUnresolvedError` subclass, so delivery tells a refused target from a resolver outage.
+ * The DNS-pinned fetch checks the addresses it connects to again.
+ */
+const assertPublicDeliveryTarget: WebhookUrlGuard = async (url) => {
+  const target = assertPublicHttpUrl(url);
+  await resolvePublicAddresses(stripIpv6Brackets(target.hostname.toLowerCase()));
 };
 
 /**
  * Subscriptions and their delivery (#1852): the service the routes and Ray read through, the drain
  * job's handler, and the periodic sweep that guarantees every due subscription is drained within a
- * minute. Targets are checked by the same outbound URL guard and DNS-pinned fetch webhook skills
- * use, at create and at every hop of every push; plain http to this machine only where
- * `WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK` allows it outside production.
+ * minute. A target passes the website crawler's public-address check at create, and the public
+ * address rule with the DNS-pinned fetch webhook skills use at every hop of every push; plain http
+ * to this machine only where `WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK` allows it outside production.
  */
 export const buildWorkspaceEventDelivery = (input: {
   infrastructure: {
@@ -131,7 +133,7 @@ export const buildWorkspaceEventDelivery = (input: {
   };
   workspaces: Pick<WorkspaceRepositoryPort, "findById">;
   logger: Pick<AppLogger, "warn" | "info">;
-  /** The outbound URL guard; the website crawler's public-address check unless a test supplies one. */
+  /** The outbound URL guard at create; the website crawler's public-address check unless a test supplies one. */
   assertPublicUrl?: WebhookUrlGuard;
 }): {
   subscriptions: EventSubscriptionService;
@@ -152,7 +154,7 @@ export const buildWorkspaceEventDelivery = (input: {
       access: input.access.accountAccessService,
       workspaces: input.workspaces,
     }),
-    client: new FetchWebhookHttpClient(refusingGuard(assertPublicUrl), { allowHttpLoopback, fetchImpl: fetchPublicUrl }),
+    client: new FetchWebhookHttpClient(assertPublicDeliveryTarget, { allowHttpLoopback, fetchImpl: fetchPublicUrl }),
     sealer,
     requeue: (target) => requestSubscriptionDrain(input.queue, target),
     audit,

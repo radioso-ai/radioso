@@ -7,6 +7,11 @@
 -- encrypted like the signing secret, under CONNECTOR_ENCRYPTION_KEY. Only its host is kept in
 -- plain text, for the Settings list.
 --
+-- One subscription per target. `target_url_hash` is an HMAC of the normalized target URL keyed
+-- from CONNECTOR_ENCRYPTION_KEY, never the URL itself. Subscribing the same URL again in a
+-- workspace (a client retrying a create whose response it lost) replaces that row rather than
+-- adding a second one that would deliver every event twice.
+--
 -- Delivery. `cursor_tx` / `cursor_position` is the subscription's place in the log, the same
 -- (transaction, position) order the log's reader pages by: set to the snapshot horizon when the
 -- subscription is created, and advanced past each event its target accepts. The delivery columns
@@ -27,6 +32,7 @@ CREATE TABLE workspace_event_subscriptions (
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   label TEXT NOT NULL CHECK (label IN ('zapier', 'n8n', 'custom')),
   target_url_ciphertext TEXT NOT NULL,
+  target_url_hash TEXT NOT NULL CHECK (target_url_hash ~ '^[0-9a-f]{64}$'),
   target_host TEXT NOT NULL CHECK (length(target_host) BETWEEN 1 AND 255),
   secret_ciphertext TEXT NOT NULL,
   event_types TEXT[] NOT NULL CHECK (cardinality(event_types) BETWEEN 1 AND 50),
@@ -55,6 +61,10 @@ CREATE TABLE workspace_event_subscriptions (
 
 -- A workspace's list, its cap, and the post-commit wake's scoped search.
 CREATE INDEX workspace_event_subscriptions_workspace_idx ON workspace_event_subscriptions (workspace_id, status);
+
+-- One subscription per target URL in a workspace.
+CREATE UNIQUE INDEX workspace_event_subscriptions_target_idx
+  ON workspace_event_subscriptions (workspace_id, target_url_hash);
 
 -- The periodic sweep's search for active subscriptions that are due, across every workspace.
 CREATE INDEX workspace_event_subscriptions_due_idx

@@ -2279,6 +2279,7 @@ export interface WorkspaceEventSubscriptions {
   status: Generated<string>;
   target_host: string;
   target_url_ciphertext: string;
+  target_url_hash: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }

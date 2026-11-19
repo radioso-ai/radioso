@@ -3,10 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import type { AuthenticatedPrincipal } from "../../../modules/account/public.js";
-import {
-  resolveReadableEventTypes,
-  WORKSPACE_EVENT_SUBSCRIPTIONS_MANAGE_PERMISSION,
-} from "../../../modules/workspaceEventLog/public.js";
+import { WORKSPACE_EVENT_SUBSCRIPTIONS_MANAGE_PERMISSION } from "../../../modules/workspaceEventLog/public.js";
 import { WORKSPACE_EVENT_TYPES } from "../../../shared/domain/workspaceEventLog.js";
 import {
   EVENT_SUBSCRIPTION_LABELS,
@@ -20,7 +17,7 @@ type EventSubscriptionRouteDependencies = WorkspaceSessionDependencies & Pick<Ap
 
 export const createEventSubscriptionBodySchema = z.object({
   targetUrl: z.string().trim().min(1).max(2048)
-    .describe("The https URL each event is POSTed to. Its host must resolve to a public address. Never returned after this response."),
+    .describe("The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id."),
   eventTypes: z.array(z.enum(WORKSPACE_EVENT_TYPES)).min(1).max(WORKSPACE_EVENT_TYPES.length)
     .describe("The event types to receive. Each needs the permission that reads it from the event log."),
   label: z.enum(EVENT_SUBSCRIPTION_LABELS).describe("Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings."),
@@ -43,9 +40,8 @@ const creatorOf = (res: Response): EventSubscriptionCreator => {
 };
 
 /**
- * Event subscriptions (#1852) at `/api/v1/workspace/event-subscriptions`: Zapier REST hooks and
- * n8n trigger nodes create one when a workflow turns on and delete it when it turns off. A
- * subscription receives each event of its types as a signed POST.
+ * Event subscriptions (#1852) at `/api/v1/workspace/event-subscriptions`: a receiver subscribes its
+ * URL with a token, and receives each event of its types as a signed POST until it unsubscribes.
  */
 export const createWorkspaceEventSubscriptionRoutes = (dependencies: EventSubscriptionRouteDependencies): Router => {
   const router = Router();
@@ -56,7 +52,6 @@ export const createWorkspaceEventSubscriptionRoutes = (dependencies: EventSubscr
     try {
       const body = req.body as z.infer<typeof createEventSubscriptionBodySchema>;
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-      const readableTypes = await resolveReadableEventTypes((permission) => holdsWorkspacePermission(dependencies, res, permission));
       const created = await dependencies.workspaceEventSubscriptions.create({
         workspaceId,
         actor: { accountId },
@@ -64,7 +59,12 @@ export const createWorkspaceEventSubscriptionRoutes = (dependencies: EventSubscr
         targetUrl: body.targetUrl,
         eventTypes: body.eventTypes,
         label: body.label,
-        readableTypes,
+        permits: async (permissions) => {
+          for (const permission of permissions) {
+            if (!(await holdsWorkspacePermission(dependencies, res, permission))) return false;
+          }
+          return true;
+        },
       });
       res.status(201).json(created);
     } catch (error) {

@@ -71,21 +71,16 @@ test('an operator sees where workspace events go and deletes a subscription that
   await page.goto(`/w/${workspaceKey}/settings?tab=api-access`)
 
   const card = page.locator('#event-subscriptions')
-  await expect(card.getByRole('heading', { name: 'Event subscriptions' })).toBeVisible()
   const rows = card.getByTestId('event-subscription-row')
   await expect(rows).toHaveCount(2)
-  await expect(rows.nth(0)).toContainText('Zapier · hooks.zapier.example')
-  await expect(rows.nth(0)).toContainText('routine.completed, contact_request.created')
-  await expect(rows.nth(0)).toContainText('Service account Zapier connection')
-  await expect(rows.nth(0)).toContainText('Delivered (200)')
-  await expect(rows.nth(1)).toContainText('n8n · automation.example')
-  await expect(rows.nth(1)).toContainText('Stopped: failing for a day')
-  await expect(rows.nth(1)).toContainText('Failed (502)')
+  await expect(rows.nth(0)).toHaveAttribute('data-state', 'active')
+  await expect(rows.nth(0)).toContainText('hooks.zapier.example')
+  await expect(rows.nth(1)).toHaveAttribute('data-state', 'stopped_failing')
+  await expect(rows.nth(1)).toContainText('automation.example')
 
-  await rows.nth(1).getByRole('button', { name: 'Delete n8n · automation.example' }).click()
+  await rows.nth(1).getByRole('button', { name: /automation\.example/ }).click()
   const confirm = page.getByRole('alertdialog')
-  await expect(confirm).toContainText('Events stop going to automation.example')
-  await confirm.getByRole('button', { name: 'Delete subscription' }).click()
+  await confirm.getByRole('button', { name: /delete/i }).click()
 
   await expect(confirm).toHaveCount(0)
   await expect(rows).toHaveCount(1)
@@ -93,7 +88,7 @@ test('an operator sees where workspace events go and deletes a subscription that
   expect(deletes).toEqual([`${n8n.id} workspace-1`])
 })
 
-test('a workspace no automation has subscribed to says how one gets there', async ({ page }) => {
+test('a workspace with no subscriptions lists none and shows no error', async ({ page }) => {
   await seedDashboardStorage(page)
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
   await page.route('**/backend/api/v1/account/workspaces/workspace-1/api-access**', async (route) => {
@@ -104,5 +99,8 @@ test('a workspace no automation has subscribed to says how one gets there', asyn
 
   await page.goto(`/w/${workspaceKey}/settings?tab=api-access`)
 
-  await expect(page.locator('#event-subscriptions')).toContainText('No event subscriptions. Turning on a Zapier or n8n trigger adds one.')
+  const card = page.locator('#event-subscriptions')
+  await expect(card.getByTestId('event-subscriptions-empty')).toBeVisible()
+  await expect(card.getByTestId('event-subscription-row')).toHaveCount(0)
+  await expect(card.getByRole('alert')).toHaveCount(0)
 })

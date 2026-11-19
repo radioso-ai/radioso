@@ -157,6 +157,7 @@ import { NotificationRecipientStateRepository } from "../../db/repositories/noti
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { createPeriodicTasks } from "../composition/periodicTaskRunner.js";
+import { contributedPeriodicTasks } from "../composition/applicationModule.js";
 import { wireVisitorImages } from "../composition/visitorImages.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
 import { createPublicConversationEventBus } from "../composition/publicConversationEvents.js";
@@ -198,8 +199,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     audit: infrastructure.auditService,
   });
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes, logger });
-  const abuseControlComposition = createAbuseControlComposition({ env, logger, metricsRegistry: infrastructure.metricsRegistry, postgresRepository: repositories.abuseControlRepository });
-  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({ auditService: infrastructure.auditService, env, logger, repositories });
+  const abuseControlComposition = createAbuseControlComposition({
+    env,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    postgresRepository: repositories.abuseControlRepository,
+  });
+  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
+    auditService: infrastructure.auditService,
+    env,
+    logger,
+    repositories,
+  });
   const { voiceSessions, voiceRecordingErasures, voiceRecordings } = wireVoiceRecordings({
     database: infrastructure.database,
     credentials: workspaceProviderCredentialsService,
@@ -1162,19 +1173,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRecordings.erasureRecoveryTask,
     // Built in: single-use nonces of verified visitor identities are deleted once their window has passed.
     identityNoncePrunePeriodicTask({ nonces: repositories.identityNonceRepository, logger }),
+    // Built in: every event subscription with an event waiting is drained within a minute.
     workspaceEventDelivery.periodicTask,
-    ...composition.periodicTaskRegistrations.map((registration) => ({
-      id: registration.id,
-      intervalMs: registration.intervalMs,
-      handle: registration.create({
-        database: infrastructure.database,
-        logger,
-        audit: infrastructure.auditService,
-        noticeMail,
-        accountAdministrators,
-        appBaseUrl: env.APP_BASE_URL ?? null,
-      }),
-    })),
+    ...contributedPeriodicTasks(composition.periodicTaskRegistrations, {
+      database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null,
+    }),
   ];
   const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
   const conversationLinks = buildConversationLinkResolver({

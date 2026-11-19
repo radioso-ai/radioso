@@ -1,0 +1,136 @@
+---
+title: "Install the widget on Wix, Shopify, Webflow, Squarespace, WordPress, or Google Tag Manager"
+description: "Where each site builder takes the website widget's script tag, which plans allow it, and which addresses to add to the widget's allowed origins."
+last_updated: 2026-11-19
+---
+
+import { Callout } from 'nextra/components'
+
+# Install the widget on a site builder
+
+Every site builder takes the widget the same way: one script tag, pasted where the platform lets you add code to every page. Each platform needs two things from you. The snippet has to load on each page, and every address your site answers on has to be on the widget's allowed list. Most failed installs miss the second.
+
+The running example is Acme Outdoor, whose shop answers at `https://www.acme-outdoor.example` and `https://acme-outdoor.example`.
+
+## Before you start
+
+Open the agent's **Channels** section, then **Web chat**, and turn on **Website widget**. Under **Add this to your website**, copy the snippet. It looks like this, with your own app address and token:
+
+```html
+<script
+  async
+  src="https://your-frontend.example.com/radioso-embed.js"
+  data-radioso-token="wksp_embed_REPLACE_WITH_YOUR_TOKEN"
+></script>
+```
+
+The dashboard says to paste it just before the closing `</body>` tag. The script loads `async`, so `<head>` works too when a platform only offers that. Changing the widget's look later never means pasting it again: see [Customize the website widget](/guides/customize-the-widget).
+
+## Which addresses to allow
+
+**Where the chat widget can appear** decides which sites may start a chat. Leave **Any website** on and any page that carries the snippet can launch the widget. Turn it off to list addresses under **Specific websites**, one per line. Radioso compares the browser's origin with each line exactly: the scheme, the host, and the port.
+
+- Write the full origin with `https://`, such as `https://www.acme-outdoor.example`. A line without a scheme, such as `www.acme-outdoor.example`, is dropped when it's saved. A path is trimmed off, so `https://www.acme-outdoor.example/shop` saves as `https://www.acme-outdoor.example`.
+- `https://www.acme-outdoor.example` and `https://acme-outdoor.example` are different origins. If both serve pages without redirecting, list both.
+- Wildcard subdomains don't match anything. `https://*.myshopify.com` saves as written and admits no site. List each address, or use **Any website**.
+- The builder's own address counts too. A Shopify store at `https://acme-outdoor.myshopify.com`, a Webflow site at `https://acme-outdoor.webflow.io`, and the custom domain they point to are separate origins.
+
+The list holds up to 20 addresses.
+
+## Wix
+
+1. In the site's dashboard, go to **Settings**, then **Custom Code** under **Development & integrations**.
+2. Click **+ Add Custom Code** and paste the snippet.
+3. Apply it to **All pages**, loading on each page the visitor opens rather than once per visit.
+4. Under **Place Code in**, choose **Body – end**, and save.
+
+Wix runs custom code only on a published site with a connected domain, and connecting a domain takes a Premium plan. If you assign a different domain later, Wix removes the snippet, so paste it again. Allow the connected domain, such as `https://www.acme-outdoor.example`. Source: Wix Help Center, [Embedding custom code on your site](https://support.wix.com/en/article/embedding-custom-code-on-your-site).
+
+## Shopify
+
+1. In the Shopify admin, go to **Online Store**, then **Themes**.
+2. Next to the current theme, open the **…** menu icon and choose **Edit code**.
+3. Open `layout/theme.liquid`, paste the snippet on the line above `</body>`, and click **Save**.
+
+The snippet belongs to that theme. When you switch themes, or install an update that conflicts with your edits, paste it into the new copy. Shopify lets you edit code only on a theme you've bought, not on a trial. Checkout pages don't run theme code, so the widget appears on the storefront but not during checkout. A Shopify custom pixel isn't an alternative, because pixels run in a sandbox that can't draw on the page.
+
+Allow your custom domain, such as `https://www.acme-outdoor.example`, plus `https://acme-outdoor.myshopify.com` if anyone browses the store at that address. Sources: Shopify Help Center, [Edit theme code](https://help.shopify.com/en/manual/online-store/themes/theme-structure/extend/edit-theme-code), and [Custom pixels](https://help.shopify.com/en/manual/promoting-marketing/pixels/custom-pixels).
+
+## Webflow
+
+1. Open **Site settings**, then the **Custom code** tab.
+2. Paste the snippet into **Footer code** and choose **Save changes**.
+3. Publish the site. Custom code goes live only once you publish.
+
+Custom code needs a paid Site plan, or a Core, Growth, Agency, or Freelancer Workspace. Allow every domain you publish to, such as `https://acme-outdoor.webflow.io` and `https://www.acme-outdoor.example`. Source: Webflow Help Center, [Custom code in head and body tags](https://help.webflow.com/hc/en-us/articles/33961357265299-Custom-code-in-head-and-body-tags).
+
+## Squarespace
+
+1. In the editor, open the **Code Injection** panel. Its address ends in `/pages/website-tools/code-injection`.
+2. Paste the snippet into **Footer** and save. Squarespace adds footer code before `</body>` on every page.
+
+Code injection needs a Core, Plus, or Advanced plan, or one of some legacy plans. Checkout pages don't run injected code. While you're logged in, Squarespace can turn scripts off in its preview, so check the widget in a private window. Allow your domain, such as `https://www.acme-outdoor.example`. Source: Squarespace Help Center, [Using code injection](https://support.squarespace.com/hc/en-us/articles/205815908-Using-code-injection).
+
+## WordPress
+
+The Radioso WordPress plugin syncs your posts and products into the workspace and publishes the agent's discovery paths. It doesn't add the widget to your pages, so paste the snippet as well. See [WordPress and WooCommerce](/operators/wordpress-connector) for the plugin.
+
+The quickest way in is a header-and-footer plugin. With WPCode, go to **Code Snippets**, then **Header & Footer**, paste the snippet into the footer box, and choose **Save Changes**. Source: WPCode, [Using the global header and footer settings](https://wpcode.com/docs/using-the-global-header-footer-settings/).
+
+If you maintain a child theme, print the snippet from its `functions.php` on the `wp_footer` hook instead:
+
+```php
+add_action('wp_footer', function () {
+    echo '<script async src="https://your-frontend.example.com/radioso-embed.js" data-radioso-token="wksp_embed_REPLACE_WITH_YOUR_TOKEN"></script>';
+});
+```
+
+On WordPress.com, installing a plugin takes a paid plan. See WordPress.com's [plugins support page](https://wordpress.com/support/plugins/) for which plans include it. Allow the site address, plus the bare domain if it serves pages without redirecting to `www`.
+
+## Google Tag Manager
+
+Google Tag Manager can drop custom `data-` attributes from a `<script src>` tag pasted into a Custom HTML tag. The launcher reads its token from `data-radioso-token` on its own script tag, so a pasted snippet can load and then show nothing. Build the script tag in code instead, so the attribute is on the element the launcher reads:
+
+```html
+<script>
+  (function () {
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://your-frontend.example.com/radioso-embed.js';
+    s.setAttribute('data-radioso-token', 'wksp_embed_REPLACE_WITH_YOUR_TOKEN');
+    (document.body || document.head).appendChild(s);
+  })();
+</script>
+```
+
+1. In your container, go to **Tags** and create a new tag of type **Custom HTML**.
+2. Paste the code above, with your app address and token in place of the placeholders.
+3. Set its trigger to **All Pages**.
+4. Submit and publish the container.
+
+The widget then appears wherever the container runs, so allow the same addresses as the site itself. A visitor whose browser blocks Google Tag Manager won't get the widget either. If that matters for your audience, paste the snippet into the site directly. Source: Google Tag Manager Help, [Custom HTML tags](https://support.google.com/tagmanager/answer/6107167).
+
+## Check the install
+
+Open your live site in a private window, so the builder's logged-in preview doesn't get in the way. The launcher should appear in the corner you chose. Open it and ask something your documents answer.
+
+If the launcher appears but the chat can't start, the page's origin isn't on the list. In the browser's network panel, the `embed-config` or session request answers `400`, with an error saying the website is not approved to host the embedded assistant. Compare the address bar with your list, character for character, including `www`. If the agent hasn't been published yet, the widget says "This assistant isn't available right now. Please try again later." instead. Publish it.
+
+<Callout type="info">
+  Test on the published site, not inside the builder's editor. An editor preview can run on the builder's own address, which isn't on your list and doesn't need to be.
+</Callout>
+
+## Common failure modes
+
+- **Nothing appears on any page.** The code isn't reaching the live site. On Wix that usually means there's no connected domain, on Webflow an unpublished site, and on Squarespace a plan without code injection.
+- **The widget works on `www` but not the bare domain, or the other way round.** Only one of the two origins is on the list. Add the other one.
+- **The widget works on the custom domain but not on `*.myshopify.com` or `*.webflow.io`.** That address is a separate origin. Add it if visitors use it.
+- **A Google Tag Manager tag fires but no launcher appears.** The snippet was pasted as is and lost its `data-radioso-token`. Use the `createElement` version above.
+- **The widget disappeared after a theme change on Shopify.** The snippet lives in one theme's `theme.liquid`. Paste it into the new theme.
+- **The widget is missing at checkout.** Shopify and Squarespace checkout pages don't run site code, so the widget stays on the storefront pages.
+
+## Read next
+
+- [Customize the website widget](/guides/customize-the-widget): colors, position, the welcome message, and suggested questions.
+- [Embed on your website](/quickstarts/website-embed): how origin checks, sessions, and analytics events work.
+- [WordPress and WooCommerce](/operators/wordpress-connector): sync your pages and products into the workspace.

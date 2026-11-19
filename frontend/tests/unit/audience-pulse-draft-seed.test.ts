@@ -53,10 +53,10 @@ describe('audience-pulse-draft-seed', () => {
   it('links a saved document to its seed topic without letting a failure escape', async () => {
     linkTopicDraftMock.mockRejectedValueOnce(new Error('offline'))
 
-    linkAudiencePulseDraft({ title: 'Directions', questions: [], topicId: 'topic-travel' }, 'document-1')
-    linkAudiencePulseDraft({ title: 'No topic', questions: [] }, 'document-2')
-    linkAudiencePulseDraft(null, 'document-3')
-    await Promise.resolve()
+    await expect(linkAudiencePulseDraft({ title: 'Directions', questions: [], topicId: 'topic-travel' }, 'document-1'))
+      .resolves.toBeUndefined()
+    await linkAudiencePulseDraft({ title: 'No topic', questions: [] }, 'document-2')
+    await linkAudiencePulseDraft(null, 'document-3')
 
     expect(linkTopicDraftMock).toHaveBeenCalledTimes(1)
     expect(linkTopicDraftMock).toHaveBeenCalledWith({ topicId: 'topic-travel', documentId: 'document-1' })

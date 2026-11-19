@@ -7,6 +7,14 @@ import type {
 import type { AudiencePulseDraftSeed } from '@/lib/audience-pulse-draft-seed'
 import { questionLabel } from '@/lib/visitor-image-input'
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Whether a topic can carry operator state ("not for us", a draft link). Topic ids are UUIDs, but a
+ * report saved before they were can hold other ids, which the topic-state routes refuse.
+ */
+export const topicKeepsState = (topicId: string): boolean => UUID_PATTERN.test(topicId)
+
 /** A topic the operator marked "not for us" (true) or brought back (false) since the report was read. */
 export type DismissalChoices = Readonly<Record<string, boolean>>
 
@@ -21,6 +29,8 @@ export interface ContentQueueItem {
   rationale: string | null
   questions: string[]
   latestDraft: { documentId: string; createdAt: string } | null
+  /** False for a legacy topic id: no "not for us", and a draft is not recorded against it. */
+  keepsState: boolean
   draftSeed: AudiencePulseDraftSeed
 }
 
@@ -50,6 +60,8 @@ const queueItem = (
   recommendation: AudiencePulseRecommendation | undefined,
 ): ContentQueueItem => {
   const questions = recommendation && recommendation.questions.length > 0 ? recommendation.questions : gapQuestions(theme)
+  const keepsState = topicKeepsState(theme.id)
+  const topic = keepsState ? { topicId: theme.id } : {}
   return {
     topicId: theme.id,
     title: recommendation?.title ?? theme.title,
@@ -59,9 +71,10 @@ const queueItem = (
     rationale: recommendation?.rationale ?? null,
     questions,
     latestDraft: gap.latestDraft ?? null,
+    keepsState,
     draftSeed: recommendation
-      ? { title: recommendation.startDraft.title, questions: recommendation.startDraft.questions, topicId: theme.id }
-      : { title: theme.title, questions, topicId: theme.id },
+      ? { title: recommendation.startDraft.title, questions: recommendation.startDraft.questions, ...topic }
+      : { title: theme.title, questions, ...topic },
   }
 }
 

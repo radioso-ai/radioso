@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import type { AudiencePulseHydratedReport } from "@/lib/api-audience-pulse";
 
-import { busyReport, quietReport } from "./audience-pulse-fixtures";
+import { busyReport, fixtureTopicId, quietReport } from "./audience-pulse-fixtures";
 import {
   accountId,
   installDashboardApiMocks,
@@ -19,6 +19,7 @@ const conversationTwo = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
 const evidenceMessageOne = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
 const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 const createdDocumentId = "dddddddd-dddd-4ddd-8ddd-000000000001";
+const refundTopicId = "eeeeeeee-eeee-4eee-8eee-000000000001";
 
 const completedReport: AudiencePulseHydratedReport = {
   period,
@@ -38,7 +39,7 @@ const completedReport: AudiencePulseHydratedReport = {
   dissolvedTopics: [],
   themes: [
     {
-      id: "theme-1",
+      id: refundTopicId,
       title: "Refund timing",
       description: "Repeat questions about how long refunds take after a return is accepted.",
       memberCount: 30,
@@ -78,12 +79,12 @@ const completedReport: AudiencePulseHydratedReport = {
     },
   ],
   contentGaps: [
-    { themeId: "theme-1", eligibleEvidenceCount: 6, distinctConversationCount: 4, dismissedAt: null, latestDraft: null },
+    { themeId: refundTopicId, eligibleEvidenceCount: 6, distinctConversationCount: 4, dismissedAt: null, latestDraft: null },
   ],
   recommendations: [
     {
       id: "rec-1",
-      themeId: "theme-1",
+      themeId: refundTopicId,
       title: "Explain refund timelines end-to-end",
       rationale: "Visitors repeatedly ask when the refund lands and whether their bank changes it.",
       questions: [
@@ -938,8 +939,9 @@ test.describe("Audience Pulse dashboard", () => {
     await composer.getByRole("button", { name: "Add Document" }).click();
     await expect(composer).toBeHidden();
 
-    await expect.poll(() => mocks.state.topicWrites).toEqual([
-      { method: "POST", path: "/topics/theme-1/drafts", body: { documentId: createdDocumentId } },
+    // The save waits for the link, so the composer closes only once it is recorded.
+    expect(mocks.state.topicWrites).toEqual([
+      { method: "POST", path: `/topics/${refundTopicId}/drafts`, body: { documentId: createdDocumentId } },
     ]);
     expect(documentBodies).toHaveLength(1);
 
@@ -953,6 +955,53 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(composer).toBeHidden();
     expect(documentBodies).toHaveLength(2);
     await expect(page.getByText(/Failed to save document/)).toHaveCount(0);
+  });
+
+  test("a report saved with legacy topic ids drafts without recording the topic and offers no Not for us", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    const legacyReport: AudiencePulseHydratedReport = {
+      ...completedReport,
+      themes: [{ ...completedReport.themes[0], id: "theme-1" }],
+      contentGaps: [{ ...completedReport.contentGaps[0], themeId: "theme-1" }],
+      recommendations: [{ ...completedReport.recommendations[0], themeId: "theme-1" }],
+    };
+    const mocks = await installAudiencePulseMocks(page, { read: "completed", report: legacyReport });
+    await page.route("**/backend/api/v1/document", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ status: 201, json: { documentId: createdDocumentId, status: "pending" } });
+    });
+
+    await openPulse(page);
+    const refund = queueRow(page, "Explain refund timelines end-to-end");
+    await expect(refund.getByRole("button", { name: "Draft" })).toBeVisible();
+    await expect(refund.getByRole("button", { name: /^More for/ })).toHaveCount(0);
+
+    await refund.getByRole("button", { name: "Draft" }).click();
+    const composer = page.getByRole("dialog", { name: "Add Document" });
+    await expect(page.getByLabel("Title")).toHaveValue("Refund timelines: after approval, at the bank, and reconciliations");
+    await composer.getByRole("button", { name: "Add Document" }).click();
+    await expect(composer).toBeHidden();
+    expect(mocks.state.topicWrites).toEqual([]);
+  });
+
+  test("when every gap is marked not for us, the queue offers Restore and claims no empty period", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    const dismissedAt = "2026-11-18T10:00:00.000Z";
+    await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: { ...quietReport, contentGaps: quietReport.contentGaps.map((gap) => ({ ...gap, dismissedAt })) },
+    });
+
+    await openPulse(page);
+    await expect(queueSection(page).getByRole("button", { name: "1 not for us · Restore" })).toBeVisible();
+    await expect(queueSection(page).getByText("No content gaps in this period.")).toHaveCount(0);
+    await queueSection(page).getByRole("button", { name: "1 not for us · Restore" }).click();
+    await expect(queueRow(page, "Parking and directions to the studio")).toBeVisible();
   });
 
   test("a topic with a saved draft says when it was added instead of offering Draft", async ({ page }) => {
@@ -982,8 +1031,8 @@ test.describe("Audience Pulse dashboard", () => {
     await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
     await expect(meals).toBeVisible();
     await expect.poll(() => mocks.state.topicWrites.map((write) => `${write.method} ${write.path}`)).toEqual([
-      "PUT /topics/food/dismissal",
-      "DELETE /topics/food/dismissal",
+      `PUT /topics/${fixtureTopicId("food")}/dismissal`,
+      `DELETE /topics/${fixtureTopicId("food")}/dismissal`,
     ]);
 
     await meals.getByRole("button", { name: "More for Meals, allergies and dietary options" }).click();

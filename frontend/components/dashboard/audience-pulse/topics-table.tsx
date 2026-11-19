@@ -231,7 +231,7 @@ function OtherRow({ other, largestQuestionCount }: { other: OtherTopicRow; large
       <td className="px-3 py-2.5">
         <ShareCell
           questionCount={other.questionCount}
-          noAnswerCount={0}
+          noAnswerCount={other.noAnswerCount}
           share={other.share}
           largestQuestionCount={largestQuestionCount}
         />
@@ -277,7 +277,7 @@ export function TopicsTable({
   const [sort, setSort] = useState<TopicSort>({ key: 'questions', direction: 'desc' })
   const visible = sortTopicRows(filterTopicRows(rows, state.filter), sort)
   const shown = state.showAll ? visible : visible.slice(0, ROW_LIMIT)
-  const largestQuestionCount = Math.max(0, ...rows.map((row) => row.theme.memberCount))
+  const largestQuestionCount = Math.max(other?.questionCount ?? 0, ...rows.map((row) => row.theme.memberCount))
   const onSort = (key: TopicSortKey) =>
     setSort((current) => ({
       key,

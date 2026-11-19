@@ -126,7 +126,12 @@ describe('conversationChannelLabel', () => {
   it('names a channel by its badge, else its source, else the dashboard chat', () => {
     expect(conversationChannelLabel('website_embed')).toBe('Embedded')
     expect(conversationChannelLabel('voice')).toBe('Voice')
-    expect(conversationChannelLabel('whatsapp')).toBe('whatsapp')
+    expect(conversationChannelLabel('whatsapp')).toBe('WhatsApp')
+    expect(conversationChannelLabel('email')).toBe('Email')
+    expect(conversationChannelLabel('agent_api')).toBe('Agent API')
+    expect(conversationChannelLabel('slack')).toBe('Slack')
+    expect(conversationChannelLabel('a_channel_nobody_named')).toBe('a_channel_nobody_named')
+    expect(conversationChannelLabel('constructor')).toBe('constructor')
     expect(conversationChannelLabel(null)).toBe('Dashboard chat')
   })
 })

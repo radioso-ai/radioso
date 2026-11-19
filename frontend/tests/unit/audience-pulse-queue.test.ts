@@ -7,7 +7,7 @@ import type {
   AudiencePulseTheme,
   AudiencePulseThemeEvidence,
 } from '@/lib/api-audience-pulse'
-import { contentQueue } from '@/lib/audience-pulse-queue'
+import { contentQueue, topicKeepsState } from '@/lib/audience-pulse-queue'
 
 const evidence = (
   reference: string,
@@ -75,7 +75,11 @@ const report = (overrides: Partial<AudiencePulseHydratedReport>): AudiencePulseH
   ...overrides,
 })
 
-const travel = theme('travel', 'Getting to the retreat centre', {
+const TRAVEL = '11111111-1111-4111-8111-000000000001'
+const FOOD = '11111111-1111-4111-8111-000000000002'
+const ROOMS = '11111111-1111-4111-8111-000000000003'
+
+const travel = theme(TRAVEL, 'Getting to the retreat centre', {
   evidence: [
     evidence('ev-1', 'Is there a bus?', 'unanswered'),
     evidence('ev-2', 'Can I cycle there?', 'answered'),
@@ -83,28 +87,28 @@ const travel = theme('travel', 'Getting to the retreat centre', {
     evidence('ev-4', 'Is there a bus?', 'partial'),
   ],
 })
-const food = theme('food', 'Food and dietary needs')
-const rooms = theme('rooms', 'Accommodation and rooms')
+const food = theme(FOOD, 'Food and dietary needs')
+const rooms = theme(ROOMS, 'Accommodation and rooms')
 
 describe('contentQueue', () => {
   it('ranks the topics in the queue by how many questions had no answer in your content', () => {
     const queue = contentQueue(report({
       themes: [travel, food, rooms],
-      contentGaps: [gap('food', 12), gap('travel', 40), gap('rooms', 20)],
+      contentGaps: [gap(FOOD, 12), gap(TRAVEL, 40), gap(ROOMS, 20)],
     }), {})
 
     expect(queue.items.map((item) => [item.topicId, item.noAnswerCount])).toEqual([
-      ['travel', 40],
-      ['rooms', 20],
-      ['food', 12],
+      [TRAVEL, 40],
+      [ROOMS, 20],
+      [FOOD, 12],
     ])
   })
 
   it('titles a row with its recommendation, else its topic, and always names the topic', () => {
     const queue = contentQueue(report({
       themes: [travel, food],
-      contentGaps: [gap('travel', 40), gap('food', 12)],
-      recommendations: [recommendation('travel', 'Directions and transfers')],
+      contentGaps: [gap(TRAVEL, 40), gap(FOOD, 12)],
+      recommendations: [recommendation(TRAVEL, 'Directions and transfers')],
     }), {})
 
     expect(queue.items.map((item) => [item.title, item.topicTitle])).toEqual([
@@ -116,12 +120,12 @@ describe('contentQueue', () => {
   it('lists the recommendation questions, else the topic questions with no or a partial answer', () => {
     const withRecommendation = contentQueue(report({
       themes: [travel],
-      contentGaps: [gap('travel', 40)],
-      recommendations: [recommendation('travel', 'Directions and transfers')],
+      contentGaps: [gap(TRAVEL, 40)],
+      recommendations: [recommendation(TRAVEL, 'Directions and transfers')],
     }), {})
     const withoutRecommendation = contentQueue(report({
       themes: [travel],
-      contentGaps: [gap('travel', 40)],
+      contentGaps: [gap(TRAVEL, 40)],
     }), {})
 
     expect(withRecommendation.items[0].questions).toEqual(['Is there a shuttle?', 'Where do I park?'])
@@ -133,39 +137,39 @@ describe('contentQueue', () => {
   it('seeds a draft from the recommendation, else from the topic and its questions, keyed to the topic', () => {
     const queue = contentQueue(report({
       themes: [travel, food],
-      contentGaps: [gap('travel', 40), gap('food', 12)],
-      recommendations: [recommendation('travel', 'Directions and transfers')],
+      contentGaps: [gap(TRAVEL, 40), gap(FOOD, 12)],
+      recommendations: [recommendation(TRAVEL, 'Directions and transfers')],
     }), {})
 
     expect(queue.items[0].draftSeed).toEqual({
       title: 'Directions and transfers (draft)',
       questions: ['Is there a shuttle?', 'Where do I park?', 'How long is the ride?'],
-      topicId: 'travel',
+      topicId: TRAVEL,
     })
-    expect(queue.items[1].draftSeed).toEqual({ title: 'Food and dietary needs', questions: [], topicId: 'food' })
+    expect(queue.items[1].draftSeed).toEqual({ title: 'Food and dietary needs', questions: [], topicId: FOOD })
   })
 
   it('leaves out dismissed topics, with the operator’s latest choice winning over the saved one', () => {
     const contentGaps = [
-      gap('travel', 40),
-      gap('food', 12, { dismissedAt: '2026-11-18T10:00:00.000Z' }),
-      gap('rooms', 20, { dismissedAt: '2026-11-18T10:00:00.000Z' }),
+      gap(TRAVEL, 40),
+      gap(FOOD, 12, { dismissedAt: '2026-11-18T10:00:00.000Z' }),
+      gap(ROOMS, 20, { dismissedAt: '2026-11-18T10:00:00.000Z' }),
     ]
     const saved = contentQueue(report({ themes: [travel, food, rooms], contentGaps }), {})
-    const changed = contentQueue(report({ themes: [travel, food, rooms], contentGaps }), { travel: true, rooms: false })
+    const changed = contentQueue(report({ themes: [travel, food, rooms], contentGaps }), { [TRAVEL]: true, [ROOMS]: false })
 
-    expect(saved.items.map((item) => item.topicId)).toEqual(['travel'])
-    expect(saved.dismissedTopicIds).toEqual(['food', 'rooms'])
-    expect(changed.items.map((item) => item.topicId)).toEqual(['rooms'])
-    expect(changed.dismissedTopicIds).toEqual(['travel', 'food'])
+    expect(saved.items.map((item) => item.topicId)).toEqual([TRAVEL])
+    expect(saved.dismissedTopicIds).toEqual([FOOD, ROOMS])
+    expect(changed.items.map((item) => item.topicId)).toEqual([ROOMS])
+    expect(changed.dismissedTopicIds).toEqual([TRAVEL, FOOD])
   })
 
   it('carries the latest draft and counts the questions the queue covers', () => {
     const queue = contentQueue(report({
       themes: [travel, food],
       contentGaps: [
-        gap('travel', 40, { latestDraft: { documentId: 'cccccccc-cccc-4ccc-8ccc-000000000001', createdAt: '2026-11-12T09:00:00.000Z' } }),
-        gap('food', 12, { latestDraft: undefined, dismissedAt: undefined }),
+        gap(TRAVEL, 40, { latestDraft: { documentId: 'cccccccc-cccc-4ccc-8ccc-000000000001', createdAt: '2026-11-12T09:00:00.000Z' } }),
+        gap(FOOD, 12, { latestDraft: undefined, dismissedAt: undefined }),
       ],
     }), {})
 
@@ -175,7 +179,28 @@ describe('contentQueue', () => {
   })
 
   it('skips a gap whose topic is not in the report', () => {
-    expect(contentQueue(report({ themes: [food], contentGaps: [gap('gone', 50), gap('food', 12)] }), {}).items)
+    expect(contentQueue(report({ themes: [food], contentGaps: [gap('gone', 50), gap(FOOD, 12)] }), {}).items)
       .toHaveLength(1)
+  })
+
+  it('keeps no operator state for a legacy topic id, while Draft still seeds the document', () => {
+    const legacy = theme('theme-1', 'Refund timing')
+    const queue = contentQueue(report({
+      themes: [legacy, food],
+      contentGaps: [gap('theme-1', 40), gap(FOOD, 12)],
+    }), {})
+
+    expect(queue.items.map((item) => [item.topicId, item.keepsState])).toEqual([['theme-1', false], [FOOD, true]])
+    expect(queue.items[0].draftSeed).toEqual({ title: 'Refund timing', questions: [] })
+    expect(queue.items[1].draftSeed.topicId).toBe(FOOD)
+  })
+})
+
+describe('topicKeepsState', () => {
+  it('accepts a UUID and nothing else', () => {
+    expect(topicKeepsState(TRAVEL)).toBe(true)
+    expect(topicKeepsState(TRAVEL.toUpperCase())).toBe(true)
+    expect(topicKeepsState('theme-1')).toBe(false)
+    expect(topicKeepsState(`${TRAVEL}x`)).toBe(false)
   })
 })

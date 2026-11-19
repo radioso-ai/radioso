@@ -72,7 +72,7 @@ function QueueRow({
         </div>
         <div className="justify-self-end">{draftControl}</div>
         <div>
-          {canDismiss ? (
+          {canDismiss && item.keepsState ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="ghost" size="icon-sm" aria-label={`More for ${item.title}`}>
@@ -141,7 +141,9 @@ export function ContentQueueSection({
           </span>
         ) : null}
       </div>
-      {items.length === 0 ? <p className="pt-2 text-sm text-muted-foreground">No content gaps in this period.</p> : null}
+      {items.length === 0 && dismissedTopicIds.length === 0 ? (
+        <p className="pt-2 text-sm text-muted-foreground">No content gaps in this period.</p>
+      ) : null}
       {shown.map((item, index) => (
         <QueueRow
           key={item.topicId}

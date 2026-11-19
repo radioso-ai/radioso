@@ -589,7 +589,7 @@ export function DocumentsView({
         setIsEditingDetail(false)
       } else {
         const created = await documentsApi.createDocument(payload)
-        linkAudiencePulseDraft(audiencePulseDraftSeedRef.current.seed, created.documentId)
+        await linkAudiencePulseDraft(audiencePulseDraftSeedRef.current.seed, created.documentId)
         invalidateDashboardQueries(['document.status_changed'])
         setDocumentsPage(1)
         audiencePulseDraftSeedRef.current = { seed: null, consumed: true, dismissed: true }

@@ -22,7 +22,7 @@ export function PulseTiles({ tiles }: { tiles: readonly PulseTile[] }) {
             <Sparkline
               points={tile.series}
               formatValue={tile.seriesKind === 'rate' ? formatRatePoint : formatCount}
-              ariaLabel={`${tile.label}, daily, last ${tile.series.length} days`}
+              ariaLabel={`${tile.label}, daily over the ${tile.series.length} whole days in the period`}
             />
           )}
         />

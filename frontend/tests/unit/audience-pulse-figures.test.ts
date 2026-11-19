@@ -166,6 +166,23 @@ describe('pulseTiles', () => {
     expect(thinPrevious?.every((tile) => tile.delta === null)).toBe(true)
   })
 
+  it('draws only the whole UTC days of a window that starts and ends mid-day', () => {
+    const day = (date: string) => ({ day: date, questionCount: 4, conversationCount: 2, answeredCount: 3, contentGapEligibleCount: 1 })
+    const midDay = pulseTiles(report({
+      period: { start: '2026-10-20T06:00:00.000Z', end: '2026-10-23T06:00:00.000Z' },
+      totals: totals(),
+      dailyVolume: [day('2026-10-20'), day('2026-10-21'), day('2026-10-22'), day('2026-10-23')],
+    }))
+    const midnight = pulseTiles(report({
+      period: { start: '2026-10-20T00:00:00.000Z', end: '2026-10-23T00:00:00.000Z' },
+      totals: totals(),
+      dailyVolume: [day('2026-10-20'), day('2026-10-21'), day('2026-10-22')],
+    }))
+
+    expect(midDay?.[1].series.map((point) => point.date)).toEqual(['2026-10-21', '2026-10-22'])
+    expect(midnight?.[1].series.map((point) => point.date)).toEqual(['2026-10-20', '2026-10-21', '2026-10-22'])
+  })
+
   it('draws daily rates, leaving a day without questions undefined', () => {
     const tiles = pulseTiles(report({
       totals: totals(),

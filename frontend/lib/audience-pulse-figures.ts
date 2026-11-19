@@ -80,12 +80,28 @@ export interface PulseTile {
   subtext: string
   /** Null when there is nothing to compare against. */
   delta: StatDelta | null
+  /** One point per whole UTC day in the window. */
   series: SparklinePoint[]
   /** A count series reads as counts, a rate series as fractions of 1. */
   seriesKind: 'count' | 'rate'
 }
 
 const DAY_MS = 86_400_000
+
+const isUtcMidnight = (iso: string): boolean => Date.parse(iso) % DAY_MS === 0
+
+/**
+ * The window's whole UTC days. `dailyVolume` has an entry for every day the rolling window touches,
+ * so a window that starts or ends mid-day has a partial day at that end, which would read as a dip.
+ */
+const wholeDays = (report: AudiencePulseHydratedReport) => {
+  const days = report.dailyVolume ?? []
+  const { start, end } = report.period
+  const utcDay = (iso: string) => new Date(iso).toISOString().slice(0, 10)
+  const first = isUtcMidnight(start) || days[0]?.day !== utcDay(start) ? 0 : 1
+  const last = isUtcMidnight(end) || days.at(-1)?.day !== utcDay(end) ? days.length : days.length - 1
+  return days.slice(first, Math.max(first, last))
+}
 
 const deltaOf = (change: number, text: string, label: string, upIsGood: boolean | null): StatDelta => {
   if (change === 0) return { text: `No change ${label}`, trend: 'flat', tone: 'neutral' }
@@ -118,7 +134,7 @@ const dailyRate = (part: number, whole: number): number | null => (whole > 0 ? p
 export const pulseTiles = (report: AudiencePulseHydratedReport): PulseTile[] | null => {
   const totals = report.totals
   if (!totals) return null
-  const days = report.dailyVolume ?? []
+  const days = wholeDays(report)
   const previous = report.previousPeriod ?? null
   const comparable = previous !== null
     && isAboveSampleFloor(previous.questionCount)

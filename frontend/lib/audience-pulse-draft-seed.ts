@@ -128,12 +128,18 @@ export function consumeAudiencePulseDraftSeed(scope: {
 }
 
 /**
- * Records that a document was saved from a seed's topic, so the content queue can say when it
- * was added. Best-effort: the document is already saved, so a failure is neither awaited nor shown.
+ * Records that a document was saved from a seed's topic, so the content queue says when it was
+ * added instead of offering Draft again. The save awaits it so a quick return to Audience Pulse
+ * reads the link; it never rejects, because the document is already saved and a failed link is
+ * bookkeeping the operator need not see.
  */
-export function linkAudiencePulseDraft(seed: AudiencePulseDraftSeed | null, documentId: string): void {
+export async function linkAudiencePulseDraft(seed: AudiencePulseDraftSeed | null, documentId: string): Promise<void> {
   if (!seed?.topicId) return
-  audiencePulseApi.linkTopicDraft({ topicId: seed.topicId, documentId }).catch(() => undefined)
+  try {
+    await audiencePulseApi.linkTopicDraft({ topicId: seed.topicId, documentId })
+  } catch {
+    // Best-effort, see above.
+  }
 }
 
 /**

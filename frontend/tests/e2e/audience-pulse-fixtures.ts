@@ -35,6 +35,15 @@ interface TopicSpec {
   examples?: Array<[question: string, asked: number, status: ExampleStatus]>;
 }
 
+const topicIds = new Map<string, string>();
+/** The UUID a fixture topic is saved under, stable for its slug. */
+export const fixtureTopicId = (slug: string): string => {
+  if (!topicIds.has(slug)) {
+    topicIds.set(slug, `ffffffff-ffff-4fff-8fff-${String(topicIds.size + 1).padStart(12, "0")}`);
+  }
+  return topicIds.get(slug)!;
+};
+
 let uuidCounter = 0;
 const uuid = (prefix: string) => {
   uuidCounter += 1;
@@ -71,7 +80,7 @@ const weeklyFor = (spec: TopicSpec) => {
 const themeFor = (spec: TopicSpec, totalQuestions: number): AudiencePulseTheme => {
   const share = spec.questions / totalQuestions;
   return {
-    id: spec.id,
+    id: fixtureTopicId(spec.id),
     title: spec.title,
     description: spec.description,
     memberCount: spec.questions,
@@ -79,7 +88,7 @@ const themeFor = (spec: TopicSpec, totalQuestions: number): AudiencePulseTheme =
     previousShare: spec.emerged || spec.delta === undefined ? null : share - spec.delta / 100,
     transition: spec.emerged
       ? { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false }
-      : { kind: "survived", parentTopicIds: [spec.id], viaCentroidFallback: false },
+      : { kind: "survived", parentTopicIds: [fixtureTopicId(spec.id)], viaCentroidFallback: false },
     share,
     distinctQuestionCount: Math.round(spec.questions * 0.6),
     weeklyPulse: weeklyFor(spec),
@@ -165,7 +174,7 @@ const reportFor = (spec: ReportSpec): AudiencePulseHydratedReport => {
   });
 
   const contentGaps: AudiencePulseContentGap[] = spec.gaps.map((gap) => ({
-    themeId: gap.topicId,
+    themeId: fixtureTopicId(gap.topicId),
     eligibleEvidenceCount: spec.topics.find((topic) => topic.id === gap.topicId)!.noAnswer,
     distinctConversationCount: gap.conversations,
     dismissedAt: gap.dismissedAt ?? null,
@@ -187,6 +196,7 @@ const reportFor = (spec: ReportSpec): AudiencePulseHydratedReport => {
     contentGaps,
     recommendations: spec.recommendations.map((recommendation) => ({
       ...recommendation,
+      themeId: fixtureTopicId(recommendation.themeId),
       id: `rec-${recommendation.themeId}`,
       evidenceReferences: [],
       startDraft: { title: recommendation.title, questions: recommendation.questions },

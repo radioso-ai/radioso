@@ -263,6 +263,16 @@ const agentDiscoveryDocument = permanent("Permanent exclusion: the public discov
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
 const automationEventFeed = permanent("Permanent exclusion: the workspace event log is a feed automations poll by cursor. Ray reads the same facts where they live: conversation_transcript and conversation_history_search for conversations, contact requests, handoffs and routine endings, and pending decisions through needs_attention.");
+// An event subscription is created by the automation client that receives it (a Zapier REST hook,
+// an n8n trigger node): the create response is the only time the signing secret exists in plain
+// text, and the client verifies every push with it. Ray creating one would put the secret in a
+// model context and hand nobody a receiver that can use it.
+const eventSubscriptionSecretGoesToItsClient = permanent(
+  "Permanent exclusion: creating an event subscription answers with its signing secret once, and the automation client that created it is the one that verifies every push with that secret. Ray would hold a secret no receiver has.",
+);
+const eventSubscriptionRemoval = deferred(
+  "Deferred: deleting an event subscription silently stops an automation its client believes is live, and only the client can subscribe again, so removal needs its own proposal shape. Operators delete one in Settings → API access; list_event_subscriptions reads them.",
+);
 // A context variable *value* is data written for one session, customer, agent, or workspace scope
 // at runtime (by a resolver skill, a pushed API call, or the browser SDK) — it is what a visitor's
 // conversation carries, not a setting an operator tunes. propose_context_variable covers the
@@ -322,6 +332,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
 
   streamWorkspaceEvents: ambientOperatorRuntime,
   listWorkspaceEvents: automationEventFeed,
+  listEventSubscriptions: "list_event_subscriptions",
+  getEventSubscription: "list_event_subscriptions",
+  ...coverage(["createEventSubscription"], eventSubscriptionSecretGoesToItsClient),
+  ...coverage(["deleteEventSubscription"], eventSubscriptionRemoval),
 
   ...coverage([
     "getHealth",

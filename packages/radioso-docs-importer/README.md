@@ -15,9 +15,12 @@ REST API.
   client-side Stoplight widget, so it is not MDX; this package renders it to
   markdown, one document per OpenAPI tag (method, path, params, request/response
   schemas with local `$ref`s dereferenced).
-- **Repo READMEs** — every `README.md` / `readme.md` under the repository, excluding
-  generated and dependency directories. These are imported as raw markdown with one
-  document per README.
+- **Repo READMEs** — only the READMEs listed in `PRODUCT_README_PATHS`
+  (`src/readme/buildReadmeDocuments.ts`): the ones a person outside the team installs,
+  runs, or integrates with (repo overview, TypeScript SDK, MCP server, WordPress
+  plugin). Area briefs for coding agents, test fixtures, spec contracts, infra, and
+  internal packages are not imported. Imported as raw markdown, one document per
+  README. A new README is internal until it is added to the list.
 
 ## Sync semantics
 
@@ -26,7 +29,8 @@ Every document is uploaded under one common `website` source URL, derived from
 the field Radioso citations resolve from. The backend short-circuits unchanged
 pages by content hash, so re-running is idempotent.
 
-`--prune` removes previously imported documents that are no longer present, scoped
+`--prune` removes previously imported documents that are no longer present (including
+READMEs dropped from the allowlist), scoped
 strictly to documents carrying our `metadata.section` (`mdx-docs` /
 `api-reference` / `repo-readme`) — it never touches other docs. Prune is also
 source-aware: it deletes obsolete importer-owned documents that still live under

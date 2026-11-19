@@ -45,6 +45,7 @@ import {
 } from "./assistantTurnOutcomeTypes.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import {
+  buildAssistantTurnCompletedAnalyticsEvent,
   buildAssistantTurnSuccessAuditEvent,
   buildAssistantTurnSuspendedAuditEvent,
   buildOwnershipHandoffAuditEvent,
@@ -810,15 +811,24 @@ export class ChatTurnLifecycle {
       assistantMessage = persisted.message;
       input.onReplyStored?.(assistantMessage.id);
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
+      const tracksCompletion = !suspended && recordsBookkeeping;
       if (!input.transaction) {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
         persisted.afterCommit?.();
       } else {
-        // The jobs are invisible until the caller's transaction commits; a wake now would find nothing.
-        postCommitWake = persisted.afterCommit;
+        // The caller's transaction commits after this returns: the jobs are invisible until then, so
+        // a wake now would find nothing, and the analytics sinks' round trips would hold it open.
+        const afterCommit = persisted.afterCommit;
+        const successInput = presentation.successInput;
+        postCommitWake = afterCommit || tracksCompletion
+          ? () => {
+              afterCommit?.();
+              if (tracksCompletion) void this.trackAssistantTurnCompleted(successInput);
+            }
+          : undefined;
       }
       this.auditService.logRecorded?.(auditEvent);
-      if (!suspended && recordsBookkeeping) {
+      if (tracksCompletion && !input.transaction) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
       }
     } else {
@@ -1253,23 +1263,7 @@ export class ChatTurnLifecycle {
 
   private async trackAssistantTurnCompleted(input: AssistantTurnSuccessInput): Promise<void> {
     try {
-      await this.productAnalyticsService.track({
-        eventName: "chat.completed",
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        subjectType: "conversation",
-        subjectId: input.conversationId,
-        properties: {
-          stream: input.stream,
-          answerOutcome: input.answerOutcome,
-          skillName: input.skillTurnOutcome.skillName,
-          skillOutcome: input.skillTurnOutcome.outcome,
-          skillStatus: input.skillTurnOutcome.status,
-          citationCount: input.citations.length,
-          suggestionCount: input.suggestions?.length ?? 0,
-        },
-        source: "backend",
-      });
+      await this.productAnalyticsService.track(buildAssistantTurnCompletedAnalyticsEvent(input));
     } catch {
       // Analytics fan-out must not change successful chat behavior.
     }

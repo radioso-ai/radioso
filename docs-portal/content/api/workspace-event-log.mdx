@@ -10,6 +10,8 @@ The workspace event log tells an automation that something happened: a visitor s
 
 Read it with a personal token or a service-account credential that holds `workspace.events.read`. Every role that reads history holds it.
 
+To have each event sent to a URL as it happens instead of polling for it, use [workspace event subscriptions](/api/workspace-event-subscriptions). A push carries the same event this log lists.
+
 ## How it works
 
 1. Call `GET /api/v1/workspace/events` without a cursor. You get the newest events, oldest first, and a `nextCursor` that points at the end of the log.
@@ -57,7 +59,7 @@ curl -sS "https://api.radioso.ai/api/v1/workspace/events?types=contact_request.c
 
 ## Paging never skips an event
 
-Two turns can write events at the same moment and finish in either order. The log holds an event back until every transaction that started before it has finished, so an event that commits late still arrives after your cursor instead of behind it. Usually that wait is too short to notice. A write that runs long, such as a database migration during a deploy or a decision whose resumed routine is still answering, delays newer events until it ends; nothing is lost.
+Two turns can write events at the same moment and finish in either order. The log holds an event back until every transaction that started before it has finished, so an event that commits late still arrives after your cursor instead of behind it. Usually that wait is too short to notice. A write that runs long, such as a database migration during a deploy, delays newer events until it ends; nothing is lost.
 
 Deduplicate on `id` when your automation might read the same page twice, for example after it crashed before storing `nextCursor`.
 
@@ -123,6 +125,7 @@ A cursor stays usable for 29 days. An older one returns `410` with `cursor_expir
 
 ## Read next
 
+- [Workspace event subscriptions](/api/workspace-event-subscriptions) to receive each event at a URL as it happens.
 - [Personal tokens and service accounts](/api/workspaces-and-tokens) for the credential an automation uses.
 - [Chat and history](/api/chat-and-history) to read the conversation an event names.
 - The [API Reference](/api-reference) for the full schema of every event type.

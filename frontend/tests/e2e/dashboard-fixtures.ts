@@ -1655,6 +1655,12 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    // No automation has subscribed to this workspace's events unless a spec routes its own list.
+    if (request.method() === "GET" && path === "/workspace/event-subscriptions") {
+      await json(route, { subscriptions: [] });
+      return;
+    }
+
     if (request.method() === "PATCH" && path === "/workspace/setup-state") {
       Object.assign(workspaceSetupState, request.postDataJSON());
       workspaceSetupState.shouldShowFirstRun = workspaceSetupState.dismissed !== true;

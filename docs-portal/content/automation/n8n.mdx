@@ -158,7 +158,7 @@ The nodes do not reply as an operator or resolve decisions. Those routes accept 
 - **"Radioso could not find it" (404).** The agent or conversation id belongs to another workspace, or the agent has never been published.
 - **"Radioso is rate limiting this token" (429).** Authenticated chat, search and answer share one limit of 60 requests per 60 seconds per token by default. Add a wait, or turn on **Retry On Fail** for the node. Self-hosted operators tune it in [Deployment](/operators/deployment).
 - **"Radioso cannot deliver events to this n8n instance" (400 `invalid_target_url`).** Radioso needs a public `https://` webhook URL for n8n. Set `WEBHOOK_URL` on a self-hosted n8n to its public address, or use Radioso Poll Trigger.
-- **"This workspace has reached its limit of event subscriptions" (409).** A workspace holds up to 25. Delete subscriptions that are no longer used, or switch the workflow to Radioso Poll Trigger.
+- **"This workspace has reached its limit of event subscriptions" (409).** A workspace holds up to 25. Delete subscriptions that are no longer used under **Settings → API access**, or switch the workflow to Radioso Poll Trigger.
 - **"This Radioso instance cannot store webhook secrets yet" (503 `encryption_not_configured`).** The operator of a self-hosted instance has to configure encryption. Radioso Poll Trigger works without it.
 - **A test run waits and nothing arrives.** The test listener lasts about two minutes and does not backfill. Trigger a new event in Radioso while it listens.
 - **"Could not reach Radioso".** n8n can't open a connection to the instance. For a self-hosted instance, check that the API origin in the credential is reachable from where n8n runs.

@@ -10,6 +10,7 @@ export const backgroundJobHandlers = (input: {
   slackInbound: readonly BackgroundJobHandlerRegistration[];
   voiceRecordingErasure: BackgroundJobHandlerRegistration;
   visitorImageObjectDeletion: BackgroundJobHandlerRegistration;
+  workspaceEventDelivery: BackgroundJobHandlerRegistration;
   workspaceStoragePurge: BackgroundJobHandlerRegistration;
 }): BackgroundJobHandlerRegistration[] => [
   ...input.chat,
@@ -18,6 +19,8 @@ export const backgroundJobHandlers = (input: {
   input.voiceRecordingErasure,
   // The photos an erasure or the unbound sweep handed off.
   input.visitorImageObjectDeletion,
+  // One event subscription's drain: its events, in order, to its target.
+  input.workspaceEventDelivery,
   // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
   input.workspaceStoragePurge,
 ];

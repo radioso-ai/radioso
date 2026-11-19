@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 ---
 
 # Code Map
@@ -2560,7 +2560,10 @@ Related docs:
 Owns the saved 30-day dashboard analysis that groups recurring conversation
 topics, identifies recurring content gaps from grounding evidence, proposes
 content to write, and opens bounded evidence or a seeded document draft in the
-existing dashboard surfaces. It also owns the topic census: an exact
+existing dashboard surfaces. The report also counts the whole window by answer
+status, by UTC day, and by channel, against the 30 days before it, and keeps the
+operator's state on its content queue: topics marked "not for us" and documents
+drafted from a topic. It also owns the topic census: an exact
 clustering of every eligible visitor question in an analysis window into
 topics, with topic identity (survived, split, merged, emerged, dissolved)
 tracked across analyses so growth and decline are attributable rather than
@@ -2579,7 +2582,8 @@ Public surfaces and contracts:
 - `backend/src/modules/audiencePulse/contracts/topicCensus.ts` (`TopicRepositoryPort` and the run/topic/membership/transition input shapes)
 - `backend/src/modules/audiencePulse/contracts/topicLabel.ts` (`TopicNamingPort`, `TopicLabelPrivacyAuditPort`)
 - `backend/src/modules/audiencePulse/composition.ts`
-- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
+- `backend/src/modules/audiencePulse/contracts/history.ts` (`AudiencePulseHistorySource`, including `readPeriodTotals` for the previous window)
+- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, `POST /api/v1/quality/audience-pulse/evidence-anchor`, `PUT|DELETE /api/v1/quality/audience-pulse/topics/:topicId/dismissal`, and `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`)
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
 - `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
@@ -2587,7 +2591,9 @@ Public surfaces and contracts:
 
 Primary internals:
 
-- `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
+- `backend/src/modules/audiencePulse/services/audiencePulseService.ts` (refresh orchestration, the previous-period read, and the topic queue actions)
+- `backend/src/modules/audiencePulse/services/reportHydration.ts` (stored report plus rehydrated evidence plus topic state into the response) and `narrativeReuse.ts`
+- `backend/src/modules/audiencePulse/domain/report.ts` and `domain/periodTotals.ts` (pure report aggregation: totals with the unclassified remainder, daily volume, channels, previous period)
 - `backend/src/modules/audiencePulse/services/censusService.ts` (orchestrates one census run: population, facets, clustering, naming, identity matching, persistence)
 - `backend/src/modules/audiencePulse/infra/censusServiceFactory.ts`, `modelTopicNamingGateway.ts`, `modelTopicLabelPrivacyAuditGateway.ts`
 - `backend/src/modules/audiencePulse/services/topicLabelPrivacyAudit.ts` (regenerate-once-then-neutral-fallback privacy pass over a generated label)
@@ -2595,8 +2601,9 @@ Primary internals:
 - `backend/src/modules/audiencePulse/infra/audiencePulseRefreshRateLimiter.ts`
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
+- `backend/src/db/repositories/audiencePulseTopicStateRepository.ts` (`audience_pulse_topic_dismissals`, `audience_pulse_topic_drafts`)
 - `backend/src/db/repositories/topicRepository.ts` (`topics`, `topic_census_runs`, `topic_memberships`, `topic_transitions`)
-- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`
+- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`, `263_audience_pulse_topic_state.sql`
 - `backend/prompts/audience-pulse.md`, `audience-pulse-topic-naming.md`, `audience-pulse-topic-fallback.md`, `audience-pulse-topic-audit.md`
 
 Useful searches:

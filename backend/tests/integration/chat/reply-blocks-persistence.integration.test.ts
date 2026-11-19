@@ -9,6 +9,7 @@ import { MessageRepository } from "../../../src/db/repositories/messageRepositor
 import { ChatHistoryService } from "../../../src/modules/chat/services/chatHistoryService.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -19,7 +20,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
  */
 describeIntegration("reply blocks on the message row (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const conversations = new ConversationRepository(database.kysely);
+  const conversations = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
   const messages = new MessageRepository(database.kysely);
   const auditEvents = new AuditEventRepository(database.kysely);
   const history = new ChatHistoryService(

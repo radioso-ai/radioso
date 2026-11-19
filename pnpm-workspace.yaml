@@ -4,6 +4,9 @@ packages:
   - docs-portal
   - typescript-sdk
   - packages/*
+  # Installed on its own with npm and a package-lock.json: n8n's tooling (@n8n/node-cli, n8n-workflow)
+  # carries advisories and would change how existing runtime deps resolve in the root lockfile.
+  - '!packages/n8n-nodes-radioso'
   - ee
   - ee/packages/*
 

@@ -77,9 +77,9 @@ variable "db_support_access_enabled" {
 }
 
 variable "db_tier" {
-  description = "Cloud SQL tier for EU live."
+  description = "Cloud SQL tier for EU live. Changing it restarts the instance. Set the tier here, not in the console: every apply resets the instance to this value."
   type        = string
-  default     = "db-f1-micro"
+  default     = "db-custom-1-3840"
 }
 
 variable "worker_task_max_dispatches_per_second" {

@@ -43,7 +43,7 @@ import { publicApiBaseUrl } from "./publicApiBase.js";
  */
 export const buildContactDeliveryResolver = (database: Database): ConfiguredContactDeliveryResolver =>
   new ConfiguredContactDeliveryResolver(
-    new ConversationRepository(database.kysely),
+    ConversationRepository.forExistingConversations(database.kysely),
     new AgentRepository(database.kysely),
     new WorkspaceOwnerContactRecipientResolver(
       new WorkspaceRepository(database.kysely),

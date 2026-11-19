@@ -1,8 +1,22 @@
-import type { RoutineState } from "@radioso/conversation-contract";
+import type { Routine, RoutineState } from "@radioso/conversation-contract";
 
 import { consentKeyOfGateStepId } from "./consentGates.js";
-import type { RoutineDefinition } from "./domain.js";
+import { declaredSlotVariables, sensitiveSlotKeys, type RoutineDefinition } from "./domain.js";
 import { collectedSlotsByStep } from "./slotCollection.js";
+
+/**
+ * An ended run's declared slot values as they leave the conversation, sensitive ones masked: the
+ * engine's own projection, the one completion exports and operator notices send. `sensitiveSlotKeys`
+ * names the masked keys from the routine's authored sensitivity, never from a value's text.
+ */
+export const endedRunValues = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): { values: Record<string, unknown>; sensitiveSlotKeys: string[] } => {
+  const values = declaredSlotVariables(routine, variables);
+  const sensitive = new Set(sensitiveSlotKeys(routine));
+  return { values, sensitiveSlotKeys: Object.keys(values).filter((key) => sensitive.has(key)) };
+};
 
 /**
  * The sensitive slots (#1543) the step a routine state waits on collects. The visitor's next

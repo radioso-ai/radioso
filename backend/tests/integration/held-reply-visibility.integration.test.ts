@@ -35,6 +35,7 @@ import {
 } from "./support/emailChannelHarness.js";
 import { createApiNode, openEmailConversation, replyFromInbox } from "./support/emailSendHarness.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Research B9, FR-027, SC-004 against Postgres: a held reply is operator-only. Its text, in every
 // state a teammate has not sent it from — pending, discarded, superseded, queued for an automatic
@@ -376,7 +377,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     );
     const messages = new MessageRepository(database.kysely);
     const preparer = new ChatSessionPreparer(
-      new ConversationRepository(database.kysely),
+      new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messages,
       directOnlyRetrievalTurn(),
       new AuditService(createLogger("silent"), new AuditEventRepository(database.kysely)),
@@ -419,7 +420,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
           return { summary: prompt, title: "Billing address" };
         },
       },
-      new ConversationRepository(database.kysely),
+      new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       { generate: async () => ({ title: "Billing address" }) },
       undefined,
       { minMessages: 1, refreshEveryMessages: 1, maxSummaryChars: 100_000 },

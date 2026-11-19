@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Characterization for ConversationRepository keyset pagination (updated_at, created_at, id)
 // — the migrated cursor-tuple comparison.
@@ -13,7 +14,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("ConversationRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ConversationRepository(database.kysely);
+  const repository = new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();

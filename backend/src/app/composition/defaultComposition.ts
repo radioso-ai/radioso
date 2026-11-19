@@ -1,5 +1,6 @@
 import { connectorEncryptionKeys, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
+import { workspaceEventRecorder } from "./workspaceEventLog.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/public.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import {
@@ -270,6 +271,7 @@ export const createDefaultConnectorRegistry = (
       SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
       encryptionKey: env ? connectorEncryptionKeys(env) : undefined,
       backgroundJobs: builtIn.slackBackgroundJobs,
+      workspaceEvents: workspaceEventRecorder,
     },
     email: builtIn.email,
   });

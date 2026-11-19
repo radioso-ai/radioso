@@ -4545,44 +4545,6 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     return bound;
   }
 
-  async createWithInitialAssistantMessage(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    sourceChannel?: string | null;
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    channelContext?: ConversationRecord["channelContext"];
-    verifiedCustomerId?: string | null;
-    entryPageUrl?: string | null;
-    content: string;
-  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    const conversation = await this.create({
-      workspaceId: input.workspaceId,
-      agentId: input.agentId ?? null,
-      sourceChannel: input.sourceChannel ?? null,
-      anonymousSessionId: input.anonymousSessionId ?? null,
-      sourceOrigin: input.sourceOrigin ?? null,
-      channelContext: input.channelContext ?? null,
-      verifiedCustomerId: input.verifiedCustomerId ?? null,
-      entryPageUrl: input.entryPageUrl ?? null,
-    });
-    const assistantMessage: MessageRecord = {
-      id: randomUUID(),
-      conversationId: conversation.id,
-      workspaceId: input.workspaceId,
-      role: "assistant",
-      content: input.content,
-      createdAt: new Date(),
-    };
-
-    if (this.messageRepository) {
-      const existing = this.messageRepository.items.get(conversation.id) ?? [];
-      this.messageRepository.items.set(conversation.id, [...existing, assistantMessage]);
-    }
-
-    return { conversation, assistantMessage };
-  }
-
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     const item = this.items.get(conversationId);
     return item && item.workspaceId === workspaceId ? item : null;

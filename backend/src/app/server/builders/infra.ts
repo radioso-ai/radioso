@@ -58,6 +58,7 @@ import { CustomerEmailConnectionRepository } from "../../../db/repositories/cust
 import { EmailSkillDefinitionRepository } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkillActivityRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webhookSkillDefinitionRepository.js";
+import { buildWorkspaceEventLog, workspaceEventRecorder } from "../../composition/workspaceEventLog.js";
 import { IntegrationConnectionRepository } from "../../../modules/integrationConnections/public.js";
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
@@ -188,6 +189,9 @@ export const buildInfrastructure = (input: {
     documentCapacityReader,
     managedModelPolicy,
     usageEventRecorder,
+    // The workspace event log: the recorder every owning module is handed, and its read side.
+    workspaceEvents: workspaceEventRecorder,
+    workspaceEventLog: buildWorkspaceEventLog(database.kysely, metricsRegistry),
   };
 };
 
@@ -232,7 +236,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
   documentImageRepository: new DocumentImageRepository(database.kysely),
-  conversationRepository: new ConversationRepository(database.kysely),
+  conversationRepository: new ConversationRepository(database.kysely, workspaceEventRecorder),
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),

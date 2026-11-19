@@ -86,6 +86,10 @@ export default tseslint.config(
       'typescript-sdk/src/generated/**',
       // Generated from the committed backend OpenAPI snapshot by `pnpm run sync:openapi`.
       'packages/radioso-mcp-server/src/generated/**',
+      // Linted by n8n's own `n8n-node lint` (CI job "n8n Community Node"). Its rules, such as
+      // MIT-only licensing and NodeApiError-only throws, are the verified-node gate and conflict
+      // with this config's.
+      'packages/n8n-nodes-radioso/**',
       // Generated into the frontend by the EE build.
       'frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**',
     ],

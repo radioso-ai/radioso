@@ -780,13 +780,26 @@ export class AudiencePulseService implements AudiencePulsePort {
     return audiencePulsePreviousPeriod({ period, totals });
   }
 
+  /**
+   * Operator state is decoration on a report that is already saved and, on refresh, billed: a
+   * failed read serves the report without it rather than failing the request.
+   */
   private async readTopicStates(
     workspaceId: string,
     report: AudiencePulseStoredReport,
   ): Promise<Map<string, AudiencePulseTopicState>> {
     const topicIds = report.contentGaps.map((gap) => gap.themeId);
     if (topicIds.length === 0) return new Map();
-    return this.deps.topicStateStore.readTopicStates({ workspaceId, topicIds });
+    try {
+      return await this.deps.topicStateStore.readTopicStates({ workspaceId, topicIds });
+    } catch (error) {
+      this.deps.logger?.warn?.({
+        workspaceId,
+        topicCount: topicIds.length,
+        errorName: error instanceof Error ? error.name : "unknown",
+      }, "audience_pulse_topic_state_read_failed");
+      return new Map();
+    }
   }
 
   private async recordTopicAction(

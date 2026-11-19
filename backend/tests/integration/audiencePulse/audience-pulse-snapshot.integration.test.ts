@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { AudiencePulseSnapshotRepository } from "../../../src/db/repositories/audiencePulseSnapshotRepository.js";
+import { AudiencePulseTopicStateRepository } from "../../../src/db/repositories/audiencePulseTopicStateRepository.js";
 import {
   PostgresAudiencePulseHistorySource,
   buildAudiencePulseAggregateQuery,
@@ -214,6 +215,31 @@ describeIntegration("Audience Pulse snapshot persistence", () => {
     expect(replacementRevision).not.toBeNull();
     expect((await repository.find(workspaceId))?.revision).toBe(replacementRevision);
     expect((await repository.find(workspaceId))?.revision).not.toBe(old.revision);
+  });
+
+  it("reads a saved report whose content gaps name pre-UUID theme ids, with no operator state", async () => {
+    await repository.replace({
+      workspaceId,
+      period,
+      generatedAt: new Date("2026-08-01T00:00:00.000Z"),
+      report: {
+        ...report("Report from a build whose theme ids were not UUIDs"),
+        contentGaps: [{ themeId: "theme-1", eligibleEvidenceCount: 3, distinctConversationCount: 2 }],
+      },
+      promptEvidenceRefs: [],
+    });
+    const warnings: string[] = [];
+    const service = new AudiencePulseService({
+      ...unreachableReadDependencies({ historySource: new PostgresAudiencePulseHistorySource(database.kysely), snapshotStore: repository }),
+      topicStateStore: new AudiencePulseTopicStateRepository(database.kysely),
+      logger: { warn: (_context, message) => warnings.push(message) },
+    });
+
+    await expect(service.read({ accountId, userId: randomUUID(), workspaceId })).resolves.toMatchObject({
+      kind: "completed",
+      report: { contentGaps: [{ themeId: "theme-1", dismissedAt: null, latestDraft: null }] },
+    });
+    expect(warnings).toEqual([]);
   });
 
   it("invalidates the full snapshot when a prompt source is deleted before a saved read", async () => {

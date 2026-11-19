@@ -141,6 +141,17 @@ describeIntegration("AudiencePulseTopicStateRepository (Postgres)", () => {
     });
   });
 
+  it("reads past an id that cannot name a topic, as a report saved before topic ids were UUIDs has", async () => {
+    const workspaceId = await createWorkspace();
+    const topicId = await createTopic(workspaceId);
+    await repository.dismiss({ workspaceId, topicId, userId });
+
+    const states = await repository.readTopicStates({ workspaceId, topicIds: ["theme-1", topicId] });
+
+    expect([...states.keys()]).toEqual([topicId]);
+    await expect(repository.readTopicStates({ workspaceId, topicIds: ["theme-1"] })).resolves.toEqual(new Map());
+  });
+
   it("reads only the topics asked for, and nothing for none", async () => {
     const workspaceId = await createWorkspace();
     const askedTopicId = await createTopic(workspaceId);

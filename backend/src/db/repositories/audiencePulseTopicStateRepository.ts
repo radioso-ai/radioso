@@ -6,6 +6,9 @@ import type {
 } from "../../modules/audiencePulse/contracts.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
+/** The structural shape of a `uuid` column value; a report saved before topic ids were UUIDs has others. */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Postgres adapter for operator state on Audience Pulse topics: one row per dismissal or draft link. */
 export class AudiencePulseTopicStateRepository implements AudiencePulseTopicStateStore {
   constructor(private readonly db: Db) {}
@@ -15,8 +18,9 @@ export class AudiencePulseTopicStateRepository implements AudiencePulseTopicStat
     topicIds: readonly string[];
   }): Promise<Map<string, AudiencePulseTopicState>> {
     const states = new Map<string, AudiencePulseTopicState>();
-    if (input.topicIds.length === 0) return states;
-    const topicIds = [...input.topicIds];
+    // An id that cannot name a topic has no state, and Postgres would reject it as a uuid.
+    const topicIds = input.topicIds.filter((topicId) => UUID_SHAPE.test(topicId));
+    if (topicIds.length === 0) return states;
     const [dismissals, latestDrafts] = await Promise.all([
       this.db
         .selectFrom("audience_pulse_topic_dismissals")

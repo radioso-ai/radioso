@@ -3177,6 +3177,35 @@ describe("operator state on content gaps", () => {
     });
   });
 
+  it("serves the report without operator state, and warns without content, when the state read fails", async () => {
+    const warnings: Array<{ context: Record<string, unknown>; message: string }> = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(savedSnapshot()),
+      topicStateStore: topicStateStoreWith({
+        async readTopicStates() { throw new Error("connection reset"); },
+      }),
+      logger: { info: () => undefined, warn: (context, message) => warnings.push({ context, message }) },
+    });
+    const input = { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID };
+
+    const read = await service.read(input);
+    const refreshed = await service.refresh(input);
+
+    for (const result of [read, refreshed]) {
+      expect(result.kind === "completed" && result.report.contentGaps[0]).toMatchObject({
+        themeId: "topic-1",
+        dismissedAt: null,
+        latestDraft: null,
+      });
+    }
+    // The saved narrative is reused, so the one reservation is released, as it is with state.
+    expect({ reserve: calls.reserve, commit: calls.commit, release: calls.release }).toEqual({ reserve: 1, commit: 0, release: 1 });
+    expect(warnings.filter((warning) => warning.message === "audience_pulse_topic_state_read_failed")).toEqual([
+      { message: "audience_pulse_topic_state_read_failed", context: { workspaceId: WORKSPACE_ID, topicCount: 1, errorName: "Error" } },
+      { message: "audience_pulse_topic_state_read_failed", context: { workspaceId: WORKSPACE_ID, topicCount: 1, errorName: "Error" } },
+    ]);
+  });
+
   it("audits a dismissal and a restore that changed something, and nothing else", async () => {
     const outcomes: Array<"changed" | "unchanged" | "topic_not_found"> = ["changed", "unchanged", "topic_not_found"];
     const writes: string[] = [];

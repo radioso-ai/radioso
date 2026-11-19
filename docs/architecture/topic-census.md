@@ -1,7 +1,7 @@
 ---
 title: "Topic Census"
 description: "How Audience Pulse computes an exact, deterministic topic distribution over visitor questions and tracks topic identity across analyses."
-last_updated: 2026-10-05
+last_updated: 2026-11-19
 ---
 
 # Topic Census
@@ -79,9 +79,18 @@ model cost.
 `computeCensus` (`@radioso/census`) runs seeded k-means over unit-normalized
 facet vectors under cosine distance, twice: once over all facets to produce
 fine-grained base clusters, and once more over the base centroids to
-agglomerate them into `topicTarget` operator-visible topics (10 by default).
-A topic's members are the union of the members of the base clusters it
-absorbed.
+agglomerate them into `topicTarget` operator-visible topics. A topic's members
+are the union of the members of the base clusters it absorbed.
+
+The library takes `topicTarget` as an option and defaults it to 10. The
+Audience Pulse census service sets it from the number of facet-ready questions
+it clusters, `n`: the square root of `n` divided by 3.5, rounded, and held
+between 10 and 40 topics (`deriveTopicTarget`). A workspace with 1,350
+questions or fewer gets 10 topics, one with 5,000 gets 20, and one with 14,000
+gets 34. Topic count follows the square root of volume because a busy workspace
+asks about more things, not proportionally more of them; the scaling keeps
+topics narrow enough to act on as traffic grows. A base pass that yields no
+more clusters than the target skips the agglomeration pass.
 
 `k` for the base pass is derived from a target average cluster size —
 `clamp(ceil(n / targetMembers), kMin, kMax)`, with `targetMembers` defaulting
@@ -133,6 +142,13 @@ renders with a neutral fallback label
 cluster-specific content. The rejection itself is recorded in telemetry —
 never the rejected text.
 
+Each newly named topic costs two model calls, one to name it and one to
+review the label. A flagged label adds a regeneration and a second review, and
+a second flag adds the fallback call, for five at most. Calls are made per
+topic and are not batched; a run starts every topic's calls concurrently.
+Survived topics cost nothing, so a run's naming cost follows how many topics
+changed identity, not how many topics exist.
+
 ## Topic identity across analyses
 
 Clusters are anonymous — nothing in a clustering run says that this run's
@@ -173,7 +189,8 @@ the result in one transaction across:
 
 - `topic_census_runs` — one row per analysis: the window, the exact question
   count, the unclassified count, the derived seed, and the clustering
-  parameters used.
+  parameters used (`params_json`, which includes the `topicTarget` the run
+  chose).
 - `topics` — the current registry of topics, each with its centroid, radius,
   title, description, the run it was created in, and the run it was last
   seen in. A dissolved topic keeps its row, marked with `dissolved_at`.

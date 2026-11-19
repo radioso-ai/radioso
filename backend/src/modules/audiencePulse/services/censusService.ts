@@ -18,6 +18,7 @@ import type {
 
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { deriveCensusSeed } from "../domain/censusSeed.js";
+import { deriveTopicTarget } from "../domain/censusTopicTarget.js";
 import type { AudiencePulseHistorySource } from "../contracts/history.js";
 import type {
   ActiveTopicRecord,
@@ -362,7 +363,14 @@ export class CensusService {
       windowEnd,
       facetIds: censusItems.map((item) => item.id),
     });
-    const censusOptions: CensusOptions = { ...DEFAULT_CENSUS_OPTIONS, seed };
+    // Sized to what is actually clustered, not the wider population: questions
+    // without a current facet never reach `computeCensus`, so they cannot widen a
+    // topic list. The chosen target is persisted with the run in `params`.
+    const censusOptions: CensusOptions = {
+      ...DEFAULT_CENSUS_OPTIONS,
+      seed,
+      topicTarget: deriveTopicTarget(censusItems.length),
+    };
     // `computeCensus` returns only `clusters`/`unclassifiedIds` (`@radioso/census`
     // `CensusResult`): it does not surface k-means iteration count or final inertia,
     // so this service cannot report them without inventing values. If that changes,

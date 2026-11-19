@@ -6,13 +6,14 @@ import { Agent, fetch as undiciFetch } from "undici";
 import {
   assertPublicHttpUrl,
   isPublicNetworkAddress,
+  PublicHostUnresolvedError,
   PublicNetworkPolicyError,
 } from "../../domain/publicNetwork.js";
 
 export { assertPublicHttpUrl } from "../../domain/publicNetwork.js";
 
-export type PublicLookupAddress = { address: string; family: number };
-export type PublicAddressResolver = (hostname: string) => Promise<PublicLookupAddress[]>;
+type PublicLookupAddress = { address: string; family: number };
+type PublicAddressResolver = (hostname: string) => Promise<PublicLookupAddress[]>;
 
 const defaultResolver: PublicAddressResolver = (hostname) =>
   dnsLookup(hostname, { all: true, verbatim: true });
@@ -25,7 +26,7 @@ export const resolvePublicAddresses = async (
   try {
     addresses = await resolver(hostname);
   } catch {
-    throw new PublicNetworkPolicyError("URL host could not be resolved");
+    throw new PublicHostUnresolvedError();
   }
   if (addresses.length === 0 || addresses.some((entry) => !isPublicNetworkAddress(entry.address))) {
     throw new PublicNetworkPolicyError();
@@ -55,7 +56,7 @@ export const createConnectionBoundPublicLookup = (
     });
 };
 
-export type PublicUrlFetch = typeof fetch;
+type PublicUrlFetch = typeof fetch;
 
 export const createPublicUrlFetch = (
   resolver: PublicAddressResolver = defaultResolver,

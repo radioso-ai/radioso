@@ -10,6 +10,8 @@ The workspace event log tells an automation that something happened: a visitor s
 
 Read it with a personal token or a service-account credential that holds `workspace.events.read`. Every role that reads history holds it.
 
+To have each event sent to a URL as it happens instead of polling for it, use [workspace event subscriptions](/api/workspace-event-subscriptions). A push carries the same event this log lists.
+
 ## How it works
 
 1. Call `GET /api/v1/workspace/events` without a cursor. You get the newest events, oldest first, and a `nextCursor` that points at the end of the log.
@@ -123,6 +125,7 @@ A cursor stays usable for 29 days. An older one returns `410` with `cursor_expir
 
 ## Read next
 
+- [Workspace event subscriptions](/api/workspace-event-subscriptions) to receive each event at a URL as it happens.
 - [Personal tokens and service accounts](/api/workspaces-and-tokens) for the credential an automation uses.
 - [Chat and history](/api/chat-and-history) to read the conversation an event names.
 - The [API Reference](/api-reference) for the full schema of every event type.

@@ -185,8 +185,9 @@ an answer-metered profile such as `starter_100` reads the answer counter
 (`8 / 100`). An account with no assigned profile, or on a tier without a monthly
 limit, is metered in conversations too and is never refused, so it reads its
 real usage against no cap (`412.5 / unlimited conv`). Its customer conversations
-also count toward the spend average below. Assigning such an account a tier
-mid-month starts the tier's allowance from the usage already metered that month.
+also count toward the spend average below. A tier assigned to it mid-month, from
+the console or by a Stripe subscription, starts with its full allowance: usage
+recorded before the tier never spends it.
 
 The console API is mounted at:
 

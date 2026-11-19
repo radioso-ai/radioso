@@ -255,9 +255,16 @@ describeIfDatabase("EE usage limit service integration", () => {
     );
   };
 
-  const readMeter = async (accountId: string): Promise<{ usedTenths: number; replies: number[]; answerCounters: number }> => {
-    const [units, replies, answers] = await Promise.all([
+  /** `allowanceTenths` is what a conversation limit has spent; `usageTenths` is everything recorded. */
+  const readMeter = async (
+    accountId: string,
+  ): Promise<{ allowanceTenths: number; usageTenths: number; replies: number[]; answerCounters: number }> => {
+    const [units, kinds, replies, answers] = await Promise.all([
       database.query<{ used_tenths: number }>(`SELECT used_tenths FROM ee_usage_limit_unit_counters WHERE account_id = $1`, [accountId]),
+      database.query<{ used_tenths: string | null }>(
+        `SELECT sum(used_tenths)::text AS used_tenths FROM ee_usage_limit_unit_kind_counters WHERE account_id = $1`,
+        [accountId],
+      ),
       database.query<{ reply_count: number }>(
         `SELECT reply_count FROM ee_usage_limit_conversation_replies WHERE account_id = $1 ORDER BY reply_count`,
         [accountId],
@@ -265,7 +272,8 @@ describeIfDatabase("EE usage limit service integration", () => {
       database.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ee_usage_limit_answer_counters WHERE account_id = $1`, [accountId]),
     ]);
     return {
-      usedTenths: units[0]?.used_tenths ?? 0,
+      allowanceTenths: units[0]?.used_tenths ?? 0,
+      usageTenths: Number(kinds[0]?.used_tenths ?? 0),
       replies: replies.map((row) => row.reply_count),
       answerCounters: Number(answers[0].count),
     };
@@ -284,7 +292,8 @@ describeIfDatabase("EE usage limit service integration", () => {
 
     const tenths = (kind: "conversation" | "test_run") => PLAN_CATALOG.countsAs[kind] * 10;
     expect(await readMeter(accountId)).toEqual({
-      usedTenths: 2 * tenths("conversation") + tenths("test_run"),
+      allowanceTenths: 0,
+      usageTenths: 2 * tenths("conversation") + tenths("test_run"),
       replies: [PLAN_CATALOG.repliesPerConversation + 1],
       answerCounters: 0,
     });
@@ -303,10 +312,29 @@ describeIfDatabase("EE usage limit service integration", () => {
     await failed.release();
 
     expect(await readMeter(accountId)).toEqual({
-      usedTenths: PLAN_CATALOG.countsAs.conversation * 10,
+      allowanceTenths: 0,
+      usageTenths: PLAN_CATALOG.countsAs.conversation * 10,
       replies: [0, 1],
       answerCounters: 0,
     });
+  });
+
+  it("starts a tier assigned mid-month at a full allowance, whatever the account used before it", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+    const converse = () =>
+      service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() });
+
+    await converse();
+    await converse();
+    await converse();
+    await assignProfile(accountId, { monthlyConversationLimit: 2 });
+
+    await converse();
+    await converse();
+    await expect(converse()).rejects.toBeInstanceOf(UsageLimitExceededError);
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toMatchObject({ used: 2, limit: 2 });
+    expect(await readMeter(accountId)).toMatchObject({ allowanceTenths: 20, usageTenths: 50 });
   });
 
   it("reads real document capacity from an assigned profile and leaves unassigned capacity unlimited", async () => {
@@ -649,7 +677,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
-    expect(await readMeter(accountId)).toMatchObject({ usedTenths: 0, replies: [] });
+    expect(await readMeter(accountId)).toMatchObject({ allowanceTenths: 0, usageTenths: 0, replies: [] });
   });
 
   it("seeds a profile per @radioso/plan-catalog plan with the catalog's own values", async () => {

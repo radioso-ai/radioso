@@ -17,7 +17,7 @@
   "backend/src/modules/operatorCopilot/service.ts": 1071,
   "backend/src/modules/voiceChannel/services/voiceTurnService.ts": 1090,
   "ee/packages/backend-module/src/radiosoModuleTypes.ts": 1030,
-  "ee/packages/backend-module/src/usageLimits/usageLimitService.ts": 1239,
+  "ee/packages/backend-module/src/usageLimits/usageLimitService.ts": 1224,
   "frontend/components/chat/public-chat-shell.tsx": 1178,
   "frontend/components/dashboard/agent-revision-test-chat.tsx": 2146,
   "frontend/components/dashboard/document-sources-view.tsx": 1177,

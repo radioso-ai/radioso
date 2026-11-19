@@ -25,7 +25,7 @@ import {
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { currentPeriodStart, nextPeriodStart } from "./period.js";
 import { claimGraceExhaustedSafely, claimLevelsCrossed, clearAlertClaims } from "./alerts/alertClaims.js";
-import { bumpConversationReplies, meteredInAnswers, recordUncappedTenths } from "./usageMeter.js";
+import { addKindTenths, bumpConversationReplies, meteredInAnswers, recordUncappedTenths, refundKindTenths } from "./usageMeter.js";
 
 // Re-exported for existing importers (e.g. staffConsole/organizationDirectoryService.ts):
 // conversationUsageLevel.ts is the one owner of this unit now that reserveTenths' grace
@@ -675,16 +675,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
             .where("account_id", "=", accountId)
             .execute();
         }
-        await trx
-          .insertInto("ee_usage_limit_unit_kind_counters")
-          .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
-          .onConflict((oc) =>
-            oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
-              used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
-              updated_at: sql<Date>`now()`,
-            }),
-          )
-          .execute();
+        await addKindTenths(trx, { accountId, periodStart, kind, tenths });
       });
     } catch (error) {
       // The refusing transaction above rolled back without committing anything, so the
@@ -736,13 +727,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
               .where("account_id", "=", accountId)
               .execute();
           }
-          await trx
-            .updateTable("ee_usage_limit_unit_kind_counters")
-            .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
-            .where("account_id", "=", accountId)
-            .where("period_start", "=", sql<string>`${periodStart}::date`)
-            .where("kind", "=", kind)
-            .execute();
+          await refundKindTenths(trx, { accountId, periodStart, kind, tenths });
         });
       },
     };

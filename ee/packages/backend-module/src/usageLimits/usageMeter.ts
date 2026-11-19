@@ -45,57 +45,53 @@ export const bumpConversationReplies = async (
   return row.reply_count;
 };
 
-/**
- * Meters an account no conversation limit governs into the same counters a capped account
- * spends, so the staff console reads one meter for every account. Nothing here refuses,
- * draws on credits, or claims usage alerts: each of those needs a limit to measure against.
- */
-export const recordUncappedTenths = async (
-  db: EeDb,
-  input: { accountId: string; periodStart: string; kind: UsageCountKind; tenths: number },
-): Promise<UsageLimitReservation> => {
-  const { accountId, periodStart, kind, tenths } = input;
-  await db.transaction().execute(async (trx) => {
-    await trx
-      .insertInto("ee_usage_limit_unit_counters")
-      .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, used_tenths: tenths })
-      .onConflict((oc) =>
-        oc.columns(["account_id", "period_start"]).doUpdateSet({
-          used_tenths: sql<number>`ee_usage_limit_unit_counters.used_tenths + ${tenths}`,
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .execute();
-    await trx
-      .insertInto("ee_usage_limit_unit_kind_counters")
-      .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
-      .onConflict((oc) =>
-        oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
-          used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .execute();
-  });
+interface KindTenths {
+  accountId: string;
+  periodStart: string;
+  kind: UsageCountKind;
+  tenths: number;
+}
 
+/** The month's usage per kind, kept for every account. Reporting reads it; no limit does. */
+export const addKindTenths = async (db: EeDb, input: KindTenths): Promise<void> => {
+  await db
+    .insertInto("ee_usage_limit_unit_kind_counters")
+    .values({
+      account_id: input.accountId,
+      period_start: sql<string>`${input.periodStart}::date`,
+      kind: input.kind,
+      used_tenths: input.tenths,
+    })
+    .onConflict((oc) =>
+      oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
+        used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${input.tenths}`,
+        updated_at: sql<Date>`now()`,
+      }),
+    )
+    .execute();
+};
+
+export const refundKindTenths = async (db: EeDb, input: KindTenths): Promise<void> => {
+  await db
+    .updateTable("ee_usage_limit_unit_kind_counters")
+    .set({ used_tenths: sql<number>`greatest(used_tenths - ${input.tenths}, 0)`, updated_at: sql<Date>`now()` })
+    .where("account_id", "=", input.accountId)
+    .where("period_start", "=", sql<string>`${input.periodStart}::date`)
+    .where("kind", "=", input.kind)
+    .execute();
+};
+
+/**
+ * Meters an account no conversation limit governs. Only the per-kind usage is recorded: the
+ * unit counter is the allowance a conversation limit spends, so a tier assigned mid-month,
+ * by staff or by a Stripe subscription, starts its allowance at zero.
+ */
+export const recordUncappedTenths = async (db: EeDb, input: KindTenths): Promise<UsageLimitReservation> => {
+  await addKindTenths(db, input);
   return {
     async commit() {},
     release: async () => {
-      await db.transaction().execute(async (trx) => {
-        await trx
-          .updateTable("ee_usage_limit_unit_counters")
-          .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
-          .where("account_id", "=", accountId)
-          .where("period_start", "=", sql<string>`${periodStart}::date`)
-          .execute();
-        await trx
-          .updateTable("ee_usage_limit_unit_kind_counters")
-          .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
-          .where("account_id", "=", accountId)
-          .where("period_start", "=", sql<string>`${periodStart}::date`)
-          .where("kind", "=", kind)
-          .execute();
-      });
+      await refundKindTenths(db, input);
     },
   };
 };

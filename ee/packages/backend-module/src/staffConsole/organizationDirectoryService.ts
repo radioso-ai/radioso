@@ -59,6 +59,7 @@ interface OrganizationDirectoryQueryRow {
   monthly_answer_used: number | string | bigint | null;
   monthly_answer_limit: number | string | bigint | null;
   monthly_conversation_used_tenths: number | string | bigint | null;
+  monthly_usage_tenths: number | string | bigint | null;
   monthly_conversation_limit: number | string | bigint | null;
   total_count: number | string | bigint | null;
 }
@@ -96,14 +97,15 @@ const headlineMeters = (
       monthlyConversations: null,
     };
   }
+  const conversationLimit = caps?.monthlyConversationLimit ?? null;
+  // A capped account reads the allowance it has spent. An uncapped one spends no allowance,
+  // so it reads the month's recorded usage across every kind instead.
+  const usedTenths = conversationLimit === null ? row.monthly_usage_tenths : row.monthly_conversation_used_tenths;
   return {
     // The meter is conversations, so any answer cap on the tier is not enforced and
     // must not be reported; getAccountUsage masks it too.
     monthlyAnswers: { used: toNumber(row.monthly_answer_used), limit: null },
-    monthlyConversations: {
-      used: toNumber(row.monthly_conversation_used_tenths) / TENTHS_PER_CONVERSATION,
-      limit: caps?.monthlyConversationLimit ?? null,
-    },
+    monthlyConversations: { used: toNumber(usedTenths) / TENTHS_PER_CONVERSATION, limit: conversationLimit },
   };
 };
 
@@ -150,6 +152,7 @@ export class OrganizationDirectoryService {
         coalesce(c.used_count, 0) AS monthly_answer_used,
         p.monthly_answer_limit AS monthly_answer_limit,
         coalesce(units.used_tenths, 0) AS monthly_conversation_used_tenths,
+        coalesce(kinds.used_tenths, 0) AS monthly_usage_tenths,
         p.monthly_conversation_limit AS monthly_conversation_limit,
         count(*) OVER () AS total_count
       FROM accounts a
@@ -166,6 +169,13 @@ export class OrganizationDirectoryService {
       LEFT JOIN ee_usage_limit_unit_counters units
         ON units.account_id = a.id
        AND units.period_start = ${periodStart}::date
+      LEFT JOIN (
+        SELECT account_id, sum(used_tenths) AS used_tenths
+        FROM ee_usage_limit_unit_kind_counters
+        WHERE period_start = ${periodStart}::date
+        GROUP BY account_id
+      ) kinds
+        ON kinds.account_id = a.id
       WHERE ${search}::text IS NULL
          OR a.name ILIKE '%' || ${search}::text || '%'
          OR EXISTS (

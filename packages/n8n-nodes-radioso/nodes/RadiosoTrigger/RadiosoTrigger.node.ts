@@ -65,7 +65,7 @@ export class RadiosoTrigger implements INodeType {
 				default: [],
 				required: true,
 				description:
-					'The events that start the workflow. Radioso pushes each one to this node as it happens. Decision Pending only notifies: a teammate decides in the Radioso Inbox.',
+					'The events that start the workflow. Radioso pushes each one to this node as it happens. Decision Pending only notifies: a teammate decides in the Radioso Inbox. Document Processed fires once for every page a website crawl or connector sync adds or changes.',
 			},
 		],
 	};

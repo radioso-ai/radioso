@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
@@ -79,7 +80,7 @@ describeIntegration("document attributes through the worker and retrieval (Postg
 
     const auditService = createAuditService();
     const documentRepository = new DocumentRepository(database.kysely);
-    const jobRepository = new DocumentProcessingJobRepository(database.kysely);
+    const jobRepository = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
     const processingService = new DocumentProcessingService(
       documentRepository,
       new ChunkRepository(database),

@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { createReplyBlocksComposition } from "../../src/app/composition/replyBlocks.js";
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository, type DocumentProcessingJobRecord } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -69,7 +70,7 @@ const solid = (width: number, height: number, format: "png" | "jpeg" | "gif") =>
 describeIntegration("document image capture, from a crawled page to an answer's offer (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const documents = new DocumentRepository(database.kysely);
-  const jobs = new DocumentProcessingJobRepository(database.kysely);
+  const jobs = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
   const images = new DocumentImageRepository(database.kysely);
   const chunks = new ChunkRepository(database);
   const storage = new InMemoryDocumentStorage();

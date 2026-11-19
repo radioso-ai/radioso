@@ -1,12 +1,12 @@
 ---
 title: "Workspace event log"
-description: "Poll the workspace event log for conversations started, contact requests, handoffs, routine endings and pending decisions, by a cursor that never skips an event."
-last_updated: 2026-11-19
+description: "Poll the workspace event log for conversations started, contact requests, handoffs, routine endings, pending decisions and document processing outcomes, by a cursor that never skips an event."
+last_updated: 2026-11-20
 ---
 
 # Workspace event log
 
-The workspace event log tells an automation that something happened: a visitor started a conversation, left their contact details, was handed to a person, finished a routine, or is waiting on a decision. Each event carries the ids and values an automation acts on, so a row lands in a sheet or a lead appears in a CRM without anyone copying it across.
+The workspace event log tells an automation that something happened: a visitor started a conversation, left their contact details, was handed to a person, finished a routine, or is waiting on a decision, and a document finished processing or failed to. Each event carries the ids and values an automation acts on, so a row lands in a sheet or a lead appears in a CRM without anyone copying it across.
 
 Read it with a personal token or a service-account credential that holds `workspace.events.read`. Every role that reads history holds it.
 
@@ -65,7 +65,11 @@ Deduplicate on `id` when your automation might read the same page twice, for exa
 
 ## Event types
 
-Every event has the same envelope: `id`, `type`, `version` (the version of that type's `data` schema), `occurredAt`, `workspaceId` and `data`. Every type's `data` starts with the conversation it is about: `conversationId`, `agentId`, `channel`, `callerKind` (`human` or `agent`) and `visitorId`. `agentId` and `visitorId` are copies taken when the event was recorded, so they keep the ids they had then.
+Every event has the same envelope: `id`, `type`, `version` (the version of that type's `data` schema), `occurredAt`, `workspaceId` and `data`.
+
+### Conversation events
+
+A conversation event's `data` starts with the conversation it is about: `conversationId`, `agentId`, `channel`, `callerKind` (`human` or `agent`) and `visitorId`. `agentId` and `visitorId` are copies taken when the event was recorded, so they keep the ids they had then.
 
 | Type | Recorded when | What `data` adds |
 |---|---|---|
@@ -97,6 +101,37 @@ No event carries a transcript or the agent's reply.
 
 Conversations a teammate runs to test an agent (Test Chat, workbench replays, Ray's test turns) record no events, as they stay out of history's lists.
 
+### Document events
+
+A document event's `data` names the document revision it is about: `documentId`, `revision`, `title`, `sourceKind` (`inline_text` for text, `uploaded_file` for a file) and `sourceId`, the document source it belongs to, or `null` for a document added on its own. `title` is a copy taken when the event was recorded.
+
+| Type | Recorded when | What `data` adds |
+|---|---|---|
+| `document.processed` | A document revision finishes processing and is ready for retrieval. Each revision records it once, however many times its processing was retried. | Nothing beyond the document. |
+| `document.failed` | Processing a document revision fails for good, on an error a retry cannot fix or after its last retry, and the document shows as failed. | `failureCode`: the error code, such as `provider_misconfigured`, or `null` when the failure carried none. The failure message stays on the document, as its `failureReason`. |
+
+A changed or reprocessed document is processed again as its next `revision`, so it records `document.processed` again. A website crawl or a connector sync records one for each page it adds or changes, which on a large site is hundreds of events from one sync. Filter on `sourceId` to follow one source, or to leave crawled and synced pages out, and on `sourceKind` to follow uploaded files only.
+
+```json
+{
+  "id": "0d6c4b1e-2f3a-4c5d-8e9f-1a2b3c4d5e6f",
+  "type": "document.failed",
+  "version": 1,
+  "occurredAt": "2026-11-20T09:14:52.106Z",
+  "workspaceId": "4d7293c8-d241-4f8f-a4db-3df5b88da44c",
+  "data": {
+    "documentId": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+    "revision": 2,
+    "title": "Price list",
+    "sourceKind": "uploaded_file",
+    "sourceId": null,
+    "failureCode": "provider_misconfigured"
+  }
+}
+```
+
+To read the document itself, use [documents](/api/documents-and-search): `GET /api/v1/document/{documentId}` with a credential that holds `workspace.documents.read`.
+
 ## Who can read what
 
 The log shows a type only to a caller who may read the same facts elsewhere:
@@ -104,12 +139,13 @@ The log shows a type only to a caller who may read the same facts elsewhere:
 - `workspace.events.read` lets a credential list the log at all.
 - Every conversation type also needs `workspace.history.read`.
 - `decision.pending` also needs `workspace.conversation.takeover`, as the Inbox's decisions do. It is a notification: listing and resolving decisions are dashboard actions, so an API token that reads `decision.pending` can neither list nor resolve the decision over the API. A teammate acts on it in the Inbox.
+- Every document type needs `workspace.documents.read`, as reading the document does.
 
 Without a `types` filter you get the types you may read. Naming one you may not read returns `403` with `event_type_not_permitted`.
 
 ## How long events are kept
 
-The log keeps an event for 30 days. An event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the conversation's `routine.completed` events for that routine and its contact requests that name a covered field are removed, with any other of its events that states one of the values.
+The log keeps an event for 30 days. A document event stays the full 30 days, also after its document is deleted. A conversation event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the conversation's `routine.completed` events for that routine and its contact requests that name a covered field are removed, with any other of its events that states one of the values.
 
 A cursor stays usable for 29 days. An older one returns `410` with `cursor_expired`, because events after it may already be gone: start again without a cursor.
 
@@ -128,4 +164,5 @@ A cursor stays usable for 29 days. An older one returns `410` with `cursor_expir
 - [Workspace event subscriptions](/api/workspace-event-subscriptions) to receive each event at a URL as it happens.
 - [Personal tokens and service accounts](/api/workspaces-and-tokens) for the credential an automation uses.
 - [Chat and history](/api/chat-and-history) to read the conversation an event names.
+- [Documents and search](/api/documents-and-search) to read the document an event names.
 - The [API Reference](/api-reference) for the full schema of every event type.

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import { EmbeddingProfileJobFailureAdapter } from "../../src/app/composition/embeddingProfileJobFailureAdapter.js";
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { EmbeddingProfileRepository } from "../../src/db/repositories/embeddingProfileRepository.js";
@@ -25,7 +26,7 @@ const afterLease = (claimedAt: Date) => new Date(claimedAt.getTime() + JOB_LEASE
 
 describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const jobs = new DocumentProcessingJobRepository(database.kysely);
+  const jobs = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
   const documents = new DocumentRepository(database.kysely);
   const profiles = new EmbeddingProfileRepository(database.kysely);
 

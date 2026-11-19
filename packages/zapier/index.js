@@ -9,6 +9,8 @@ import agent from './triggers/agent.js'
 import contactRequestCreated from './triggers/contact_request_created.js'
 import conversationStarted from './triggers/conversation_started.js'
 import decisionPending from './triggers/decision_pending.js'
+import documentFailed from './triggers/document_failed.js'
+import documentProcessed from './triggers/document_processed.js'
 import handoffRequested from './triggers/handoff_requested.js'
 import routineCompleted from './triggers/routine_completed.js'
 import pkg from './package.json' with { type: 'json' }
@@ -19,9 +21,16 @@ export default {
   flags: { cleanInputData: false },
   authentication,
   triggers: Object.fromEntries(
-    [agent, conversationStarted, contactRequestCreated, handoffRequested, routineCompleted, decisionPending].map(
-      (trigger) => [trigger.key, trigger],
-    ),
+    [
+      agent,
+      conversationStarted,
+      contactRequestCreated,
+      handoffRequested,
+      routineCompleted,
+      decisionPending,
+      documentProcessed,
+      documentFailed,
+    ].map((trigger) => [trigger.key, trigger]),
   ),
   creates: {
     [askAgent.key]: askAgent,

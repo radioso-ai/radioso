@@ -25,6 +25,8 @@ const EVENT_KEYS = [
   'handoff_requested',
   'routine_completed',
   'decision_pending',
+  'document_processed',
+  'document_failed',
 ]
 const EVENT_TYPES = {
   conversation_started: 'conversation.started',
@@ -32,6 +34,8 @@ const EVENT_TYPES = {
   handoff_requested: 'handoff.requested',
   routine_completed: 'routine.completed',
   decision_pending: 'decision.pending',
+  document_processed: 'document.processed',
+  document_failed: 'document.failed',
 }
 
 const sign = (secret, timestamp, rawBody) =>
@@ -254,6 +258,25 @@ describe('sample data', () => {
       expect(rest.length === 0 ? sample : sample[head], path).toBeDefined()
       if (rest.length > 0) expect(Object.keys(sample[head]), path).toContain(rest[0])
     }
+  })
+
+  it('names the document, not a conversation, on the document triggers', () => {
+    for (const key of ['document_processed', 'document_failed']) {
+      const { sample, outputFields } = trigger(key)
+      const keys = outputFields.map((field) => field.key)
+      expect(keys).toEqual(expect.arrayContaining(['data__documentId', 'data__revision', 'data__title', 'data__sourceKind', 'data__sourceId']))
+      expect(keys).not.toContain('data__conversationId')
+      expect(Object.keys(sample.data)).not.toContain('conversationId')
+    }
+    expect(trigger('document_failed').outputFields.map((field) => field.key)).toContain('data__failureCode')
+  })
+
+  it('subscribes a document trigger to its own type', async () => {
+    radioso()
+      .post('/api/v1/workspace/event-subscriptions', { targetUrl: TARGET_URL, eventTypes: ['document.failed'], label: 'zapier' })
+      .reply(201, { subscription: { id: SUBSCRIPTION_ID }, signingSecret: SECRET })
+    const result = await appTester(trigger('document_failed').performSubscribe, { authData, targetUrl: TARGET_URL })
+    expect(result).toEqual(subscribeData)
   })
 
   it('uses a channel value the backend emits', () => {

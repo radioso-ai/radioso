@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { StoredLogEvent, WorkspaceEventLogStore, WorkspaceEventType } from "../../src/shared/domain/workspaceEventLog.js";
+import {
+  isDocumentEventType,
+  type StoredLogEvent,
+  type WorkspaceEventLogStore,
+  type WorkspaceEventType,
+} from "../../src/shared/domain/workspaceEventLog.js";
 
 const compare = (left: { tx: string; position: string }, right: { tx: string; position: string }): number => {
   const tx = BigInt(left.tx) - BigInt(right.tx);
@@ -36,11 +41,10 @@ export class InMemoryWorkspaceEventLogStore implements WorkspaceEventLogStore {
       occurredAt: input.occurredAt ?? new Date(),
       tx: input.tx ?? String(this.nextTx++),
       position: String(this.nextPosition++),
-      conversationId: input.conversationId ?? randomUUID(),
-      agentId: null,
-      channel: "web",
-      callerKind: "human",
-      visitorId: null,
+      // A document event names a document in its data, and no conversation.
+      ...(isDocumentEventType(input.type)
+        ? { conversationId: null, agentId: null, channel: null, callerKind: null, visitorId: null }
+        : { conversationId: input.conversationId ?? randomUUID(), agentId: null, channel: "web", callerKind: "human", visitorId: null }),
       data: input.data ?? {},
     };
     this.events.push(event);

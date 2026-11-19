@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import {
   DocumentProcessingJobRepository,
   insertEmbeddingProfileJobsForDocumentRevision,
@@ -17,7 +18,7 @@ const claimableNow = () => new Date(Date.now() + 1_000);
 describeIntegration("document job queue embedding profiles (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const profiles = new EmbeddingProfileRepository(database.kysely);
-  const jobs = new DocumentProcessingJobRepository(database.kysely);
+  const jobs = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
   const persistence = new EmbeddingProfileJobRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import type { QueryResultRow } from "pg";
 
+import type { DocumentEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
@@ -92,8 +93,9 @@ export interface DocumentProcessingJobRepositoryPort {
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
   // Returns false when the row was no longer "processing" (already terminal,
   // from a concurrent writer or an earlier call), so a late-finishing run
-  // never overwrites a terminal state.
-  markCompleted(jobId: string): Promise<boolean>;
+  // never overwrites a terminal state. `event` is recorded with the
+  // completion, only when this call is the one that completes the job.
+  markCompleted(jobId: string, event?: DocumentEventDraft): Promise<boolean>;
   // Fenced on status='processing': a job already resolved some other way
   // (most commonly a legitimate completion racing a recovery sweep) is left
   // alone rather than overwritten with "skipped".
@@ -109,6 +111,7 @@ export interface DocumentProcessingJobRepositoryPort {
     revision: number;
     errorMessage: string;
     errorCode?: string | null;
+    event: DocumentEventDraft;
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   // Atomically decides, for one expired claim, between releasing it back to the
@@ -330,8 +333,8 @@ export const insertEmbeddingProfileJobsForDocumentRevision = async (
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   private readonly outcomes: DocumentProcessingJobOutcomes;
 
-  constructor(private readonly db: Db) {
-    this.outcomes = new DocumentProcessingJobOutcomes(db);
+  constructor(private readonly db: Db, events: WorkspaceEventRecorder) {
+    this.outcomes = new DocumentProcessingJobOutcomes(db, events);
   }
 
   async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: RevisionProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
@@ -841,8 +844,8 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     };
   }
 
-  markCompleted(jobId: string): Promise<boolean> {
-    return this.outcomes.markCompleted(jobId);
+  markCompleted(jobId: string, event?: DocumentEventDraft): Promise<boolean> {
+    return this.outcomes.markCompleted(jobId, event);
   }
 
   markSkipped(jobId: string, reason: string): Promise<void> {

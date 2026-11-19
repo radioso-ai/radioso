@@ -1,3 +1,4 @@
+import type { DocumentEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -5,12 +6,27 @@ import type { Db } from "../../shared/infra/kysely/types.js";
  * How a document processing job ends: completed, skipped or failed. Every write is fenced on
  * `status = 'processing'`, so a late-finishing run never overwrites a terminal state another caller
  * already committed (a recovery sweep's own terminal write, or a second completion attempt).
+ *
+ * A completion or failure the caller names a document event for records it in the same
+ * transaction, and only when the fence hits: one run's terminal write, never a late one's.
  */
 export class DocumentProcessingJobOutcomes {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly events: WorkspaceEventRecorder,
+  ) {}
 
-  async markCompleted(jobId: string): Promise<boolean> {
-    const row = await this.db
+  async markCompleted(jobId: string, event?: DocumentEventDraft): Promise<boolean> {
+    if (!event) return this.complete(this.db, jobId);
+    return this.inTransaction(async (db) => {
+      const completed = await this.complete(db, jobId);
+      if (completed) await this.events.record(db, event);
+      return completed;
+    });
+  }
+
+  private async complete(db: Db, jobId: string): Promise<boolean> {
+    const row = await db
       .updateTable("document_processing_jobs")
       .set({
         status: "completed",
@@ -66,8 +82,10 @@ export class DocumentProcessingJobOutcomes {
     revision: number;
     errorMessage: string;
     errorCode?: string | null;
+    /** The document event the failure records, beside the document it fails. */
+    event: DocumentEventDraft;
   }): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
+    return this.inTransaction(async (trx) => {
       // Lock the job row and confirm it is still ours to fail before writing
       // anything. A run that was not actually dead can complete the job
       // between the caller's exhausted decision and this call — if it
@@ -118,8 +136,13 @@ export class DocumentProcessingJobOutcomes {
         })
         .where("id", "=", input.jobId)
         .execute();
+      await this.events.record(trx, input.event);
 
       return true;
     });
+  }
+
+  private inTransaction<T>(work: (db: Db) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? work(this.db) : this.db.transaction().execute(work);
   }
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -10,7 +11,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new DocumentProcessingJobRepository(database.kysely);
+  const repository = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();

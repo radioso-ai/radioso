@@ -5,6 +5,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
@@ -406,7 +407,7 @@ describeIfDatabase("persistence integration", () => {
     const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database);
-    const jobRepository = new DocumentProcessingJobRepository(database.kysely);
+    const jobRepository = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
 
     const capturedTexts: string[] = [];
     const embeddingGateway: EmbeddingGenerationGateway = {

@@ -25532,6 +25532,176 @@
           "data"
         ]
       },
+      "DocumentProcessedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "document.processed"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "The document revision the event is about. A changed document is processed again as its next revision."
+              },
+              "title": {
+                "type": "string",
+                "description": "The document's title when the event was recorded."
+              },
+              "sourceKind": {
+                "type": "string",
+                "enum": [
+                  "inline_text",
+                  "uploaded_file"
+                ],
+                "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
+              },
+              "sourceId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."
+              }
+            },
+            "required": [
+              "documentId",
+              "revision",
+              "title",
+              "sourceKind",
+              "sourceId"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "DocumentFailedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "document.failed"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "The document revision the event is about. A changed document is processed again as its next revision."
+              },
+              "title": {
+                "type": "string",
+                "description": "The document's title when the event was recorded."
+              },
+              "sourceKind": {
+                "type": "string",
+                "enum": [
+                  "inline_text",
+                  "uploaded_file"
+                ],
+                "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
+              },
+              "sourceId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."
+              },
+              "failureCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included."
+              }
+            },
+            "required": [
+              "documentId",
+              "revision",
+              "title",
+              "sourceKind",
+              "sourceId",
+              "failureCode"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
       "WorkspaceEvent": {
         "oneOf": [
           {
@@ -25548,6 +25718,12 @@
           },
           {
             "$ref": "#/components/schemas/DecisionPendingEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentProcessedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentFailedEvent"
           }
         ],
         "discriminator": {
@@ -25557,7 +25733,9 @@
             "contact_request.created": "#/components/schemas/ContactRequestCreatedEvent",
             "handoff.requested": "#/components/schemas/HandoffRequestedEvent",
             "routine.completed": "#/components/schemas/RoutineCompletedEvent",
-            "decision.pending": "#/components/schemas/DecisionPendingEvent"
+            "decision.pending": "#/components/schemas/DecisionPendingEvent",
+            "document.processed": "#/components/schemas/DocumentProcessedEvent",
+            "document.failed": "#/components/schemas/DocumentFailedEvent"
           }
         }
       },
@@ -25614,7 +25792,9 @@
                 "contact_request.created",
                 "handoff.requested",
                 "routine.completed",
-                "decision.pending"
+                "decision.pending",
+                "document.processed",
+                "document.failed"
               ]
             }
           },
@@ -25756,11 +25936,13 @@
                 "contact_request.created",
                 "handoff.requested",
                 "routine.completed",
-                "decision.pending"
+                "decision.pending",
+                "document.processed",
+                "document.failed"
               ]
             },
             "minItems": 1,
-            "maxItems": 5,
+            "maxItems": 7,
             "description": "The event types to receive. Each needs the permission that reads it from the event log."
           },
           "label": {

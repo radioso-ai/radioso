@@ -115,6 +115,17 @@ touching the document's status. A follow-up is created through
 is queued again when the content names new images. The message payload stays
 `{ jobId }`: the worker reads the kind from the row.
 
+A vectorize job's terminal write records its revision's workspace event in the
+same transaction: `document.processed` when the job completes, from the normal
+run, the startup reconcile, or the recovery that finds the revision already
+published, and `document.failed`, with the job's error code and never its
+message, when the job fails the document. The writes in
+`db/repositories/documentProcessingJobOutcomes.ts` record only when their
+`status = 'processing'` fence hits, and the idempotency key
+`document.<type>:{documentId}:{revision}` drops a second write of the same fact.
+`services/documentWorkspaceEvents.ts` builds the events, and the worker wakes
+event subscription delivery once one has committed.
+
 ## Document Images
 
 Ingestion records the images a document's content names; the worker captures them.
@@ -234,5 +245,8 @@ Focused starting points:
   for placing, recording, capturing and sweeping document images.
 - `cd backend && pnpm exec vitest run tests/integration/document-image-repository.integration.test.ts tests/integration/document-image-capture.integration.test.ts`
   for the image rows, and a crawled page through the worker to an answer's offer.
+- `cd backend && pnpm exec vitest run tests/integration/document-workspace-events.integration.test.ts`
+  for `document.processed` and `document.failed`: once per revision across
+  takeovers and restarts, the code without the message, and the push.
 
 Use contract tests when document API response shape changes.

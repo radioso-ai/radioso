@@ -8,11 +8,12 @@ import type { Db } from "../infra/kysely/types.js";
  * The workspace event log's published contract (#1851): the business events an automation acts
  * on, what each one carries, the port an owning module records one through, and the port the log
  * reads its store through. The owning module builds the event from its own facts; the log stores
- * and serves it, and knows nothing about the chat turn, routine or decision that produced it.
+ * and serves it, and knows nothing about the chat turn, routine, decision or document job that
+ * produced it.
  */
 
-/** Every type the log records, by the name a client filters and subscribes by. */
-export const WORKSPACE_EVENT_TYPES = [
+/** The types about a conversation: each one names the conversation it happened in. */
+const CONVERSATION_EVENT_TYPES = [
   "conversation.started",
   "contact_request.created",
   "handoff.requested",
@@ -20,7 +21,18 @@ export const WORKSPACE_EVENT_TYPES = [
   "decision.pending",
 ] as const;
 
+/** The types about a document: each one names the document revision it happened to. */
+const DOCUMENT_EVENT_TYPES = ["document.processed", "document.failed"] as const;
+
+/** Every type the log records, by the name a client filters and subscribes by. */
+export const WORKSPACE_EVENT_TYPES = [...CONVERSATION_EVENT_TYPES, ...DOCUMENT_EVENT_TYPES] as const;
+
 export type WorkspaceEventType = typeof WORKSPACE_EVENT_TYPES[number];
+type ConversationEventType = typeof CONVERSATION_EVENT_TYPES[number];
+type DocumentEventType = typeof DOCUMENT_EVENT_TYPES[number];
+
+export const isDocumentEventType = (type: WorkspaceEventType): type is DocumentEventType =>
+  (DOCUMENT_EVENT_TYPES as readonly WorkspaceEventType[]).includes(type);
 
 /**
  * The schema version each type is written with. A field added to a type keeps its version; a change
@@ -32,6 +44,8 @@ export const WORKSPACE_EVENT_VERSIONS = {
   "handoff.requested": 1,
   "routine.completed": 1,
   "decision.pending": 1,
+  "document.processed": 1,
+  "document.failed": 1,
 } as const satisfies Record<WorkspaceEventType, number>;
 
 /** How long the log keeps an event. Fixed rather than a setting: clients page well inside it. */
@@ -55,7 +69,19 @@ const conversationEventSubjectSchema = z.object({
 });
 
 /**
- * What each type adds to the conversation it names, as its owner builds it. Written out rather than
+ * What every document event names. The log copies the title and source from the document when it
+ * records the event.
+ */
+const documentEventSubjectSchema = z.object({
+  documentId: z.string().uuid(),
+  revision: z.number().int().positive().describe("The document revision the event is about. A changed document is processed again as its next revision."),
+  title: z.string().describe("The document's title when the event was recorded."),
+  sourceKind: z.enum(["inline_text", "uploaded_file"]).describe("How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."),
+  sourceId: z.string().uuid().nullable().describe("The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."),
+});
+
+/**
+ * What each type adds to the subject it names, as its owner builds it. Written out rather than
  * inferred from the schemas below, which keeps the type checker's work small; the contract and
  * integration tests parse every served event against those schemas.
  */
@@ -78,6 +104,8 @@ interface WorkspaceEventDetails {
     options: Array<{ id: string; label: string }>;
     deadline: string | null;
   };
+  "document.processed": Record<string, never>;
+  "document.failed": { failureCode: string | null };
 }
 
 export type WorkspaceEventDetail<T extends WorkspaceEventType> = WorkspaceEventDetails[T];
@@ -107,11 +135,16 @@ const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObje
     options: z.array(z.object({ id: z.string(), label: z.string() })),
     deadline: z.string().datetime().nullable(),
   }),
+  "document.processed": z.object({}),
+  "document.failed": z.object({
+    failureCode: z.string().nullable().describe("Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included."),
+  }),
 };
 
-/** The `data` of one type as served: the conversation it names, then what the type adds. */
+/** The `data` of one type as served: the conversation or document it names, then what the type adds. */
 export const workspaceEventDataSchema = (type: WorkspaceEventType): z.ZodObject =>
-  conversationEventSubjectSchema.extend(workspaceEventDetailSchemas[type].shape);
+  (isDocumentEventType(type) ? documentEventSubjectSchema : conversationEventSubjectSchema)
+    .extend(workspaceEventDetailSchemas[type].shape);
 
 /** One event as the log serves it, and as a subscription receives it. */
 export interface WorkspaceEvent {
@@ -124,11 +157,11 @@ export interface WorkspaceEvent {
 }
 
 /**
- * An event as its owner records it: the conversation it is about and what the type adds. The log
- * fills in the rest of the conversation's fields.
+ * A conversation event as its owner records it: the conversation it is about and what the type
+ * adds. The log fills in the rest of the conversation's fields.
  */
-export type WorkspaceEventDraft = {
-  [T in WorkspaceEventType]: {
+type ConversationEventDraft = {
+  [T in ConversationEventType]: {
     type: T;
     workspaceId: string;
     conversationId: string;
@@ -136,13 +169,34 @@ export type WorkspaceEventDraft = {
     idempotencyKey?: string;
     detail: WorkspaceEventDetail<T>;
   };
-}[WorkspaceEventType];
+}[ConversationEventType];
+
+/**
+ * A document event as its owner records it: the document revision it is about and what the type
+ * adds. The log fills in the document's title and source.
+ */
+export type DocumentEventDraft = {
+  [T in DocumentEventType]: {
+    type: T;
+    workspaceId: string;
+    documentId: string;
+    revision: number;
+    /** Names the fact, so a second write of the same fact is dropped. */
+    idempotencyKey: string;
+    detail: WorkspaceEventDetail<T>;
+  };
+}[DocumentEventType];
+
+export type WorkspaceEventDraft = ConversationEventDraft | DocumentEventDraft;
+
+export const isDocumentEventDraft = (draft: WorkspaceEventDraft): draft is DocumentEventDraft => isDocumentEventType(draft.type);
 
 /**
  * Records an event in the transaction the change it describes runs in: pass that transaction as
  * `db`. A failed write throws, so the change rolls back with it, and neither commits without the
  * other. A conversation that operator testing produced, or that no longer exists, records nothing,
- * as history's own lists leave it out.
+ * as history's own lists leave it out; so does a document that is gone or has moved on to a newer
+ * revision.
  */
 export interface WorkspaceEventRecorder {
   record(db: Db, draft: WorkspaceEventDraft): Promise<void>;
@@ -154,7 +208,10 @@ export interface LogPosition {
   position: string;
 }
 
-/** One stored event as the store reads it, with its place in the log. */
+/**
+ * One stored event as the store reads it, with its place in the log. The conversation fields are
+ * null for a document event, whose `data` names its document.
+ */
 export interface StoredLogEvent extends LogPosition {
   id: string;
   workspaceId: string;

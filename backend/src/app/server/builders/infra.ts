@@ -239,7 +239,7 @@ export const buildRepositories = (
   conversationRepository: new ConversationRepository(database.kysely, workspaceEventRecorder),
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
-  documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
+  documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder),
   documentEnrichmentReplyRepository: new DocumentEnrichmentReplyRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),

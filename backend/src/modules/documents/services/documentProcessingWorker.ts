@@ -3,6 +3,7 @@ import {
   type WorkspaceInvalidationPublisher,
 } from "@radioso/workspace-invalidation-contract";
 
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -19,6 +20,7 @@ import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
 import { AppError } from "../../../shared/domain/errors.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
+import { documentFailedEvent, documentProcessedEvent } from "./documentWorkspaceEvents.js";
 import type {
   EmbeddingProfileJobService,
   EmbeddingProfileTerminalFailureKind,
@@ -112,6 +114,8 @@ export class DocumentProcessingWorker {
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
     private readonly imageCapture?: DocumentImageCaptureStage,
+    /** Asks for a workspace's event subscriptions to be delivered now, after a document event commits. */
+    private readonly workspaceEventDelivery?: WorkspaceEventDeliveryWake,
   ) {}
 
   async runPostJobMaintenance(
@@ -225,7 +229,7 @@ export class DocumentProcessingWorker {
     }
 
     if (document.status === "ready") {
-      await this.jobRepository.markCompleted(job.id);
+      await this.markJobCompleted(job);
       return;
     }
 
@@ -430,7 +434,7 @@ export class DocumentProcessingWorker {
               ? await this.requireImageCapture().capture(job)
               : await this.processingService.process(job);
         if (outcome === "completed") {
-          await this.jobRepository.markCompleted(job.id);
+          await this.markJobCompleted(job);
           // After completion, so a failure to queue capture can never send the vectorize job round again.
           if (job.kind === "vectorize") await this.imageCapture?.afterRevisionPublished(job);
           await this.runPostJobMaintenance(10, job.workspaceId);
@@ -600,6 +604,7 @@ export class DocumentProcessingWorker {
           revision: job.documentRevision,
           errorMessage: message,
           errorCode,
+          event: documentFailedEvent(job, errorCode),
         });
         if (!markedFailed) {
           // Fenced the same way: this also no-ops if the job already resolved
@@ -609,6 +614,7 @@ export class DocumentProcessingWorker {
           await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
         } else {
           this.publishDocumentStatusChanged(job.workspaceId);
+          this.workspaceEventDelivery?.requestDelivery(job.workspaceId);
         }
       }
       await this.auditService.record({
@@ -651,7 +657,7 @@ export class DocumentProcessingWorker {
     if (!document || document.revision !== job.documentRevision || document.status !== "ready") {
       return false;
     }
-    const completed = await this.jobRepository.markCompleted(job.id);
+    const completed = await this.markJobCompleted(job);
     if (completed) {
       await this.emitJobTelemetry("document.worker.job_completed", job, {
         durationMs,
@@ -659,6 +665,16 @@ export class DocumentProcessingWorker {
       });
     }
     return true;
+  }
+
+  // Every path that completes a job: a vectorize job's completion records
+  // `document.processed` with it, once per revision, and wakes the
+  // workspace's event delivery once it has committed.
+  private async markJobCompleted(job: DocumentProcessingJobRecord): Promise<boolean> {
+    const event = job.kind === "vectorize" ? documentProcessedEvent(job) : undefined;
+    const completed = await this.jobRepository.markCompleted(job.id, event);
+    if (completed && event) this.workspaceEventDelivery?.requestDelivery(job.workspaceId);
+    return completed;
   }
 
   // Claim-expiry recovery (the push-worker recovery route, the periodic

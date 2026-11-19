@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IHookFunctions, INode, IPollFunctions, IWebhookFunctions } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
-import { isRadiosoEvent } from '../nodes/Radioso/events';
+import { isRadiosoEvent, selectedEventTypes } from '../nodes/Radioso/events';
 import { RadiosoPollTrigger } from '../nodes/RadiosoPollTrigger/RadiosoPollTrigger.node';
 import { RadiosoTrigger } from '../nodes/RadiosoTrigger/RadiosoTrigger.node';
 
@@ -479,5 +479,21 @@ describe('trigger descriptions', () => {
 		}
 		expect(new RadiosoPollTrigger().description.polling).toBe(true);
 		expect(new RadiosoTrigger().description.webhooks?.[0].httpMethod).toBe('POST');
+	});
+
+	it('offer the document events in both triggers and keep them when chosen', () => {
+		for (const trigger of [new RadiosoTrigger(), new RadiosoPollTrigger()]) {
+			const events = trigger.description.properties.find((property) => property.name === 'events');
+			expect(events?.options).toEqual(
+				expect.arrayContaining([
+					{ name: 'Document Processed', value: 'document.processed' },
+					{ name: 'Document Failed', value: 'document.failed' },
+				]),
+			);
+		}
+		expect(selectedEventTypes(['document.processed', 'document.failed', 'source.synced'])).toEqual([
+			'document.processed',
+			'document.failed',
+		]);
 	});
 });

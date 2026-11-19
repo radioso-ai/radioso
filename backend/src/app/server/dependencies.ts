@@ -279,11 +279,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const notificationDeliveries = buildNotificationDeliveryReader(infrastructure.database);
   const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database, notificationRecipientPolicy, infrastructure.usageLimitPolicy);
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
-    composition,
-    env,
-    infrastructure,
-    logger,
-    repositories,
+    composition, env, infrastructure, logger, repositories,
+    backgroundJobs: backgroundJobs.queue,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,

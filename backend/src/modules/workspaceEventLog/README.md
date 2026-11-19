@@ -19,10 +19,11 @@ This module knows:
 - how a page is served (`eventLog.ts`): the newest events when a client starts, what followed
   after that, and a cursor that moves to the snapshot horizon when a page is short.
 
-It knows nothing about chat turns, routines, contact requests, decisions or handoffs. The
+It knows nothing about chat turns, routines, contact requests, decisions, handoffs or document
+processing. The
 published contract (event types, versions, `data` schemas, the `WorkspaceEventRecorder` port and
 the `WorkspaceEventLogStore` port) lives in `backend/src/shared/domain/workspaceEventLog.ts`,
-because two of its writers sit in `db/repositories`. Each owning module builds its events from
+because three of its writers sit in `db/repositories`. Each owning module builds its events from
 its own facts:
 
 | Type | Built by |
@@ -30,6 +31,7 @@ its own facts:
 | `conversation.started` | `db/repositories/conversationRepository.ts` (every insert method) |
 | `contact_request.created`, `decision.pending`, `routine.completed` | `modules/chat/services/workspaceEventLogDrafts.ts`, recorded in the turn's transaction by `modules/chat/infra/turnOutboxWrites.ts`, and by `ContactRequestRecordingOutbox` for a notify step |
 | `handoff.requested` | `modules/conversationActivity/workspaceEventLogBridge.ts`, beside every `handoff_requested` activity |
+| `document.processed`, `document.failed` | `modules/documents/services/documentWorkspaceEvents.ts`, recorded by the job's fenced terminal write in `db/repositories/documentProcessingJobOutcomes.ts` |
 
 `app/composition/workspaceEventLog.ts` is the one seam: it owns the recorder and the bridged
 activity recorder, and every construction that records an event is handed them from there.
@@ -65,7 +67,7 @@ event. The subscription store ports (lifecycle and delivery) and the wake port l
 `backend/src/shared/domain/workspaceEventSubscriptions.ts`; the Postgres store is
 `db/repositories/workspaceEventSubscriptionRepository.ts`. `app/composition/workspaceEventLog.ts`
 builds the service, the drain's job handler, the every-minute `workspace-event-delivery`
-periodic task, and the wake the chat turn's persistence fires after commit.
+periodic task, and the wake the chat turn's persistence and the document worker fire after commit.
 
 ## Adding an event type
 
@@ -80,4 +82,4 @@ periodic task, and the wake the chat turn's persistence fires after commit.
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/contract/workspace-event-log.contract.test.ts tests/contract/workspace-event-subscriptions.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/workspace-event-subscriptions.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/workspace-event-subscriptions.integration.test.ts tests/integration/document-workspace-events.integration.test.ts --no-file-parallelism`

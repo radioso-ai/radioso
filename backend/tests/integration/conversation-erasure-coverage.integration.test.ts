@@ -115,6 +115,11 @@ const coverage: Record<string, ErasureCoverage> = {
     owner: "chat-turns",
     reason: "Placed with the conversation's latest turn, before the conversation is read, so no key can hold it. The row goes as that turn ends; the turn eraser removes one a stopped instance left behind.",
   },
+  "workspace_events.visitor_id": {
+    kind: "row_cascades_with",
+    column: "conversation_id",
+    reason: "A copy of the visitor of the conversation the event names, which a visitor's erasure deletes first.",
+  },
   "usage_events.conversation_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
   "routine_consent_records.conversation_id": {
     kind: "retained",

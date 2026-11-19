@@ -14,6 +14,7 @@ import {
   transactionAdvisoryLock,
 } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
+import type { WorkspaceEventRecorder } from "../../../../shared/domain/workspaceEventLog.js";
 
 export interface SlackConversationLinkRecord {
   id: string;
@@ -92,6 +93,8 @@ const mapLink = (row: SlackConversationLinkRow): SlackConversationLinkRecord => 
 export class PostgresSlackPersistence implements SlackPersistencePort {
   constructor(
     private readonly db: Db,
+    /** Records the start of a conversation a new Slack thread opens, in the transaction that opens it. */
+    private readonly workspaceEvents: WorkspaceEventRecorder,
     /** Needed only by {@link enqueueInboundEvent}; the API webhook supplies it, the worker's
      *  job-dispatch instance never calls that method and may omit it. */
     private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
@@ -200,7 +203,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           return { link: mapLink(existing), created: false };
         }
 
-        const conversation = await new ConversationRepository(trx).create({
+        const conversation = await new ConversationRepository(trx, this.workspaceEvents).create({
           workspaceId: input.workspaceId,
           agentId: input.agentId,
           sourceChannel: input.sourceChannel,

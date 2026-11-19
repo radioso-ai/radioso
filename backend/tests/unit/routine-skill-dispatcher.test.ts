@@ -548,6 +548,34 @@ describe("RoutineSkillExecutorDispatcher", () => {
 
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
     expect(captured?.collectedOrigins).toEqual({ email: "slot", duration: "literal" });
+    expect(captured?.context).not.toHaveProperty("sensitiveInputKeys");
+  });
+
+  it("names the inputs a typed binding fills from a sensitive slot, so the executor can mask the copies it keeps", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({ customerEmail: "a@b.com", diagnosis: "sore knee" }),
+      inputBindings: {
+        email: { kind: "variableRef", ref: "customerEmail" },
+        message: { kind: "variableRef", ref: "diagnosis" },
+      },
+      sensitiveSlotKeys: ["diagnosis"],
+      turn,
+    });
+
+    // The skill gets the value itself; only the names of the sensitive inputs travel with it.
+    expect(captured?.collected).toEqual({ email: "a@b.com", message: "sore knee" });
+    expect(captured?.context?.sensitiveInputKeys).toEqual(["message"]);
   });
 
   it("resolves context-variable input bindings from the turn staged context", async () => {

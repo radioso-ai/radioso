@@ -20,9 +20,8 @@ describeIntegration("conversation activity (Postgres)", () => {
   const activity = new ConversationActivityRepository(database.kysely);
   const labels = createTeammateLabelReader({ users: new UserRepository(database.kysely) });
   const reads = createConversationActivityComposition({
-    store: activity,
+    repositories: { conversationActivityRepository: activity, messageRepository: new MessageRepository(database.kysely) },
     teammateLabels: labels,
-    messages: new MessageRepository(database.kysely),
   }).reads;
   const accountId = randomUUID();
   const workspaceId = randomUUID();

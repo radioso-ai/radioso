@@ -2239,6 +2239,23 @@ export interface WorkspaceEmbeddingTransitions {
   workspace_id: string;
 }
 
+export interface WorkspaceEvents {
+  agent_id: string | null;
+  caller_kind: string | null;
+  channel: string | null;
+  conversation_id: string | null;
+  data: Json;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  occurred_at: Generated<Timestamp>;
+  position: Generated<Int8>;
+  tx_id: Generated<string>;
+  type: string;
+  version: number;
+  visitor_id: string | null;
+  workspace_id: string;
+}
+
 export interface WorkspaceGrants {
   account_id: string;
   created_at: Generated<Timestamp>;
@@ -2474,6 +2491,7 @@ export interface DB {
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
+  workspace_events: WorkspaceEvents;
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
   workspace_service_accounts: WorkspaceServiceAccounts;

@@ -344,11 +344,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
   });
   const teammateLabels = createTeammateLabelReader({ users: repositories.userRepository });
-  const conversationActivity = createConversationActivityComposition({
-    store: repositories.conversationActivityRepository,
-    teammateLabels,
-    messages: repositories.messageRepository,
-  });
+  const conversationActivity = createConversationActivityComposition({ repositories, teammateLabels });
   // Photos visitors and API callers attach: stored under the workspace, read with the agent's chat model.
   const visitorImages = wireVisitorImages({ infrastructure, storage: documents.documentStorage, agents: repositories.agentRepository, resolver: llmCapabilityResolver, logger });
   const chat = buildChatServices({
@@ -1195,6 +1191,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
   const slackInboundJobs = buildSlackInboundJobComposition({
     db: infrastructure.database.kysely,
+    workspaceEvents: infrastructure.workspaceEvents,
     logger,
     chatService: chat.chatService,
     conversationIngestService,
@@ -1410,6 +1407,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     operatorNoticeDestinations,
     notificationDeliveries,
+    workspaceEventLog: infrastructure.workspaceEventLog,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

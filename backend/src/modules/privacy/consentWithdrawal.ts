@@ -124,6 +124,7 @@ export class ConsentWithdrawalService implements ConversationConsents {
         conversationId: input.conversationId,
         slotKeys: record.slotKeys,
         valueTexts: matchableValueTexts(Object.values(erased)),
+        withdrawnRoutineSlots: [{ routineId: record.routineId, slotKeys: record.slotKeys }],
         at: withdrawnAt,
       });
       const event: AuditEventInput = {

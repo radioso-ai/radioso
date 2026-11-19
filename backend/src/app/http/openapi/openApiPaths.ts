@@ -49,6 +49,7 @@ import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
 import { registerAudiencePulsePaths } from "./paths/audiencePulsePaths.js";
 import { registerCopilotPaths } from "./paths/copilotPaths.js";
 import { registerWorkspaceEventsPaths } from "./paths/workspaceEventsPaths.js";
+import { registerWorkspaceEventLogPaths } from "./paths/workspaceEventLogPaths.js";
 import { registerApiAccessPaths } from "./paths/apiAccessPaths.js";
 import { registerOperatorMcpPaths } from "./paths/operatorMcpPaths.js";
 import { registerTestExecutionPaths } from "./paths/testExecutionPaths.js";
@@ -83,6 +84,7 @@ export const registerOpenApiPaths = (
   registerSlackSkillsPaths(registry, schemas, security);
   registerAgentSkillsPaths(registry, schemas, security);
   registerNotificationDeliveryPaths(registry, schemas, security);
+  registerWorkspaceEventLogPaths(registry, schemas, security);
   registerRetrievalAnswerPaths(registry, schemas, security);
   registerDocumentsPaths(registry, schemas, security);
   registerDocumentChunksPaths(registry, schemas, security);

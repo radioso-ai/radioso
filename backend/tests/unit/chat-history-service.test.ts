@@ -943,9 +943,8 @@ describe("chat history service conversation activity", () => {
     teammateLabels.labels.set("user-dana", "Dana");
     const activity = new InMemoryConversationActivityStore();
     const reads = createConversationActivityComposition({
-      store: activity,
+      repositories: { conversationActivityRepository: activity, messageRepository },
       teammateLabels,
-      messages: messageRepository,
     }).reads;
     const service = new ChatHistoryService(
       conversationRepository,

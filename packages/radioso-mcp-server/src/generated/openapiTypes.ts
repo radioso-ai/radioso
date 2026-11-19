@@ -3005,6 +3005,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List workspace events
+         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
+         */
+        get: operations["listWorkspaceEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -11511,6 +11531,278 @@ export interface components {
             items: components["schemas"]["NotificationDelivery"][];
             /** @description Pass back as `cursor` for the next page; null on the last one. */
             nextCursor: string | null;
+        };
+        ConversationStartedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "conversation.started";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+            };
+        };
+        ContactRequestCreatedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "contact_request.created";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /**
+                 * Format: uuid
+                 * @description The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`.
+                 */
+                contactRequestId: string;
+                /** @description Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`. */
+                values: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        HandoffRequestedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "handoff.requested";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /**
+                 * @description Why the conversation went to a person, as a handoff reason code.
+                 * @enum {string}
+                 */
+                reason: "routine_handoff" | "routine_stuck" | "routine_consent_declined" | "retrieval_miss" | "operator_takeover" | "operator_only_mailbox" | "generation_budget" | "review_unavailable" | "policy_changed";
+            };
+        };
+        RoutineCompletedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "routine.completed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                routineId: string;
+                /** @description The routine run. A visitor's later correction to the run's values records the run again under the same id. */
+                executionId: string | null;
+                /**
+                 * @description How the run ended: at an authored `complete`, `handoff` or `action` ending, `stuck` past its re-ask limit, or `consent_declined`.
+                 * @enum {string}
+                 */
+                outcome: "complete" | "handoff" | "action" | "stuck" | "consent_declined";
+                /** @description Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`. */
+                values: {
+                    [key: string]: unknown;
+                };
+                /** @description The keys in `values` that are sensitive, whose values are masked. */
+                sensitiveSlotKeys: string[];
+            };
+        };
+        DecisionPendingEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "decision.pending";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                decisionHandle: string;
+                routineId: string;
+                stepId: string;
+                /** @description The reason the routine's author wrote on the decision step. */
+                reason: string | null;
+                options: {
+                    id: string;
+                    label: string;
+                }[];
+                /** Format: date-time */
+                deadline: string | null;
+            };
+        };
+        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"];
+        WorkspaceEventPage: {
+            events: components["schemas"]["WorkspaceEvent"][];
+            /** @description Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place. */
+            nextCursor: string;
+            /** @description True when more events follow `nextCursor` now. */
+            hasMore: boolean;
         };
         /** @description One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation. */
         ConversationConsent: {
@@ -26339,6 +26631,69 @@ export interface operations {
             };
             /** @description Agent read permission required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEvents: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent. */
+                types?: string;
+                /** @description A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log. */
+                after?: string;
+                /** @description Events per page, 1 to 100. Defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of workspace events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEventPage"];
+                };
+            };
+            /** @description An invalid query, an unknown event type, or a cursor issued for different types */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Event log read permission required, or a requested type the caller may not read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The cursor is older than the log's retention window; start again without one */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };

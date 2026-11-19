@@ -5,6 +5,28 @@ import { README_SECTION } from "../import/buildDocuments.ts";
 
 const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", ".next", "build", "coverage", "out", ".turbo", ".vercel"]);
 
+/**
+ * READMEs are grounding for the customer-facing support agent, so only the ones
+ * a person outside the team installs, runs, or integrates with are imported.
+ * Every other README is an area brief for coding agents (see AGENTS.md), a test
+ * fixture, a spec contract, terraform, or an internal package, and imported
+ * alongside the guides they outrank them in retrieval with local dev notes.
+ *
+ * An allowlist rather than an exclusion list, so a new README is internal until
+ * someone decides it is product-facing. Paths are repo-relative, POSIX, and
+ * compared case-insensitively (the repo mixes README.md and readme.md).
+ */
+export const PRODUCT_README_PATHS: ReadonlySet<string> = new Set([
+  "readme.md", // product overview and quick start
+  "typescript-sdk/readme.md", // published SDK
+  "packages/radioso-mcp-server/readme.md", // MCP server setup and client configuration
+  "packages/wordpress-companion/readme.md", // WordPress plugin install
+]);
+
+export function isProductReadme(relPath: string): boolean {
+  return PRODUCT_README_PATHS.has(relPath.toLowerCase());
+}
+
 export interface BuildReadmeDocumentsOptions {
   repoRoot: string;
   commonSourceUrl: string;
@@ -14,7 +36,9 @@ export interface BuildReadmeDocumentsOptions {
 export async function buildReadmeDocuments(options: BuildReadmeDocumentsOptions): Promise<DocumentInput[]> {
   const repoRoot = path.resolve(options.repoRoot);
   const repoSourceBase = options.repoSourceBase.replace(/\/+$/, "");
-  const files = (await listReadmeFiles(repoRoot)).sort((a, b) =>
+  const files = (await listReadmeFiles(repoRoot))
+    .filter((file) => isProductReadme(toPosixPath(path.relative(repoRoot, file))))
+    .sort((a, b) =>
     comparePath(toPosixPath(path.relative(repoRoot, a)), toPosixPath(path.relative(repoRoot, b))),
   );
   const documents: DocumentInput[] = [];

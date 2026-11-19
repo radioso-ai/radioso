@@ -9,6 +9,32 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.33.0] - 2026-11-19
+
+### Added
+
+- **frontend:** group the sidebar into Build and Insights sections ([#1846](https://github.com/radioso-ai/radioso/pull/1846))
+- **audience-pulse:** topic count scales with question volume ([#1845](https://github.com/radioso-ai/radioso/pull/1845))
+- **infra:** turn on audited engineer database access on live and live-eu ([#1833](https://github.com/radioso-ai/radioso/pull/1833))
+- **infra:** audited engineer access to each stack's database ([#1831](https://github.com/radioso-ai/radioso/pull/1831))
+
+### Fixed
+
+- **workbench:** test chat turn debug counts model calls, shows slot values, and keeps the visitor's message ([#1842](https://github.com/radioso-ai/radioso/pull/1842))
+- **workbench:** test chat replies carry the sources live chat attaches ([#1844](https://github.com/radioso-ai/radioso/pull/1844))
+- **agents:** answer a malformed revision route parameter with 400 ([#1841](https://github.com/radioso-ai/radioso/pull/1841))
+- **infra:** dev frontend watchdog stops restarting Next on escaped chunk names ([#1840](https://github.com/radioso-ai/radioso/pull/1840))
+- **routines:** an ending's reply says what the run did, not what its text assumed ([#1839](https://github.com/radioso-ai/radioso/pull/1839))
+- **routines:** opening a routine no longer saves it or dirties the agent draft ([#1838](https://github.com/radioso-ai/radioso/pull/1838))
+- **dashboard:** readable review dialog, wrapping inbox filters, named public link switch, one-time actions probe ([#1834](https://github.com/radioso-ai/radioso/pull/1834))
+- **routines:** stop offering undeclared slot keys at activation and label unstored slots by reason ([#1835](https://github.com/radioso-ai/radioso/pull/1835))
+- **chat:** treat a committed decline that cites a result as the decline, so the miss hand-off runs ([#1837](https://github.com/radioso-ai/radioso/pull/1837))
+- **infra:** start db-support runs through the Cloud Run API ([#1832](https://github.com/radioso-ai/radioso/pull/1832))
+- **retrieval:** end chunks at word boundaries and carry a document's attributes to every chunk ([#1830](https://github.com/radioso-ai/radioso/pull/1830))
+- **chat:** resolve "the event" to the course the visitor named, not the category they gave first ([#1829](https://github.com/radioso-ai/radioso/pull/1829))
+
+[1.33.0]: https://github.com/radioso-ai/radioso/compare/v1.32.0...v1.33.0
+
 ## [1.32.0] - 2026-11-17
 
 ### Added

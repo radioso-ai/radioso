@@ -19,6 +19,9 @@ const meta = {
   guides: {
     title: 'Guides',
   },
+  automation: {
+    title: 'Automation',
+  },
   api: {
     title: 'API',
   },

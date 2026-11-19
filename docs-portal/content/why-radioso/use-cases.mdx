@@ -1,7 +1,7 @@
 ---
 title: "Use cases"
-description: "Jobs a Radioso agent completes end to end: customer support, product onboarding, lead qualification, and internal help — on one agent."
-last_updated: 2026-09-10
+description: "Jobs a Radioso agent completes end to end: customer support, product onboarding, lead qualification, bookings with a person's sign-off, and internal help — on one agent."
+last_updated: 2026-11-19
 ---
 
 # Use cases
@@ -36,6 +36,16 @@ Author a routine that asks the qualifying questions in the natural place in the 
 
 You control the tone with directives rather than a wall of prompt text: what the agent may claim about pricing, when to offer a call, what it should never say about a customer you have not announced.
 
+## Take a booking and get it signed off
+
+Bookings are where a chat that only answers questions runs out. The visitor wants a time, a price, and a yes, and some bookings need a person to agree before anyone promises anything: a large group, a date outside normal hours, a job that ties up the workshop for a day. An agent can carry the whole request and bring a teammate in for the one decision that's theirs.
+
+It's a **routine**. A chat step collects what the booking needs as typed values: the date as a `date`, the party size as a `number`, the visitor's email as an `email`. A date that isn't on the calendar gets asked again. "Tomorrow" means the visitor's tomorrow, because the widget sends their time zone. A **skill step** then checks availability in your booking system, either over a `webhook_call` skill to its HTTP API or an `mcp_tool` skill to its MCP server. The step passes in the date and size and stores what comes back, open times and a price, as values the next steps read. The free times can come back as cards the visitor taps to pick one. The next chat step quotes the price for that choice and asks the visitor to confirm.
+
+Then an **approval step** pauses the routine for your team. The decision lands in the dashboard **Inbox** under **Needs you**, and in Slack when the workspace has it connected. The choices are yours to name, such as **Confirm**, **Offer another time**, and **Decline**. The conversation stays with the agent while it waits, and the routine resumes on the path of whichever choice the teammate picks. On **Confirm**, another skill step writes the booking into your system. The routine then reaches a **Finish** ending with **Notify the team** on, so the front desk gets an email listing every value the visitor gave, and their reply goes straight to the visitor's address. A booking that needs no sign-off leaves the approval step out.
+
+See [Author a routine](/guides/authoring-routines#set-branches-approvals-and-endings) for approval steps, endings, and notices, and [Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards) for letting the visitor pick a time.
+
 ## Help your own team from inside your tools
 
 The same agent answers your team, not only your customers. Engineers reach it from an MCP client in their editor; a support lead queries it from the API behind an internal dashboard; anyone can open the public chat link.
@@ -46,7 +56,7 @@ Internal help is where the "one agent" part pays off. The onboarding routine you
 
 ## One agent, every surface
 
-Every job above runs on the same agent, reachable five ways: the web app, the REST API, the TypeScript SDK, an MCP client, and a website embed. Anonymous public chat is available as a public surface. The website widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
+Every job above runs on the same agent, reachable five ways: the web app, the REST API, the TypeScript SDK, an MCP client, and a website embed. Anonymous public chat is available as a public surface. The website widget, its theming, origin approval, and handing a conversation to a person are all part of the open-source build. Enterprise Edition (`ee/`) holds what Radioso needs to run as a cloud service for many separate organizations: organization creation, plans and billing, usage limits, managed models, Google sign-in, and a staff console.
 
 Update a document, publish a new routine version, or add a directive, and every surface picks it up. One debug loop covers all of them: each turn records which directive steered it, which skill it dispatched, and which routine step it was on.
 
@@ -56,4 +66,5 @@ Update a document, publish a new routine version, or add a directive, and every 
 - [What agents can do](/why-radioso/capabilities) — directives, routines, actions, and handoff in detail
 - [MCP server](/guides/mcp-server) — connect a client to one agent's conversation surface
 - [Authoring routines](/guides/authoring-routines) — write and publish your first flow
+- [Make your agent act](/quickstarts/make-it-act) — add the notify skill a booking's ending sends through
 - [Embed on your website](/quickstarts/website-embed) — put the agent in front of customers

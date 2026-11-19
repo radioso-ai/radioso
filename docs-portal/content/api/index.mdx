@@ -1,7 +1,7 @@
 ---
 title: "API overview"
 description: "How the Radioso API is organized, which auth mode to use, and where each workflow lives."
-last_updated: 2026-10-25
+last_updated: 2026-11-19
 ---
 
 # API overview
@@ -27,7 +27,7 @@ Swap in `https://api-us.radioso.ai` for the US-hosted instance, or your own orig
 - Automating workspace documents or configuration: [Personal tokens and service accounts](/api/workspaces-and-tokens), then [Agents and skills](/api/agents-and-skills) and [Documents and search](/api/documents-and-search).
 - Adding agent chat to a backend: [Chat and history](/api/chat-and-history).
 - Starting an automation when a conversation starts, a visitor leaves contact details, or a routine ends: [Workspace event log](/api/workspace-event-log) to poll, or [Workspace event subscriptions](/api/workspace-event-subscriptions) to have each event pushed to a URL.
-- Adding customer-facing public chat or the Enterprise website widget: [Public chat and embed](/api/public-chat-and-embed).
+- Adding customer-facing public chat or the website widget: [Public chat and embed](/api/public-chat-and-embed).
 - Tuning workspace behavior: [Settings](/api/settings).
 - Managing external ingestion or messaging systems: [Connectors and webhooks](/api/connectors-and-webhooks), and [WordPress and WooCommerce](/operators/wordpress-connector) for a site or catalogue.
 
@@ -38,7 +38,7 @@ Which credential you send determines which routes will accept the request:
 - **Session cookie** — set by login, invitation acceptance, or password reset. Manages accounts, users, invitations, and workspaces.
 - **Personal token or service-account credential** — sent as `Authorization: Bearer <token>`. Runs the routes explicitly available to its live `member` or `admin` role.
 - **Agent credential** — bound to exactly one agent and either the `rest` or `mcp` audience. It carries no workspace role. A REST credential calls `/api/v1/agents/{agentId}/chat`; an MCP credential reaches `ask_agent` through the standalone MCP server.
-- **Public token** — a per-surface token embedded in a public chat link or website widget, not tied to your account. Handles anonymous chat and the Enterprise embed flow.
+- **Public token** — a per-surface token embedded in a public chat link or website widget, not tied to your account. Handles anonymous chat and the website widget.
 
 Exact schemas, status codes, and payload contracts live in the [API Reference](/api-reference), generated from the OpenAPI document at `backend/openapi.json` — the canonical source for both that reference and this scenario-first section.
 

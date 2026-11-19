@@ -1,14 +1,14 @@
 ---
 title: "Authentication"
-description: "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
-last_updated: 2026-11-09
+description: "Session, workspace automation, Operator MCP, agent chat, public chat, and website widget access patterns in Radioso."
+last_updated: 2026-11-19
 ---
 
 import { Steps } from 'nextra/components'
 
 # Authentication
 
-Radioso has more than one authentication model because it serves more than one audience. A person in the dashboard, a script calling the API, and an anonymous visitor on your website all need to be trusted differently, so the web app, API, public chat, and Enterprise embed flows don't share credentials. Pick the mode that matches who's knocking.
+Radioso has more than one authentication model because it serves more than one audience. A person in the dashboard, a script calling the API, and an anonymous visitor on your website all need to be trusted differently, so the web app, API, public chat, and website widget don't share credentials. Pick the mode that matches who's knocking.
 
 ## Main access modes
 
@@ -16,7 +16,7 @@ Radioso has more than one authentication model because it serves more than one a
 - Personal tokens and service-account credentials for role-aware workspace automation
 - Delegated Operator MCP grants for Ray tools in a user's workspace
 - Role-free agent credentials for REST or MCP chat with one agent
-- Anonymous public chat and Enterprise embed flows for customer-facing agent experiences
+- Anonymous public chat and the website widget for customer-facing agent experiences
 
 ## Session-based access
 
@@ -101,7 +101,7 @@ A signed-in user with agent-manage permission issues, rotates, or revokes these 
 
 Public website chat doesn't use an operator session. It relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
 
-That's the right model for customer-facing agents, and the wrong one for operator automation, because a public visitor should never hold an operator's credentials. The hosted website widget is an Enterprise Edition surface; anonymous public chat uses the same public-session model without the widget routes.
+That's the right model for customer-facing agents, and the wrong one for operator automation, because a public visitor should never hold an operator's credentials. The website widget and the public chat link both use this public-session model. The widget adds one check of its own: the launch has to come from an origin on the widget's allowed list, as [Embed on your website](/quickstarts/website-embed) describes.
 
 ## Choose the right mode
 
@@ -109,7 +109,7 @@ That's the right model for customer-facing agents, and the wrong one for operato
 - Use personal tokens or service-account credentials for eligible REST and SDK automation.
 - Use Operator MCP OAuth when an external engine needs Ray's current, workspace-scoped operator capabilities.
 - Use a REST or MCP agent credential when a client should only converse with one agent.
-- Use public chat or Enterprise embed flows for customer-facing agents.
+- Use the public chat link or the website widget for customer-facing agents.
 
 ## Start points
 

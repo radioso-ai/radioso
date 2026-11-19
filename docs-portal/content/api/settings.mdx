@@ -14,7 +14,7 @@ Retrieval configuration is not a workspace setting. It lives on each agent's `re
 The setting groups are:
 
 - ingestion settings for chunking behavior
-- general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
+- general settings for anonymous chat, assistant defaults, and the website widget
 - the workspace time zone, the day "today" and "tomorrow" mean in answers
 - platform settings that merge assistant and channel behavior into one resource
 - model and credential settings for provider access
@@ -197,7 +197,7 @@ This payload covers user-facing workspace behavior such as:
 - `websiteEmbedCopy`
 - `websiteEmbedExpertOverrides`
 
-<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat has its own keys and its own rotation endpoint, so the two placements are enabled and rotated independently even though the dashboard configures both on the agent's **Web chat** page.
+The `websiteEmbed*` fields hold the widget's allowed origins, button text and position, wording packs, and expert overrides such as display mode and the greeting teaser. [Customize the website widget](/guides/customize-the-widget) maps each one to its control on the agent's **Web chat** page. Public chat and the website widget each have their own token and their own rotation endpoint, so the two placements are enabled and rotated independently even though the dashboard configures both on that page.
 
 Public link and embed token rotation use explicit endpoints:
 

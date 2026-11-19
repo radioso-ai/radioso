@@ -4,6 +4,8 @@ const meta = {
   'agent-converse': 'Connect a calling agent',
   'a2a-converse': 'Connect an A2A client',
   'publish-an-agent': 'Publish and open an agent',
+  'customize-the-widget': 'Customize the website widget',
+  'install-on-site-builders': 'Install on a site builder',
   'document-upload': 'Document upload',
   'document-metadata': 'Extract document metadata',
   'authoring-directives': 'Author a directive',

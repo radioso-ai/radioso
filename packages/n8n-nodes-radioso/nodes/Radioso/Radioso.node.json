@@ -1,0 +1,12 @@
+{
+	"node": "@radioso/n8n-nodes-radioso.radioso",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Communication", "Development"],
+	"resources": {
+		"credentialDocumentation": [
+			{ "url": "https://docs.radioso.ai/guides/n8n#create-the-credential" }
+		],
+		"primaryDocumentation": [{ "url": "https://docs.radioso.ai/guides/n8n" }]
+	}
+}

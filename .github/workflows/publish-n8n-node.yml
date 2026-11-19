@@ -1,0 +1,79 @@
+name: Publish n8n community node
+
+# n8n only verifies community nodes that are published from GitHub Actions with an npm
+# provenance statement. Cut a release by pushing a tag that matches the package version:
+#   git tag n8n-nodes-radioso-v0.1.0 && git push origin n8n-nodes-radioso-v0.1.0
+#
+# One-time npm setup (owner action), either:
+#   - a Trusted Publisher on the package: owner radioso-ai, repository radioso,
+#     workflow filename publish-n8n-node.yml; leave NPM_TOKEN unset, or
+#   - a granular access token for the package stored as the NPM_TOKEN secret.
+
+on:
+  push:
+    tags:
+      - "n8n-nodes-radioso-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and inspect the tarball without publishing"
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Mints the OIDC token npm signs the provenance statement with.
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        working-directory: packages/n8n-nodes-radioso
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          tag_version="${GITHUB_REF_NAME#n8n-nodes-radioso-v}"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${package_version}." >&2
+            exit 1
+          fi
+
+      - name: Install n8n node dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/n8n-nodes-radioso...
+
+      - name: Lint
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm run lint
+
+      - name: Test
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm test
+
+      - name: Build
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm run build
+
+      - name: Inspect package contents
+        working-directory: packages/n8n-nodes-radioso
+        run: npm pack --dry-run
+
+      - name: Publish with provenance
+        if: github.event_name == 'push' || inputs.dry_run == false
+        working-directory: packages/n8n-nodes-radioso
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

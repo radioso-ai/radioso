@@ -11,6 +11,7 @@ const meta = {
   'exact-words': 'Exact words',
   'image-input': 'Let visitors send photos',
   'reply-cards': 'Show picture cards in replies',
+  n8n: 'Use Radioso in n8n',
   workbench: 'Test in the workbench',
   evals: 'Evaluate answer quality',
 }

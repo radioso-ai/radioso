@@ -76,6 +76,13 @@
         "scripts/**/*.{ts,mjs}"
       ]
     },
+    "packages/n8n-nodes-radioso": {
+      "entry": [
+        "credentials/*.credentials.ts",
+        "nodes/**/*.node.ts",
+        "tests/**/*.test.ts"
+      ]
+    },
     "packages/*": {
       "entry": [
         "src/index.ts",

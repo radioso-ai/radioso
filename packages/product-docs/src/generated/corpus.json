@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 68,
+  "pageCount": 69,
   "pages": [
     {
       "slug": "api",
@@ -1529,6 +1529,67 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Connect a calling agent](https://docs.radioso.ai/guides/agent-converse) — `ask_agent`, the reply envelope, and calling an exposed routine as a typed tool.\n* [Publish and open an agent](https://docs.radioso.ai/guides/publish-an-agent) — the agent's public id, its discovery documents, and credential-free access.\n* [Authentication](https://docs.radioso.ai/guides/authentication) — sessions, personal tokens, service credentials, and public launch flows.\n* [Personal tokens and service accounts](https://docs.radioso.ai/api/workspaces-and-tokens) — issue REST credentials and store their one-time secrets.\n* [Agents and skills](https://docs.radioso.ai/api/agents-and-skills) — configure the agent and its external MCP skills.\n* [Documents and search](https://docs.radioso.ai/api/documents-and-search) — use the REST document routes for workspace document work."
+        }
+      ]
+    },
+    {
+      "slug": "guides/n8n",
+      "url": "https://docs.radioso.ai/guides/n8n",
+      "title": "Use Radioso in n8n",
+      "description": "Install the Radioso community node in n8n, connect it with a service-account token, and ask agents, search knowledge, add documents and read conversations from a workflow.",
+      "section": "Guides",
+      "lastUpdated": "2026-11-19",
+      "intro": "Say a form submission should get an answer from your support agent, and the reply should land in a Slack channel. With the Radioso node, that is one n8n step between the form and Slack: the node sends the question to the agent, and the agent's answer, its citations and the conversation id come back as data your workflow can use.\n\nThe package is `@radioso/n8n-nodes-radioso`. It adds one credential and one node, **Radioso**, to n8n. The node works as a normal workflow step and as a tool the AI Agent node can call.",
+      "sections": [
+        {
+          "id": "install-the-node",
+          "heading": "Install the node",
+          "body": "### Open the community nodes list\n\nOn a self-hosted n8n, sign in as an owner or admin and open **Settings → Community Nodes**.\n\n### Install the package\n\nSelect **Install**, enter `@radioso/n8n-nodes-radioso`, accept the risk notice and select **Install**. n8n Cloud installs verified community nodes only, from the node panel.\n\n### Check the node panel\n\nAdd a node and search for **Radioso**. The node and its credential are available in every workflow."
+        },
+        {
+          "id": "create-the-credential",
+          "heading": "Create the credential",
+          "body": "The credential tells n8n where your workspace lives and which token to present.\n\n### Create a service account in Radioso\n\nIn **Settings → API access**, create a service account with the `member` role and copy its token. Tokens start with `radioso_svc_v1_` and are shown once. [Authentication](https://docs.radioso.ai/guides/authentication#personal-tokens-and-service-accounts) covers roles and expiry.\n\n### Add the credential in n8n\n\nCreate a **Radioso API** credential and choose the instance:\n\n| Instance            | Choose          | API origin                                                                    |\n| ------------------- | --------------- | ----------------------------------------------------------------------------- |\n| Radioso EU cloud    | **EU Cloud**    | `https://api.radioso.ai`                                                      |\n| Radioso US cloud    | **US Cloud**    | `https://api-us.radioso.ai`                                                   |\n| Your own deployment | **Self-Hosted** | the origin of your backend API, such as `https://radioso.example.com/backend` |\n\nPaste the token and save. n8n tests the credential with `GET /api/v1/workspace/summary`; a green check means the token and instance match.\n\nA token only works against the instance that issued it. A token from the EU cloud fails on the US cloud with `401`."
+        },
+        {
+          "id": "ask-an-agent",
+          "heading": "Ask an agent",
+          "body": "Choose **Agent → Ask**, pick an agent from the list and write the message. The list loads from your workspace, and the agent must be published.\n\nThe output carries `answer`, `citations`, `conversationId` and `ownership`. To keep a conversation going, put the `conversationId` from the first reply into **Additional Fields → Conversation ID** on the next Ask step, and the agent sees the earlier turns. Leave it empty to start a new conversation.\n\nAsk calls `POST /api/v1/assistant/chat`, the assistant chat API. A workspace token reaches an agent through that route, with the agent chosen in the request.\n\nWhen a teammate has taken over a conversation, the agent doesn't answer. The reply then comes back with `ownership.state` set to `human_owned` and an empty or suppressed answer, so check `ownership` before you post `answer` anywhere."
+        },
+        {
+          "id": "search-knowledge",
+          "heading": "Search knowledge",
+          "body": "**Knowledge → Search** returns the passages from your documents that match a query, so a workflow can look something up without involving an agent. **Knowledge → Answer** returns one grounded answer with citations, written without an agent's persona.\n\nBoth take an optional agent in **Additional Fields**. With an agent chosen, the search covers the documents that agent can use; without one, it covers the workspace. **Max Results** applies to Search."
+        },
+        {
+          "id": "add-a-document",
+          "heading": "Add a document",
+          "body": "**Document → Create** adds a text document: a title, the content, optional metadata as a JSON object, and an optional external document id such as a CMS record id. Metadata values are strings, numbers, booleans or null.\n\nDocument processing is asynchronous. The node returns as soon as Radioso accepts the document, with `documentId`, `status`, and `processing: \"asynchronous\"`. Chunking and embedding happen in the background, and an agent can cite the document once its status is ready. See [Document upload](https://docs.radioso.ai/guides/document-upload)."
+        },
+        {
+          "id": "get-a-conversation",
+          "heading": "Get a conversation",
+          "body": "**Conversation → Get** reads a transcript by conversation id: the messages, the agent, the channel, the visitor and the ownership history. **Message Limit** and **Message Offset** page through long conversations."
+        },
+        {
+          "id": "use-the-node-as-an-ai-agent-tool",
+          "heading": "Use the node as an AI agent tool",
+          "body": "Add the Radioso node to an AI Agent node's **Tool** input. The model fills the fields from the conversation, so a support workflow can let the model search your knowledge or fetch a transcript when it needs one. On a self-hosted n8n, if the node does not appear in the tool list, check your n8n version's setting for community nodes as tools."
+        },
+        {
+          "id": "permissions",
+          "heading": "Permissions",
+          "body": "Every operation works with a service account on the `member` role.\n\n| Operation                  | Radioso route                              | Permission                   |\n| -------------------------- | ------------------------------------------ | ---------------------------- |\n| Agent list (dropdown)      | `GET /api/v1/agents`                       | `workspace.agents.read`      |\n| Agent → Ask                | `POST /api/v1/assistant/chat`              | `workspace.chat.use`         |\n| Knowledge → Search, Answer | `POST /api/v1/retrieval/search`, `/answer` | `workspace.retrieval.query`  |\n| Document → Create          | `POST /api/v1/document`                    | `workspace.documents.manage` |\n| Conversation → Get         | `GET /api/v1/history/chat/{id}`            | `workspace.history.read`     |\n\nThe node does not reply as an operator or resolve decisions. Those routes accept a signed-in dashboard session only, so a service-account token can't call them."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* **\"Radioso rejected the credential\" (401).** The token is expired, revoked, or from the other cloud region. Create a new one under **Settings → API access** and check the instance on the credential.\n* **\"The token is not allowed to do this\" (403).** The service account's role lacks the permission in the table above. Use the `member` role or higher.\n* **\"Radioso could not find it\" (404).** The agent or conversation id belongs to another workspace, or the agent has never been published.\n* **\"Radioso is rate limiting this token\" (429).** Authenticated chat, search and answer share one limit of 60 requests per 60 seconds per token by default. Add a wait, or turn on **Retry On Fail** for the node. Self-hosted operators tune it in [Deployment](https://docs.radioso.ai/operators/deployment).\n* **\"Could not reach Radioso\".** n8n can't open a connection to the instance. For a self-hosted instance, check that the API origin in the credential is reachable from where n8n runs."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Authentication](https://docs.radioso.ai/guides/authentication) for service accounts and roles.\n* [Document upload](https://docs.radioso.ai/guides/document-upload) for what happens after a document is accepted.\n* [TypeScript SDK](https://docs.radioso.ai/sdk/typescript-getting-started) when the workflow belongs in code instead."
         }
       ]
     },

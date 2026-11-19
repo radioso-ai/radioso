@@ -1,0 +1,59 @@
+{
+  "name": "@radioso/n8n-nodes-radioso",
+  "version": "0.1.0",
+  "description": "n8n community node for Radioso: ask an agent, search knowledge, add documents and read conversations from a workflow.",
+  "license": "MIT",
+  "homepage": "https://docs.radioso.ai/guides/n8n",
+  "keywords": [
+    "n8n-community-node-package",
+    "radioso",
+    "agents",
+    "retrieval"
+  ],
+  "author": {
+    "name": "Radioso",
+    "email": "security@radioso.ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/radioso-ai/radioso.git",
+    "directory": "packages/n8n-nodes-radioso"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "n8n-node build",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/RadiosoApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Radioso/Radioso.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.57.4",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.39.0",
+    "n8n-workflow": "^2.16.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.12"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

@@ -39,6 +39,7 @@ jobs:
       ee: ${{ steps.filter.outputs.ee }}
       terraform: ${{ steps.filter.outputs.terraform }}
       wordpress_companion: ${{ steps.filter.outputs.wordpress_companion }}
+      n8n_node: ${{ steps.filter.outputs.n8n_node }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -64,6 +65,7 @@ jobs:
           ee=false
           terraform=false
           wordpress_companion=false
+          n8n_node=false
 
           mark_all() {
             backend=true
@@ -76,6 +78,7 @@ jobs:
             ee=true
             terraform=true
             wordpress_companion=true
+            n8n_node=true
           }
 
           if [ "$EVENT_NAME" = "push" ]; then
@@ -159,6 +162,9 @@ jobs:
               packages/wordpress-companion/*)
                 wordpress_companion=true
                 ;;
+              packages/n8n-nodes-radioso/*)
+                n8n_node=true
+                ;;
               ee/*)
                 ee=true
                 ;;
@@ -181,6 +187,7 @@ jobs:
             echo "ee=${ee}"
             echo "terraform=${terraform}"
             echo "wordpress_companion=${wordpress_companion}"
+            echo "n8n_node=${n8n_node}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -726,6 +733,42 @@ jobs:
         working-directory: packages/census
         run: pnpm test
 
+  n8n-node:
+    name: n8n Community Node
+    needs: changes
+    if: needs.changes.outputs.n8n_node == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install n8n node dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/n8n-nodes-radioso...
+
+      # n8n's own linter is the verified-node gate; the root ESLint config does not cover this package.
+      - name: Lint n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm run lint
+
+      - name: Build n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm run build
+
+      - name: Test n8n node
+        working-directory: packages/n8n-nodes-radioso
+        run: pnpm test
+
   wordpress-companion:
     name: WordPress Companion Plugin
     needs: changes
@@ -853,6 +896,7 @@ jobs:
       - crawler
       - census
       - wordpress-companion
+      - n8n-node
       - ee
       - terraform
     if: always()
@@ -877,6 +921,8 @@ jobs:
       CENSUS_RESULT: ${{ needs.census.result }}
       WORDPRESS_COMPANION_SELECTED: ${{ needs.changes.outputs.wordpress_companion }}
       WORDPRESS_COMPANION_RESULT: ${{ needs['wordpress-companion'].result }}
+      N8N_NODE_SELECTED: ${{ needs.changes.outputs.n8n_node }}
+      N8N_NODE_RESULT: ${{ needs['n8n-node'].result }}
       EE_SELECTED: ${{ needs.changes.outputs.ee }}
       EE_RESULT: ${{ needs.ee.result }}
       TERRAFORM_SELECTED: ${{ needs.changes.outputs.terraform }}
@@ -922,5 +968,6 @@ jobs:
           check_selected_job "Crawler Package" "$CRAWLER_SELECTED" "$CRAWLER_RESULT"
           check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
           check_selected_job "WordPress Companion Plugin" "$WORDPRESS_COMPANION_SELECTED" "$WORDPRESS_COMPANION_RESULT"
+          check_selected_job "n8n Community Node" "$N8N_NODE_SELECTED" "$N8N_NODE_RESULT"
           check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"
           check_selected_job "Terraform" "$TERRAFORM_SELECTED" "$TERRAFORM_RESULT"

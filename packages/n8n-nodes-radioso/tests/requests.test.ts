@@ -81,16 +81,36 @@ describe('Ask an agent', () => {
 		).not.toThrow();
 	});
 
-	it('flags a reply that a teammate owns, where the answer is a waiting message', () => {
+	it('flags a suppressed reply, where the answer is the waiting message and no agent answered', () => {
 		const output = shapeResponse('agent', 'ask', {
 			conversationId: 'c-1',
 			assistantMessageId: '',
 			answer: 'A teammate will answer shortly.',
 			ownership: { state: 'human_owned', suppressed: true },
 		});
-		expect(output).toMatchObject({ humanOwned: true, assistantMessageId: '' });
-		expect(shapeResponse('agent', 'ask', { answer: 'Hi', ownership: { state: 'ai_owned' } }))
-			.toMatchObject({ humanOwned: false });
+		expect(output).toMatchObject({
+			conversationOwner: 'human_owned',
+			replySuppressed: true,
+			assistantMessageId: '',
+		});
+	});
+
+	it('does not flag the handoff turn, which is teammate-owned but carries a real answer', () => {
+		const output = shapeResponse('agent', 'ask', {
+			assistantMessageId: 'm-1',
+			answer: 'I am passing you to a teammate.',
+			ownership: { state: 'human_owned', suppressed: false },
+		});
+		expect(output).toMatchObject({ conversationOwner: 'human_owned', replySuppressed: false });
+	});
+
+	it('reports an agent-owned reply as such', () => {
+		expect(shapeResponse('agent', 'ask', { answer: 'Hi', ownership: { state: 'ai_owned', suppressed: false } }))
+			.toMatchObject({ conversationOwner: 'ai_owned', replySuppressed: false });
+		expect(shapeResponse('agent', 'ask', { answer: 'Hi' })).toMatchObject({
+			conversationOwner: 'ai_owned',
+			replySuppressed: false,
+		});
 	});
 
 	it('leaves out an empty conversation id so a new conversation starts', () => {
@@ -103,10 +123,12 @@ describe('Ask an agent', () => {
 		expect(request.body).not.toHaveProperty('conversationId');
 	});
 
-	it('refuses to send without an agent or a message', () => {
-		expect(() => buildRequest(node, 'agent', 'ask', reader({ message: 'Hi' }))).toThrow(
-			'Agent (needed to start a conversation) is required.',
-		);
+	it('starts a conversation with the workspace default agent when none is chosen', () => {
+		const request = buildRequest(node, 'agent', 'ask', reader({ message: 'Hi' }));
+		expect(request.body).toEqual({ message: 'Hi' });
+	});
+
+	it('refuses to send without a message', () => {
 		expect(() => buildRequest(node, 'agent', 'ask', reader({ agentId: AGENT_ID }))).toThrow(
 			'Message is required.',
 		);
@@ -193,10 +215,16 @@ describe('Add a document', () => {
 	it('says processing is asynchronous in the output', () => {
 		const output = shapeResponse('document', 'create', {
 			documentId: 'd-1',
-			status: 'processing',
+			status: 'pending',
 		});
-		expect(output).toMatchObject({ documentId: 'd-1', status: 'processing', processing: 'asynchronous' });
+		expect(output).toMatchObject({ documentId: 'd-1', status: 'pending', processing: 'asynchronous' });
 		expect(String(output.note)).toContain('background');
+	});
+
+	it('reports unchanged content, which comes back ready at once, as complete', () => {
+		const output = shapeResponse('document', 'create', { documentId: 'd-1', status: 'ready' });
+		expect(output).toMatchObject({ status: 'ready', processing: 'complete' });
+		expect(String(output.note)).toContain('ready and searchable now');
 	});
 });
 
@@ -215,9 +243,76 @@ describe('Get a conversation', () => {
 		});
 	});
 
-	it('passes the response through unchanged', () => {
-		const body = { conversationId: 'c-1', messages: [] };
-		expect(shapeResponse('conversation', 'get', body)).toEqual(body);
+	it('reads the newest 100 messages when no window is given', () => {
+		const request = buildRequest(node, 'conversation', 'get', reader({ conversationId: 'c-1' }));
+		expect(request.qs).toEqual({ limit: 100 });
+	});
+
+	const history = {
+		conversationId: 'c-1',
+		workspaceId: 'w-1',
+		agentId: 'a-1',
+		agentName: 'Support',
+		agentInternalName: 'support-internal',
+		sourceChannel: 'website_embed',
+		callerKind: 'visitor',
+		sourceOrigin: 'https://shop.example',
+		entryPageUrl: 'https://shop.example/cart?email=ada@example.test',
+		entryReferrer: 'https://search.example',
+		visitor: { name: 'Ada Example', email: 'ada@example.test' },
+		requestContext: { ip: '203.0.113.7', country: 'GB', userAgent: 'Mozilla/5.0' },
+		channelContext: { kind: 'web', pageUrl: 'https://shop.example/cart' },
+		title: 'Return window',
+		createdAt: '2026-11-19T09:12:00.000Z',
+		updatedAt: '2026-11-19T09:13:10.000Z',
+		messageCount: 4,
+		hasOlderMessages: true,
+		ownership: { state: 'human_owned' },
+		messages: [
+			{ id: 'm0', role: 'system', source: 'system', content: 'internal note', createdAt: 't0' },
+			{ id: 'm1', role: 'user', source: 'customer', content: 'Can I return it?', createdAt: 't1' },
+			{
+				id: 'm2',
+				role: 'assistant',
+				source: 'human_agent',
+				content: 'Yes, within 30 days.',
+				createdAt: 't2',
+				operatorDisplayName: 'Grace Teammate',
+				operatorLabel: 'grace@example.test',
+				debug: { model: 'x', prompt: 'secret prompt' },
+			},
+		],
+	};
+
+	it('returns the transcript without the visitor profile, request context or debug data', () => {
+		const output = shapeResponse('conversation', 'get', history);
+		const serialized = JSON.stringify(output);
+
+		expect(output).toMatchObject({
+			conversationId: 'c-1',
+			agentName: 'Support',
+			sourceChannel: 'website_embed',
+			title: 'Return window',
+			messageCount: 4,
+			conversationOwner: 'human_owned',
+			transcriptIsPartial: true,
+			transcript: 'customer: Can I return it?\nhuman_agent: Yes, within 30 days.',
+		});
+		expect(output.messages).toEqual([
+			{ source: 'customer', content: 'Can I return it?', createdAt: 't1' },
+			{ source: 'human_agent', content: 'Yes, within 30 days.', createdAt: 't2' },
+		]);
+		for (const key of ['requestContext', 'visitor', 'entryPageUrl', 'entryReferrer', 'channelContext']) {
+			expect(output).not.toHaveProperty(key);
+		}
+		for (const leaked of ['203.0.113.7', 'ada@example.test', 'Grace Teammate', 'secret prompt', 'w-1']) {
+			expect(serialized).not.toContain(leaked);
+		}
+	});
+
+	it('defaults to an agent-owned, complete transcript', () => {
+		const output = shapeResponse('conversation', 'get', { conversationId: 'c-1', messages: [] });
+		expect(output).toMatchObject({ conversationOwner: 'ai_owned', transcriptIsPartial: false, transcript: '' });
 	});
 });
 

@@ -8,6 +8,12 @@ Portions of this software are licensed as follows:
     source-available software governed solely by "ee/LICENSE". It is NOT
     covered by the Apache License, Version 2.0.
 
+  * All content that resides under the "packages/n8n-nodes-radioso/" directory
+    is the Radioso n8n community node, licensed under the MIT License as n8n
+    requires of verified community nodes, governed solely by
+    "packages/n8n-nodes-radioso/LICENSE". It is NOT covered by the Apache
+    License, Version 2.0.
+
   * All third-party components incorporated into the Radioso software are
     licensed under the original license provided by the owner of the
     applicable component.
@@ -15,7 +21,7 @@ Portions of this software are licensed as follows:
   * All other content is licensed under the Apache License, Version 2.0, the
     full text of which follows below.
 
-See the NOTICE file for attribution and this Enterprise Edition carve-out.
+See the NOTICE file for attribution and these carve-outs.
 
 --------------------------------------------------------------------------------
 

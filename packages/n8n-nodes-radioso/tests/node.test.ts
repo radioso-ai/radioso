@@ -21,7 +21,11 @@ interface Reply {
 function context(
 	parameters: Record<string, unknown>,
 	reply: Reply | Error,
-	options: { continueOnFail?: boolean; items?: number } = {},
+	options: {
+		continueOnFail?: boolean;
+		items?: number;
+		credentials?: Record<string, unknown>;
+	} = {},
 ) {
 	const httpRequestWithAuthentication = vi.fn(async () => {
 		if (reply instanceof Error) throw reply;
@@ -32,10 +36,11 @@ function context(
 		getInputData: () => Array.from({ length: options.items ?? 1 }, () => ({ json: {} })),
 		getNodeParameter: (name: string, _index: number, fallback?: unknown) =>
 			name in parameters ? parameters[name] : fallback,
-		getCredentials: async () => ({
-			environment: 'custom',
-			customUrl: 'https://radioso.example.com/backend/',
-		}),
+		getCredentials: async () =>
+			options.credentials ?? {
+				environment: 'custom',
+				customUrl: 'https://radioso.example.com/backend/',
+			},
 		continueOnFail: () => options.continueOnFail ?? false,
 		helpers: { httpRequestWithAuthentication },
 	};
@@ -45,10 +50,6 @@ function context(
 const AGENT_ID = '3f2a9a52-7a6e-4a9e-8d57-5b7f0a0c1111';
 
 describe('Radioso node', () => {
-	it('is usable as an AI agent tool', () => {
-		expect(new Radioso().description.usableAsTool).toBe(true);
-	});
-
 	it('asks an agent through the configured instance with the credential applied', async () => {
 		const { fakeContext, httpRequestWithAuthentication } = context(
 			{ resource: 'agent', operation: 'ask', agentId: AGENT_ID, message: 'Hello' },
@@ -97,6 +98,32 @@ describe('Radioso node', () => {
 		expect(httpRequestWithAuthentication).not.toHaveBeenCalled();
 	});
 
+	it('reports a credential with no usable URL as a setup error, not a network one', async () => {
+		const { fakeContext, httpRequestWithAuthentication } = context(
+			{ resource: 'conversation', operation: 'get', conversationId: 'c-1' },
+			{ statusCode: 200, body: {} },
+			{ credentials: { environment: 'custom', customUrl: 'http://radioso.example.com' } },
+		);
+
+		const failure = await new Radioso().execute.call(fakeContext).catch((error: unknown) => error);
+
+		expect(failure).toBeInstanceOf(NodeOperationError);
+		expect((failure as Error).message).toContain('must start with https://');
+		expect(httpRequestWithAuthentication).not.toHaveBeenCalled();
+	});
+
+	it('explains a 2xx that is not API JSON, which is a wrong URL', async () => {
+		const { fakeContext } = context(
+			{ resource: 'conversation', operation: 'get', conversationId: 'c-1' },
+			{ statusCode: 200, body: '<html>Welcome</html>' },
+		);
+
+		const failure = await new Radioso().execute.call(fakeContext).catch((error: unknown) => error);
+
+		expect(failure).toBeInstanceOf(NodeOperationError);
+		expect((failure as NodeOperationError).description).toContain('/backend');
+	});
+
 	it('reports an unreachable instance', async () => {
 		const { fakeContext } = context(
 			{ resource: 'conversation', operation: 'get', conversationId: 'c-1' },
@@ -107,6 +134,7 @@ describe('Radioso node', () => {
 
 		expect(failure).toBeInstanceOf(NodeApiError);
 		expect((failure as NodeApiError).message).toBe('Could not reach Radioso');
+		expect((failure as NodeApiError).description).not.toContain('..');
 	});
 
 	it('keeps going per item when Continue On Fail is on', async () => {
@@ -119,7 +147,11 @@ describe('Radioso node', () => {
 		const [output] = await new Radioso().execute.call(fakeContext);
 
 		expect(output).toHaveLength(2);
-		expect(output[1].json.error).toBe('Radioso could not find it');
+		expect(output[1].json).toMatchObject({
+			error: 'Radioso could not find it',
+			httpCode: '404',
+			description: expect.stringContaining('Conversation not found'),
+		});
 	});
 
 	it('loads the agents dropdown from the agents list', async () => {

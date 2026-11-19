@@ -70,7 +70,7 @@ export const radiosoProperties: INodeProperties[] = [
 				type: 'string',
 				default: '',
 				description:
-					'Continue an existing conversation with the conversationId from a previous reply. The conversation keeps its agent, so Agent is ignored. Leave empty to start a new one, which needs an Agent.',
+					'Continue an existing conversation with the conversationId from a previous reply. The conversation keeps its agent, so Agent is ignored. Leave empty to start a new conversation. Retry On Fail sends the message again, and a retried first message opens a second conversation.',
 			},
 			{
 				displayName: 'Language',
@@ -152,11 +152,11 @@ export const radiosoProperties: INodeProperties[] = [
 		displayOptions: { show: { resource: ['document'] } },
 		options: [
 			{
-				name: 'Create',
+				name: 'Add or Replace',
 				value: 'create',
-				action: 'Add a document',
+				action: 'Add or replace a document',
 				description:
-					'Add a text document to the workspace. Processing is asynchronous: it is searchable once its status is ready.',
+					'Add a text document to the workspace, or replace the one with the same External Document ID. Processing is asynchronous: a document is searchable once its status is ready.',
 			},
 		],
 		default: 'create',
@@ -202,7 +202,8 @@ export const radiosoProperties: INodeProperties[] = [
 				name: 'externalDocumentId',
 				type: 'string',
 				default: '',
-				description: 'Your own ID for the document, such as a CMS record ID',
+				description:
+					'An ID from your own system, such as a record ID. Sending the same ID again replaces the document it created, so a workflow can keep one document in sync with a record. Unchanged content comes back ready at once.',
 			},
 		],
 	},

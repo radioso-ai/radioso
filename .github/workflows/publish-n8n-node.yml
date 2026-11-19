@@ -1,47 +1,55 @@
 name: Publish n8n community node
 
 # n8n only verifies community nodes that are published from GitHub Actions with an npm
-# provenance statement. Cut a release by pushing a tag that matches the package version:
+# provenance statement. Cut a release by pushing a tag that matches the package version, on a
+# commit that is on main:
 #   git tag n8n-nodes-radioso-v0.1.0 && git push origin n8n-nodes-radioso-v0.1.0
 #
-# One-time npm setup (owner action), either:
-#   - a Trusted Publisher on the package: owner radioso-ai, repository radioso,
-#     workflow filename publish-n8n-node.yml; leave NPM_TOKEN unset, or
-#   - a granular access token for the package stored as the NPM_TOKEN secret.
+# Publishing relies on npm Trusted Publishing (OIDC) alone. No npm token is read here, so a leaked
+# token cannot publish this package. One-time owner setup:
+#   - create the `npm-publish` GitHub environment with a required reviewer;
+#   - on npmjs.com bind the package's Trusted Publisher to owner radioso-ai, repository radioso,
+#     workflow publish-n8n-node.yml and environment npm-publish, and turn on "disallow tokens";
+#   - add tag rulesets for `n8n-nodes-radioso-v*` so only maintainers can create them.
+#
+# The build job runs the package's code (install scripts off) with read-only access. The publish
+# job has the OIDC permission but runs no repository code: it publishes the tarball the build
+# job produced.
 
 on:
   push:
     tags:
       - "n8n-nodes-radioso-v*"
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Pack and inspect the tarball without publishing"
-        type: boolean
-        default: true
+  workflow_dispatch: {}
 
 jobs:
-  publish:
-    name: Publish to npm
+  build:
+    name: Build package tarball
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Mints the OIDC token npm signs the provenance statement with.
-      id-token: write
+    defaults:
+      run:
+        working-directory: packages/n8n-nodes-radioso
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: packages/n8n-nodes-radioso/package-lock.json
-          registry-url: https://registry.npmjs.org
 
-      - name: Verify tag matches package version
+      - name: Verify the tag is on main and matches the package version
         if: github.event_name == 'push'
-        working-directory: packages/n8n-nodes-radioso
         run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tagged commit ${GITHUB_SHA} is not on main." >&2
+            exit 1
+          fi
           package_version="$(node -p "require('./package.json').version")"
           tag_version="${GITHUB_REF_NAME#n8n-nodes-radioso-v}"
           if [ "$package_version" != "$tag_version" ]; then
@@ -49,29 +57,56 @@ jobs:
             exit 1
           fi
 
-      - name: Install n8n node dependencies
-        working-directory: packages/n8n-nodes-radioso
-        run: npm ci
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
       - name: Lint
-        working-directory: packages/n8n-nodes-radioso
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
-        working-directory: packages/n8n-nodes-radioso
         run: npm test
 
-      - name: Build
-        working-directory: packages/n8n-nodes-radioso
-        run: npm run build
+      - name: Pack
+        run: npm pack --pack-destination "$RUNNER_TEMP/package"
 
-      - name: Inspect package contents
-        working-directory: packages/n8n-nodes-radioso
-        run: npm pack --dry-run
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: n8n-node-package
+          path: ${{ runner.temp }}/package/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to npm
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      # Mints the OIDC token npm signs the provenance statement with.
+      id-token: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Require an npm that supports Trusted Publishing
+        run: |
+          version="$(npm --version)"
+          if ! printf '11.5.1\n%s\n' "$version" | sort -V -C; then
+            echo "npm ${version} is older than 11.5.1, which Trusted Publishing needs." >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: n8n-node-package
+          path: package
 
       - name: Publish with provenance
-        if: github.event_name == 'push' || inputs.dry_run == false
-        working-directory: packages/n8n-nodes-radioso
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish package/*.tgz --provenance --access public

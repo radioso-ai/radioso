@@ -1,11 +1,11 @@
 import { createHmac } from 'node:crypto'
 
 import nock from 'nock'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import zapier from 'zapier-platform-core'
 
 import App from '../index.js'
-import { isAuthenticPush } from '../lib/signature.js'
+import { pushRejection } from '../lib/signature.js'
 
 const appTester = zapier.createAppTester(App)
 const ORIGIN = 'https://api.example'
@@ -37,22 +37,45 @@ const EVENT_TYPES = {
 const sign = (secret, timestamp, rawBody) =>
   `sha256=${createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')}`
 
+// Zapier's documented rawRequest: every header except Content-Type and Content-Length is prefixed `Http-`.
 const push = ({ type = 'routine.completed', secret = SECRET, timestamp = Math.floor(Date.now() / 1000), tamper = false } = {}) => {
   const event = { id: 'e1', type, version: 1, occurredAt: '2026-01-15T10:30:00.000Z', workspaceId: 'w1', data: { conversationId: 'c1' } }
   const content = JSON.stringify(event)
   return {
     event,
+    cleanedRequest: event,
     rawRequest: {
       method: 'POST',
+      querystring: '',
       headers: {
-        'content-type': 'application/json',
-        'x-radioso-timestamp': String(timestamp),
-        'x-radioso-signature': sign(secret, timestamp, content),
+        'Content-Type': 'application/json',
+        'Content-Length': String(content.length),
+        'Http-X-Radioso-Timestamp': String(timestamp),
+        'Http-X-Radioso-Signature': sign(secret, timestamp, content),
+        'Http-Idempotency-Key': 'e1',
       },
       content: tamper ? `${content} ` : content,
     },
   }
 }
+
+/** A stand-in for Zapier's `z` with its cache semantics (set only if absent) and a console that records drops. */
+const fakeZ = () => {
+  const claimed = new Set()
+  const logs = []
+  return {
+    logs,
+    console: { log: (line) => logs.push(line) },
+    cache: {
+      set: vi.fn(async (key, _value, _ttl, _scope, nx) => {
+        if (nx && claimed.has(key)) return false
+        claimed.add(key)
+        return true
+      }),
+    },
+  }
+}
+const receive = (key, bundle, z = fakeZ()) => trigger(key).perform(z, { authData, subscribeData, ...bundle })
 
 beforeAll(() => {
   nock.disableNetConnect()
@@ -81,6 +104,13 @@ describe('subscribing', () => {
     )
   })
 
+  it('says so when the instance has no subscriptions API', async () => {
+    radioso().post('/api/v1/workspace/event-subscriptions').reply(404, { error: { code: 'not_found', message: 'Not found' } })
+    await expect(appTester(trigger('routine_completed').performSubscribe, { authData, targetUrl: TARGET_URL })).rejects.toThrow(
+      /does not support event triggers/,
+    )
+  })
+
   it('deletes the subscription by the stored id', async () => {
     radioso().delete(`/api/v1/workspace/event-subscriptions/${SUBSCRIPTION_ID}`).reply(204)
     await appTester(trigger('routine_completed').performUnsubscribe, { authData, subscribeData })
@@ -100,45 +130,73 @@ describe('subscribing', () => {
 
 describe('receiving a push', () => {
   it('hands a correctly signed event to the Zap, keyed by the event id', async () => {
-    const { event, rawRequest } = push()
-    const result = await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })
+    const { event, rawRequest, cleanedRequest } = push()
+    const result = await receive('routine_completed', { rawRequest, cleanedRequest })
     expect(result).toEqual([event])
     expect(result[0].id).toBe('e1')
   })
 
-  it('drops a push whose body was altered', async () => {
-    const { rawRequest } = push({ tamper: true })
-    expect(await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })).toEqual([])
-  })
-
-  it('drops a push signed with another secret', async () => {
-    const { rawRequest } = push({ secret: 'whsec_other' })
-    expect(await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })).toEqual([])
-  })
-
-  it('drops a push when no signing secret was stored', async () => {
-    const { rawRequest } = push()
-    expect(await appTester(trigger('routine_completed').perform, { authData, rawRequest })).toEqual([])
-  })
-
-  it('drops an unsigned push', async () => {
-    const { rawRequest } = push()
-    delete rawRequest.headers['x-radioso-signature']
-    expect(await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })).toEqual([])
-  })
-
-  it("drops another type's event on this trigger", async () => {
-    const { rawRequest } = push({ type: 'handoff.requested' })
-    expect(await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })).toEqual([])
-  })
-
-  it('reads header names in any case', async () => {
+  it('accepts unprefixed header names as well', async () => {
     const { event, rawRequest } = push()
     rawRequest.headers = {
-      'X-Radioso-Timestamp': rawRequest.headers['x-radioso-timestamp'],
-      'X-Radioso-Signature': rawRequest.headers['x-radioso-signature'],
+      'x-radioso-timestamp': rawRequest.headers['Http-X-Radioso-Timestamp'],
+      'X-Radioso-Signature': rawRequest.headers['Http-X-Radioso-Signature'],
     }
-    expect(await appTester(trigger('routine_completed').perform, { authData, subscribeData, rawRequest })).toEqual([event])
+    expect(await receive('routine_completed', { rawRequest })).toEqual([event])
+  })
+
+  const dropped = [
+    ['a body that was altered', () => push({ tamper: true }), undefined, 'bad_signature'],
+    ['another secret', () => push({ secret: 'whsec_other' }), undefined, 'bad_signature'],
+    ['no stored signing secret', () => push(), { subscribeData: {} }, 'bad_signature'],
+    [
+      'no signature',
+      () => {
+        const request = push()
+        delete request.rawRequest.headers['Http-X-Radioso-Signature']
+        return request
+      },
+      undefined,
+      'no_signature',
+    ],
+    ['a stale timestamp', () => push({ timestamp: Math.floor(Date.now() / 1000) - 3700 }), undefined, 'stale_timestamp'],
+    ["another type's event", () => push({ type: 'handoff.requested' }), undefined, 'type_mismatch'],
+  ]
+  it.each(dropped)('drops a push with %s and logs why, without the secret or body', async (_name, make, extra, reason) => {
+    const z = fakeZ()
+    const { rawRequest } = make()
+    expect(await receive('routine_completed', { rawRequest, ...extra }, z)).toEqual([])
+    expect(z.logs).toEqual([`radioso push dropped: ${reason}`])
+    expect(z.logs.join()).not.toContain(SECRET)
+  })
+
+  it('drops a signed body that is not JSON', async () => {
+    const z = fakeZ()
+    const timestamp = Math.floor(Date.now() / 1000)
+    const rawRequest = {
+      headers: { 'Http-X-Radioso-Timestamp': String(timestamp), 'Http-X-Radioso-Signature': sign(SECRET, timestamp, 'not json') },
+      content: 'not json',
+    }
+    expect(await receive('routine_completed', { rawRequest }, z)).toEqual([])
+    expect(z.logs).toEqual(['radioso push dropped: bad_json'])
+  })
+
+  it('runs the Zap once when Radioso retries the same event', async () => {
+    const z = fakeZ()
+    const { rawRequest } = push()
+    expect(await receive('routine_completed', { rawRequest }, z)).toHaveLength(1)
+    expect(await receive('routine_completed', { rawRequest }, z)).toEqual([])
+    expect(z.logs).toEqual(['radioso push dropped: duplicate'])
+    expect(z.cache.set).toHaveBeenCalledWith(`${SUBSCRIPTION_ID}:e1`, true, 172800, null, true)
+  })
+
+  it('delivers rather than loses an event when the cache is unavailable', async () => {
+    const z = fakeZ()
+    z.cache.set = async () => {
+      throw new Error('rpc is not available')
+    }
+    const { event, rawRequest } = push()
+    expect(await receive('routine_completed', { rawRequest }, z)).toEqual([event])
   })
 })
 
@@ -148,27 +206,28 @@ describe('signature check', () => {
   // Computed with the backend's signedWebhook recipe: HMAC-SHA256 over "{timestamp}.{rawBody}".
   const KNOWN_DIGEST = 'ab83d1c69fc6abfedd5e2108a9f3c3e40d812929f2908b881fa6582de35d3f50'
   const request = (timestamp, digest = KNOWN_DIGEST) => ({
-    headers: { 'x-radioso-timestamp': String(timestamp), 'x-radioso-signature': `sha256=${digest}` },
+    headers: { 'Http-X-Radioso-Timestamp': String(timestamp), 'Http-X-Radioso-Signature': `sha256=${digest}` },
     content: body,
   })
+  const check = (rawRequest) => pushRejection({ rawRequest, secret: SECRET, nowSeconds: now })
 
   it('accepts the known vector', () => {
-    expect(isAuthenticPush({ rawRequest: request(now), secret: SECRET, nowSeconds: now })).toBe(true)
+    expect(check(request(now))).toBeNull()
   })
 
-  it('rejects a different digest', () => {
-    expect(isAuthenticPush({ rawRequest: request(now, 'a'.repeat(64)), secret: SECRET, nowSeconds: now })).toBe(false)
-    expect(isAuthenticPush({ rawRequest: request(now, 'short'), secret: SECRET, nowSeconds: now })).toBe(false)
+  it('rejects a different or malformed digest', () => {
+    expect(check(request(now, 'a'.repeat(64)))).toBe('bad_signature')
+    expect(check(request(now, 'short'))).toBe('bad_signature')
   })
 
-  it('accepts a timestamp up to five minutes off and rejects more', () => {
+  it('accepts a timestamp up to an hour off and rejects more', () => {
     const signed = (timestamp) => ({
-      headers: { 'x-radioso-timestamp': String(timestamp), 'x-radioso-signature': sign(SECRET, timestamp, body) },
+      headers: { 'Http-X-Radioso-Timestamp': String(timestamp), 'Http-X-Radioso-Signature': sign(SECRET, timestamp, body) },
       content: body,
     })
-    expect(isAuthenticPush({ rawRequest: signed(now - 300), secret: SECRET, nowSeconds: now })).toBe(true)
-    expect(isAuthenticPush({ rawRequest: signed(now - 301), secret: SECRET, nowSeconds: now })).toBe(false)
-    expect(isAuthenticPush({ rawRequest: signed(now + 301), secret: SECRET, nowSeconds: now })).toBe(false)
+    expect(check(signed(now - 3600))).toBeNull()
+    expect(check(signed(now - 3601))).toBe('stale_timestamp')
+    expect(check(signed(now + 3601))).toBe('stale_timestamp')
   })
 })
 
@@ -195,6 +254,10 @@ describe('sample data', () => {
       expect(rest.length === 0 ? sample : sample[head], path).toBeDefined()
       if (rest.length > 0) expect(Object.keys(sample[head]), path).toContain(rest[0])
     }
+  })
+
+  it('uses a channel value the backend emits', () => {
+    expect(trigger('conversation_started').sample.data.channel).toBe('website_embed')
   })
 
   it('keeps the version and workspace out of the listed output fields', () => {

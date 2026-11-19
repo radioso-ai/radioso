@@ -12,7 +12,15 @@ export default eventTrigger({
     { key: 'data__routineId', label: 'Routine ID' },
     { key: 'data__stepId', label: 'Step ID' },
     { key: 'data__reason', label: 'Reason' },
-    { key: 'data__options', label: 'Options' },
+    {
+      key: 'data__options',
+      label: 'Options',
+      list: true,
+      children: [
+        { key: 'data__options__id', label: 'Option ID' },
+        { key: 'data__options__label', label: 'Option label' },
+      ],
+    },
     { key: 'data__deadline', label: 'Deadline', type: 'datetime' },
   ],
   sample: sampleEvent('decision.pending', {

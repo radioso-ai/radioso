@@ -1,7 +1,10 @@
 import { radiosoRequest } from './client.js'
-import { isAuthenticPush } from './signature.js'
+import { pushRejection } from './signature.js'
 
 const SUBSCRIPTIONS = '/workspace/event-subscriptions'
+
+/** Longer than Radioso's 24 hour retry horizon, so a retried event is still recognised. */
+const DEDUPE_TTL_SECONDS = 2 * 24 * 60 * 60
 
 const dataField = (key, label, extra = {}) => ({ key: `data__${key}`, label, ...extra })
 
@@ -23,6 +26,25 @@ const envelopeFields = [
 /** Zapier shows the newest sample first; the list API serves a page in log order. */
 const newestFirst = (events) => [...events].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
 
+const drop = (z, reason) => {
+  z.console.log(`radioso push dropped: ${reason}`)
+  return []
+}
+
+/**
+ * Radioso delivers at least once and Zapier does not dedupe hook events, so the first sight of an
+ * event id claims it in Zapier's cache (set if absent) and a retry finds the claim. When the cache
+ * is unavailable the event is delivered: a repeat is better than a lost event.
+ */
+const alreadyDelivered = async (z, key) => {
+  try {
+    const claimed = await z.cache.set(key, true, DEDUPE_TTL_SECONDS, null, true)
+    return claimed === false || claimed === null
+  } catch {
+    return false
+  }
+}
+
 /**
  * Builds one REST hook trigger for one event type. Subscribing registers Zapier's target URL with
  * Radioso; every push is verified against the subscription's own signing secret before it reaches
@@ -34,7 +56,12 @@ export const eventTrigger = ({ key, type, noun, label, description, sample, deta
       method: 'POST',
       path: SUBSCRIPTIONS,
       body: { targetUrl: bundle.targetUrl, eventTypes: [type], label: 'zapier' },
+      allowNotFound: true,
     })
+    // A 404 on the collection route means the instance predates the subscriptions API.
+    if (body === null) {
+      throw new z.errors.Error('This Radioso instance does not support event triggers yet.', 'events_unsupported', 404)
+    }
     // Zapier keeps this as bundle.subscribeData. The secret is returned only here.
     return { id: body.subscription.id, signingSecret: body.signingSecret }
   }
@@ -52,17 +79,19 @@ export const eventTrigger = ({ key, type, noun, label, description, sample, deta
     return {}
   }
 
-  // Zapier ignores a hook whose perform returns an empty array, so an unverified request starts no Zap.
+  // Zapier ignores a hook whose perform returns an empty array, so a rejected push starts no Zap.
   const perform = async (z, bundle) => {
     const secret = bundle.subscribeData && bundle.subscribeData.signingSecret
-    if (!isAuthenticPush({ rawRequest: bundle.rawRequest, secret })) return []
+    const rejection = pushRejection({ rawRequest: bundle.rawRequest, secret })
+    if (rejection) return drop(z, rejection)
     let event
     try {
       event = JSON.parse(bundle.rawRequest.content)
     } catch {
-      return []
+      return drop(z, 'bad_json')
     }
-    if (!event || typeof event.id !== 'string' || event.type !== type) return []
+    if (!event || typeof event.id !== 'string' || event.type !== type) return drop(z, 'type_mismatch')
+    if (await alreadyDelivered(z, `${bundle.subscribeData.id}:${event.id}`)) return drop(z, 'duplicate')
     return [event]
   }
 
@@ -90,7 +119,7 @@ export const eventTrigger = ({ key, type, noun, label, description, sample, deta
 const sampleSubject = {
   conversationId: '9c0a1b6e-5a43-4c61-a1f8-2d7e0c7f3b10',
   agentId: '0f6b3a52-7c1e-4d0e-9a4b-3d2f6a1c8e10',
-  channel: 'web',
+  channel: 'website_embed',
   callerKind: 'human',
   visitorId: '5b1d7c2e-3f4a-4e8b-9c6d-1a2b3c4d5e6f',
 }

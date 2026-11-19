@@ -31,12 +31,13 @@ The `member` role holds all of these.
 Each trigger is a Zapier REST hook for one event type: `conversation.started`, `contact_request.created`, `handoff.requested`, `routine.completed`, `decision.pending`.
 
 - **Subscribe.** Turning a Zap on posts Zapier's target URL to `/api/v1/workspace/event-subscriptions` with `eventTypes: [<type>]` and `label: "zapier"`. The response's subscription id and signing secret are stored in `bundle.subscribeData`; Radioso returns the secret once. A subscription starts at the newest event and does not backfill.
-- **Receive.** `perform` checks `X-Radioso-Signature` (`sha256=` plus the HMAC-SHA256 of `{timestamp}.{rawBody}` under the signing secret) against `bundle.rawRequest.content`, and rejects a timestamp more than five minutes from now. A push that fails the check returns an empty array, which Zapier drops, so nothing starts the Zap. A verified push returns the event envelope; its `id` is the event id, and Zapier dedupes on it, which covers Radioso's at-least-once delivery.
+- **Receive.** Zapier prefixes request headers with `Http-`, so the signature arrives as `Http-X-Radioso-Signature` and the timestamp as `Http-X-Radioso-Timestamp`; `perform` accepts either spelling. It checks the signature (`sha256=` plus the HMAC-SHA256 of `{timestamp}.{rawBody}` under the signing secret) against `bundle.rawRequest.content`, and rejects a timestamp more than one hour from now (`perform` can run well after the push). A rejected push returns an empty array, which Zapier drops, and logs one reason through `z.console.log`: `no_signature`, `bad_signature`, `stale_timestamp`, `bad_json`, `type_mismatch` or `duplicate`. The log never holds the secret or the body. A verified push returns the event envelope, whose `id` is the event id.
+- **Duplicates.** Radioso delivers at least once, and Zapier does not dedupe hook events, so `perform` claims `{subscription id}:{event id}` with `z.cache.set(key, true, 172800, null, true)` (set only if absent; the TTL is two days, past Radioso's 24 hour retry horizon) and drops a retried event. `z.cache` is a remote call to Zapier, and the core 19 source only checks that the TTL is an integer, so the service's maximum TTL is not visible in the package; I found no documented limit below two days. If the cache call fails, the event is delivered anyway, so a rare duplicate is possible and a lost event is not.
 - **Unsubscribe.** Turning the Zap off deletes the subscription by the stored id. A 404 counts as success. Radioso also deletes a subscription when Zapier answers a push with `410`.
 - **Samples.** The editor's test step lists the three newest events of the type from `/api/v1/workspace/events`, newest first.
 - **Decision Pending** only notifies. A decision is resolved in the Radioso Inbox; resolving it is a session route that a service-account token cannot call.
 
-**One service account per Zap.** The subscription is tied to the token that created it. Revoking that service account disables the subscription, and the Zap stops receiving events. Give each Zap its own service account (role `member` or above) so revoking one does not stop the others. A token needs `workspace.history.read` for conversation events and also `workspace.conversation.takeover` for Decision Pending.
+**One service account per Zap.** The subscription is tied to the token that created it. Revoking that service account disables the subscription, and the Zap stops receiving events. Give each Zap its own service account (role `member` or above) so revoking one does not stop the others. The token's role needs `workspace.event_subscriptions.manage`, `workspace.events.read`, and each trigger's read permission: `workspace.history.read` for the conversation events, plus `workspace.conversation.takeover` for Decision Pending. The `member` role holds all of them.
 
 ## Layout
 
@@ -55,7 +56,7 @@ test/app.test.js      nock-backed tests for auth and steps, no live calls
 test/triggers.test.js nock-backed tests for the hook triggers
 ```
 
-Output keys are snake_case and flat so Zapier's field mapper lists them.
+Action and search outputs are flat snake_case so Zapier's field mapper lists them. Trigger outputs are the event envelope: `id`, `type`, `occurredAt` and a nested `data` object, which Zapier lists as `data__conversationId` and so on.
 
 ## Commands
 
@@ -82,5 +83,7 @@ Registering and pushing are owner actions and are not part of CI.
 1. Create a Zapier developer account and `zapier-platform login`.
 2. `zapier-platform register "Radioso"` from this directory. It writes `.zapierapprc`, which carries the app id.
 3. `zapier-platform validate` and `zapier-platform build`, then `zapier-platform push` to upload the version in `package.json`.
-4. Test each trigger in the Zap editor against a real instance: turn the Zap on, start a conversation, and confirm the event arrives. If a push never reaches `perform`, check that `bundle.rawRequest.content` holds the unparsed body in the Zapier version you run, because the signature covers the exact bytes.
-5. Invite testers with `zapier-platform users:add <email>`, or share the invite link from `zapier-platform users:links`. Zapier's public listing review is a separate submission with its own requirements (integration checks, a support contact, and a working test account).
+4. Test each trigger in the Zap editor against a real instance: turn the Zap on, start a conversation, and confirm the event arrives. If a push never starts the Zap, read the Zap's logs for the drop reason; a `bad_signature` on every push means `bundle.rawRequest.content` is not the unparsed body in the Zapier version you run, because the signature covers the exact bytes.
+5. Push the app only after the subscriptions API (PR #1866) is released and live on both the EU and US clouds. On an instance without it, turning a trigger on fails with "This Radioso instance does not support event triggers yet".
+6. Republishing a Zap is safe: subscribing the same hook URL again replaces that subscription, with a new id and signing secret, rather than adding a second one.
+7. Invite testers with `zapier-platform users:add <email>`, or share the invite link from `zapier-platform users:links`. Zapier's public listing review is a separate submission with its own requirements (integration checks, a support contact, and a working test account).

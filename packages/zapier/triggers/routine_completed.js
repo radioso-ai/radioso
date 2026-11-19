@@ -10,8 +10,7 @@ export default eventTrigger({
     { key: 'data__routineId', label: 'Routine ID' },
     { key: 'data__executionId', label: 'Run ID' },
     { key: 'data__outcome', label: 'Outcome' },
-    { key: 'data__values', label: 'Collected values' },
-    { key: 'data__sensitiveSlotKeys', label: 'Sensitive value keys' },
+    { key: 'data__sensitiveSlotKeys', label: 'Sensitive value keys', list: true },
   ],
   sample: sampleEvent('routine.completed', {
     routineId: 'book-a-visit',

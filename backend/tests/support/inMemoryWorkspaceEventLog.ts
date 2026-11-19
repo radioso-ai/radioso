@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { StoredLogEvent, WorkspaceEventLogStore } from "../../src/modules/workspaceEvents/public.js";
-import type { WorkspaceEventType } from "../../src/shared/domain/workspaceEvents.js";
+import type { StoredLogEvent, WorkspaceEventLogStore, WorkspaceEventType } from "../../src/shared/domain/workspaceEventLog.js";
 
 const compare = (left: { tx: string; position: string }, right: { tx: string; position: string }): number => {
   const tx = BigInt(left.tx) - BigInt(right.tx);
@@ -69,7 +68,7 @@ export class InMemoryWorkspaceEventLogStore implements WorkspaceEventLogStore {
     types: readonly WorkspaceEventType[];
     after: { tx: string; position: string } | null;
     limit: number;
-  }): Promise<{ events: StoredLogEvent[]; horizon: string }> {
+  }): Promise<{ events: StoredLogEvent[]; horizon: string; horizonXidSpan: number }> {
     const horizon = this.horizon();
     const below = this.events
       .filter((event) => event.workspaceId === input.workspaceId && input.types.includes(event.type))
@@ -78,6 +77,6 @@ export class InMemoryWorkspaceEventLogStore implements WorkspaceEventLogStore {
     const page = input.after
       ? below.filter((event) => compare(event, input.after!) > 0).slice(0, input.limit)
       : below.reverse().slice(0, input.limit);
-    return { events: page, horizon };
+    return { events: page, horizon, horizonXidSpan: Number(this.nextTx - BigInt(horizon)) };
   }
 }

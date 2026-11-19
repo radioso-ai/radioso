@@ -24999,7 +24999,10 @@
             ]
           },
           "version": {
-            "type": "integer",
+            "type": "number",
+            "enum": [
+              1
+            ],
             "description": "The version of this type's `data` schema the event was written with."
           },
           "occurredAt": {
@@ -25024,7 +25027,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The agent the conversation is with; null once that agent is deleted."
+                "description": "The agent the conversation was with when the event was recorded."
               },
               "channel": {
                 "type": [
@@ -25047,7 +25050,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The visitor the conversation belongs to, when the channel identifies one."
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
               }
             },
             "required": [
@@ -25083,7 +25086,10 @@
             ]
           },
           "version": {
-            "type": "integer",
+            "type": "number",
+            "enum": [
+              1
+            ],
             "description": "The version of this type's `data` schema the event was written with."
           },
           "occurredAt": {
@@ -25108,7 +25114,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The agent the conversation is with; null once that agent is deleted."
+                "description": "The agent the conversation was with when the event was recorded."
               },
               "channel": {
                 "type": [
@@ -25131,12 +25137,12 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The visitor the conversation belongs to, when the channel identifies one."
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
               },
               "contactRequestId": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The contact request, as `GET /api/v1/history/contact/{requestId}` reads it."
+                "description": "The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`."
               },
               "values": {
                 "type": "object",
@@ -25179,7 +25185,10 @@
             ]
           },
           "version": {
-            "type": "integer",
+            "type": "number",
+            "enum": [
+              1
+            ],
             "description": "The version of this type's `data` schema the event was written with."
           },
           "occurredAt": {
@@ -25204,7 +25213,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The agent the conversation is with; null once that agent is deleted."
+                "description": "The agent the conversation was with when the event was recorded."
               },
               "channel": {
                 "type": [
@@ -25227,11 +25236,22 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The visitor the conversation belongs to, when the channel identifies one."
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
               },
               "reason": {
                 "type": "string",
-                "description": "Why the agent handed the conversation to a person, as a handoff reason code such as `routine_handoff` or `retrieval_miss`."
+                "enum": [
+                  "routine_handoff",
+                  "routine_stuck",
+                  "routine_consent_declined",
+                  "retrieval_miss",
+                  "operator_takeover",
+                  "operator_only_mailbox",
+                  "generation_budget",
+                  "review_unavailable",
+                  "policy_changed"
+                ],
+                "description": "Why the conversation went to a person, as a handoff reason code."
               }
             },
             "required": [
@@ -25268,7 +25288,10 @@
             ]
           },
           "version": {
-            "type": "integer",
+            "type": "number",
+            "enum": [
+              1
+            ],
             "description": "The version of this type's `data` schema the event was written with."
           },
           "occurredAt": {
@@ -25293,7 +25316,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The agent the conversation is with; null once that agent is deleted."
+                "description": "The agent the conversation was with when the event was recorded."
               },
               "channel": {
                 "type": [
@@ -25316,7 +25339,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The visitor the conversation belongs to, when the channel identifies one."
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
               },
               "routineId": {
                 "type": "string"
@@ -25390,7 +25413,10 @@
             ]
           },
           "version": {
-            "type": "integer",
+            "type": "number",
+            "enum": [
+              1
+            ],
             "description": "The version of this type's `data` schema the event was written with."
           },
           "occurredAt": {
@@ -25415,7 +25441,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The agent the conversation is with; null once that agent is deleted."
+                "description": "The agent the conversation was with when the event was recorded."
               },
               "channel": {
                 "type": [
@@ -25438,7 +25464,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The visitor the conversation belongs to, when the channel identifies one."
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
               },
               "decisionHandle": {
                 "type": "string"

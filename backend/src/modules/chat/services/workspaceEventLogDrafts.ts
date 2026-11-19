@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { canonicalJson } from "../../../shared/domain/canonicalContentHash.js";
-import type { WorkspaceEventDraft } from "../../../shared/domain/workspaceEvents.js";
-import type { EndedRoutineRun } from "./routines/endedRoutineRun.js";
+import type { WorkspaceEventDraft } from "../../../shared/domain/workspaceEventLog.js";
+import type { EndedRoutineRun } from "./routines/routineRunEvents.js";
 
 /**
  * Chat's events for the workspace event log (#1851), built from the facts a turn commits. Each names
@@ -41,13 +41,24 @@ export const routineCompletedEvent = (scope: ConversationScope, run: EndedRoutin
 /** A contact request as it was queued: the values the visitor gave, sensitive ones already masked. */
 export const contactRequestCreatedEvent = (
   scope: ConversationScope,
-  request: { id: string; payload: unknown },
+  request: { id: string; values: Record<string, unknown> },
 ): WorkspaceEventDraft => ({
   type: "contact_request.created",
   ...scope,
   idempotencyKey: `contact_request.created:${request.id}`,
-  detail: { contactRequestId: request.id, values: recordOf(request.payload) },
+  detail: { contactRequestId: request.id, values: request.values },
 });
+
+/**
+ * A routine action step's payload as the log carries it: the routine's declared slots only, when
+ * it declares any, so a tool output or a stray key stays in the delivery and out of the event.
+ */
+export const declaredSlotValues = (payload: unknown, declaredSlotKeys: readonly string[] | undefined): Record<string, unknown> => {
+  const values = recordOf(payload);
+  return declaredSlotKeys
+    ? Object.fromEntries(Object.entries(values).filter(([key]) => declaredSlotKeys.includes(key)))
+    : values;
+};
 
 /**
  * A decision a routine waits on. Its reason is the text the author wrote on the step, never rendered

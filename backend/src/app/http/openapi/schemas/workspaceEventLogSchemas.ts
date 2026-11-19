@@ -1,12 +1,13 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
-import { listWorkspaceEventsQuerySchema } from "../../routes/workspaceEventRoutes.js";
+import { listWorkspaceEventsQuerySchema } from "../../routes/workspaceEventLogRoutes.js";
 import {
   WORKSPACE_EVENT_TYPES,
+  WORKSPACE_EVENT_VERSIONS,
   workspaceEventDataSchema,
   type WorkspaceEventType,
-} from "../../../../shared/domain/workspaceEvents.js";
+} from "../../../../shared/domain/workspaceEventLog.js";
 
 /** The component name each type's event is published under, as `routine.completed` → `RoutineCompletedEvent`. */
 const componentName = (type: WorkspaceEventType): string =>
@@ -17,7 +18,7 @@ export const registerWorkspaceEventLogSchemas = (registry: OpenAPIRegistry) => {
   const eventSchema = <T extends WorkspaceEventType>(type: T) => registry.register(componentName(type), z.object({
     id: z.string().uuid().describe("The event's id: stable, and the key a delivery or a poller deduplicates on."),
     type: z.literal(type),
-    version: z.number().int().describe("The version of this type's `data` schema the event was written with."),
+    version: z.literal(WORKSPACE_EVENT_VERSIONS[type]).describe("The version of this type's `data` schema the event was written with."),
     occurredAt: z.string().datetime().describe("When the change the event records happened."),
     workspaceId: z.string().uuid(),
     data: workspaceEventDataSchema(type),

@@ -335,6 +335,17 @@ export const timestampMatchOrAbsent = (
 export const snapshotHorizon = (): RawBuilder<string> =>
   sql`pg_snapshot_xmin(pg_current_snapshot())::text`;
 
+/**
+ * How many transaction ids the snapshot's horizon trails its newest (`xmax - xmin`), as text. It
+ * grows while one long write transaction holds the horizon back.
+ */
+export const snapshotHorizonSpan = (): RawBuilder<string> =>
+  sql`(pg_snapshot_xmax(pg_current_snapshot())::text::numeric - pg_snapshot_xmin(pg_current_snapshot())::text::numeric)::text`;
+
+/** `(<document> -> <field>) ?| <keys>`: the object at `field` has any of `keys`. */
+export const jsonbFieldHasAnyKey = (document: Expression<unknown>, field: string, keys: readonly string[]): RawBuilder<boolean> =>
+  sql`(${document} -> ${field}) ?| ${sql.val([...keys])}::text[]`;
+
 /** `<transaction column> < <horizon>::xid8`: the row's transaction finished before the horizon. */
 export const finishedBefore = (txColumn: Expression<unknown>, horizon: string): RawBuilder<boolean> =>
   sql`${txColumn} < ${horizon}::xid8`;

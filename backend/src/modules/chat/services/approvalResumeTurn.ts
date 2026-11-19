@@ -28,7 +28,7 @@ import {
 } from "./routines/routineGroundedAnswerRenderer.js";
 import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import { asksConsentField, type CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
-import { endedRoutineRunField } from "./routines/endedRoutineRun.js";
+import { routineRunEventFields } from "./routines/routineRunEvents.js";
 import { routineAwaitingDecisionEffects } from "./routines/routinePendingDecision.js";
 import { routineConsentTurnFacts } from "./routines/routineConsentTurn.js";
 import {
@@ -112,7 +112,7 @@ const approvalResumeTransition = (
     kind: "save",
     state: keptState,
     ...asksConsentField(routines, keptState.routineId),
-    ...endedRoutineRunField(routines, keptState),
+    ...routineRunEventFields(routines, keptState),
   };
 };
 

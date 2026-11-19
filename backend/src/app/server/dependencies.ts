@@ -137,7 +137,6 @@ import { createConversationOperatorDirectory } from "../composition/conversation
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
-import { buildWorkspaceEventLog } from "../composition/workspaceEvents.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
@@ -1192,6 +1191,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
   const slackInboundJobs = buildSlackInboundJobComposition({
     db: infrastructure.database.kysely,
+    workspaceEvents: infrastructure.workspaceEvents,
     logger,
     chatService: chat.chatService,
     conversationIngestService,
@@ -1407,7 +1407,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     operatorNoticeDestinations,
     notificationDeliveries,
-    workspaceEventLog: buildWorkspaceEventLog(infrastructure.database.kysely),
+    workspaceEventLog: infrastructure.workspaceEventLog,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

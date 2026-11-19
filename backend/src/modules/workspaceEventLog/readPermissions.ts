@@ -1,13 +1,16 @@
 import type { AccountPermission } from "../account/public.js";
-import { WORKSPACE_EVENT_TYPES, type WorkspaceEventType } from "../../shared/domain/workspaceEvents.js";
+import { WORKSPACE_EVENT_TYPES, type WorkspaceEventType } from "../../shared/domain/workspaceEventLog.js";
 
 /** The permission that lists the log at all. Each type then needs what reads its subject elsewhere. */
 export const WORKSPACE_EVENTS_READ_PERMISSION = "workspace.events.read" as const satisfies AccountPermission;
 
 /**
- * What a caller needs to read each type, matched to where the same facts are read elsewhere, so the
- * log never shows more than those reads do: conversation events need history's read, and a pending
- * decision also the takeover permission the decision list (`GET /api/v1/decisions`) needs.
+ * What a caller needs to read each type, matched to who may see the same facts elsewhere, so the
+ * log never shows more to a role than it may see: conversation events need history's read, and a
+ * pending decision also the takeover permission the Inbox's decisions need. A pending decision is a
+ * notification: the decision list and its resolution are dashboard-session routes, so an API token
+ * that reads `decision.pending` can neither list nor resolve the decision over the API, and a
+ * teammate acts on it in the Inbox.
  */
 const READ_PERMISSIONS: Readonly<Record<WorkspaceEventType, readonly AccountPermission[]>> = {
   "conversation.started": ["workspace.history.read"],

@@ -10,7 +10,7 @@ import { RoutineStateRepository } from "../../src/db/repositories/routineStateRe
 import { ConversationTestExecutionSeedSource } from "../../src/modules/chat/services/conversationTestExecutionSeedSource.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Verifies the seed against real Postgres: the human-visible thread plus the conversation's
 // live routine, clarification, and directive rows come back as one v1 continuation, keyed to

@@ -69,7 +69,7 @@ const coverage: Record<string, ExportCoverage> = {
   usage_events: excluded("The billing ledger: models, tokens and costs per turn."),
   notification_delivery_outcomes: excluded("The daily email cap's ledger: counts and a recipient digest."),
   notification_deliveries: excluded("Which of the workspace's own recipient addresses a notice went to, and whether it was sent: the team's addresses, never the subject's, and no message content. It goes with its conversation."),
-  workspace_events: excluded("The workspace event log's 30-day copy of facts the export already carries: the conversation, and the contact requests and routine values its routine_actions section holds as they left. It goes with its conversation."),
+  workspace_events: excluded("The workspace event log's 30-day copy of what the visitor gave in the conversation, which the export carries: a contact request as its routine_actions section holds it, and a routine's values as the transcript states them (a routine that queued no action has its values there only), sensitive ones masked. It goes with its conversation."),
   agent_test_execution_sides: excluded("A private test side mints a conversation id that never becomes a conversations row; its transcript is a teammate's test."),
   agent_converse_session_mappings: excluded("Maps an agent grant to the public session it minted; it holds no conversation content."),
   a2a_message_receipts: excluded("Idempotency bookkeeping for a calling agent's retries: a digest of its message id, and the id of the reply or task the send produced with the turn's routine report, which the export carries as messages and routine values."),

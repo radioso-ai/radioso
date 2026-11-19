@@ -1,12 +1,12 @@
 import { sql } from "kysely";
 
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
-import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEvents.js";
+import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { actionIdempotencyKey, type AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js";
-import { contactRequestCreatedEvent, decisionPendingEvent, routineCompletedEvent } from "../services/workspaceEventDrafts.js";
+import { contactRequestCreatedEvent, declaredSlotValues, decisionPendingEvent, routineCompletedEvent } from "../services/workspaceEventLogDrafts.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -98,13 +98,15 @@ export const recordTurnWorkspaceEvents = async (
   contactRequests: readonly QueuedContactRequest[],
 ): Promise<void> => {
   const scope = { workspaceId: input.workspaceId, conversationId: input.conversationId };
+  const transition = input.routineStateTransition;
+  // The routine that ran this turn queued the actions, so its declared slots bound what they carry.
+  const declaredSlotKeys = transition?.kind === "save" ? transition.declaredSlotKeys : undefined;
   for (const request of contactRequests) {
-    await events.record(db, contactRequestCreatedEvent(scope, request));
+    await events.record(db, contactRequestCreatedEvent(scope, { id: request.id, values: declaredSlotValues(request.payload, declaredSlotKeys) }));
   }
   if (input.pendingDecisionTransition) {
     await events.record(db, decisionPendingEvent(input.pendingDecisionTransition));
   }
-  const transition = input.routineStateTransition;
   if (transition?.kind === "save" && transition.ending) {
     await events.record(db, routineCompletedEvent(scope, transition.ending));
   }

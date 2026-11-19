@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Characterization for ConversationRepository keyset pagination (updated_at, created_at, id)
 // — the migrated cursor-tuple comparison.

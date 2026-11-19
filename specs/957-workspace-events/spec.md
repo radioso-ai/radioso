@@ -10,7 +10,7 @@
 
 | # | Decision | Section |
 |---|----------|---------|
-| D1 | New module `modules/workspaceEvents/`; the event contract and the recorder port live in `shared/domain/workspaceEvents.ts`, because two emitters sit in `db/repositories` | 1, 3 |
+| D1 | New module `modules/workspaceEventLog/`; the event contract and the recorder port live in `shared/domain/workspaceEventLog.ts`, because two emitters sit in `db/repositories` | 1, 3 |
 | D2 | Transactional outbox: the event row is written in the business transaction, and a failed write fails the business action | 4 |
 | D3 | The cursor is `(tx_id xid8, position)`, and a read stops at the snapshot horizon `pg_snapshot_xmin(pg_current_snapshot())` | 6 |
 | D4 | Conversation fields (agent, channel, caller kind, visitor) and the operator-test filter come from one `INSERT … SELECT FROM conversations` in the recorder, not from the emitters | 2, 5 |
@@ -23,9 +23,34 @@
 
 ## Review outcome
 
+### Fix round 1 (final), as built
+
+- **Notify steps (H1).** The routine skill dispatcher passes `sensitiveInputKeys`: the inputs a typed binding fills from a sensitive slot. `NotifyExecutor` hands the outbox a `maskedPayload` for the event and still delivers the payload whole.
+- **Naming (H2, L8).** The SSE contract suite is restored to main's `workspace-events.contract.test.ts`. New files use "event log" (`workspaceEventLog*`, `workspace-event-log.*`).
+- **Horizon (M1).** The five-minute idle-in-transaction timeout and the span lag are in (see the horizon section). The approvals restructure is the next small PR.
+- **Withholding by structure (M2).** See §8.
+- **Tests (M3, M4).** They separate xid order from position order, page one transaction's events across a page boundary, move a narrow filter's cursor to the horizon, and record through `resolveInTransaction` and `getOrCreateByAnonymousSession`. Every served event is parsed against its schema. The contract suite covers the takeover deny case and a 410 on an aged cursor.
+- **One seam (M5).** `app/composition/workspaceEventLog.ts` owns `workspaceEventRecorder` and `withWorkspaceEvents(activity)`. Every construction gets them injected, `PostgresSlackPersistence` included (through `SlackPlugin` and `buildSlackInboundJobComposition`).
+- **Descriptions (M6, M7, L4).**
+  - `decision.pending` is described as a notification tokens cannot act on.
+  - `contactRequestId` is the queued request's stable id, with a pointer to `GET /api/v1/history/chat/{conversationId}`.
+  - `agentId` and `visitorId` are copies taken when the event was recorded.
+  - `handoff.requested.reason` is an enum from `CONVERSATION_OWNERSHIP_REASONS` (`shared/domain/conversationOwnershipReasons.ts`, which `ConversationOwnershipReason` now derives from).
+  - Each type's `version` is published as a literal.
+- **Cursors (L1, L3).** A full page's cursor ages from its last event's `occurredAt`; a cursor at the horizon ages from the read. Out-of-range `tx`/`pos` answers 400.
+- **Turn-path contact values (L2)** carry only the routine's declared slots. The save transition carries `declaredSlotKeys` from the turn's routines.
+- **Cleanup (L5, L7, L9, L10).**
+  - The DSAR reason is reworded.
+  - The store port (`LogPosition`, `StoredLogEvent`, `WorkspaceEventLogStore`) lives in the shared contract.
+  - The leftover fakes are removed.
+  - `workspace_events_cursor_expired_total` is counted.
+  - A shared-Postgres test helper waits for the horizon to pass the file's writes.
+
+### Phase 2 review
+
 D1–D10 are accepted. The orchestrator's answers and changes, as built:
 
-- **`conversation.started` stays in `ConversationRepository`, with the recorder required.** The constructor takes `(db, events)`. The read-only constructions (15 in production) use `ConversationRepository.forExistingConversations(db)`. It returns the repository typed without its three start methods, and is backed by a recorder that refuses. The three constructions that start conversations pass `postgresWorkspaceEventRecorder` explicitly. `createWithInitialAssistantMessage` had no caller and is removed.
+- **`conversation.started` stays in `ConversationRepository`, with the recorder required.** The constructor takes `(db, events)`. The read-only constructions (15 in production) use `ConversationRepository.forExistingConversations(db)`. It returns the repository typed without its three start methods, and is backed by a recorder that refuses. The three constructions that start conversations pass the composition seam's `workspaceEventRecorder`. `createWithInitialAssistantMessage` had no caller and is removed.
 - **When a conversation row is created** (verified in code):
   - Opening the widget or fetching its greeting creates no row. `ChatBootstrapService.startConversation` (`chat/services/chatBootstrapService.ts:97`) reads and writes only the greeting cache and holds no conversation repository.
   - The web, embed, public link and agent API row is created in `ChatSessionPreparer.prepare` (`chatSessionPreparer.ts:460`). That is the same call that stores the caller's message (`:529`), and it runs only for a chat turn.
@@ -62,11 +87,19 @@ A read returns only rows whose transaction is older than every transaction still
 | **Migrations at deploy** (`db/runMigrations.ts:110-111`) | `SET LOCAL statement_timeout = 0`: unbounded per migration. A long migration delays events for its duration. |
 | **A transaction left open** | No `idle_in_transaction_session_timeout` is set on the pool (`database.ts:82-92`) or as a Cloud SQL flag (`infra/terraform/database.tf:60-69`, which sets only IAM and pgAudit flags). A connection idle inside an open transaction is bounded only by its process ending: a bug, or a Cloud Run instance whose CPU is throttled after its response while a detached promise holds the transaction. **Worst case unbounded.** |
 
-Not done in PR 1: setting `idle_in_transaction_session_timeout` on the app pool. It would kill a decision resolution whose model call outlasts it. That resolution holds its transaction idle while the model answers, so the timeout needs a value above the longest model call, or the resume moved out of the transaction. Proposed as a follow-up. PR 3's `workspace_event_delivery_lag_ms` (now − `occurredAt` at delivery) makes a stall visible as a rising lag across every subscription at once.
+Done in the review round:
+
+- Every pool sets `idle_in_transaction_session_timeout` to five minutes (`shared/infra/database.ts`, no env var), which bounds the "transaction left open" case.
+- The longest legitimate idle-in-transaction wait is decision resolution: its resumed turn calls the model inside the decision's transaction, and the OpenAI client has no explicit timeout (the SDK default is 600 s with 2 retries). A resolution that waits past five minutes fails, and the decision stays pending to be resolved again.
+- Migrations run their statements actively (`statement_timeout = 0`, never idle), so the timeout does not touch them.
+- The `workspace_events.list` span carries `workspace_events.horizon_xid_lag` (`pg_snapshot_xmax − pg_snapshot_xmin` from the read's own snapshot).
+- PR 3's `workspace_event_delivery_lag_ms` (now − `occurredAt` at delivery) shows a stall as a rising lag across every subscription at once.
+
+Follow-up PR, before PR 3: `fix(approvals): …`. It claims the decision with `pg_advisory_xact_lock(handle)` plus a plain `status = 'pending'` read, so no xid is taken while the routine resumes. It moves the `pending_decisions` UPDATE and the `approval_decided` activity insert to just before `completeAssistantTurn`, in the same transaction. The horizon stays global.
 
 ## 1. Placement
 
-`backend/src/modules/workspaceEvents/` is a new module.
+`backend/src/modules/workspaceEventLog/` is a new module.
 
 **It knows:**
 - the v1 event types, the envelope, and the schema version of each type;
@@ -85,7 +118,7 @@ It gets the facts it stores as typed drafts. Two exceptions:
 
 These are row columns named by the event contract, not owner internals.
 
-**`backend/src/shared/domain/workspaceEvents.ts` (new) holds the published contract:**
+**`backend/src/shared/domain/workspaceEventLog.ts` (new) holds the published contract:**
 - `WORKSPACE_EVENT_TYPES`;
 - the per-type `data` zod schemas and their inferred types (the OpenAPI registry imports the same schemas);
 - `WorkspaceEventDraft`, a union of a `conversation` scope and a `document` scope;
@@ -97,14 +130,14 @@ It lives in `shared/domain` because `ConversationRepository` and the document jo
 
 | Emitter | Mapper |
 |---|---|
-| chat | `modules/chat/services/workspaceEventDrafts.ts` |
+| chat | `modules/chat/services/workspaceEventLogDrafts.ts` |
 | documents | `modules/documents/services/documentWorkspaceEvents.ts` |
 | conversation activity | the handoff bridge (§2) |
 
 ## 2. Ports and emit sites
 
 ```ts
-// shared/domain/workspaceEvents.ts
+// shared/domain/workspaceEventLog.ts
 export interface WorkspaceEventRecorder {
   /** Writes in the caller's transaction. A failed write throws, so the change rolls back with it. */
   record(db: Db, draft: WorkspaceEventDraft): Promise<void>;
@@ -113,13 +146,13 @@ export interface WorkspaceEventRecorder {
 
 The port follows `ConversationActivityRecorder` (`modules/conversationActivity/contracts/index.ts:170-173`).
 
-- The Postgres implementation is `db/repositories/workspaceEventRepository.ts`.
+- The Postgres implementation is `db/repositories/workspaceEventLogRepository.ts`.
 - `draft.idempotencyKey`, when present, makes the write `ON CONFLICT DO NOTHING` on `(workspace_id, idempotency_key)`.
 - A conversation draft whose conversation is missing, is `purpose = 'operator_test'`, or is on an `OPERATOR_TEST_SOURCE_CHANNELS` channel inserts nothing. This is the same exclusion as history's default `end_user` scope (`shared/domain/conversationSource.ts:16-27`).
 
 | Type | Emit site (file:line) | Who calls the port | Idempotency key |
 |---|---|---|---|
-| `conversation.started` | `db/repositories/conversationRepository.ts`: the four insert methods `getOrCreateByAnonymousSession` :317, `create` :366, `createIfAbsent` :381, `createWithInitialAssistantMessage` :415. They are reached from `chat/services/chatSessionPreparer.ts:460`, `chat/services/agentConverseService.ts:109`, `connectors/plugins/slack/slackPersistence.ts:203` and `chat/services/conversationIngestService.ts:95` | `ConversationRepository`, with the recorder as an optional constructor dependency. `create` opens a transaction when `this.db` is not one. The three constructions that create conversations pass it: `app/server/builders/infra.ts:235`, `app/composition/conversationIngest.ts:27`, and `connectors/plugins/slack/slackInboundJobComposition.ts:44` | `conversation.started:{id}` |
+| `conversation.started` | `db/repositories/conversationRepository.ts`: the four insert methods `getOrCreateByAnonymousSession` :317, `create` :366, `createIfAbsent` :381, and `createWithInitialAssistantMessage` (no caller; removed). They are reached from `chat/services/chatSessionPreparer.ts:460`, `chat/services/agentConverseService.ts:109`, `connectors/plugins/slack/slackPersistence.ts:203` and `chat/services/conversationIngestService.ts:95` | `ConversationRepository`, with the recorder as a required constructor argument; read-only constructions use `forExistingConversations(db)`. `create` opens a transaction when `this.db` is not one. The three constructions that create conversations pass it: `app/server/builders/infra.ts:235`, `app/composition/conversationIngest.ts:27`, and `connectors/plugins/slack/slackInboundJobComposition.ts:44` | `conversation.started:{id}` |
 | `contact_request.created` | (a) the turn path: `chat/infra/postgresAssistantTurnPersistence.ts:85-110` `enqueueActions` inserts `contact.send` rows (`RETURNING id` added). (b) the notify path: `notify/notifyExecutor.ts:121` enqueues through the outbox built at `app/server/builders/chat.ts:409-415` | (a) the turn persistence, for each inserted `contact.send` row. (b) a chat-owned `ContactRequestRecordingOutbox` that runs `ActionRequestRepository(trx).enqueue` and the record in one transaction, wrapped by the existing `DrainTriggeringActionOutbox` | `contact_request.created:{actionRequestId}` |
 | `handoff.requested` | Both handoff paths already record a `handoff_requested` activity in their transaction: `chat/infra/postgresAssistantTurnPersistence.ts:443` and `handoff/conversationOwnershipService.ts:318-326` (email review, ingest, mailbox policy change) | A `conversationActivity` bridge, `publishingWorkspaceEvents(recorder, events)`, exported from its `public.ts` and applied once in `app/composition/conversationActivity.ts:20`. Every `handoff_requested` record also records the event on the same `db` | none (each activity row is a distinct fact) |
 | `routine.completed` | The ended run is captured at `chat/services/routines/deferredRoutineStore.ts:61-68` (live turns) and `chat/services/approvalResumeTurn.ts:110` (resume after a decision). It is written at `postgresAssistantTurnPersistence.ts:372` (`applyRoutineStateTransition`) | Both capture sites add an `ending` field to the `save` transition, as they add `asksConsentField`. The field holds the routine id, execution id, terminal kind (from the `completedRoutineState` metadata, `packages/conversation-engine/src/routineEnding.ts:26-47`) and the declared-slot values masked by the engine's `declaredSlotVariables` (`packages/conversation-engine/src/routineSlotValues.ts:88`, newly exported through `modules/routines/domain.ts` and `public.ts`). The turn persistence records it | `routine.completed:{executionId}` |
@@ -138,17 +171,17 @@ The port follows `ConversationActivityRecorder` (`modules/conversationActivity/c
 ## 3. Dependency direction and wiring
 
 ```
-shared/domain/workspaceEvents.ts   (types, zod data schemas, recorder port)
+shared/domain/workspaceEventLog.ts   (types, zod data schemas, recorder port)
    ^             ^                   ^                         ^
 chat/infra   conversationActivity   documents/services   db/repositories (Conversation, DocumentJob, WorkspaceEvent)
    ^             ^                   ^                         ^
-modules/workspaceEvents (log reads, permissions, retention, subscriptions, delivery)
+modules/workspaceEventLog (log reads, permissions, retention, subscriptions, delivery)
    ^
-app/composition/workspaceEvents.ts  -> wires everything below
+app/composition/workspaceEventLog.ts  -> wires everything below
 ```
 
-`app/composition/workspaceEvents.ts` (new) builds:
-- the recorder (`WorkspaceEventRepository`);
+`app/composition/workspaceEventLog.ts` (new) builds:
+- the recorder (`WorkspaceEventLogRepository`);
 - the bridged activity recorder;
 - the log read service;
 - the retention rule, appended to `app/composition/conversationRetention.ts`;
@@ -157,7 +190,7 @@ app/composition/workspaceEvents.ts  -> wires everything below
 
 `app/server/builders/infra.ts` constructs the recorder beside the other repositories and hands it to `ConversationRepository`, the turn persistence, and the document job repository.
 
-The events module imports only `shared/*` and `modules/account/public.ts` (permission types). No owner imports `modules/workspaceEvents`.
+The events module imports only `shared/*` and `modules/account/public.ts` (permission types). No owner imports `modules/workspaceEventLog`.
 
 ## 4. Transaction semantics
 
@@ -192,7 +225,7 @@ Rules:
 | `conversation.started` | none |
 | `contact_request.created` | `contactRequestId`, `values` (the `contact.send` payload as queued; the engine already masks sensitive slots, `outboundVariables`, `routineSlotValues.ts:82`) |
 | `handoff.requested` | `reason` (the handoff reason code) |
-| `routine.completed` | `routineId`, `executionId \| null`, `outcome` (`complete` \| `handoff` \| `stuck` \| `consent_declined`), `values` (declared slots, sensitive ones as `[redacted]`), `sensitiveSlotKeys` |
+| `routine.completed` | `routineId`, `executionId \| null`, `outcome` (`complete` \| `handoff` \| `action` \| `stuck` \| `consent_declined`), `values` (declared slots, sensitive ones as `[redacted]`), `sensitiveSlotKeys` |
 | `decision.pending` | `decisionHandle`, `routineId`, `stepId`, `options: [{ id, label }]`, `deadline \| null`, `reason \| null` (see open question 5) |
 
 **Document events** carry `documentId`, `revision`, `title`, `sourceKind` and `sourceId | null`. `document.failed` adds `failureCode | null`, the job's error code, never the message.
@@ -274,7 +307,7 @@ Both are added to `AccountPermission` and to the member list in `workspaceRoleAl
 ## 8. Retention and erasure
 
 **Retention:**
-- 30 days, fixed. `WorkspaceEventRetention` implements `ConversationDataRetentionRule` (`shared/domain/conversationDataRetention.ts`) with table `workspace_events`.
+- 30 days, fixed. `WorkspaceEventLogRetention` implements `ConversationDataRetentionRule` (`shared/domain/conversationDataRetention.ts`) with table `workspace_events`.
 - It deletes `occurred_at < now - 30d` in `SKIP LOCKED` batches, on the existing `conversation-retention` periodic task (every 15 minutes, local poll loop and Cloud Scheduler alike).
 - It counts in `radioso_retention_rows_removed_total{table}` with no new code.
 
@@ -284,7 +317,7 @@ Both are added to `AccountPermission` and to the member list in `workspaceRoleAl
 - The port's own documentation names cascading keys as the default and erasers as the fallback for rows a key cannot reach. No event row is out of reach: document events carry no person.
 - `conversation-erasure-coverage.integration.test.ts` passes on the cascading key.
 
-**Consent withdrawal (#1544):** `WorkspaceEventValueWithholder` implements `MessageCopyWithholder`. It removes the conversation's events whose strings contain a withdrawn value (`jsonbStringContainsAnyValueText`), as the audit withholder removes its copies. It is registered in `app/composition/consentWithdrawal.ts`.
+**Consent withdrawal (#1544):** `WorkspaceEventValueWithholder` implements `MessageCopyWithholder`. It removes by structure, so it works after the routine's state (and with it the values) has expired: the conversation's `routine.completed` rows for the withdrawn routine, and its `contact_request.created` rows whose `values` name a covered slot (`?|`). It then removes any of the conversation's events whose strings contain a withdrawn value (`jsonbStringContainsAnyValueText`), as the audit withholder removes its copies. `WithheldMessages` carries `withdrawnRoutineSlots` (routine id and slot keys) for this. It is registered in `app/composition/consentWithdrawal.ts`.
 
 **Data subject export:** `data-subject-export-coverage.integration.test.ts` gets `workspace_events: excluded(...)` with this reason: a 30-day copy of facts the export already carries (the conversation, and its routine actions as they left). See open question 3.
 
@@ -452,13 +485,13 @@ Migration numbers are as of `origin/main` (latest `263`). Each PR runs `db:types
 
 | Area | Files |
 |---|---|
-| Contract | `shared/domain/workspaceEvents.ts`; `shared/infra/kysely/sqlHelpers.ts` (horizon) |
-| Module and wiring | `modules/workspaceEvents/{README.md,public.ts,composition.ts,eventLog.ts,readPermissions.ts,cursor.ts,valueWithholder.ts}`; `db/repositories/workspaceEventRepository.ts`; `app/composition/workspaceEvents.ts`, `conversationActivity.ts`, `conversationRetention.ts`, `consentWithdrawal.ts`, `conversationIngest.ts`; `app/server/builders/infra.ts` |
-| Emitters | `db/repositories/conversationRepository.ts`; `connectors/plugins/slack/{slackPersistence.ts,slackInboundJobComposition.ts}` (+ its caller); `chat/infra/postgresAssistantTurnPersistence.ts`; `chat/services/{workspaceEventDrafts.ts,approvalResumeTurn.ts,routines/deferredRoutineStore.ts}`; `chat/services/actions/contactRequestRecordingOutbox.ts`; `app/server/builders/chat.ts`; `conversationActivity/{workspaceEventBridge.ts,public.ts}`; `routines/{domain.ts,public.ts}`; `packages/conversation-engine/src/index.ts` (one export) |
+| Contract | `shared/domain/workspaceEventLog.ts`; `shared/infra/kysely/sqlHelpers.ts` (horizon) |
+| Module and wiring | `modules/workspaceEventLog/{README.md,public.ts,eventLog.ts,readPermissions.ts,cursor.ts}`; `db/repositories/workspaceEventLogRepository.ts`; `app/composition/workspaceEventLog.ts`, `conversationActivity.ts`, `conversationRetention.ts`, `consentWithdrawal.ts`, `conversationIngest.ts`; `app/server/builders/infra.ts` |
+| Emitters | `db/repositories/conversationRepository.ts`; `connectors/plugins/slack/{slackPersistence.ts,slackInboundJobComposition.ts}` (+ its caller); `chat/infra/postgresAssistantTurnPersistence.ts`; `chat/services/{workspaceEventLogDrafts.ts,approvalResumeTurn.ts,routines/deferredRoutineStore.ts}`; `chat/infra/contactRequestRecordingOutbox.ts`; `app/server/builders/chat.ts`; `conversationActivity/{workspaceEventLogBridge.ts,public.ts}`; `routines/{domain.ts,public.ts}`; `packages/conversation-engine/src/index.ts` (one export) |
 | HTTP | `app/http/routes/workspaceEventRoutes.ts` + `routes/index.ts`; `app/http/openapi/{paths,schemas}/workspaceEvent*.ts`; `apiPrincipalRoutePolicy.ts`; `account/services/accountAccessService.ts` |
 | SDK | `typescript-sdk/openapi/`, `typescript-sdk/src/generated/` |
-| Ray | `tests/unit/operatorCopilot/catalogCoverage.ts`: `listWorkspaceEvents` as `permanent`. It is an automation feed over facts Ray reads through `conversation_transcript`, `conversation_history_search` and `document_status` |
-| Docs | `docs-portal/content/api/workspace-events.mdx` (+ `_meta.js`); `operators/data-retention.mdx` and `deleting-conversation-data.mdx` (events kept 30 days, erased with their conversation); `docs/architecture/code-map.md` ("Workspace Events"); product-docs corpus resync if gated |
+| Ray | `tests/unit/operatorCopilot/catalogCoverage.ts`: `listWorkspaceEvents` as `permanent`. It is an automation feed over facts Ray reads through `conversation_transcript`, `conversation_history_search` and `needs_attention` |
+| Docs | `docs-portal/content/api/workspace-event-log.mdx` (+ `_meta.js`); `operators/data-retention.mdx` and `deleting-conversation-data.mdx` (events kept 30 days, erased with their conversation); `docs/architecture/code-map.md` ("Workspace Events"); product-docs corpus resync if gated |
 
 **Tests (TDD, business-level):**
 - Integration (`workspace-event-log.integration.test.ts`):
@@ -468,9 +501,9 @@ Migration numbers are as of `origin/main` (latest `263`). Each PR runs `db:types
   - erasing a visitor removes their events;
   - Test Chat traffic records nothing;
   - retention removes old events;
-  - withdrawal redacts values.
+  - withdrawal removes the withdrawn routine's events, also after its state expired.
 - Unit: mappers, cursor codec, per-type permission filter.
-- Contract: `workspace-events.contract.test.ts` (permissions, 403, 410, OpenAPI parse).
+- Contract: `workspace-event-log.contract.test.ts` (permissions, the takeover deny case, 403, 410 on an aged cursor, OpenAPI parse). The realtime SSE suite keeps `workspace-events.contract.test.ts`.
 - Schema coverage tests (§8).
 
 ### PR 2: #1851 document events (merges after PR 3; closes #1851)
@@ -495,9 +528,9 @@ Split out to keep PR 1 reviewable. It touches only documents:
 
 | Area | Files |
 |---|---|
-| Module | `modules/workspaceEvents/{subscriptionService.ts,deliveryDrain.ts,deliveryJob.ts,deliverySweep.ts,ownerCheck.ts}`; `db/repositories/workspaceEventSubscriptionRepository.ts`; `db/repositories/encryptedFieldRepository.ts` |
+| Module | `modules/workspaceEventLog/{subscriptionService.ts,deliveryDrain.ts,deliveryJob.ts,deliverySweep.ts,ownerCheck.ts}`; `db/repositories/workspaceEventSubscriptionRepository.ts`; `db/repositories/encryptedFieldRepository.ts` |
 | Transport | `shared/infra/http/signedWebhook.ts` (status error, URL rule); `modules/webhooks/service.ts` (uses the extracted rule) |
-| Wiring | `app/composition/{workspaceEvents.ts,backgroundJobHandlers.ts}`; `app/server/dependencies.ts` (baselined at 1451: handler argument and periodic task, kept line-neutral); `chat/infra/postgresAssistantTurnPersistence.ts` (wake in `afterCommit`); `documentProcessingWorker.ts` (wake); `infra/terraform/scheduler.tf` |
+| Wiring | `app/composition/{workspaceEventLog.ts,backgroundJobHandlers.ts}`; `app/server/dependencies.ts` (baselined at 1451: handler argument and periodic task, kept line-neutral); `chat/infra/postgresAssistantTurnPersistence.ts` (wake in `afterCommit`); `documentProcessingWorker.ts` (wake); `infra/terraform/scheduler.tf` |
 | HTTP | `app/http/routes/workspaceEventSubscriptionRoutes.ts`, OpenAPI, route policy |
 | SDK | snapshot |
 | Frontend | `settings-tab-metadata.ts`, `api-access-panel.tsx`, `event-subscriptions-card.tsx`, `lib/` API adapter; Playwright `tests/e2e/event-subscriptions.spec.ts` (list and delete) |
@@ -555,4 +588,4 @@ PR 3 could split backend and frontend if the orchestrator prefers.
   - On `410 cursor_expired`, restart from the tail.
   - Dedupe on `id`.
   - Verify `X-Radioso-Signature` as above.
-- **#1850 docs:** link the trigger pages to `docs-portal/content/api/workspace-events.mdx` once it ships.
+- **#1850 docs:** link the trigger pages to `docs-portal/content/api/workspace-event-log.mdx` once it ships.

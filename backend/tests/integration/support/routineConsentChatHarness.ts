@@ -27,7 +27,7 @@ import type { UserMessageInputMetadata } from "../../../src/shared/domain/chatIn
 import type { Database } from "../../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../../support/fakes.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 export const CONSENT_ROUTINE_ID = "routine-class-booking";
 

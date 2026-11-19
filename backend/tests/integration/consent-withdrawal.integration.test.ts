@@ -16,7 +16,8 @@ import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsR
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 import { CONSENT_ROUTINE_ID, classBooking, createRoutineConsentChatHarness } from "./support/routineConsentChatHarness.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
+import type { WorkspaceEventDraft } from "../../src/shared/domain/workspaceEventLog.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -208,6 +209,15 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
        VALUES ($1, $2, ARRAY['ask_name', 'ask_injury', 'done'], '{"name": "Ada", "injury": "sore knee", "time": "Tuesday"}'::jsonb, 'completed')`,
       [conversationId, CONSENT_ROUTINE_ID],
     );
+    // The workspace event log's copies: the run as it ended, a contact request naming a covered slot,
+    // and one that names none.
+    for (const draft of [
+      { type: "routine.completed", detail: { routineId: CONSENT_ROUTINE_ID, executionId: null, outcome: "complete", values: { name: "Ada", injury: "sore knee", time: "Tuesday" }, sensitiveSlotKeys: [] } },
+      { type: "contact_request.created", detail: { contactRequestId: randomUUID(), values: { injury: "sore knee", email: "ada@classes.example" } } },
+      { type: "contact_request.created", detail: { contactRequestId: randomUUID(), values: { email: "ada@classes.example", message: "Call me back" } } },
+    ] as const) {
+      await postgresWorkspaceEventRecorder.record(database.kysely, { ...draft, workspaceId: workspace.id, conversationId } as WorkspaceEventDraft);
+    }
 
     // The summary and title the worker wrote from the transcript, before any routine asked.
     await database.query(
@@ -409,6 +419,16 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       ]);
     });
 
+    it("removes the workspace events that carry the withdrawn routine's values, and keeps the rest", async () => {
+      const events = await database.query<{ type: string; data: Record<string, unknown> }>(
+        "SELECT type, data FROM workspace_events WHERE conversation_id = $1 ORDER BY position",
+        [seeded.conversationId],
+      );
+      expect(events).toEqual([
+        { type: "contact_request.created", data: expect.objectContaining({ values: { email: "ada@classes.example", message: "Call me back" } }) },
+      ]);
+    });
+
     it("writes one audit event with ids alone, and logs and counts the withdrawal", async () => {
       const audits = await database.query<{ account_id: string; metadata_json: Record<string, unknown> }>(
         "SELECT account_id, metadata_json FROM audit_events WHERE workspace_id = $1 AND event_type = 'routine_consent.withdrawn'",
@@ -423,7 +443,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
           consentKey: "health",
           recordId: seeded.recordId,
           withheldMessageCount: 5,
-          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2, "workspace-events": 0 },
+          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2, "workspace-events": 2 },
         }),
       }]);
       expect(JSON.stringify(audits)).not.toContain("sore knee");
@@ -573,6 +593,22 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
       expect((await message(visitorMessageId)).content).toBe("Tuesday works");
       expect((await message(receipt.message.id)).content).toBe("Booked for Tuesday.");
     });
+  });
+
+  it("removes the withdrawn routine's events by their structure once its state, and the values with it, has expired", async () => {
+    const seeded = await seed();
+    await database.query("DELETE FROM routine_states WHERE session_id = $1", [seeded.conversationId]);
+
+    const outcome = await withdraw(seeded);
+
+    expect(outcome.kind).toBe("withdrawn");
+    const events = await database.query<{ type: string; data: Record<string, unknown> }>(
+      "SELECT type, data FROM workspace_events WHERE conversation_id = $1 ORDER BY position",
+      [seeded.conversationId],
+    );
+    expect(events.map((event) => [event.type, event.data.values])).toEqual([
+      ["contact_request.created", { email: "ada@classes.example", message: "Call me back" }],
+    ]);
   });
 
   it("refuses a declined consent and changes nothing", async () => {

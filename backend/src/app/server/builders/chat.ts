@@ -39,7 +39,7 @@ import { LlmResponseLanguageDetector } from "../../../shared/services/responseLa
 import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { ContactRequestRecordingOutbox } from "../../../modules/chat/infra/contactRequestRecordingOutbox.js";
-import { postgresWorkspaceEventRecorder } from "../../../db/repositories/workspaceEventRepository.js";
+import { workspaceEventRecorder } from "../../composition/workspaceEventLog.js";
 import { AccountAccessService } from "../../../modules/account/public.js";
 import { AgentRevisionRuntimeResolver, AgentService } from "../../../modules/agents/public.js";
 import { VisitorRepository, VisitorResolver } from "../../../modules/visitors/composition.js";
@@ -411,7 +411,7 @@ export const buildChatServices = (input: {
       executor: new NotifyExecutor({
         skills: new AgentSkillRepository(input.database.kysely),
         outbox: new DrainTriggeringActionOutbox(
-          new ContactRequestRecordingOutbox(input.database.kysely, postgresWorkspaceEventRecorder),
+          new ContactRequestRecordingOutbox(input.database.kysely, workspaceEventRecorder),
           actionDrainDispatcher,
           input.logger,
         ),
@@ -511,7 +511,7 @@ export const buildChatServices = (input: {
   const assistantTurnPersistence = new PostgresAssistantTurnPersistence(
     input.database.kysely,
     input.conversationActivity.recorder,
-    postgresWorkspaceEventRecorder,
+    workspaceEventRecorder,
     undefined,
     input.conversationOwnershipRepository,
     actionDrainDispatcher,

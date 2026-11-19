@@ -9,7 +9,7 @@ import { MessageRepository } from "../../../src/db/repositories/messageRepositor
 import { ChatHistoryService } from "../../../src/modules/chat/services/chatHistoryService.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 

@@ -7,7 +7,7 @@ const meta = {
   'agents-and-skills': 'Agents and skills',
   'documents-and-search': 'Documents and search',
   'chat-and-history': 'Chat and history',
-  'workspace-events': 'Workspace events',
+  'workspace-event-log': 'Workspace event log',
   'agent-converse': 'Agent converse API',
   'public-chat-and-embed': 'Public chat and embed',
   settings: 'Settings',

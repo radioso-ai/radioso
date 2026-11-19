@@ -11548,8 +11548,11 @@ export interface components {
              * @enum {string}
              */
             type: "conversation.started";
-            /** @description The version of this type's `data` schema the event was written with. */
-            version: number;
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
             /**
              * Format: date-time
              * @description When the change the event records happened.
@@ -11562,7 +11565,7 @@ export interface components {
                 conversationId: string;
                 /**
                  * Format: uuid
-                 * @description The agent the conversation is with; null once that agent is deleted.
+                 * @description The agent the conversation was with when the event was recorded.
                  */
                 agentId: string | null;
                 /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
@@ -11574,7 +11577,7 @@ export interface components {
                 callerKind: "human" | "agent";
                 /**
                  * Format: uuid
-                 * @description The visitor the conversation belongs to, when the channel identifies one.
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
             };
@@ -11590,8 +11593,11 @@ export interface components {
              * @enum {string}
              */
             type: "contact_request.created";
-            /** @description The version of this type's `data` schema the event was written with. */
-            version: number;
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
             /**
              * Format: date-time
              * @description When the change the event records happened.
@@ -11604,7 +11610,7 @@ export interface components {
                 conversationId: string;
                 /**
                  * Format: uuid
-                 * @description The agent the conversation is with; null once that agent is deleted.
+                 * @description The agent the conversation was with when the event was recorded.
                  */
                 agentId: string | null;
                 /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
@@ -11616,12 +11622,12 @@ export interface components {
                 callerKind: "human" | "agent";
                 /**
                  * Format: uuid
-                 * @description The visitor the conversation belongs to, when the channel identifies one.
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
                 /**
                  * Format: uuid
-                 * @description The contact request, as `GET /api/v1/history/contact/{requestId}` reads it.
+                 * @description The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`.
                  */
                 contactRequestId: string;
                 /** @description Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`. */
@@ -11641,8 +11647,11 @@ export interface components {
              * @enum {string}
              */
             type: "handoff.requested";
-            /** @description The version of this type's `data` schema the event was written with. */
-            version: number;
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
             /**
              * Format: date-time
              * @description When the change the event records happened.
@@ -11655,7 +11664,7 @@ export interface components {
                 conversationId: string;
                 /**
                  * Format: uuid
-                 * @description The agent the conversation is with; null once that agent is deleted.
+                 * @description The agent the conversation was with when the event was recorded.
                  */
                 agentId: string | null;
                 /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
@@ -11667,11 +11676,14 @@ export interface components {
                 callerKind: "human" | "agent";
                 /**
                  * Format: uuid
-                 * @description The visitor the conversation belongs to, when the channel identifies one.
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
-                /** @description Why the agent handed the conversation to a person, as a handoff reason code such as `routine_handoff` or `retrieval_miss`. */
-                reason: string;
+                /**
+                 * @description Why the conversation went to a person, as a handoff reason code.
+                 * @enum {string}
+                 */
+                reason: "routine_handoff" | "routine_stuck" | "routine_consent_declined" | "retrieval_miss" | "operator_takeover" | "operator_only_mailbox" | "generation_budget" | "review_unavailable" | "policy_changed";
             };
         };
         RoutineCompletedEvent: {
@@ -11685,8 +11697,11 @@ export interface components {
              * @enum {string}
              */
             type: "routine.completed";
-            /** @description The version of this type's `data` schema the event was written with. */
-            version: number;
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
             /**
              * Format: date-time
              * @description When the change the event records happened.
@@ -11699,7 +11714,7 @@ export interface components {
                 conversationId: string;
                 /**
                  * Format: uuid
-                 * @description The agent the conversation is with; null once that agent is deleted.
+                 * @description The agent the conversation was with when the event was recorded.
                  */
                 agentId: string | null;
                 /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
@@ -11711,7 +11726,7 @@ export interface components {
                 callerKind: "human" | "agent";
                 /**
                  * Format: uuid
-                 * @description The visitor the conversation belongs to, when the channel identifies one.
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
                 routineId: string;
@@ -11741,8 +11756,11 @@ export interface components {
              * @enum {string}
              */
             type: "decision.pending";
-            /** @description The version of this type's `data` schema the event was written with. */
-            version: number;
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
             /**
              * Format: date-time
              * @description When the change the event records happened.
@@ -11755,7 +11773,7 @@ export interface components {
                 conversationId: string;
                 /**
                  * Format: uuid
-                 * @description The agent the conversation is with; null once that agent is deleted.
+                 * @description The agent the conversation was with when the event was recorded.
                  */
                 agentId: string | null;
                 /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
@@ -11767,7 +11785,7 @@ export interface components {
                 callerKind: "human" | "agent";
                 /**
                  * Format: uuid
-                 * @description The visitor the conversation belongs to, when the channel identifies one.
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
                 decisionHandle: string;

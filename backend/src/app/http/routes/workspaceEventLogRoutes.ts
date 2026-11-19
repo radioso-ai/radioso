@@ -2,9 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { resolveReadableEventTypes, WORKSPACE_EVENTS_READ_PERMISSION } from "../../../modules/workspaceEvents/public.js";
+import { resolveReadableEventTypes, WORKSPACE_EVENTS_READ_PERMISSION } from "../../../modules/workspaceEventLog/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { WORKSPACE_EVENT_TYPES, type WorkspaceEventType } from "../../../shared/domain/workspaceEvents.js";
+import { WORKSPACE_EVENT_TYPES, type WorkspaceEventType } from "../../../shared/domain/workspaceEventLog.js";
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateQuery } from "../middleware/validate.js";

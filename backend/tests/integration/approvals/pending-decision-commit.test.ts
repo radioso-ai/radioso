@@ -14,7 +14,7 @@ import { ConversationActivityRepository } from "../../../src/db/repositories/con
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 

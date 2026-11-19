@@ -25,7 +25,7 @@ import { createMailAccountInvitationNotifier } from "../../src/app/composition/a
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
 import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
-import { WorkspaceEventLog } from "../../src/modules/workspaceEvents/public.js";
+import { WorkspaceEventLog } from "../../src/modules/workspaceEventLog/public.js";
 import { InMemoryWorkspaceEventLogStore } from "./inMemoryWorkspaceEventLog.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";

@@ -16,7 +16,7 @@ import { DefaultBackgroundJobQueue, type BackgroundJobWakePort } from "../../../
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 

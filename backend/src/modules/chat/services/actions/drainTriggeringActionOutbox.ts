@@ -15,6 +15,7 @@ interface EnqueueingActionOutboxPort {
     conversationId?: string | null;
     idempotencyKey?: string | null;
     skillName?: string | null;
+    maskedPayload?: Record<string, unknown>;
   }): Promise<{ id: string; duplicate: boolean }>;
 }
 

@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import type { AccountPermission } from "../../../src/modules/account/public.js";
-import { resolveReadableEventTypes, WorkspaceEventLog } from "../../../src/modules/workspaceEvents/public.js";
+import { resolveReadableEventTypes, WorkspaceEventLog } from "../../../src/modules/workspaceEventLog/public.js";
+import { encodeCursor } from "../../../src/shared/domain/cursorPagination.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
-import { WORKSPACE_EVENT_TYPES } from "../../../src/shared/domain/workspaceEvents.js";
+import { WORKSPACE_EVENT_TYPES } from "../../../src/shared/domain/workspaceEventLog.js";
 import { InMemoryWorkspaceEventLogStore } from "../../support/inMemoryWorkspaceEventLog.js";
 
 const WORKSPACE = randomUUID();
@@ -14,7 +15,9 @@ const ALL_TYPES = [...WORKSPACE_EVENT_TYPES];
 const harness = (now = new Date("2026-11-19T10:00:00.000Z")) => {
   const store = new InMemoryWorkspaceEventLogStore();
   let clock = now;
-  const log = new WorkspaceEventLog({ store, clock: () => clock });
+  const expired: string[] = [];
+  const metrics = { incrementCounter: (name: string) => { expired.push(name); } };
+  const log = new WorkspaceEventLog({ store, metrics, clock: () => clock });
   const list = (input: { after?: string | null; types?: typeof ALL_TYPES | null; readable?: typeof ALL_TYPES; limit?: number } = {}) =>
     log.list({
       workspaceId: WORKSPACE,
@@ -23,7 +26,7 @@ const harness = (now = new Date("2026-11-19T10:00:00.000Z")) => {
       after: input.after ?? null,
       limit: input.limit ?? 50,
     });
-  return { store, list, advance: (ms: number) => { clock = new Date(clock.getTime() + ms); } };
+  return { store, list, expired, advance: (ms: number) => { clock = new Date(clock.getTime() + ms); } };
 };
 
 const refusal = async (promise: Promise<unknown>): Promise<{ statusCode: number; code: string }> => {
@@ -112,6 +115,36 @@ describe("workspace event log", () => {
     h.advance(30 * 24 * 60 * 60 * 1_000);
     expect(await refusal(h.list({ after: routines.nextCursor, types: ["routine.completed"] })))
       .toEqual({ statusCode: 410, code: "cursor_expired" });
+    expect(h.expired).toEqual(["workspace_events_cursor_expired_total"]);
+  });
+
+  it("ages a full page's cursor from its last event, so a cursor deep in old events expires on time", async () => {
+    const day = 24 * 60 * 60 * 1_000;
+    const h = harness();
+    const start = await h.list();
+    h.store.append({ workspaceId: WORKSPACE, type: "conversation.started", occurredAt: new Date(Date.parse("2026-11-19T10:00:00.000Z") - 20 * day) });
+    h.store.append({ workspaceId: WORKSPACE, type: "conversation.started" });
+
+    const page = await h.list({ after: start.nextCursor, limit: 1 });
+    expect(page.hasMore).toBe(true);
+
+    // The cursor names an event 20 days old: ten days on, the event behind it may be gone.
+    h.advance(10 * day);
+    expect(await refusal(h.list({ after: page.nextCursor }))).toEqual({ statusCode: 410, code: "cursor_expired" });
+  });
+
+  it("refuses a cursor whose place lies outside the log's number ranges as invalid, before it reaches the store", async () => {
+    const h = harness();
+    const at = new Date("2026-11-19T10:00:00.000Z").toISOString();
+    const outOfRange = [
+      encodeCursor({ tx: "18446744073709551616", pos: "1", filter: "*", at }),
+      encodeCursor({ tx: "1", pos: "9223372036854775808", filter: "*", at }),
+      encodeCursor({ tx: "-1", pos: "1", filter: "*", at }),
+    ];
+
+    for (const cursor of outOfRange) {
+      expect(await refusal(h.list({ after: cursor }))).toEqual({ statusCode: 400, code: "invalid_cursor" });
+    }
   });
 });
 

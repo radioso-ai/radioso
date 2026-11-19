@@ -2,7 +2,7 @@ import type { Kysely } from "kysely";
 
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
-import { postgresWorkspaceEventRecorder } from "../../db/repositories/workspaceEventRepository.js";
+import { workspaceEventRecorder } from "./workspaceEventLog.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import type { ConversationIngestUnitOfWork } from "../../modules/chat/composition.js";
@@ -25,7 +25,7 @@ export const createPostgresConversationIngestUnitOfWork = (deps: {
     const ownership = new ConversationOwnershipRepository(trx);
     const heldReplies = new HeldReplyRepository(trx);
     return work({
-      conversations: new ConversationRepository(trx, postgresWorkspaceEventRecorder),
+      conversations: new ConversationRepository(trx, workspaceEventRecorder),
       messages: new MessageRepository(trx),
       ownership,
       activity: { record: (event) => deps.activity.record(trx, event) },

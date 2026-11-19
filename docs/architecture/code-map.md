@@ -2555,17 +2555,19 @@ Related docs:
 - `docs/human-takeover.md#conversation-activity`
 - `docs/human-takeover.md#held-replies`
 
-## Workspace Events
+## Workspace Event Log
 
 Owns the workspace event log (#1851): business events an automation acts on
 (`conversation.started`, `contact_request.created`, `handoff.requested`,
 `routine.completed`, `decision.pending`), each written in the transaction of the
-change it records and listed by a cursor that never passes a row still being
-committed. The owning module builds each event from its own facts and records
-it through `WorkspaceEventRecorder`; the log copies the conversation's agent,
-channel, caller kind and visitor from the conversation row in the same
-statement, and records nothing for a conversation history's default lists leave
-out (operator testing).
+change it records and listed at `GET /api/v1/workspace/events` by a cursor that
+never passes a row still being committed. It is not the dashboard's
+`GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
+module builds each event from its own facts and records it through the
+`WorkspaceEventRecorder` that `app/composition/workspaceEventLog.ts`, the one
+seam, hands it; the log copies the conversation's agent, channel, caller kind
+and visitor from the conversation row in the same statement, and records
+nothing for a conversation history's default lists leave out (operator testing).
 
 Where each type is recorded:
 
@@ -2574,35 +2576,39 @@ Where each type is recorded:
   that cannot start a conversation)
 - `contact_request.created`, `decision.pending`, `routine.completed`: the chat
   turn's transaction (`modules/chat/infra/turnOutboxWrites.ts`), and a notify
-  step's `contact.send` through `ContactRequestRecordingOutbox`; an ended run's
-  masked values are captured with the routine-state transition
-  (`modules/chat/services/routines/endedRoutineRun.ts`)
+  step's `contact.send` through `ContactRequestRecordingOutbox`, with an input
+  bound to a sensitive slot masked (`maskedPayload`); an ended run's masked
+  values and the routine's declared slots are captured with the routine-state
+  transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
-  `publishingWorkspaceEvents` in `modules/conversationActivity/`
+  `withWorkspaceEvents` in the composition seam
 
 Reads run in one repeatable-read snapshot and stop at
 `pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
-long write transaction delays newer events until it ends. Events are kept 30
-days (a `ConversationDataRetentionRule`), go with their conversation by a
-cascading key, and a withdrawn consent's values leave through a
-`MessageCopyWithholder`.
+long write transaction delays newer events until it ends; every pool sets
+`idle_in_transaction_session_timeout` to five minutes (`shared/infra/database.ts`)
+so one left open cannot hold the horizon for long, and the `workspace_events.list`
+span reports `workspace_events.horizon_xid_lag`. Events are kept 30 days (a
+`ConversationDataRetentionRule`), go with their conversation by a cascading key,
+and a withdrawn consent's events leave through a `MessageCopyWithholder` that
+removes them by routine and slot keys as well as by value.
 
 Public surfaces and key files:
 
-- `backend/src/shared/domain/workspaceEvents.ts` (types, versions, data schemas, recorder port)
-- `backend/src/modules/workspaceEvents/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions)
-- `backend/src/db/repositories/workspaceEventRepository.ts` (recorder, snapshot reads, retention, withholder)
-- `backend/src/app/composition/workspaceEvents.ts`
-- `backend/src/app/http/routes/workspaceEventRoutes.ts` (`GET /api/v1/workspace/events`, `workspace.events.read`)
+- `backend/src/shared/domain/workspaceEventLog.ts` (types, versions, data schemas, recorder and store ports)
+- `backend/src/modules/workspaceEventLog/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions)
+- `backend/src/db/repositories/workspaceEventLogRepository.ts` (recorder, snapshot reads, retention, withholder)
+- `backend/src/app/composition/workspaceEventLog.ts` (the recorder seam, the bridged activity recorder, the log)
+- `backend/src/app/http/routes/workspaceEventLogRoutes.ts` (`GET /api/v1/workspace/events`, `workspace.events.read`)
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/workspaceEvents tests/unit/deferred-routine-store.test.ts tests/contract/workspace-events.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/unit/deferred-routine-store.test.ts tests/contract/workspace-event-log.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
 
 Related docs:
 
-- [Workspace events](../../docs-portal/content/api/workspace-events.mdx)
+- [Workspace event log](../../docs-portal/content/api/workspace-event-log.mdx)
 - `specs/957-workspace-events/spec.md`
 
 ## Audience Pulse

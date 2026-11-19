@@ -1,10 +1,10 @@
 import type { Kysely } from "kysely";
 
 import { ActionRequestRepository, type EnqueueActionRequestInput } from "../../../db/repositories/actionRequestRepository.js";
-import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEvents.js";
+import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 import type { DB } from "../../../shared/infra/kysely/types.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js";
-import { contactRequestCreatedEvent } from "../services/workspaceEventDrafts.js";
+import { contactRequestCreatedEvent } from "../services/workspaceEventLogDrafts.js";
 
 /**
  * The action outbox for a skill that queues its action outside the turn's transaction (a notify
@@ -20,7 +20,7 @@ export class ContactRequestRecordingOutbox {
       if (!queued.duplicate && input.type === CONTACT_SEND_ACTION_TYPE && input.workspaceId && input.conversationId) {
         await this.events.record(trx, contactRequestCreatedEvent(
           { workspaceId: input.workspaceId, conversationId: input.conversationId },
-          { id: queued.id, payload: input.payload },
+          { id: queued.id, values: input.maskedPayload ?? input.payload },
         ));
       }
       return queued;

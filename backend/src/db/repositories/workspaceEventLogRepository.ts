@@ -6,39 +6,24 @@ import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domai
 import {
   WORKSPACE_EVENT_RETENTION_DAYS,
   WORKSPACE_EVENT_VERSIONS,
+  type LogPosition,
+  type StoredLogEvent,
   type WorkspaceEventDraft,
+  type WorkspaceEventLogStore,
   type WorkspaceEventRecorder,
   type WorkspaceEventType,
-} from "../../shared/domain/workspaceEvents.js";
+} from "../../shared/domain/workspaceEventLog.js";
 import {
   finishedBefore,
+  jsonbFieldHasAnyKey,
+  jsonbKeyText,
   jsonbStringContainsAnyValueText,
   logRowAfter,
   snapshotHorizon,
+  snapshotHorizonSpan,
   toSanitizedJsonb,
 } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-
-/** A place in the log: the writing transaction's id and the row's position, both as decimal text. */
-interface WorkspaceEventLogPosition {
-  tx: string;
-  position: string;
-}
-
-/** One stored event, before the log presents it. */
-interface StoredWorkspaceEvent extends WorkspaceEventLogPosition {
-  id: string;
-  workspaceId: string;
-  type: WorkspaceEventType;
-  version: number;
-  occurredAt: Date;
-  conversationId: string | null;
-  agentId: string | null;
-  channel: string | null;
-  callerKind: string | null;
-  visitorId: string | null;
-  data: Record<string, unknown>;
-}
 
 /**
  * Writes an event in the caller's transaction. The conversation's own fields come from its row in
@@ -77,7 +62,10 @@ const recordWorkspaceEvent = async (db: Db, draft: WorkspaceEventDraft): Promise
     .execute();
 };
 
-/** The Postgres recorder every owning module writes through; it holds no state of its own. */
+/**
+ * The Postgres recorder. It holds no state; application composition (`workspaceEventLog.ts`) is
+ * its one owner and hands it to every module that records an event.
+ */
 export const postgresWorkspaceEventRecorder: WorkspaceEventRecorder = { record: recordWorkspaceEvent };
 
 const storedEventColumns = [
@@ -112,7 +100,7 @@ interface StoredEventRow {
   data: unknown;
 }
 
-const mapStoredEvent = (row: StoredEventRow): StoredWorkspaceEvent => ({
+const mapStoredEvent = (row: StoredEventRow): StoredLogEvent => ({
   id: row.id,
   workspaceId: row.workspace_id,
   type: row.type as WorkspaceEventType,
@@ -129,7 +117,7 @@ const mapStoredEvent = (row: StoredEventRow): StoredWorkspaceEvent => ({
 });
 
 /** Reads a workspace's log below the snapshot horizon. */
-export class WorkspaceEventRepository {
+export class WorkspaceEventLogRepository implements WorkspaceEventLogStore {
   constructor(private readonly db: Db) {}
 
   /**
@@ -141,16 +129,20 @@ export class WorkspaceEventRepository {
   async readPage(input: {
     workspaceId: string;
     types: readonly WorkspaceEventType[];
-    after: WorkspaceEventLogPosition | null;
+    after: LogPosition | null;
     limit: number;
-  }): Promise<{ events: StoredWorkspaceEvent[]; horizon: string }> {
+  }): Promise<{ events: StoredLogEvent[]; horizon: string; horizonXidSpan: number }> {
     return this.db.transaction()
       .setIsolationLevel("repeatable read")
       .setAccessMode("read only")
       .execute(async (trx) => {
-        const { horizon } = await trx.selectNoFrom(snapshotHorizon().as("horizon")).executeTakeFirstOrThrow();
+        const snapshot = await trx
+          .selectNoFrom([snapshotHorizon().as("horizon"), snapshotHorizonSpan().as("span")])
+          .executeTakeFirstOrThrow();
+        const horizon = snapshot.horizon;
+        const horizonXidSpan = Number(snapshot.span);
         if (input.types.length === 0) {
-          return { events: [], horizon };
+          return { events: [], horizon, horizonXidSpan };
         }
         const direction = input.after ? "asc" : "desc";
         const rows = await trx
@@ -164,7 +156,7 @@ export class WorkspaceEventRepository {
           .orderBy("position", direction)
           .limit(input.limit)
           .execute();
-        return { events: (rows as StoredEventRow[]).map(mapStoredEvent), horizon };
+        return { events: (rows as StoredEventRow[]).map(mapStoredEvent), horizon, horizonXidSpan };
       });
   }
 }
@@ -172,7 +164,7 @@ export class WorkspaceEventRepository {
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /** Removes events past {@link WORKSPACE_EVENT_RETENTION_DAYS}, in every workspace, by age alone. */
-export class WorkspaceEventRetention implements ConversationDataRetentionRule {
+export class WorkspaceEventLogRetention implements ConversationDataRetentionRule {
   readonly table = "workspace_events";
 
   constructor(private readonly db: Db) {}
@@ -194,8 +186,11 @@ export class WorkspaceEventRetention implements ConversationDataRetentionRule {
 }
 
 /**
- * A withdrawn consent's values leave the log (#1544): the conversation's events whose values state
- * one are removed, as the audit withholder removes its copies.
+ * A withdrawn consent's values leave the log (#1544). By structure first, so the events go even
+ * after the routine's state, and with it the values, has expired: every `routine.completed` of a
+ * routine whose consent was withdrawn, and every `contact_request.created` whose values name one of
+ * its slots. Then, as the audit withholder does, any other event of the conversation that states a
+ * withdrawn value.
  */
 export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
   readonly owner = "workspace-events";
@@ -203,15 +198,31 @@ export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
   constructor(private readonly db: Db) {}
 
   async withhold(messages: WithheldMessages): Promise<number> {
-    if (messages.valueTexts.length === 0) {
-      return 0;
-    }
-    const deleted = await this.db
+    const ofConversation = () => this.db
       .deleteFrom("workspace_events")
       .where("workspace_id", "=", messages.workspaceId)
-      .where("conversation_id", "=", messages.conversationId)
-      .where((eb) => jsonbStringContainsAnyValueText(eb.ref("data"), messages.valueTexts))
-      .executeTakeFirst();
-    return Number(deleted.numDeletedRows);
+      .where("conversation_id", "=", messages.conversationId);
+    let removed = 0;
+    for (const { routineId, slotKeys } of messages.withdrawnRoutineSlots) {
+      const runs = await ofConversation()
+        .where("type", "=", "routine.completed")
+        .where((eb) => eb(jsonbKeyText(eb.ref("data"), "routineId"), "=", routineId))
+        .executeTakeFirst();
+      removed += Number(runs.numDeletedRows);
+      if (slotKeys.length > 0) {
+        const requests = await ofConversation()
+          .where("type", "=", "contact_request.created")
+          .where((eb) => jsonbFieldHasAnyKey(eb.ref("data"), "values", slotKeys))
+          .executeTakeFirst();
+        removed += Number(requests.numDeletedRows);
+      }
+    }
+    if (messages.valueTexts.length > 0) {
+      const stating = await ofConversation()
+        .where((eb) => jsonbStringContainsAnyValueText(eb.ref("data"), messages.valueTexts))
+        .executeTakeFirst();
+      removed += Number(stating.numDeletedRows);
+    }
+    return removed;
   }
 }

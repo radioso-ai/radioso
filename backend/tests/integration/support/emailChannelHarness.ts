@@ -72,7 +72,7 @@ import { Database } from "../../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 import { passingReviewChecks } from "../../support/inMemoryEmailReview.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Shared by the email channel's Postgres suites (thread protocol, inbound end to end, crash
 // recovery): a disposable database per file, seeded workspaces and mailboxes, the committed `.eml`

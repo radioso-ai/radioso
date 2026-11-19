@@ -30,7 +30,7 @@ import { IngestionSettingsService } from "../../src/modules/settings/services/in
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 

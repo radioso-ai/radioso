@@ -35,7 +35,7 @@ import {
 } from "./support/emailChannelHarness.js";
 import { createApiNode, openEmailConversation, replyFromInbox } from "./support/emailSendHarness.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Research B9, FR-027, SC-004 against Postgres: a held reply is operator-only. Its text, in every
 // state a teammate has not sent it from — pending, discarded, superseded, queued for an automatic

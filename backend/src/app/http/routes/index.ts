@@ -31,7 +31,7 @@ import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js"
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
-import { createWorkspaceEventRoutes } from "./workspaceEventRoutes.js";
+import { createWorkspaceEventRoutes } from "./workspaceEventLogRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";

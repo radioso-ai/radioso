@@ -52,7 +52,7 @@ import {
   seedSupportMailbox,
   type createWorkerNode,
 } from "./emailChannelHarness.js";
-import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 // The sending side of the email channel's Postgres suites: the API process a teammate replies and
 // resolves delivery failures through, the provider's own record of what it accepted, and reads of

@@ -1,12 +1,11 @@
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
-import { postgresWorkspaceEventRecorder } from "../../db/repositories/workspaceEventRepository.js";
 import type { TeammateLabelReaderPort } from "../../modules/auth/contracts/index.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import {
   ConversationActivityReadService,
-  publishingWorkspaceEvents,
   type ConversationActivityStore,
 } from "../../modules/conversationActivity/public.js";
+import { withWorkspaceEvents } from "./workspaceEventLog.js";
 
 /**
  * Conversation activity's default wiring: the Postgres table records each event in the writer's
@@ -22,7 +21,7 @@ export const createConversationActivityComposition = (deps: {
   };
   teammateLabels: TeammateLabelReaderPort;
 }): { recorder: ConversationActivityRecorder; reads: ConversationActivityReadService } => ({
-  recorder: publishingWorkspaceEvents(deps.repositories.conversationActivityRepository, postgresWorkspaceEventRecorder),
+  recorder: withWorkspaceEvents(deps.repositories.conversationActivityRepository),
   reads: new ConversationActivityReadService({
     store: deps.repositories.conversationActivityRepository,
     teammateLabels: deps.teammateLabels,

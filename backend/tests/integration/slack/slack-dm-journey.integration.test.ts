@@ -18,6 +18,7 @@ import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/sla
 import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
@@ -178,7 +179,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       chat: {
         answer: async (input) => {
           chatInputs.push({
@@ -303,7 +304,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {
@@ -446,7 +447,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database.kysely),
+      persistence: new PostgresSlackPersistence(database.kysely, postgresWorkspaceEventRecorder),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {

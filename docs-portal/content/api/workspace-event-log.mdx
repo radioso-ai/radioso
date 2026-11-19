@@ -1,10 +1,10 @@
 ---
-title: "Workspace events"
+title: "Workspace event log"
 description: "Poll the workspace event log for conversations started, contact requests, handoffs, routine endings and pending decisions, by a cursor that never skips an event."
 last_updated: 2026-11-19
 ---
 
-# Workspace events
+# Workspace event log
 
 The workspace event log tells an automation that something happened: a visitor started a conversation, left their contact details, was handed to a person, finished a routine, or is waiting on a decision. Each event carries the ids and values an automation acts on, so a row lands in a sheet or a lead appears in a CRM without anyone copying it across.
 
@@ -63,19 +63,35 @@ Deduplicate on `id` when your automation might read the same page twice, for exa
 
 ## Event types
 
-Every event has the same envelope: `id`, `type`, `version` (the version of that type's `data` schema), `occurredAt`, `workspaceId` and `data`. Every type's `data` starts with the conversation it is about: `conversationId`, `agentId`, `channel`, `callerKind` (`human` or `agent`) and `visitorId`.
+Every event has the same envelope: `id`, `type`, `version` (the version of that type's `data` schema), `occurredAt`, `workspaceId` and `data`. Every type's `data` starts with the conversation it is about: `conversationId`, `agentId`, `channel`, `callerKind` (`human` or `agent`) and `visitorId`. `agentId` and `visitorId` are copies taken when the event was recorded, so they keep the ids they had then.
 
 | Type | Recorded when | What `data` adds |
 |---|---|---|
 | `conversation.started` | A conversation is created, which happens with the first message a person or calling agent sends. Opening the chat widget or showing its greeting records nothing. | Nothing beyond the conversation. |
-| `contact_request.created` | A visitor leaves contact details through a contact request. | `contactRequestId`, and `values`: what the visitor gave, keyed by field, such as `email` and `message`. |
-| `handoff.requested` | The agent hands a conversation to a person: a routine's hand-off ending, a routine stuck past its re-ask limit, a retrieval miss, or a mailbox rule. | `reason`, the handoff reason code, such as `routine_handoff` or `retrieval_miss`. |
+| `contact_request.created` | A visitor leaves contact details through a contact request. | `contactRequestId`, the queued request's stable id, and `values`: what the visitor gave, keyed by field, such as `email` and `message`. When a routine's step queued the request, `values` holds the routine's slots only. |
+| `handoff.requested` | The agent hands a conversation to a person. | `reason`, the handoff reason code (see below). |
 | `routine.completed` | A routine run ends, whichever way it ends. | `routineId`, `executionId`, `outcome` (`complete`, `handoff`, `action`, `stuck` or `consent_declined`), `values` (the routine's declared slots) and `sensitiveSlotKeys`. A visitor who corrects a value after the run ended records the run again, with the corrected values and the same `executionId`. |
-| `decision.pending` | A routine stops at a decision step and waits for a teammate. | `decisionHandle`, `routineId`, `stepId`, `reason` (the text the routine's author wrote on the step), `options` (`id` and `label`) and `deadline`. |
+| `decision.pending` | A routine stops at a decision step and waits for a teammate. A teammate decides in the Inbox: the event tells an automation the decision is waiting. | `decisionHandle`, `routineId`, `stepId`, `reason` (the text the routine's author wrote on the step), `options` (`id` and `label`) and `deadline`. |
 
-A slot the routine's author marked sensitive reads `[redacted]` in `values`, as it does in every notice and export. `sensitiveSlotKeys` names the masked keys.
+A slot the routine's author marked sensitive reads `[redacted]` in `values`, as it does in every notice and export, and so does a notify step's input bound to one. `sensitiveSlotKeys` names a routine run's masked keys.
 
-No event carries a transcript or the agent's reply. When an automation needs the conversation itself, it reads it with [conversation history](/api/chat-and-history#conversation-history) and a credential that holds `workspace.history.read`.
+A handoff's `reason` is one of these codes:
+
+| Code | Why the conversation went to a person |
+|---|---|
+| `routine_handoff` | A routine reached a hand-off ending. |
+| `routine_stuck` | A routine's step stayed unanswered past its re-ask limit. |
+| `routine_consent_declined` | The visitor declined a routine's consent, and its decline choice hands off. |
+| `retrieval_miss` | The agent found nothing to answer from and hands off on a miss. |
+| `operator_takeover` | A teammate took the conversation over. |
+| `operator_only_mailbox` | The conversation arrived at a mailbox only teammates answer. |
+| `generation_budget` | The channel's budget for generated replies ran out. |
+| `review_unavailable` | A reviewed turn could not produce a reply to review. |
+| `policy_changed` | A mailbox's settings changed under a draft the customer was waiting on. |
+
+The contact details and routine values an event carries are the ones an automation acts on. To read the whole conversation, use [conversation history](/api/chat-and-history#conversation-history): `GET /api/v1/history/chat/{conversationId}` with a credential that holds `workspace.history.read`.
+
+No event carries a transcript or the agent's reply.
 
 Conversations a teammate runs to test an agent (Test Chat, workbench replays, Ray's test turns) record no events, as they stay out of history's lists.
 
@@ -85,13 +101,13 @@ The log shows a type only to a caller who may read the same facts elsewhere:
 
 - `workspace.events.read` lets a credential list the log at all.
 - Every conversation type also needs `workspace.history.read`.
-- `decision.pending` also needs `workspace.conversation.takeover`, as the decision list does.
+- `decision.pending` also needs `workspace.conversation.takeover`, as the Inbox's decisions do. It is a notification: listing and resolving decisions are dashboard actions, so an API token that reads `decision.pending` can neither list nor resolve the decision over the API. A teammate acts on it in the Inbox.
 
 Without a `types` filter you get the types you may read. Naming one you may not read returns `403` with `event_type_not_permitted`.
 
 ## How long events are kept
 
-The log keeps an event for 30 days. An event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the events that state a value the consent covered are removed.
+The log keeps an event for 30 days. An event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the conversation's `routine.completed` events for that routine and its contact requests that name a covered field are removed, with any other of its events that states one of the values.
 
 A cursor stays usable for 29 days. An older one returns `410` with `cursor_expired`, because events after it may already be gone: start again without a cursor.
 

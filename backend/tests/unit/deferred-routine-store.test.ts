@@ -97,6 +97,7 @@ describe("DeferredRoutineStore", () => {
         values: { name: "Ada", phone: "[redacted]" },
         sensitiveSlotKeys: ["phone"],
       },
+      declaredSlotKeys: ["name", "phone"],
     });
 
     // A run still going, or a routine the turn does not know, ends nothing the log can describe.

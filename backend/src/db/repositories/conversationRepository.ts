@@ -11,7 +11,7 @@ import {
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
-import type { WorkspaceEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEvents.js";
+import type { WorkspaceEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { ConversationOwnershipScope } from "../../modules/handoff/ownershipState.js";
 import {
   currentTimestamp,

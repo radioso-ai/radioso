@@ -4,7 +4,7 @@ import type {
   DataSubjectAccess,
   PrivacySettingsService,
 } from "../../modules/privacy/public.js";
-import type { WorkspaceEventLog } from "../../modules/workspaceEvents/public.js";
+import type { WorkspaceEventLog } from "../../modules/workspaceEventLog/public.js";
 import type {
   AgentStarterPromptReader,
   AssistantChatService,

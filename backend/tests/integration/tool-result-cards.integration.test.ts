@@ -28,7 +28,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { seedConversations } from "./support/conversationSeed.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
-import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 

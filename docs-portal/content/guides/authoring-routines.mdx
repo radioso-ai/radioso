@@ -493,9 +493,11 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
   the body and raw copy of the email it came in as, the turn's debug record, the
   coverage assessment's restatement of the question, the picture cards a reply
   showed, and any photo the visitor attached. The conversation's summary and
-  title are cleared and written again from what the transcript now reads, and
-  the conversation's [workspace events](/api/workspace-events) that state one
-  of the values are removed.
+  title are cleared and written again from what the transcript now reads. In
+  the [workspace event log](/api/workspace-event-log), the conversation's
+  `routine.completed` events for that routine, its contact requests that name a
+  covered field, and any of its events that state one of the values are removed,
+  even when the routine's own record of the values has already expired.
 - The record keeps its proof and gains the withdrawal time and the teammate who
   withdrew it. It shows as withdrawn in the panel and in the data subject's
   export.

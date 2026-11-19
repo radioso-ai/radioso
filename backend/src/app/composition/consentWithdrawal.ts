@@ -6,7 +6,7 @@ import { AuditEventRepository, ConversationAuditWithholder } from "../../db/repo
 import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ConsentWithdrawalRepository } from "../../db/repositories/consentWithdrawalRepository.js";
 import { ConversationSummaryWithholder } from "../../db/repositories/conversationSummaryRepository.js";
-import { WorkspaceEventValueWithholder } from "../../db/repositories/workspaceEventRepository.js";
+import { WorkspaceEventValueWithholder } from "../../db/repositories/workspaceEventLogRepository.js";
 import { conversationSummaryRefreshRequest } from "../../modules/chat/composition.js";
 import { EmailMessageWithholder } from "../../modules/emailChannel/public.js";
 import { ConsentWithdrawalService, type ConsentWithdrawalUnitOfWork } from "../../modules/privacy/public.js";

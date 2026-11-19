@@ -7,6 +7,16 @@ import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
 import type { DB } from "./kysely/schema.js";
 import { sessionAdvisoryUnlock, trySessionAdvisoryLock } from "./kysely/sqlHelpers.js";
 
+/**
+ * How long a connection may sit idle inside an open transaction before Postgres ends it. A write
+ * transaction holds back the workspace event log's snapshot horizon for every workspace while it is
+ * open, so one left open by a stalled process must not stay open for long. Five minutes sits well
+ * above the longest legitimate idle-in-transaction wait, a decision resolution whose resumed routine
+ * turn calls the model inside the decision's transaction; one that waits longer fails and leaves
+ * the decision pending, to be resolved again.
+ */
+const IDLE_IN_TRANSACTION_TIMEOUT_MS = 5 * 60 * 1_000;
+
 interface DatabaseOptions {
   poolMax?: number;
   idleTimeoutMs?: number;
@@ -86,6 +96,7 @@ export class Database {
       connectionTimeoutMillis: options.connectionTimeoutMs,
       lock_timeout: options.lockTimeoutMs,
       statement_timeout: options.statementTimeoutMs,
+      idle_in_transaction_session_timeout: IDLE_IN_TRANSACTION_TIMEOUT_MS,
       query_timeout: options.queryTimeoutMs,
       application_name: options.applicationName,
       keepAlive: true,

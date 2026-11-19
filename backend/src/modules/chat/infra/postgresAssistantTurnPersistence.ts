@@ -11,7 +11,7 @@ import { RoutineConsentRepository } from "../../../db/repositories/routineConsen
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
-import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEvents.js";
+import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
@@ -246,11 +246,15 @@ const markSensitiveVisitorMessages = async (db: Db, input: CompleteAssistantTurn
 const withdrawnCoverage = (
   withdrawn: ReadonlyArray<{ routineId: string; slotKeys: readonly string[] }>,
   transition: CapturedRoutineTransition | null | undefined,
-): { slotKeys: string[]; valueTexts: string[] } => {
+): { slotKeys: string[]; valueTexts: string[]; withdrawnRoutineSlots: Array<{ routineId: string; slotKeys: readonly string[] }> } => {
   const states = transition ? [transition.kind === "save" ? transition.state : null, transition.startedFrom ?? null] : [];
   const values = withdrawn.flatMap((record) => states.flatMap((state) =>
     state && state.routineId === record.routineId ? record.slotKeys.map((key) => state.variables[key]) : []));
-  return { slotKeys: [...new Set(withdrawn.flatMap((record) => record.slotKeys))], valueTexts: matchableValueTexts(values) };
+  return {
+    slotKeys: [...new Set(withdrawn.flatMap((record) => record.slotKeys))],
+    valueTexts: matchableValueTexts(values),
+    withdrawnRoutineSlots: withdrawn.map((record) => ({ routineId: record.routineId, slotKeys: record.slotKeys })),
+  };
 };
 
 const insertAuditEvent = async (

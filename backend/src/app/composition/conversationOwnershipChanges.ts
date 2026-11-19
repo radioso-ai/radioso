@@ -39,7 +39,7 @@ export const createPostgresOwnershipChangeUnitOfWork = (deps: {
       queued = null;
       const outbox = new ActionRequestRepository(trx);
       return work({
-        conversations: new ConversationRepository(trx),
+        conversations: ConversationRepository.forExistingConversations(trx),
         ownership: new ConversationOwnershipRepository(trx),
         outbox: {
           enqueue: async (request) => {

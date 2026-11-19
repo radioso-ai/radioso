@@ -18,6 +18,7 @@ describe("Slack inbound job composition (worker)", () => {
     // side, which only ever reads a bot token out of the database per installation.
     const composition = buildSlackInboundJobComposition({
       db: {} as never,
+      workspaceEvents: { record: vi.fn() },
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       chatService: { answer: vi.fn(), review: vi.fn() },
       conversationIngestService: { ingest: vi.fn() },
@@ -80,6 +81,7 @@ describe("Slack inbound job composition (worker)", () => {
 
     const composition = buildSlackInboundJobComposition({
       db: {} as never,
+      workspaceEvents: { record: vi.fn() },
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       chatService: { answer, review: vi.fn() } as never,
       conversationIngestService: { ingest: vi.fn() },

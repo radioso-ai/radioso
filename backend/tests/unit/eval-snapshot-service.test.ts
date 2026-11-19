@@ -108,10 +108,6 @@ class StubConversationRepository implements ConversationRepositoryPort {
     throw new Error("not implemented");
   }
 
-  async createWithInitialAssistantMessage(): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    throw new Error("not implemented");
-  }
-
   async listPageByWorkspaceId(): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     throw new Error("not implemented");
   }

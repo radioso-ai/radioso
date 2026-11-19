@@ -155,7 +155,7 @@ describe("ConsentWithdrawalService", () => {
     expect(outcome).toEqual({ kind: "withdrawn", consent: { ...granted, withdrawnAt: WITHDRAWN_AT } });
     expect(fake.state().routineValues).toEqual({ name: "Ada" });
     expect(fake.state().withheld).toEqual(["message-1", "message-2"]);
-    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["message-1", "message-2"], valueTexts: ["sore knee"] }]);
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["message-1", "message-2"], valueTexts: ["sore knee"], withdrawnRoutineSlots: [{ routineId: "routine-intake", slotKeys: ["injury"] }] }]);
     expect(fake.order).toEqual(["lock", "mark", "erase", "withhold", "copies", "audit"]);
     expect(fake.state().audit).toEqual([{
       accountId: ACTOR.accountId,
@@ -202,7 +202,7 @@ describe("ConsentWithdrawalService", () => {
     await withdraw(fake);
 
     expect(fake.state().withheld).toEqual(["before-routine", "after-routine"]);
-    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["before-routine", "after-routine"], valueTexts: ["sore knee"] }]);
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: ["before-routine", "after-routine"], valueTexts: ["sore knee"], withdrawnRoutineSlots: [{ routineId: "routine-intake", slotKeys: ["injury"] }] }]);
   });
 
   it("searches no text for a value too short, a number or a yes or no, and finds those messages by their marker", async () => {
@@ -219,13 +219,15 @@ describe("ConsentWithdrawalService", () => {
     expect(fake.copyScopes[0]?.valueTexts).toEqual(["left knee"]);
   });
 
-  it("asks no module to withhold copies when no message carried a covered value and none was held", async () => {
+  it("still asks every module to withhold its copies of the withdrawn routine when no message carried a covered value and none was held", async () => {
     const fake = createFake({ records: [granted], routineValues: { name: "Ada" } });
 
     await withdraw(fake);
 
-    expect(fake.copyScopes).toEqual([]);
-    expect(fake.state().audit[0]?.metadata).toMatchObject({ withheldMessageCount: 0, rowsByOwner: {} });
+    // A copy kept per run or keyed by slot (the workspace event log's) goes by the routine and its
+    // slots, which the record names after the values themselves have expired.
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: [], valueTexts: [], withdrawnRoutineSlots: [{ routineId: "routine-intake", slotKeys: ["injury"] }] }]);
+    expect(fake.state().audit[0]?.metadata).toMatchObject({ withheldMessageCount: 0, rowsByOwner: { "email-channel": 0 } });
   });
 
   it("still asks every module to withhold its copies stating a held value when no message did", async () => {
@@ -233,7 +235,7 @@ describe("ConsentWithdrawalService", () => {
 
     await withdraw(fake);
 
-    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: [], valueTexts: ["sore knee"] }]);
+    expect(fake.copyScopes).toEqual([{ workspaceId: WORKSPACE, conversationId: CONVERSATION, messageIds: [], valueTexts: ["sore knee"], withdrawnRoutineSlots: [{ routineId: "routine-intake", slotKeys: ["injury"] }] }]);
     expect(fake.state().audit[0]?.metadata).toMatchObject({ withheldMessageCount: 0, rowsByOwner: { "email-channel": 1 } });
   });
 

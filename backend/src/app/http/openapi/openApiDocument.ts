@@ -71,6 +71,7 @@ export const createOpenApiDocument = (
       { name: "Auth" },
       { name: "Account" },
       { name: "Workspace" },
+      { name: "Workspace Events" },
       { name: "Realtime" },
       { name: "Assistant" },
       { name: "Agent Channels" },

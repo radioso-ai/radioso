@@ -141,7 +141,7 @@ const createHeldReplyDispatch = (deps: {
     throw new Error("held_reply_dispatch_releases_nothing");
   };
   const service = new HeldReplyService({
-    conversations: new ConversationRepository(deps.db),
+    conversations: ConversationRepository.forExistingConversations(deps.db),
     writes: createPostgresHeldReplyUnitOfWork({
       db: deps.db,
       channels: [deps.heldReplyChannel],
@@ -214,7 +214,7 @@ export const createPostgresEmailSendUnitOfWork = (deps: {
  * reply carries is the send's decision.
  */
 const firstReplyNoticeOver = (trx: Kysely<DB>): EmailFirstReplyNoticeScope => {
-  const conversations = new ConversationRepository(trx);
+  const conversations = ConversationRepository.forExistingConversations(trx);
   return {
     pending: async ({ workspaceId, conversationId }) => {
       const conversation = await conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -264,7 +264,7 @@ export const createPostgresEmailSendCommitmentUnitOfWork = (deps: {
       firstReplyNotice: firstReplyNoticeOver(trx),
       conversations: {
         lockOwnership: async ({ workspaceId, conversationId }) => {
-          await new ConversationRepository(trx).lockForUpdate(conversationId, workspaceId);
+          await ConversationRepository.forExistingConversations(trx).lockForUpdate(conversationId, workspaceId);
           return ownership.loadForUpdate(conversationId);
         },
       },

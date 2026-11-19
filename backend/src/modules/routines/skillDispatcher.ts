@@ -235,6 +235,11 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     const { values: collected, origins: collectedOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
       : resolveUntypedSkillArguments(state.variables ?? {}, input.sensitiveSlotKeys);
+    // A binding that names a sensitive slot hands the skill the value itself; the executor masks it
+    // in every copy it keeps beyond the delivery (the workspace event log's contact request).
+    const sensitiveInputKeys = Object.entries(inputBindings ?? {})
+      .filter(([, binding]) => binding.kind === "variableRef" && (input.sensitiveSlotKeys ?? []).includes(binding.ref))
+      .map(([inputKey]) => inputKey);
     const execute = async (): Promise<RoutineSkillResult> => {
       let result: SkillDispatchResult;
       this.throwIfCancelled?.();
@@ -258,6 +263,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
             conversationDurability: this.conversationDurability,
             routineId: state.routineId,
             ...(stepId ? { stepId } : {}),
+            ...(sensitiveInputKeys.length > 0 ? { sensitiveInputKeys } : {}),
             ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
             ...(this.accountId ? { accountId: this.accountId } : {}),
           },

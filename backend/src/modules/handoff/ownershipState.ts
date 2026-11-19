@@ -1,27 +1,10 @@
 import { teammateLabel } from "../auth/contracts/index.js";
+import type { ConversationOwnershipReasonCode } from "../../shared/domain/conversationOwnershipReasons.js";
 
 export type ConversationOwnershipState = "ai_owned" | "human_owned";
 export type ConversationOwnershipScope = "human_owned";
-export type ConversationOwnershipReason =
-  | "routine_handoff"
-  | "routine_stuck"
-  /** A visitor declined a routine's consent, and its decline choice hands off (#1544). */
-  | "routine_consent_declined"
-  | "retrieval_miss"
-  | "operator_takeover"
-  /** The conversation arrived at a mailbox that only operators answer. */
-  | "operator_only_mailbox"
-  /** The channel's budget for generated replies ran out. */
-  | "generation_budget"
-  /** A reviewed turn could not produce a reply to review. */
-  | "review_unavailable"
-  /**
-   * A channel's policy change (an upgrade, another agent) superseded the draft the customer was
-   * waiting on and runs no review for that message again. Its own reason rather than
-   * `review_unavailable`, because no review failed: the operator changed the rules under it.
-   */
-  | "policy_changed"
-  | (string & {});
+/** A listed code (`CONVERSATION_OWNERSHIP_REASONS`), or one a stored row carries from before it was listed. */
+export type ConversationOwnershipReason = ConversationOwnershipReasonCode | (string & {});
 
 /** The owning teammate's profile as it is now. */
 interface ConversationOwnerProfile {

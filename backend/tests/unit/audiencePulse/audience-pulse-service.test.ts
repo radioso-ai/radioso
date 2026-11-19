@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
-  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
   AudiencePulseService,
   buildSummaryTopics,
-  hydrateReport,
 } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import {
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
+  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+} from "../../../src/modules/audiencePulse/services/narrativeReuse.js";
+import { hydrateReport } from "../../../src/modules/audiencePulse/services/reportHydration.js";
+import { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT } from "../../../src/modules/audiencePulse/domain/report.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,

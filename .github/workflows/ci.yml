@@ -785,6 +785,23 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Zapier integration dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/zapier...
+
+      # Local schema validation and the nock tests only. `zapier-platform validate` without
+      # `--without-style` and `build` call Zapier's servers; the owner runs those before a push.
+      - name: Validate and test Zapier integration
+        working-directory: packages/zapier
+        run: pnpm test
 
   wordpress-companion:
     name: WordPress Companion Plugin

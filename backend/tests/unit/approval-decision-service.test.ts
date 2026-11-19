@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { PostCommitInvalidationReceipt } from "@radioso/workspace-invalidation-contract";
 
 import type {
+  PendingDecisionClaim,
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../src/db/repositories/pendingDecisionRepository.js";
@@ -38,24 +39,28 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   ...overrides,
 });
 
-type DecisionStore = Pick<PendingDecisionRepository, "loadByHandle" | "claimInTransaction" | "resolve" | "listPending">;
+type DecisionStore = Pick<PendingDecisionRepository, "loadByHandle" | "claimInTransaction" | "listPending">;
 
-const createRepository = (record: PendingDecisionRecord) => ({
-  listPending: vi.fn(async () => [record]),
-  loadByHandle: vi.fn(async (handle: string) => handle === record.handle ? record : null),
-  claimInTransaction: vi.fn(async (_input, callback) => {
-    const resume = await callback(record, {});
-    return resume;
-  }),
-  resolve: vi.fn(async () => ({ ...record, status: "resolved" as const })),
-}) as unknown as DecisionStore;
+/** A store whose claim hands out `claimResolve` as the claimed decision's resolution. */
+const createRepository = (record: PendingDecisionRecord) => {
+  const claimResolve = vi.fn<PendingDecisionClaim["resolve"]>(async () => ({ ...record, status: "resolved" as const }));
+  const store = {
+    listPending: vi.fn(async () => [record]),
+    loadByHandle: vi.fn(async (handle: string) => handle === record.handle ? record : null),
+    claimInTransaction: vi.fn(async (_input, callback) => {
+      const resume = await callback({ record, resolve: claimResolve }, {});
+      return resume;
+    }),
+  } as unknown as DecisionStore;
+  return Object.assign(store, { claimResolve });
+};
 
 const noActivity = () => ({ record: vi.fn(async () => undefined) });
 
-/** A resumed turn: it writes the decision's resolution, then commits `result`. */
+/** A resumed turn: it commits its (empty) writes after the decision's resolution, then returns `result`. */
 const resumedTurn = (result: Partial<ApprovalResumeResult> = {}): ResumeRunner["resume"] =>
-  vi.fn<ResumeRunner["resume"]>(async ({ writeResolution }) => {
-    await writeResolution();
+  vi.fn<ResumeRunner["resume"]>(async ({ commit }) => {
+    await commit(async () => undefined);
     return {
       conversationId: "conversation_1",
       resumed: true as const,
@@ -181,8 +186,8 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const order: string[] = [];
     const repository = {
       ...createRepository(pending),
-      claimInTransaction: vi.fn(async (_input, callback: (record: PendingDecisionRecord, trx: unknown) => Promise<unknown>) => {
-        const resume = await callback(pending, {});
+      claimInTransaction: vi.fn(async (_input, callback: (claim: PendingDecisionClaim, trx: unknown) => Promise<unknown>) => {
+        const resume = await callback({ record: pending, resolve: async () => ({ ...pending, status: "resolved" }) }, {});
         order.push("committed");
         return resume;
       }),
@@ -273,7 +278,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const repository = createRepository(pending);
     const activity = noActivity();
     const order: string[] = [];
-    vi.mocked(repository.resolve).mockImplementation(async () => {
+    repository.claimResolve.mockImplementation(async () => {
       order.push("decision resolved");
       return { ...pending, status: "resolved" };
     });
@@ -283,10 +288,10 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const resumeRunner: ResumeRunner = {
       resume: async (input) => {
         order.push("model answered");
-        await input.writeResolution();
-        // Asking again writes nothing more.
-        await input.writeResolution();
-        order.push("reply written");
+        await input.commit(async () => {
+          order.push("reply written");
+        });
+        // Committing again writes the resolution no second time.
         return resumedTurn()(input);
       },
     };
@@ -303,9 +308,9 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     });
 
     expect(order).toEqual(["model answered", "decision resolved", "decider recorded", "reply written"]);
-    expect(repository.resolve).toHaveBeenCalledWith(
-      expect.objectContaining({ handle: pending.handle, decidedBy: "account_1", decidedByUserId: "user_bea" }),
-      {},
+    expect(repository.claimResolve).toHaveBeenCalledTimes(1);
+    expect(repository.claimResolve).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "resolved", decidedBy: "account_1", decidedByUserId: "user_bea" }),
     );
     expect(activity.record).toHaveBeenCalledWith({}, {
       kind: "approval_decided",
@@ -316,7 +321,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     });
   });
 
-  it("fails the resume, leaving the decision pending, when the resumed turn never writes the resolution", async () => {
+  it("fails the resume, leaving the decision pending, when the resumed turn never commits", async () => {
     const pending = decision();
     const repository = createRepository(pending);
     const resumeRunner: ResumeRunner = {
@@ -338,15 +343,22 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       contentHash: pending.contentHash,
       caller: { accountId: "account_1", workspaceId: pending.workspaceId },
     })).rejects.toThrow("approval_resume_resolution_unwritten");
-    expect(repository.resolve).not.toHaveBeenCalled();
+    expect(repository.claimResolve).not.toHaveBeenCalled();
   });
 
-  it("reports a concurrent resolution when the decision is gone by the time the resumed turn resolves it", async () => {
+  it("reports the decision not found, writing nothing of the turn, when it is gone by the time the resumed turn commits", async () => {
     const pending = decision();
     const repository = createRepository(pending);
-    vi.mocked(repository.resolve).mockResolvedValue(null);
+    repository.claimResolve.mockResolvedValue(null);
     const activity = noActivity();
-    const service = new ApprovalDecisionService(repository, runner(), activity, {
+    const work = vi.fn(async () => undefined);
+    const resumeRunner: ResumeRunner = {
+      resume: async (input) => {
+        await input.commit(work);
+        return resumedTurn()(input);
+      },
+    };
+    const service = new ApprovalDecisionService(repository, resumeRunner, activity, {
       resolveWorkspaceRole: vi.fn(async () => "admin" as const),
     });
 
@@ -356,7 +368,8 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       optionId: "approve",
       contentHash: pending.contentHash,
       caller: { accountId: "account_1", workspaceId: pending.workspaceId },
-    })).rejects.toMatchObject({ reason: "concurrent_resolution" });
+    })).rejects.toMatchObject({ reason: "not_found" });
     expect(activity.record).not.toHaveBeenCalled();
+    expect(work).not.toHaveBeenCalled();
   });
 });

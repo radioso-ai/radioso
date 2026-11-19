@@ -2521,8 +2521,7 @@ describe("chat service streaming", () => {
       record,
       optionId: "approve",
       decidedBy: "account-1",
-      transaction: {} as never,
-      writeResolution: async () => undefined,
+      commit: (work) => work({} as never),
       skillDispatchIdempotencyKey: "approval-decision:decision-1",
     });
 
@@ -2587,8 +2586,7 @@ describe("chat service streaming", () => {
       },
       optionId: "approve",
       decidedBy: "account-1",
-      transaction: {} as never,
-      writeResolution: async () => undefined,
+      commit: (work) => work({} as never),
     });
 
     // The turn reads the conversation's channel, so a consent it reaches is shown the way Slack shows one.
@@ -2729,8 +2727,7 @@ describe("chat service streaming", () => {
       },
       optionId: "approve",
       decidedBy: "account-1",
-      transaction: decisionTransaction,
-      writeResolution: async () => undefined,
+      commit: (work) => work(decisionTransaction),
     });
 
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
@@ -2822,8 +2819,7 @@ describe("chat service streaming", () => {
       },
       optionId: "approve",
       decidedBy: "account-1",
-      transaction: {} as never,
-      writeResolution: async () => undefined,
+      commit: (work) => work({} as never),
     });
 
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
@@ -2899,8 +2895,7 @@ describe("chat service streaming", () => {
         },
         optionId: "approve",
         decidedBy: "account-1",
-        transaction: {} as never,
-        writeResolution: async () => undefined,
+        commit: (work) => work({} as never),
       });
       return { run, result, conversation, agent, assistantTurnPersistence };
     };

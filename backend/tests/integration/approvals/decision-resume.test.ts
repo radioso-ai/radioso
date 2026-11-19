@@ -12,7 +12,11 @@ import {
   PendingDecisionRepository,
   type PendingDecisionCreateInput,
 } from "../../../src/db/repositories/pendingDecisionRepository.js";
+import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { ApprovalResumeEffectJournalRepository } from "../../../src/db/repositories/approvalResumeEffectJournalRepository.js";
+import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
+import { WorkspaceRepository } from "../../../src/db/repositories/workspaceRepository.js";
 import { ApprovalResumeEffectJournalDispatcher } from "../../../src/modules/routines/approvalResumeEffectJournal.js";
 import { RoutineSkillExecutorDispatcher } from "../../../src/modules/routines/skillDispatcher.js";
 import {
@@ -53,8 +57,10 @@ const databaseUrlForSchema = (databaseUrl: string, schema: string): string => {
 const operatorId = randomUUID();
 // The teammate behind the operator's organisation: a real user, since the decision names them.
 const deciderUserId = randomUUID();
-const workspaceId = randomUUID();
-const conversationId = randomUUID();
+// A real conversation: resolving a decision locks its conversation row first, as erasure does.
+let workspaceId: string;
+let conversationId: string;
+let seededAccountId: string | undefined;
 
 const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): PendingDecisionCreateInput => ({
   handle: `decision_${randomUUID()}`,
@@ -108,6 +114,17 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
       [deciderUserId, `decider-${deciderUserId}@example.com`],
     );
+    const account = await new AccountRepository(adminDatabase.kysely).create({
+      name: "Refunds team",
+      email: `refunds-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+    });
+    seededAccountId = account.id;
+    workspaceId = (await new WorkspaceRepository(adminDatabase.kysely).create(account.id, "Refunds")).id;
+    const agentId = randomUUID();
+    await adminDatabase.query("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Support')", [agentId, workspaceId]);
+    conversationId = (await new ConversationRepository(adminDatabase.kysely, postgresWorkspaceEventRecorder)
+      .create({ workspaceId, agentId, sourceChannel: "website_embed" })).id;
     repository = new PendingDecisionRepository(database.kysely);
   });
 
@@ -125,13 +142,16 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await database?.close();
     await adminDatabase?.execute(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
     await adminDatabase?.execute(`DELETE FROM public.users WHERE id = $1`, [deciderUserId]).catch(() => undefined);
+    if (seededAccountId) {
+      await adminDatabase?.execute(`DELETE FROM public.accounts WHERE id = $1`, [seededAccountId]).catch(() => undefined);
+    }
     await adminDatabase?.close();
   });
 
-  // A resumed turn writes the decision's resolution before its own writes, as the chat module's does.
+  // A resumed turn commits its writes after the decision's resolution, as the chat module's does.
   const okRunner = (): ResumeRunner => ({
-    resume: vi.fn<ResumeRunner["resume"]>(async ({ writeResolution }) => {
-      await writeResolution();
+    resume: vi.fn<ResumeRunner["resume"]>(async ({ commit }) => {
+      await commit(async () => undefined);
       return {
         conversationId,
         resumed: true as const,
@@ -169,13 +189,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       conversationId: randomUUID(),
       handle: "other_workspace",
     }));
-    await repository.resolve({
-      handle: resolved.handle,
-      status: "resolved",
-      decision: { optionId: "approve", label: "Approve" },
-      decidedBy: operatorId,
-      contentHash: resolved.contentHash,
-    });
+    await database.execute(`UPDATE pending_decisions SET status = 'resolved' WHERE handle = $1`, [resolved.handle]);
 
     await expect(service.listPending(workspaceId)).resolves.toMatchObject([
       { id: newer.id, handle: newer.handle, status: "pending" },
@@ -199,8 +213,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     expect(result).toMatchObject({ status: "resolved", optionId: "approve", conversationId, resumed: true });
     expect(runner.resume).toHaveBeenCalledTimes(1);
-    // Resume must receive the open transaction (one-tx crash-safety).
-    expect(vi.mocked(runner.resume).mock.calls[0][0].transaction).toBeDefined();
+    // Resume must commit on the decision's transaction (one-tx crash-safety).
+    expect(vi.mocked(runner.resume).mock.calls[0][0].commit).toBeDefined();
     expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve");
     expect(await statusOf(input.handle)).toBe("resolved");
 
@@ -294,7 +308,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     );
     let attempts = 0;
     const runner: ResumeRunner = {
-      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume, writeResolution }) => {
+      resume: vi.fn(async ({ record, optionId, payload, skillDispatchIdempotencyKey, approvalResume, commit }) => {
         const result = await resumeAwaitingDecision({
           suspendedReader: { loadSuspended: vi.fn(async () => state) },
           routineRunner,
@@ -313,11 +327,12 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
           payloadDigest: expect.any(String),
         });
         // The refund has gone out; the resolution is written, then the turn fails to persist once.
-        await writeResolution();
         attempts += 1;
-        if (attempts === 1) {
-          throw new Error("assistant_turn_persist_failed");
-        }
+        await commit(async () => {
+          if (attempts === 1) {
+            throw new Error("assistant_turn_persist_failed");
+          }
+        });
         expect(result.resumed).toBe(true);
         return {
           conversationId: record.conversationId,
@@ -385,9 +400,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await repository.create(input);
     const next = decisionInput({ agentId: input.agentId, sessionId: input.sessionId });
     const runner: ResumeRunner = {
-      resume: vi.fn(async ({ transaction, writeResolution }) => {
-        await writeResolution();
-        await new PendingDecisionRepository(transaction).create(next);
+      resume: vi.fn<ResumeRunner["resume"]>(async ({ commit }) => {
+        await commit((transaction) => new PendingDecisionRepository(transaction).create(next));
         return {
           conversationId,
           resumed: true as const,

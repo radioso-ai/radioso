@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { PoolClient, QueryResultRow } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   PendingDecisionRepository,
@@ -180,18 +180,20 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     expect(loaded?.deadline?.toISOString()).toBe(input.deadline?.toISOString());
   });
 
-  it("resolves a decision once when the content hash matches", async () => {
+  const createWithConversation = async (input: PendingDecisionCreateInput) => {
+    await database.execute("INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)", [input.conversationId, input.workspaceId]);
+    return repository.create(input);
+  };
+
+  it("resolves a claimed decision once when the content hash matches", async () => {
     const input = decisionInput();
-    await repository.create(input);
+    await createWithConversation(input);
 
     const decidedBy = randomUUID();
-    const resolved = await repository.resolve({
-      handle: input.handle,
-      status: "resolved",
-      decision: { optionId: "approve", payload: { note: "Looks correct" } },
-      decidedBy,
-      contentHash: input.contentHash,
-    });
+    const resolved = await repository.claimInTransaction(
+      { handle: input.handle, contentHash: input.contentHash },
+      (claim) => claim.resolve({ status: "resolved", decision: { optionId: "approve", payload: { note: "Looks correct" } }, decidedBy }),
+    );
 
     expect(resolved).toMatchObject({
       handle: input.handle,
@@ -201,26 +203,32 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     });
     expect(resolved?.decidedAt).toBeInstanceOf(Date);
 
-    await expect(repository.resolve({
-      handle: input.handle,
-      status: "resolved",
-      decision: { optionId: "reject" },
-      decidedBy,
-      contentHash: input.contentHash,
-    })).resolves.toBeNull();
+    const claimedAgain = vi.fn(async () => "claimed");
+    await expect(repository.claimInTransaction({ handle: input.handle, contentHash: input.contentHash }, claimedAgain))
+      .resolves.toBeNull();
+    expect(claimedAgain).not.toHaveBeenCalled();
   });
 
-  it("does not resolve a pending decision when the content hash is stale", async () => {
+  it("resolves nothing when the claimed decision's conversation is gone", async () => {
     const input = decisionInput();
-    await repository.create(input);
+    await createWithConversation(input);
 
-    await expect(repository.resolve({
-      handle: input.handle,
-      status: "resolved",
-      decision: { optionId: "approve" },
-      decidedBy: randomUUID(),
-      contentHash: "sha256:stale",
-    })).resolves.toBeNull();
+    const resolved = await repository.claimInTransaction({ handle: input.handle, contentHash: input.contentHash }, async (claim, db) => {
+      await db.deleteFrom("conversations").where("id", "=", input.conversationId).execute();
+      return claim.resolve({ status: "resolved", decision: { optionId: "approve" }, decidedBy: null });
+    });
+
+    expect(resolved).toBeNull();
+  });
+
+  it("does not claim a pending decision when the content hash is stale", async () => {
+    const input = decisionInput();
+    await createWithConversation(input);
+
+    const claimed = vi.fn(async () => "claimed");
+    await expect(repository.claimInTransaction({ handle: input.handle, contentHash: "sha256:stale" }, claimed))
+      .resolves.toBeNull();
+    expect(claimed).not.toHaveBeenCalled();
 
     const loaded = await repository.loadByHandle(input.handle);
     expect(loaded).toMatchObject({
@@ -254,13 +262,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     const newer = await repository.create(decisionInput({ workspaceId, handle: "newer_pending" }));
     const approved = await repository.create(decisionInput({ workspaceId, handle: "approved_decision" }));
     await repository.create(decisionInput({ workspaceId: otherWorkspaceId, handle: "other_workspace" }));
-    await repository.resolve({
-      handle: approved.handle,
-      status: "resolved",
-      decision: { optionId: "approve" },
-      decidedBy: null,
-      contentHash: approved.contentHash,
-    });
+    await database.execute("UPDATE pending_decisions SET status = 'resolved' WHERE handle = $1", [approved.handle]);
 
     await expect(repository.listPending({ workspaceId })).resolves.toMatchObject([
       { id: newer.id, handle: newer.handle, status: "pending" },

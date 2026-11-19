@@ -937,12 +937,20 @@ tool call pauses on: a pending decision proposal, its content hash, and the
 resume path once an operator decides.
 
 Resolving claims the decision (`PendingDecisionRepository.claimInTransaction`:
-an advisory lock on the handle and a plain read), then hands the claim's
-transaction to the `ResumeRunner` (`chat/services/approvalResumeTurn.ts`). The
-runner calls `writeResolution()` after its model calls and skill dispatches and
-before it persists the turn, so the transaction takes its transaction id only
-to commit and the workspace event log keeps serving events while the routine
-resumes.
+an advisory lock on the handle and a plain read), then runs the `ResumeRunner`
+(`chat/services/approvalResumeTurn.ts`). The runner reaches the claim's
+transaction only through `commit(work)`, which it calls after its model calls
+and skill dispatches. `commit` locks the conversation row, writes the
+resolution and the `approval_decided` activity, then runs the turn's writes in
+the same transaction. So the transaction takes its transaction id only to
+commit, and the workspace event log keeps serving events while the routine
+resumes. Every write that changes a decision's status holds the
+`pending-decision:<handle>` advisory lock.
+
+The claim locks no rows while the routine resumes. An erasure, including the
+inactivity retention sweep, can therefore remove the conversation mid-resume.
+A skill that already acted has acted once, and the resolve returns `404`
+with nothing of the turn written.
 
 Public surfaces and key files:
 

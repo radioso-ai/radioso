@@ -265,11 +265,8 @@ describeIntegration("workspace event log (Postgres)", () => {
     };
 
     const decisions = new PendingDecisionRepository(database.kysely);
-    await decisions.claimInTransaction({ handle: parked.handle, contentHash: parked.contentHash }, async (_record, trx) => {
-      await decisions.resolve(
-        { handle: parked.handle, status: "resolved", decision: { optionId: "approve" }, decidedBy: null, contentHash: parked.contentHash },
-        trx,
-      );
+    await decisions.claimInTransaction({ handle: parked.handle, contentHash: parked.contentHash }, async (claim, trx) => {
+      await claim.resolve({ status: "resolved", decision: { optionId: "approve" }, decidedBy: null });
       return persistence.completeAssistantTurn({
         ...turn(workspaceId, conversation.id),
         transaction: trx,

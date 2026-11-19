@@ -143,27 +143,32 @@ const setup = async (input: {
     createdAt: now,
     updatedAt: now,
   };
-  const writeResolution = vi.fn(async () => undefined);
+  const decisionTransaction = { decision: "transaction" } as never;
+  const commitSpy = vi.fn();
+  const commit = <T,>(work: (db: never) => Promise<T>): Promise<T> => {
+    commitSpy();
+    return work(decisionTransaction);
+  };
   const resume = async () => {
-    await turn.resume({ record, optionId: "approve", decidedBy: "account-1", transaction: {} as never, writeResolution });
+    await turn.resume({ record, optionId: "approve", decidedBy: "account-1", commit });
     const engineTurn: TurnContext = resumeAwaitingDecision.mock.calls[0][0].turn;
     const engineTrace = (completeAssistantTurn.mock.calls[0] as unknown as [{ engineTrace: { stages: Stage[] } }])[0].engineTrace;
     return { engineTurn, engineTrace, readWorkspaceTimeZone };
   };
-  return { resume, forTurn, resumeAwaitingDecision, writeResolution, completeAssistantTurn };
+  return { resume, forTurn, resumeAwaitingDecision, commit: commitSpy, completeAssistantTurn, decisionTransaction };
 };
 
 // The decision's transaction must hold no transaction id while the routine calls the model, or it
 // holds back the workspace event log (spec 957 §6).
 describe("an approval resume's decision", () => {
-  it("is resolved once the routine has walked on from it, and before the resumed reply is written", async () => {
-    const { resume, resumeAwaitingDecision, writeResolution, completeAssistantTurn } = await setup({ workspaceTimeZone: null });
+  it("is committed once the routine has walked on from it, with the resumed reply written on its transaction", async () => {
+    const { resume, resumeAwaitingDecision, commit, completeAssistantTurn, decisionTransaction } = await setup({ workspaceTimeZone: null });
 
     await resume();
 
-    expect(writeResolution).toHaveBeenCalledTimes(1);
-    expect(resumeAwaitingDecision.mock.invocationCallOrder[0]).toBeLessThan(writeResolution.mock.invocationCallOrder[0]);
-    expect(writeResolution.mock.invocationCallOrder[0]).toBeLessThan(completeAssistantTurn.mock.invocationCallOrder[0]);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(resumeAwaitingDecision.mock.invocationCallOrder[0]).toBeLessThan(commit.mock.invocationCallOrder[0]);
+    expect(completeAssistantTurn).toHaveBeenCalledWith(expect.objectContaining({ transaction: decisionTransaction }));
   });
 });
 

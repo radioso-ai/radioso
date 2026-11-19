@@ -3,11 +3,17 @@ import { sql } from "kysely";
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { ConversationRepository } from "./conversationRepository.js";
 
 // A gate is `pending` until an operator picks a choice, then `resolved` (the routine
 // branches on the chosen option id, so the status is bookkeeping, not the decision), or
 // `cancelled` if the conversation ends the gate without a choice. The legacy `approved`/
 // `rejected` values predate multi-way gates and are retained only so historical rows read.
+//
+// The lock rule: every write that changes a decision's status holds the transaction-scoped advisory
+// lock on `pending-decision:<handle>` (`transactionAdvisoryLock`). A resolution takes it through
+// `claimInTransaction`. A writer that cancels or expires decisions takes it with
+// `pg_try_advisory_xact_lock` and skips a decision it cannot take, since a claimant is resolving it.
 export type PendingDecisionStatus = "pending" | "resolved" | "approved" | "rejected" | "cancelled";
 
 export interface PendingDecisionOption {
@@ -59,18 +65,26 @@ export interface PendingDecisionCreateInput {
   deadline?: Date | null;
 }
 
-interface PendingDecisionResolveInput {
-  handle: string;
+interface PendingDecisionResolution {
   status: PendingDecisionStatus;
   decision: unknown;
   decidedBy: string | null;
   decidedByUserId?: string | null;
-  contentHash: string;
 }
 
 interface PendingDecisionClaimInput {
   handle: string;
   contentHash: string;
+}
+
+/** A pending decision claimed for one transaction (see `claimInTransaction`). */
+export interface PendingDecisionClaim {
+  record: PendingDecisionRecord;
+  /**
+   * Writes the decision's resolution on the claim's transaction, which takes its transaction id
+   * here. Null when the decision is gone: its conversation was erased after the claim.
+   */
+  resolve(resolution: PendingDecisionResolution): Promise<PendingDecisionRecord | null>;
 }
 
 interface PendingDecisionListInput {
@@ -257,32 +271,6 @@ export class PendingDecisionRepository {
     return row ? mapRecord(row) : null;
   }
 
-  // `db` lets the caller run the CAS inside a claim's transaction (the turn-commit
-  // fence) so the decision flip, the routine resume, and the assistant-turn persistence
-  // all commit or roll back together. A crash before COMMIT leaves the row `pending`, so
-  // a retried resolve re-runs cleanly (crash-safe; spec 091 review finding P1(b)).
-  async resolve(
-    input: PendingDecisionResolveInput,
-    db: Db = this.db,
-  ): Promise<PendingDecisionRecord | null> {
-    const result = await sql<PendingDecisionRow>`
-      UPDATE pending_decisions
-         SET status = ${input.status},
-             decision = ${toJsonb(input.decision)},
-             decided_by = ${input.decidedBy},
-             decided_by_user_id = ${input.decidedByUserId ?? null},
-             decided_at = ${currentTimestamp()},
-             updated_at = ${currentTimestamp()}
-       WHERE handle = ${input.handle}
-         AND status = 'pending'
-         AND content_hash = ${input.contentHash}
-      RETURNING ${pendingDecisionColumns}
-    `.execute(db);
-
-    const row = result.rows[0];
-    return row ? mapRecord(row) : null;
-  }
-
   /**
    * Claims a pending decision for one transaction and runs `onClaimed` inside it. Resolves null,
    * running nothing, when the decision is no longer pending with this content.
@@ -291,17 +279,18 @@ export class PendingDecisionRepository {
    * plain read. So the transaction does not hold back the workspace event log (spec 957 §6) while
    * `onClaimed` resumes a routine that calls models and skills. A second claimant waits on the lock
    * until the first commits or rolls back, then reads what it left. `onClaimed` writes the
-   * resolution with `resolve(input, db)` before its own first write, which is when the transaction
-   * takes its id. Every resolution goes through a claim, so the lock is what keeps it to one.
+   * resolution with `claim.resolve` before its own first write, which is when the transaction takes
+   * its id. The decision flip, the routine resume and the turn commit or roll back together, so a
+   * crash before COMMIT leaves the decision pending and a retry resolves cleanly. See the lock rule
+   * at the top of this file.
    */
   async claimInTransaction<T>(
     input: PendingDecisionClaimInput,
-    onClaimed: (
-      record: PendingDecisionRecord,
-      db: Db,
-    ) => Promise<T>,
+    onClaimed: (claim: PendingDecisionClaim, db: Db) => Promise<T>,
   ): Promise<T | null> {
-    return this.db.transaction().execute(async (trx) => {
+    // Read committed, whatever the session default: a second claimant's read must see what the
+    // first committed while it waited on the lock, which a repeatable-read snapshot would not.
+    return this.db.transaction().setIsolationLevel("read committed").execute(async (trx) => {
       await transactionAdvisoryLock(`pending-decision:${input.handle}`).execute(trx);
       // Its own statement, after the lock: its snapshot sees what an earlier claimant committed.
       const result = await sql<PendingDecisionRow>`
@@ -315,8 +304,40 @@ export class PendingDecisionRepository {
       if (!row) {
         return null;
       }
-      return onClaimed(mapRecord(row), trx);
+      const record = mapRecord(row);
+      return onClaimed({ record, resolve: (resolution) => this.resolveClaimed(trx, record, resolution) }, trx);
     });
+  }
+
+  /**
+   * The conversation row first, as the conversation lock protocol and erasure take it, then the
+   * decision. Under the claim only erasure can remove the decision, so a miss means it is gone.
+   */
+  private async resolveClaimed(
+    trx: Db,
+    record: PendingDecisionRecord,
+    resolution: PendingDecisionResolution,
+  ): Promise<PendingDecisionRecord | null> {
+    const conversations = ConversationRepository.forExistingConversations(trx);
+    if (!(await conversations.lockForUpdate(record.conversationId, record.workspaceId))) {
+      return null;
+    }
+    const result = await sql<PendingDecisionRow>`
+      UPDATE pending_decisions
+         SET status = ${resolution.status},
+             decision = ${toJsonb(resolution.decision)},
+             decided_by = ${resolution.decidedBy},
+             decided_by_user_id = ${resolution.decidedByUserId ?? null},
+             decided_at = ${currentTimestamp()},
+             updated_at = ${currentTimestamp()}
+       WHERE handle = ${record.handle}
+         AND status = 'pending'
+         AND content_hash = ${record.contentHash}
+      RETURNING ${pendingDecisionColumns}
+    `.execute(trx);
+
+    const row = result.rows[0];
+    return row ? mapRecord(row) : null;
   }
 
   async listPending(input: PendingDecisionListInput): Promise<PendingDecisionRecord[]> {

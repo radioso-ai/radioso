@@ -1,7 +1,7 @@
 ---
 title: "Personal tokens and service accounts"
 description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
-last_updated: 2026-10-25
+last_updated: 2026-11-19
 ---
 
 # Personal tokens and service accounts
@@ -78,6 +78,12 @@ For a deployment with no interruption:
 4. Revoke the previous credential.
 
 Immediate rotation is intended for a credential you must invalidate at once. It revokes the predecessor and returns one replacement with the same expiry setting.
+
+## Event subscriptions in API access
+
+An automation client such as a Zapier trigger or an n8n workflow uses a token to [subscribe a URL to workspace events](/api/workspace-event-subscriptions). **Settings → API access** lists those subscriptions under **Event subscriptions**: the client, the host events go to, the event types, the service account, token or teammate that created each one, its last delivery and outcome, and whether it is active, failing or stopped.
+
+A subscription answers to the credential that created it. Revoke that token, or disable its service account, and the subscription stops at its next event and shows **Stopped: its creator lost access**. One whose receiver has failed for a day shows **Stopped: failing for a day**. Neither starts again by itself: the client subscribes again, and you can delete the stopped one with **Delete**. Deleting an active subscription stops its automation's trigger until the client subscribes again.
 
 ## Agent chat credentials are separate
 

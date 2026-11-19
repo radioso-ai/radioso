@@ -12,6 +12,7 @@ import type { ConversationActivityRecorder } from "../../conversationActivity/co
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
@@ -299,6 +300,9 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly consentMessageWithholding?: MessageWithholdingBinding,
     // Records the pictures a reply's cards show from a skill's result, with the reply.
     private readonly toolImageRows?: ToolImageRowWriter,
+    // Asks, once the turn has committed, for the workspace's event subscriptions to be delivered:
+    // what the turn recorded, and the conversation's start, which its first turn follows.
+    private readonly eventDeliveryWake?: WorkspaceEventDeliveryWake,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
@@ -447,18 +451,21 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     }
     const queue = insertedBackgroundJobs > 0 ? this.backgroundJobs : undefined;
     const consentReport = this.consentReport(input, consentWritten);
-    if (!queue && !consentReport && !drainsAfterCommit) {
+    const eventDelivery = this.eventDeliveryWake;
+    if (!queue && !consentReport && !drainsAfterCommit && !eventDelivery) {
       return result;
     }
     // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
     // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
-    // the drain logs a failed push, and the worker's sweeps run what a lost wake or push left.
+    // the drain logs a failed push, and the worker's sweeps run what a lost wake or push left; a
+    // lost event delivery wake waits for the delivery sweep.
     return {
       ...result,
       afterCommit: () => {
         if (queue) void queue.wake();
         if (drainsAfterCommit) void this.requestActionDrain(input.actions);
         consentReport?.();
+        eventDelivery?.requestDelivery(input.workspaceId);
       },
     };
   }

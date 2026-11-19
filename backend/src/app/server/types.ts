@@ -4,7 +4,7 @@ import type {
   DataSubjectAccess,
   PrivacySettingsService,
 } from "../../modules/privacy/public.js";
-import type { WorkspaceEventLog } from "../../modules/workspaceEventLog/public.js";
+import type { EventSubscriptionService, WorkspaceEventLog } from "../../modules/workspaceEventLog/public.js";
 import type {
   AgentStarterPromptReader,
   AssistantChatService,
@@ -457,6 +457,8 @@ export interface AppDependencies {
   notificationDeliveries: NotificationDeliveryReaderPort;
   /** The workspace event log (#1851): business events listed by a commit-safe cursor. */
   workspaceEventLog: Pick<WorkspaceEventLog, "list">;
+  /** Event subscriptions (#1852): URLs the log's events are pushed to, created and removed by their clients. */
+  workspaceEventSubscriptions: Pick<EventSubscriptionService, "create" | "list" | "get" | "delete">;
   notificationRecipientPolicy: NotificationRecipientPolicyPort;
   notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;

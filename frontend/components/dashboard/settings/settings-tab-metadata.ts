@@ -66,6 +66,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         label: 'Members’ personal tokens',
         summary: 'Revoke any; owners manage their own.',
       },
+      {
+        id: 'event-subscriptions',
+        label: 'Event subscriptions',
+        summary: 'Where Zapier, n8n and your code receive workspace events.',
+      },
     ],
   },
   providers: {

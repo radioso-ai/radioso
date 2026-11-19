@@ -39,7 +39,7 @@ import {
   FacetExtractionService,
   FacetExtractionWorkspaceDrainService,
 } from "../../modules/facets/composition.js";
-import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
+import { ProbeRoutineReader, RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
@@ -100,7 +100,7 @@ import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCop
 import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ConversationIngestService, ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
-import { ProbeRoutineReader } from "../../modules/routines/public.js";
+import { buildWorkspaceEventDelivery } from "../composition/workspaceEventLog.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
@@ -198,18 +198,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     audit: infrastructure.auditService,
   });
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings, copilotProposalTargetTypes: copilotContributions.proposals.targetTypes, logger });
-  const abuseControlComposition = createAbuseControlComposition({
-    env,
-    logger,
-    metricsRegistry: infrastructure.metricsRegistry,
-    postgresRepository: repositories.abuseControlRepository,
-  });
-  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
-    auditService: infrastructure.auditService,
-    env,
-    logger,
-    repositories,
-  });
+  const abuseControlComposition = createAbuseControlComposition({ env, logger, metricsRegistry: infrastructure.metricsRegistry, postgresRepository: repositories.abuseControlRepository });
+  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({ auditService: infrastructure.auditService, env, logger, repositories });
   const { voiceSessions, voiceRecordingErasures, voiceRecordings } = wireVoiceRecordings({
     database: infrastructure.database,
     credentials: workspaceProviderCredentialsService,
@@ -237,6 +227,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     personalCredentialLifecycle,
     lifecycleUnitOfWork: new AccessGrantLifecycleUnitOfWork(infrastructure.database.kysely),
   });
+  // Event subscriptions (#1852): their service, the drain job's handler, and the delivery sweep.
+  const workspaceEventDelivery = buildWorkspaceEventDelivery({ infrastructure, env, queue: backgroundJobs.queue, access, workspaces: repositories.workspaceRepository, logger });
   const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
   const notificationRecipientPolicy = buildNotificationRecipientPolicy({
     database: infrastructure.database,
@@ -1034,6 +1026,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     notificationDeliveries,
+    eventSubscriptions: workspaceEventDelivery.subscriptions,
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -1169,6 +1162,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRecordings.erasureRecoveryTask,
     // Built in: single-use nonces of verified visitor identities are deleted once their window has passed.
     identityNoncePrunePeriodicTask({ nonces: repositories.identityNonceRepository, logger }),
+    workspaceEventDelivery.periodicTask,
     ...composition.periodicTaskRegistrations.map((registration) => ({
       id: registration.id,
       intervalMs: registration.intervalMs,
@@ -1207,6 +1201,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     slackInbound: slackInboundJobs.backgroundJobHandlers,
     voiceRecordingErasure: voiceRecordings.erasureJobHandler,
     visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
+    workspaceEventDelivery: workspaceEventDelivery.jobHandler,
     workspaceStoragePurge: workspaceStoragePurgeHandler({
       storage: documents.documentStorage,
       owners: repositories.documentStorageOwnerRepository,
@@ -1408,6 +1403,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     operatorNoticeDestinations,
     notificationDeliveries,
     workspaceEventLog: infrastructure.workspaceEventLog,
+    workspaceEventSubscriptions: workspaceEventDelivery.subscriptions,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

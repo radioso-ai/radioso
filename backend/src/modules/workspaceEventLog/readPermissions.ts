@@ -20,6 +20,13 @@ const READ_PERMISSIONS: Readonly<Record<WorkspaceEventType, readonly AccountPerm
   "decision.pending": ["workspace.history.read", "workspace.conversation.takeover"],
 };
 
+/**
+ * Everything a caller needs to read `types` from the log: the log's own read permission and what
+ * each type adds. A subscription's creator must hold all of it at every push.
+ */
+export const permissionsToReadEventTypes = (types: readonly WorkspaceEventType[]): AccountPermission[] =>
+  [...new Set<AccountPermission>([WORKSPACE_EVENTS_READ_PERMISSION, ...types.flatMap((type) => READ_PERMISSIONS[type])])];
+
 /** The types a caller may read, resolved once through however the edge checks its permissions. */
 export const resolveReadableEventTypes = async (
   holdsPermission: (permission: AccountPermission) => Promise<boolean>,

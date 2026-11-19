@@ -9,6 +9,7 @@ import type {
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import { CursorExpiredError, decodeLogCursor, encodeLogCursor, laterPosition } from "./cursor.js";
+import { presentWorkspaceEvent as presentEvent } from "./envelope.js";
 
 interface WorkspaceEventPage {
   events: WorkspaceEvent[];
@@ -17,23 +18,6 @@ interface WorkspaceEventPage {
   /** True when more events follow `nextCursor` right now. */
   hasMore: boolean;
 }
-
-/** An event as served: the conversation it names first, then what its type adds. */
-const presentEvent = (event: StoredLogEvent): WorkspaceEvent => ({
-  id: event.id,
-  type: event.type,
-  version: event.version,
-  occurredAt: event.occurredAt.toISOString(),
-  workspaceId: event.workspaceId,
-  data: {
-    conversationId: event.conversationId,
-    agentId: event.agentId,
-    channel: event.channel,
-    callerKind: event.callerKind,
-    visitorId: event.visitorId,
-    ...event.data,
-  },
-});
 
 const positionOf = (event: StoredLogEvent): LogPosition => ({ tx: event.tx, position: event.position });
 

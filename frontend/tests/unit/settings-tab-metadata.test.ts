@@ -25,6 +25,7 @@ describe('settings tab metadata', () => {
       'personal-tokens',
       'service-accounts',
       'member-personal-tokens',
+      'event-subscriptions',
     ])
   })
 

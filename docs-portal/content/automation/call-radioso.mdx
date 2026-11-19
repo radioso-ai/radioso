@@ -16,12 +16,12 @@ This page sets up one credential, proves it works, then walks through the same f
 
 Use a service account rather than your personal token: the workflow keeps working when you leave, and you can disable it on its own.
 
-1. Open **Settings → API access** and create a service account named after the workflow, such as `n8n lead intake`.
+1. As an owner or admin, open **Settings → API access** and create a service account named after the workflow, such as `n8n lead intake`.
 2. Choose the **Member** role. It covers every call on this page. Choose **Admin** only when the workflow needs more than this page uses.
 3. Set an expiry. A service-account credential can last up to 365 days.
 4. Copy the secret when the dialog shows it. It starts with `radioso_svc_v1_` and Radioso never shows it again.
 
-Store the secret in the automation tool's credential store, not in a step's text field where teammates read it. [Personal tokens and service accounts](/api/workspaces-and-tokens) covers rotation and revocation.
+Store the secret in the automation tool's credential store where it has one: n8n credentials and Make's keychain. Zapier keeps the header in the step itself, so limit who can edit that Zap. [Personal tokens and service accounts](/api/workspaces-and-tokens) covers rotation and revocation.
 
 Every request carries the token as a bearer header, plus `Content-Type: application/json` when it has a body:
 
@@ -54,14 +54,14 @@ A `200` response with `documentCount`, `readyDocumentCount` and `conversationCou
   <Tabs.Tab>
     1. Add an action with **Webhooks by Zapier** and choose the **Custom Request** event.
     2. Set **Method** and **URL**. For a call with a body, put the JSON in **Data**.
-    3. In **Headers**, add `Authorization` with the value `Bearer radioso_svc_v1_…` and `Content-Type` with the value `application/json`.
+    3. In **Headers**, add `Authorization` with the value `Bearer radioso_svc_v1_…` (the token sits in the step) and `Content-Type` with the value `application/json`.
 
     The response fields appear in later steps as the step's output, so map `answer` from there.
   </Tabs.Tab>
   <Tabs.Tab>
     1. Add the **HTTP** app's **Make a request** module.
-    2. Set **URL** and **Method**. Under **Headers**, add `Authorization` with `Bearer radioso_svc_v1_…`.
-    3. For a call with a body, set **Body type** to **Raw**, **Content type** to **JSON (application/json)**, and put the JSON in **Request content**. Set **Parse response** to **Yes**.
+    2. Set **URL** and **Method**. Set **Authentication type** to **API key** and create a keychain entry whose key is `Bearer radioso_svc_v1_…`, with the parameter name `Authorization`, sent in the header.
+    3. For a call with a body, set **Body content type** to **application/JSON**, **Body input method** to **JSON string**, and put the JSON in **Body content**. Set **Parse response** to **Yes**.
 
     With **Parse response** on, later modules pick `answer` and the other fields from a list.
   </Tabs.Tab>
@@ -94,7 +94,7 @@ Leave `agentId` out and the workspace's default agent answers. The response carr
 }
 ```
 
-Map `answer` into the next step, such as a reply in your helpdesk. To continue the same conversation, send the returned `conversationId` with the next message. `userExpectedLocale` and `userTimeZone` are optional and make "today" and the reply language follow the person you are answering for. Keep `stream` at its default `false`: a workflow step waits for one complete response, not a stream.
+Map `answer` into the next step, such as a reply in your helpdesk. When a person has taken over the conversation, `answer` is the waiting message and the response carries `ownership: { "state": "human_owned", "suppressed": true }`. Branch on `ownership.suppressed` so the workflow does not send the waiting message on as an answer. To continue the same conversation, send the returned `conversationId` with the next message. `userExpectedLocale` and `userTimeZone` are optional and make "today" and the reply language follow the person you are answering for. Keep `stream` at its default `false`: a workflow step waits for one complete response, not a stream.
 
 The permission this route needs is `workspace.chat.use`, which both Member and Admin service accounts hold.
 
@@ -130,7 +130,7 @@ When you want a written answer instead of passages, `POST /api/v1/retrieval/answ
 }
 ```
 
-`title` and `content` are required. `externalDocumentId` is your own identifier for the document; set it to the record id from the source system so you can find the document again. `metadata` takes strings, numbers, booleans and nulls.
+`title` and `content` are required. `externalDocumentId` is your own identifier for the document; set it to the record id from the source system. Posting the same `externalDocumentId` again updates that document in place: changed content becomes a new revision, and unchanged content is `ready` immediately. That is what makes a "page updated" workflow work. `metadata` takes strings, numbers, booleans and nulls.
 
 The response is `202` with `documentId` and `status`. Processing continues in the background, so the document is searchable a short while later. [Documents and search](/api/documents-and-search) shows how to list documents and read their processing state.
 

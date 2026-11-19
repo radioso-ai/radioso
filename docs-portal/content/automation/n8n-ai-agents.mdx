@@ -15,13 +15,13 @@ This works through the [MCP server](/guides/mcp-server): n8n's **MCP Client Tool
 <Steps>
 ### Issue an MCP credential
 
-Open the Radioso agent's **Channels → MCP** card and choose **Connect a client**. Pick **Other MCP clients**, name the connection `n8n`, and copy the secret. It starts with `radioso_mcp_v1_` and is shown once. The card also shows the server URL, which ends in `/mcp`.
+Open the Radioso agent's **Channels → MCP** card and choose **Connect a client**. Pick **Other MCP client**, name the connection `n8n`, and copy the one-time secret. It starts with `radioso_`. The card also shows the server URL, which ends in `/mcp`.
 
 This credential is bound to that one agent. It is not a service-account token: a service-account token gets `401` from the MCP server. [MCP server](/guides/mcp-server#connect-a-client) covers expiry, rotation and revocation.
 
 ### Save the secret in n8n
 
-In n8n, create a credential of type **Header Auth** with **Name** `Authorization` and **Value** `Bearer radioso_mcp_v1_…`. n8n's MCP Client Tool node can also use its **Bearer Auth** option; either sends the same header.
+In n8n, create a credential of type **Header Auth** with **Name** `Authorization` and **Value** `Bearer radioso_…` followed by the secret. n8n's MCP Client Tool node can also use its **Bearer Auth** option; either sends the same header.
 
 ### Add the MCP Client Tool node
 
@@ -47,11 +47,15 @@ reply on its answer. If it says it cannot answer, say so and escalate.
 
 The connection lists these tools:
 
-- **`ask_agent`** sends one message to the Radioso agent and returns its answer with a reply envelope: whether the question was answered, who owns the conversation, and the state of any routine. It continues the same conversation across calls, so the Radioso agent remembers earlier turns of a thread.
+- **`ask_agent`** sends one message to the Radioso agent and returns its answer with a reply envelope: whether the question was answered, who owns the conversation, and the state of any routine. It continues one conversation per credential: every call the credential makes, from any workflow run, lands in the same Radioso conversation for up to 12 hours. The Radioso agent remembers earlier turns, and it cannot tell your customers apart.
 - **One tool per exposed routine**, with typed inputs built from the routine's slots. Expose a routine in the routine editor and publish the agent; the tool appears in the next session. Calling it starts the routine with those values already filled.
 - **`radioso_docs` and `radioso_doc_page`**, which read Radioso's own documentation. They help when you are building the workflow with an AI assistant, and you can leave them out of **Tools to Include** for a production agent.
 
-[Connect a calling agent](/guides/agent-converse) explains the reply envelope, routine tools and handoffs in full. When a person has taken over a conversation, the envelope says so, and the n8n agent should stop answering for it.
+[Connect a calling agent](/guides/agent-converse) explains the reply envelope, routine tools and handoffs in full. When a person has taken over the conversation, every call returns the waiting message with `ownership.suppressed` set to true, until the conversation is handed back.
+
+## One credential is one conversation
+
+Because a credential carries a single ongoing conversation, MCP suits a shared, internal agent: a team assistant, or a workflow that consults the Radioso agent about your own product. A flow that serves each customer or ticket separately would mix their messages into one conversation. Send per-customer or per-thread work to `POST /api/v1/assistant/chat` instead, with one `conversationId` per thread, as in [Call Radioso from n8n, Zapier and Make](/automation/call-radioso#ask-an-agent).
 
 ## When to use REST instead
 
@@ -61,7 +65,7 @@ MCP suits a model choosing among tools. A fixed step in a workflow, such as "sea
 
 - **The node reports `401`.** The secret is wrong, expired, revoked, or a service-account token. Issue an MCP credential from the agent's **Channels → MCP** card.
 - **The card says MCP is not enabled on this deployment.** A self-hosted Radioso needs `RADIOSO_MCP_PUBLIC_URL` set on the frontend. [MCP server](/guides/mcp-server#deployment-enablement) lists the steps.
-- **A routine tool is missing.** The session opened before the routine was exposed and published. Run the n8n workflow again to open a new session.
+- **A routine tool is missing.** The connection's session was opened before the routine was exposed and published, and it keeps its tool list until it lapses (up to 12 hours). Rotate the credential from the **Channels → MCP** card and update the n8n credential with the new secret, or wait for the session to lapse. Running the workflow again does not refresh it.
 - **The connection fails to open.** The endpoint must be the full `/mcp` URL. A transport set to SSE against an HTTP endpoint fails, so keep **HTTP Streamable**.
 - **The n8n agent never calls the tool.** The system message does not say when the Radioso agent applies. Name the questions it should handle.
 

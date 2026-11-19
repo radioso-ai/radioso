@@ -6,7 +6,7 @@ last_updated: 2026-11-19
 
 # Connect Radioso to your automations
 
-Your team already runs work in n8n, Zapier or Make: a new lead lands in a CRM, a ticket changes state, a form comes in. Radioso connects to those tools in three ways, and each one works with the product as it is, with nothing extra to install.
+Your team already runs work in n8n, Zapier or Make: a new lead lands in a CRM, a ticket changes state, a form comes in. Radioso connects to those tools in three ways, and each one is a route you can set up today from the dashboard and your automation tool, with no code to host.
 
 | You want to | Direction | Use | Page |
 |---|---|---|---|
@@ -36,9 +36,9 @@ Radioso keeps credentials for different jobs apart, so an automation usually hol
 | Credential | Looks like | Made in | Reaches |
 |---|---|---|---|
 | Service-account token | `radioso_svc_v1_…` | **Settings → API access** | Workspace routes: assistant chat, retrieval, documents, history |
-| Agent REST credential | one-time secret | The agent's **Channels → API** card | `POST /api/v1/agents/{agentId}/chat` for that one agent |
-| Agent MCP credential | `radioso_mcp_v1_…` | The agent's **Channels → MCP** card | The MCP server, for that one agent |
-| Webhook destination secret | one-time secret | **Settings → Workspace → Webhook destinations** | Verifies the signature on requests Radioso sends |
+| Agent REST credential | starts with `radioso_`, one-time secret | The agent's **Channels → API** card | `POST /api/v1/agents/{agentId}/chat` for that one agent |
+| Agent MCP credential | starts with `radioso_`, one-time secret | The agent's **Channels → MCP** card | The MCP server, for that one agent |
+| Webhook destination secret | one-time secret, shown at creation | **Settings → Workspace → Webhook destinations** | Verifies the signature on requests Radioso sends |
 
 [Personal tokens and service accounts](/api/workspaces-and-tokens) covers the first row in full, and [Authentication](/guides/authentication) compares all the access modes. Give each automation its own service account, so you can disable one workflow's access without touching another's.
 

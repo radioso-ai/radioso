@@ -17,21 +17,23 @@ A routine step can call the skill, and so can the agent itself in the middle of 
 
 Create the trigger first, because Radioso needs its URL.
 
-- **Zapier:** start a Zap with **Webhooks by Zapier** and the **Catch Hook** event. Copy the **Custom Webhook URL**, which begins `https://hooks.zapier.com/hooks/catch/`.
-- **n8n:** add a **Webhook** node, set **HTTP Method** to `POST`, and copy the **Production URL**. The Test URL listens only while you click **Listen for test event**, so a skill pointed at it fails the rest of the time. Activate the workflow before you rely on the Production URL.
+- **Zapier:** start a Zap with **Webhooks by Zapier** and the **Catch Hook** event. To verify signatures, choose **Catch Raw Hook** instead (see [Verify the signature](#verify-the-signature)). Copy the **Custom Webhook URL**, which begins `https://hooks.zapier.com/hooks/catch/`.
+- **n8n:** add a **Webhook** node, set **HTTP Method** to `POST`, and copy the **Production URL**. The Test URL listens only while you click **Listen for test event**, so a skill pointed at it fails the rest of the time. Publish the workflow (called Activate in n8n versions before 2.0) before you rely on the Production URL; it goes live on publish, and later edits need a republish.
 - **Make:** add the **Webhooks** module's **Custom webhook** trigger, create a webhook, and copy its address. A Make scenario receives requests only while it is switched on.
 
 ### Add a webhook destination
 
 Open **Settings → Workspace → Webhook destinations** and choose **New destination**. Give it a name such as `crm-leads` and paste the URL. The URL must be public HTTPS.
 
-Radioso shows the signing secret once, so copy it now. It signs every request to this destination and is how your workflow proves a request came from Radioso. `POST /api/v1/settings/webhook-destinations/{id}/rotate-secret` issues a replacement. The API equivalent of this step is `POST /api/v1/settings/webhook-destinations`; [Settings](/api/settings#webhook-destinations) lists the rest.
+Radioso shows the signing secret once, so copy it now. It signs every request to this destination and is how your workflow proves a request came from Radioso. Opening the destination later lets you rotate the secret. The destination routes under `/api/v1/settings/webhook-destinations` need a dashboard sign-in, so a service-account token cannot call them; [Settings](/api/settings#webhook-destinations) lists them.
 
 ### Add a webhook skill to the agent
 
-Open the agent's **Skills** list, choose **Add new skill**, and pick the **Webhook call** tile. The tile is available once the workspace has a destination. Name the skill, such as `send_lead`, and choose the destination.
+Open the agent's **Skills** list, choose **Add new skill**, and pick the **Webhook Call** tile. The tile is available once the workspace has a destination. Name the skill, such as `send_lead`, and choose the destination.
 
-The form exposes a payload to routines by default. Under **Advanced**, edit the raw config to name the fields the skill sends and to set fixed values:
+The form starts with one required `payload` row set to **Ask at runtime**. It reads a routine variable named `payload` that your routine does not have, so the skill would end as `missing_input` and nothing would be sent. Set the `payload` row to **Don't include**.
+
+Then open **Advanced** and write the fields you want in the **Advanced config JSON** box:
 
 ```json
 {
@@ -43,13 +45,13 @@ The form exposes a payload to routines by default. Under **Advanced**, edit the 
 }
 ```
 
-An exposed field is filled from what the person said, and a bound field always carries the value you set. A field is one or the other, never both.
+An exposed field is filled from the routine variable with the same name, so this skill reads the routine's `name` and `email` variables. Add `"slotBinding": "contact_email"` to a field to read a differently named variable. A bound field always carries the value you set. A field is one or the other, never both.
 
 ### Use the skill
 
 In a routine, add a tool step that names the skill. The routine fills each exposed field from the variables it collected and branches on the outcome. The skill can also be left selectable by the agent, which then calls it when a conversation calls for it.
 
-Test the whole path in the agent's test chat before you publish. The trigger in your automation tool shows the request, and the destination's `lastDeliveryStatus` reads `success`, `failed` or `skipped`.
+The agent's test chat keeps skills that reach outside systems switched off by default, so a test sends nothing. Turn on **Run skills for real** in the test chat's actions menu, run the routine, and check the request in your automation tool. The destination's **Last delivery** reads `success`, `failed` or `skipped`.
 </Steps>
 
 ## What arrives
@@ -86,7 +88,7 @@ Four headers come with it:
 | `X-Radioso-Timestamp` | Unix seconds when Radioso signed the request. |
 | `X-Radioso-Signature` | `sha256=` followed by the hex HMAC-SHA256 of `{timestamp}.{body}`, keyed with the destination's signing secret. |
 
-The skill reads only the HTTP status. Radioso treats any `2xx` as delivered and ignores the response body, so a workflow cannot hand data back to the agent through this path. A non-`2xx` status, a timeout of about ten seconds, or a redirect to a different host marks the call `failed`, and the routine branches on that outcome. Let the trigger answer straight away and do the slow work after it. The n8n Webhook node does so with its default **Respond** setting of **Immediately**.
+The skill reads only the HTTP status. Radioso treats any `2xx` as delivered and ignores the response body, so a workflow cannot hand data back to the agent through this path. A non-`2xx` status, a timeout of about ten seconds, or a redirect that changes scheme, host or port marks the call `failed`. Radioso follows up to three redirects on the same origin, and the routine branches on that outcome. Let the trigger answer straight away and do the slow work after it. The n8n Webhook node does so with its default **Respond** setting of **Immediately**.
 
 The four outcomes a routine can branch on are `delivered`, `missing_input` (a required field was never collected), `destination_not_found` and `failed`.
 
@@ -123,21 +125,49 @@ export const isFromRadioso = (rawBody, headers, secret) => {
 
 ### In n8n
 
-Open the Webhook node's **Options**, add **Raw Body**, and turn it on. The body then arrives as binary data, with the headers in `$json.headers`. Add a **Code** node after it that reads the raw bytes with `await this.helpers.getBinaryDataBuffer(0, 'data')`, runs the check above, and throws when it fails, which stops the workflow. Store the signing secret in n8n's credentials or an environment variable rather than in the node. The Code node needs the `crypto` module; a self-hosted n8n allows it with `NODE_FUNCTION_ALLOW_BUILTIN=crypto`.
+Open the Webhook node's **Options**, add **Raw Body**, and turn it on. The body then arrives as binary data, with the headers in `$json.headers`. Add a **Code** node after it that reads the raw bytes with `await this.helpers.getBinaryDataBuffer(0, 'data')`, runs the check above, and throws when it fails, which stops the workflow. A Code node cannot read n8n credentials, and n8n 2.0 blocks environment access in nodes by default, so keep the signing secret in an n8n Variable and read it as `$vars.RADIOSO_SIGNING_SECRET`, or pass it in from an earlier node. The Code node needs the `crypto` module. n8n Cloud allows it; on a self-hosted n8n, set `NODE_FUNCTION_ALLOW_BUILTIN=crypto` on the task runner when runners are external, or on n8n itself otherwise.
 
-### In Zapier and Make
+### In Zapier
 
-Zapier's Catch Hook and Make's custom webhook hand your steps parsed fields rather than the exact bytes Radioso signed, so the recipe cannot run inside them. Two things protect the workflow instead:
+Use the **Catch Raw Hook** event instead of **Catch Hook**. It passes your steps the raw request body and the request headers. Add a **Code by Zapier** step (JavaScript) and map the raw body, the `X-Radioso-Timestamp` header, the `X-Radioso-Signature` header and your signing secret into its **Input Data**. The secret belongs in that step input, not in the code.
 
-- Treat the hook URL as a secret. Zapier and Make generate long random addresses, so keep them out of screenshots, tickets and shared docs, and replace the destination's URL when one leaks.
-- Use a verifying receiver in front when the workflow does something sensitive. Point the destination at a small service you run, such as a serverless function, that verifies the signature and then forwards the verified `data` to the Zapier or Make hook.
+```js
+const crypto = require("crypto");
+
+const expected = crypto
+  .createHmac("sha256", inputData.secret)
+  .update(`${inputData.timestamp}.${inputData.rawBody}`)
+  .digest("hex");
+const received = (inputData.signature || "").replace("sha256=", "");
+const fresh = Math.abs(Date.now() / 1000 - Number(inputData.timestamp)) < 300;
+const verified = fresh && received === expected;
+
+if (!verified) throw new Error("Signature check failed");
+return { data: JSON.parse(inputData.rawBody).data };
+```
+
+The step stops the Zap when the check fails. Later steps read the fields from the parsed `data` the step returns.
+
+### In Make
+
+Create the custom webhook with **JSON pass-through** on, so the module keeps the body as text, and turn on **Get request headers**. Put a filter on the route after it that keeps only requests whose computed digest matches the header:
+
+```text
+sha256(timestamp + "." + body; hex; secret) = replace(signature; "sha256="; "")
+```
+
+Here `body` is the module's raw body text, `timestamp` and `signature` are the `X-Radioso-Timestamp` and `X-Radioso-Signature` headers, and `secret` is the destination's signing secret. Keep the secret in a Make data store or scenario variable that you control. A request that fails the filter stops there.
+
+### A verifying service in front
+
+Point the destination at a small service you run, such as a serverless function, that verifies the signature and then forwards the verified `data` to the Zapier, Make or n8n hook. This also keeps one verifier in code you can test, and it lets you treat the hook URL as a secret between the service and your automation tool.
 
 ## Common failure modes
 
 - **The destination shows `failed`.** The trigger answered with a non-`2xx` status or took longer than about ten seconds. Open the trigger's own log in n8n, Zapier or Make, which names the status it returned.
-- **The destination shows `skipped`.** A required field was never collected, so Radioso sent nothing. The routine outcome `missing_input` names the field.
+- **The destination shows `skipped`.** Radioso sent nothing: a required field was never collected (`missing_input`), or the destination no longer exists (`destination_not_found`). A `payload` row left on **Ask at runtime** produces the first.
 - **The URL is rejected when you save it.** Destinations take public HTTPS addresses. A private network address, a `localhost` URL, or plain `http://` is refused.
-- **The n8n workflow never starts.** The destination points at the Webhook node's Test URL, or the workflow is not active. Use the Production URL on an active workflow.
+- **The n8n workflow never starts.** The destination points at the Webhook node's Test URL, or the workflow is not published. Use the Production URL on a published workflow.
 - **The same lead appears twice.** A call was repeated. Store `Idempotency-Key` and skip a value you have already handled.
 - **Every signature check fails.** The check ran over parsed JSON instead of the raw body, used a stale secret after a rotation, or joined the timestamp and body without the dot.
 

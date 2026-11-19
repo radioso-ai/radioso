@@ -3006,20 +3006,34 @@ describe("whole-window counts and comparisons", () => {
     };
   };
 
-  it("counts the 30 days before the window from text-free outcomes, before any billing, and logs the read once", async () => {
+  it("counts the 30 days before the window from text-free outcomes, beside the census, and logs the read once", async () => {
     const periodReads: Array<{ workspaceId: string; analysisStart: Date; analysisEnd: Date; signal?: AbortSignal }> = [];
     const logs: Array<{ context: Record<string, unknown>; message: string }> = [];
     const stored: AudiencePulseStoredReport[] = [];
     const controller = new AbortController();
+    let previousReadStarted!: () => void;
+    const previousReadStart = new Promise<void>((resolve) => { previousReadStarted = resolve; });
     const { service, calls } = createService({
       historySource: historySourceWith({
         async read() { return inWindowHistory(); },
         async readPeriodOutcomes(input) {
           periodReads.push(input);
           calls.lifecycle.push("previous-period");
+          previousReadStarted();
           return previousWindowOutcomes();
         },
       }),
+      // The census finishes only once the previous-period read has started: run one after the
+      // other, the refresh would never complete.
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => {
+            calls.lifecycle.push("census");
+            await previousReadStart;
+            return censusResult();
+          },
+        } as unknown as CensusService),
+      },
       snapshotStore: {
         async find() { return null; },
         async replace(input) { stored.push(input.report); return { ...input, revision: "revision-1" }; },
@@ -3036,8 +3050,8 @@ describe("whole-window counts and comparisons", () => {
       analysisEnd: new Date("2026-07-02T00:00:00.000Z"),
       signal: controller.signal,
     }]);
-    expect(calls.lifecycle.indexOf("previous-period")).toBeLessThan(calls.lifecycle.indexOf("reserve"));
-    expect(calls.lifecycle.indexOf("previous-period")).toBeLessThan(calls.lifecycle.indexOf("census"));
+    expect(calls.lifecycle.indexOf("reserve")).toBeLessThan(calls.lifecycle.indexOf("previous-period"));
+    expect(calls.lifecycle.indexOf("reserve")).toBeLessThan(calls.lifecycle.indexOf("census"));
     const previousPeriod = {
       period: { start: "2026-06-02T00:00:00.000Z", end: "2026-07-02T00:00:00.000Z" },
       questionCount: 7,
@@ -3101,7 +3115,6 @@ describe("whole-window counts and comparisons", () => {
 
   it.each([
     ["throws", () => { throw new Error("statement timeout"); }],
-    ["is aborted", () => { throw new DOMException("The operation was aborted.", "AbortError"); }],
   ])("completes and bills the refresh as usual, with no previous period, when that read %s", async (_label, failure) => {
     const baseline = createService({ historySource: historySourceWith({ async read() { return inWindowHistory(); } }) });
     await baseline.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
@@ -3164,6 +3177,47 @@ describe("whole-window counts and comparisons", () => {
       dailyVolume: result.report.dailyVolume,
       channels: result.report.channels,
     });
+  });
+
+  it("stops a cancelled refresh when the previous-period read is aborted, with no failure warning", async () => {
+    const warnings: string[] = [];
+    const controller = new AbortController();
+    const { service, calls } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() {
+          controller.abort();
+          throw new DOMException("The operation was aborted.", "AbortError");
+        },
+      }),
+      logger: { info: () => undefined, warn: (_context, message) => warnings.push(message) },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, signal: controller.signal });
+
+    expect(result).toEqual({ kind: "unavailable", reason: "cancelled" });
+    expect(calls.replace).toBe(0);
+    expect(warnings).not.toContain("audience_pulse_previous_period_read_failed");
+  });
+
+  it("does no previous-period work when usage capacity cannot be reserved", async () => {
+    let periodReads = 0;
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { periodReads += 1; return previousWindowOutcomes(); },
+      }),
+      usageLimitPolicy: {
+        async reserveAnswer() { throw Object.assign(new Error("usage limit reached"), { code: "usage_limit_exceeded" }); },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "usage_limited" });
+    expect(periodReads).toBe(0);
   });
 
   it("names no compared snapshot when the prior one gave no topic a previous count", async () => {

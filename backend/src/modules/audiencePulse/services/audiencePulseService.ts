@@ -437,14 +437,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "preparing" };
       }
 
-      // Depends on neither the census nor a reservation, and never fails the refresh.
-      const previousPeriod = await this.readPreviousPeriod({
-        workspaceId: input.workspaceId,
-        currentStart: analysisStart,
-        now: analysisEnd,
-        signal: input.signal,
-      });
-
       try {
         reservation = await this.deps.usageLimitPolicy.reserveAnswer({
           accountId: input.accountId,
@@ -466,18 +458,29 @@ export class AudiencePulseService implements AudiencePulsePort {
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
       // call writes a word of narrative about them.
+      // The previous-period read runs beside it: it needs no census, turns a failure into a null
+      // comparison, and rejects only when the refresh is cancelled.
       const census = this.deps.censusServiceFactory.create({ workspaceId: input.workspaceId });
       let censusResult: CensusRunResult;
+      let previousPeriod: AudiencePulsePreviousPeriod | null;
       try {
-        censusResult = await census.run({
-          workspaceId: input.workspaceId,
-          windowStart: analysisStart,
-          windowEnd: analysisEnd,
-          signal: input.signal,
-          onModelCallIssued: () => {
-            modelCallsIssued += 1;
-          },
-        });
+        [censusResult, previousPeriod] = await Promise.all([
+          census.run({
+            workspaceId: input.workspaceId,
+            windowStart: analysisStart,
+            windowEnd: analysisEnd,
+            signal: input.signal,
+            onModelCallIssued: () => {
+              modelCallsIssued += 1;
+            },
+          }),
+          this.readPreviousPeriod({
+            workspaceId: input.workspaceId,
+            currentStart: analysisStart,
+            now: analysisEnd,
+            signal: input.signal,
+          }),
+        ]);
       } catch (error) {
         if (errorStatusCode(error) !== undefined) throw error;
         const reason = unavailableReason(error);
@@ -781,8 +784,8 @@ export class AudiencePulseService implements AudiencePulsePort {
    * The 30 days before the report's window, counted with the same rule as the window itself from
    * the history source's text-free outcomes. Null when part of those days is out of sight (the
    * workspace is younger, or retention is sweeping them) and when the read fails: the comparison is
-   * a nicety, so it never fails or bills a refresh. The read roughly doubles a refresh's
-   * per-question reads, so its cost is logged once.
+   * a nicety, so a failure never fails or bills a refresh. An abort rethrows, so a cancelled
+   * refresh stops. The read roughly doubles a refresh's per-question reads, so its cost is logged.
    */
   private async readPreviousPeriod(input: {
     workspaceId: string;
@@ -810,6 +813,8 @@ export class AudiencePulseService implements AudiencePulsePort {
       }, "audience_pulse_previous_period_read");
       return audiencePulsePreviousPeriod({ period, totals });
     } catch (error) {
+      // A cancelled refresh stops; only a genuine read failure becomes a missing comparison.
+      if (isAbortError(error) || input.signal?.aborted) throw error;
       this.deps.logger?.warn?.({
         workspaceId: input.workspaceId,
         durationMs: durationMs(),

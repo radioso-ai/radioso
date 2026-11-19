@@ -293,11 +293,12 @@ when the workspace can see all 30 days: a workspace created during them, or
 one whose conversation retention reaches past their start (a workspace
 keeping 45 days has swept half of days 31 to 60), gets a null
 `previousPeriod`, since counting what survived would read as growth. The read
-runs before usage is reserved, roughly doubles a refresh's per-question reads,
+starts once usage is reserved and runs beside the census, so a refresh refused
+for usage does none of it. It roughly doubles a refresh's per-question reads
 and logs `audience_pulse_previous_period_read` once with the question count
-and duration. A failed or cancelled read leaves `previousPeriod` null, logs
+and duration. A failed read leaves `previousPeriod` null, logs
 `audience_pulse_previous_period_read_failed`, and the refresh completes and
-bills as it would have. When those 30 days had no eligible question,
+bills as it would have; a cancelled refresh stops like any other. When those 30 days had no eligible question,
 `previousPeriod` is null too. `previousGeneratedAt` names the saved report each
 topic's `previousMemberCount` and `previousShare` come from, and is null when
 that report gave no topic a previous count. Reports saved before these fields

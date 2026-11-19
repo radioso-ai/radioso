@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Radioso API
-  version: 0.1.0
+  version: "1"
   description: Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token.
 servers:
   - url: https://api.radioso.ai

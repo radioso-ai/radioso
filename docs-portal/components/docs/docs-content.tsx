@@ -39,7 +39,7 @@ console.log(response.answer)`,
   },
 ]
 
-export function DocsContent() {
+export function DocsContent({ releaseLine }: { releaseLine: string }) {
   const quickstartCards = [
     {
       href: '/operators/start-here',
@@ -63,9 +63,7 @@ export function DocsContent() {
       <section id="introduction" className="mb-14">
         <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
-          <span className="font-medium text-foreground">v0.1</span>
-          <span className="text-muted-foreground/70">·</span>
-          <span>Early preview</span>
+          <span className="font-medium text-foreground">{releaseLine}</span>
         </div>
         <h1 className="sr-only">Radioso documentation</h1>
         {/* The lockup is a fixed-colour mark, so it needs a per-scheme asset

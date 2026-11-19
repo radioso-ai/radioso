@@ -55,7 +55,7 @@ const errorFromResponse = (z, response) => {
  * Sends one authenticated request. `bundle.authData` carries `instance_url` and `api_token`.
  * A non-2xx answer throws; a 404 can be tolerated by the caller with `allowNotFound`.
  */
-export const radiosoRequest = async (z, bundle, { method = 'GET', path, params, body, allowNotFound = false }) => {
+export const radiosoRequest = async (z, bundle, { method = 'GET', path, params, body, allowNotFound = false, allowEmptyBody = false }) => {
   if (!isHttpsInstanceUrl(bundle.authData.instance_url)) {
     throw new z.errors.Error(
       'Instance URL must start with https://, for example https://api.radioso.ai.',
@@ -77,7 +77,7 @@ export const radiosoRequest = async (z, bundle, { method = 'GET', path, params, 
   })
   if (allowNotFound && response.status === 404) return null
   if (response.status >= 400) throw errorFromResponse(z, response)
-  if (response.data === undefined) {
+  if (response.data === undefined && !allowEmptyBody) {
     throw new z.errors.Error(
       'Radioso did not answer with JSON. Set Instance URL to the URL your API answers on, for example https://api.radioso.ai or https://app.example.com/backend.',
       'invalid_instance_url',

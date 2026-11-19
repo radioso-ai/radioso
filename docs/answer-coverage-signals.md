@@ -1,7 +1,7 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-10-18
+last_updated: 2026-11-19
 ---
 
 # Answer Coverage Signals
@@ -32,20 +32,20 @@ retrieval answer path actually declined the request.
 
 ## Read Audience Pulse
 
-Each topic row answers two questions: what visitors ask, and where the agent falls short. The topic's title sits on the first line and its counts on the second:
+Audience Pulse splits every visitor question in the last 30 days into five parts, and the same split appears for the whole window under the headline tiles and for each topic when you expand its row:
 
 ```text
-Book, ebook, and audiobook details and access
-19 questions · 2 unanswered · 2 partly answered
+Answered 10,090 · 71%   No answer in your content 1,279 · 9%   Partly answered or unclear 1,563 · 11%
+Outside what the agent covers 853 · 6%   Not assessed 427 · 3%
 ```
 
-That row says 19 questions landed in the topic, 2 went unanswered, and 2 got only part of an answer. A topic where nothing went unanswered or partly answered shows only its question count.
+**No answer in your content** is the part you can fix by writing: the agent fell short because your documents had nothing, or too little, to answer from. **Partly answered or unclear** is the rest of the partly answered, unanswered, and needs-clarification questions. **Outside what the agent covers** is a question the agent declined on purpose: its assessment is partly answered or unanswered with the intentional scope boundary reason, so the agent did what you authored. A question with no assessment record reads from its answer instead: a grounded answer counts as answered, and a retrieval answer that found partial or no support in your documents counts as partly answered or unanswered. **Not assessed** covers the rest: an assessment that was unavailable, failed, or still pending, and an unassessed answer that was neither. When a saved report carries no answer coverage at all, its counts come from retrieval grounding.
 
-Expand a topic for one line of answer counts across all its questions, such as **11 answered · 2 unanswered · 2 partly answered · 1 out of scope · 3 not assessed** for the 19 above. The collapsed row repeats the unanswered and partly answered numbers from this line, so the two always agree. The counts and the example questions under them use the turn inspector's labels: **Answered**, **Unanswered**, **Partly answered**, **Needs clarification**, **Out of scope**, and **Not assessed**.
+The tiles compare the window with the 30 days before it: question and conversation counts in percent, the answered and no-answer rates in points. A comparison needs at least 50 questions in each window, and a topic row under 50 questions shows its answered count as **32 of 38** rather than a percentage, with no comparison or trend. The **vs** column compares each topic's share of all questions with the report it was last seen in, and marks a topic that appeared since as **New**.
 
-**Out of scope** is a question the agent declined on purpose: its assessment is partly answered or unanswered with the intentional scope boundary reason. The agent did what you authored, so the decline is one bucket on the counts line and stays off the collapsed row, which keeps that row to the questions where the agent fell short. A question with no assessment record reads from its answer instead: a grounded answer counts as answered, and a retrieval answer that found partial or no support in your documents counts as partly answered or unanswered. **Not assessed** covers the rest: an assessment that was unavailable, failed, or still pending, and an unassessed answer that was neither. When a saved report carries no answer coverage at all, its counts come from retrieval grounding: grounded answers count as answered, degraded ones as partly answered, unsupported ones as unanswered, and the rest as not assessed. That report's examples carry no label, because none of them has a verdict of its own.
+Expand a topic for up to five of its questions, each with the turn inspector's label: **Answered**, **Unanswered**, **Partly answered**, **Needs clarification**, **Out of scope**, or **Not assessed**. A question asked more than once shows its count, such as **asked 3×**, and each one opens its conversation in Activity.
 
-The examples are a sample of up to twelve of the topic's questions, and their heading says how many are shown, such as **Examples · 3 of 9 questions**. The sample takes the topic's unanswered and partly answered questions first and fills any remaining places from the rest of the topic. A question asked more than once appears once for each label it earned, with its count, such as **asked 3×**. Each example opens its conversation in Activity. When the topic has a content opportunity, **Start draft** opens the document composer seeded with its questions. Unresolved request text and routine reaction details stay in authorized turn diagnostics.
+**Content to write** lists the topics with questions that had no answer in your content, the most first. **Draft** opens the document composer seeded with the questions to cover; once the document is saved, the row says when it was added. **Not for us** takes a topic off the list without changing any count, and **Restore** brings it back. Unresolved request text and routine reaction details stay in authorized turn diagnostics.
 
 ## Shadow assessor
 

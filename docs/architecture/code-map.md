@@ -2584,10 +2584,11 @@ Public surfaces and contracts:
 - `backend/src/modules/audiencePulse/composition.ts`
 - `backend/src/modules/audiencePulse/contracts/history.ts` (`AudiencePulseHistorySource`, including `readPeriodOutcomes`, the text-free per-question outcomes of the previous window)
 - `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, `POST /api/v1/quality/audience-pulse/evidence-anchor`, `PUT|DELETE /api/v1/quality/audience-pulse/topics/:topicId/dismissal`, and `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`)
-- `frontend/components/dashboard/audience-pulse-view.tsx`
-- `frontend/lib/api-audience-pulse.ts`
-- `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
-- `frontend/lib/audience-pulse-answer-status.ts` (pure answer-status labels, counts line, and example ordering for the topic rows)
+- `frontend/components/dashboard/audience-pulse-view.tsx` (read, refresh, and the evidence and draft handoffs) over `frontend/components/dashboard/audience-pulse/` (`pulse-report.tsx` composes tiles, the answer split, the topics table, By channel, Content to write, and the footer; `use-topic-dismissals.ts` saves "not for us" behind an optimistic choice)
+- `frontend/lib/api-audience-pulse.ts` (including `dismissTopic`, `restoreTopic`, and `linkTopicDraft`)
+- `frontend/lib/audience-pulse-figures.ts` (pure figures: the answer split shared by the window and each topic, tile deltas, the 50-question sample floor, topic comparison, filters and sorting, the Other row, the channel flag) and `frontend/lib/audience-pulse-queue.ts` (Content to write: ranking, titles and questions with their fallbacks, dismissals)
+- `frontend/lib/audience-pulse-draft-seed.ts` (the seed carries its `topicId`; `linkAudiencePulseDraft` records the saved document, best-effort) and `frontend/lib/audience-pulse-evidence-handoff.ts`
+- `frontend/components/dashboard/shared/stat-tile.tsx`, `delta-chip.tsx`, and `sparkline.tsx`, the tile anatomy Quality's health row shares
 
 Primary internals:
 
@@ -2614,7 +2615,8 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/audiencePulse tests/integration/audiencePulse tests/contract/audiencePulse`
-- `cd frontend && pnpm exec playwright test tests/e2e/audience-pulse.spec.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/audience-pulse-figures.test.ts tests/unit/audience-pulse-queue.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/audience-pulse.spec.ts` (busy and quiet reports in `tests/e2e/audience-pulse-fixtures.ts`)
 
 Related specs:
 

@@ -81,9 +81,13 @@ constructing ad hoc fetches.
 - Dashboard navigation: `dashboard-routes.ts`,
   `dashboard-workspace-sync.ts`, and dashboard components.
 - Audience Pulse: `api-audience-pulse.ts` reads saved reports, starts explicit
-  refreshes, and opens evidence; `audience-pulse-draft-seed.ts` and
-  `audience-pulse-evidence-handoff.ts` keep transient recommendations and evidence
-  out of the URL.
+  refreshes, opens evidence, and saves a topic's "not for us" and draft link;
+  `audience-pulse-figures.ts` (the answer split, tile deltas, the 50-question
+  sample floor, topic and channel rows) and `audience-pulse-queue.ts` (Content to
+  write) are the page's pure math; `audience-pulse-draft-seed.ts` and
+  `audience-pulse-evidence-handoff.ts` keep transient draft text and evidence out
+  of the URL. `stat-tile.ts` holds the sparkline point and delta shapes the shared
+  stat tile reads.
 - Embedded/public chat: `api-public-chat.ts`, `public-chat-session-handoff.ts`,
   `public-chat-suggestion.ts` (what a clicked suggestion chip sends, and which chips a restored thread keeps), `embed-widget.ts`.
 
@@ -95,6 +99,6 @@ Focused starting points:
 - `cd frontend && pnpm test -- tests/unit/auth-api.test.ts`
 - `cd frontend && pnpm test -- tests/unit/workspace-context.test.ts`
 - `cd frontend && pnpm test -- tests/unit/embed-widget.test.ts`
-- `cd frontend && pnpm test -- tests/unit/api-audience-pulse.test.ts tests/unit/audience-pulse-draft-seed.test.ts tests/unit/audience-pulse-evidence-handoff.test.ts`
+- `cd frontend && pnpm test -- tests/unit/api-audience-pulse.test.ts tests/unit/audience-pulse-figures.test.ts tests/unit/audience-pulse-queue.test.ts tests/unit/audience-pulse-draft-seed.test.ts tests/unit/audience-pulse-evidence-handoff.test.ts`
 
 Use Playwright when behavior is only meaningful through a visible user journey.

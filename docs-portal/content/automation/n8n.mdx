@@ -1,0 +1,171 @@
+---
+title: "Use Radioso in n8n"
+description: "Install the Radioso community nodes in n8n, connect them with a service-account token, ask agents, search knowledge, add documents and read conversations from a workflow, and start workflows from Radioso events."
+last_updated: 2026-11-20
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Use Radioso in n8n
+
+Say a form submission should get an answer from your support agent, and the reply should land in a Slack channel. With the Radioso node, that is one n8n step between the form and Slack: the node sends the question to the agent, and the agent's answer, its citations and the conversation id come back as data your workflow can use.
+
+The package is `@radioso/n8n-nodes-radioso`. It adds one credential and three nodes to n8n. **Radioso** works as a normal workflow step and as a tool the AI Agent node can call. **Radioso Trigger** and **Radioso Poll Trigger** start a workflow when something happens in Radioso.
+
+## Install the node
+
+<Steps>
+### Open the community nodes list
+
+On a self-hosted n8n, sign in as an owner or admin and open **Settings → Community Nodes**.
+
+### Install the package
+
+Select **Install**, enter `@radioso/n8n-nodes-radioso`, accept the risk notice and select **Install**. n8n Cloud installs verified community nodes only, from the node panel.
+
+### Check the node panel
+
+Add a node and search for **Radioso**. The three nodes and the credential are available in every workflow.
+</Steps>
+
+## Create the credential
+
+The credential tells n8n where your workspace lives and which token to present.
+
+<Steps>
+### Create a service account in Radioso
+
+In **Settings → API access**, create a service account with the `member` role and copy its token. Tokens start with `radioso_svc_v1_` and are shown once. [Authentication](/guides/authentication#personal-tokens-and-service-accounts) covers roles and expiry.
+
+### Add the credential in n8n
+
+Create a **Radioso API** credential and choose the instance:
+
+| Instance | Choose | API origin |
+|---|---|---|
+| Radioso EU cloud | **EU Cloud** | `https://api.radioso.ai` |
+| Radioso US cloud | **US Cloud** | `https://api-us.radioso.ai` |
+| Your own deployment | **Self-Hosted** | the origin of your backend API, such as `https://radioso.example.com/backend` |
+
+Paste the token and save. n8n tests the credential with `GET /api/v1/workspace/summary`; a green check means the token and instance match.
+</Steps>
+
+A self-hosted URL must start with `https://`, and often ends in `/backend`. Plain `http://` is accepted only for `localhost`, `127.0.0.0/8`, `::1`, private IPv4 addresses (10/8, 172.16/12, 192.168/16) and single-word host names such as a Docker service name, so the token never crosses the public internet unencrypted. A pasted trailing `/api/v1` is dropped.
+
+A token only works against the instance that issued it. A token from the EU cloud fails on the US cloud with `401`.
+
+## Ask an agent
+
+Choose **Agent → Ask**, pick an agent from the list and write the message. Leave the agent empty to use the workspace's default agent. The agent must be published.
+
+The output carries `answer`, `citations`, `conversationId`, `conversationOwner` and `replySuppressed`. To keep a conversation going, put the `conversationId` from the first reply into **Additional Fields → Conversation ID** on the next Ask step, and the agent sees the earlier turns. The conversation keeps its agent, so the node sends none then. Leave it empty to start a new conversation.
+
+Ask calls `POST /api/v1/assistant/chat`, the assistant chat API. A workspace token reaches an agent through that route, with the agent chosen in the request.
+
+<Callout type="info">
+When a teammate owns a conversation, the agent doesn't answer. The reply comes back with `conversationOwner` set to `human_owned` and `replySuppressed` set to `true`, `answer` holds the waiting message shown to the visitor, and `assistantMessageId` is empty. The turn that hands a conversation to a teammate is also `human_owned`, but it has `replySuppressed: false` and a real answer. Check `replySuppressed` before you post `answer` anywhere.
+</Callout>
+
+**Retry On Fail** sends the message again, and a retried first message opens a second conversation. Leave it off for Ask, or continue with a Conversation ID.
+
+## Search knowledge
+
+**Knowledge → Search** returns the passages from your documents that match a query, so a workflow can look something up without involving an agent. **Knowledge → Answer** returns one grounded answer with citations, written without an agent's persona.
+
+Both take an optional agent in **Additional Fields**. With an agent chosen, the search covers the documents that agent can use; without one, it covers the workspace. **Max Results** applies to Search.
+
+## Add or replace a document
+
+**Document → Add or Replace** adds a text document: a title, the content, optional metadata as a JSON object, and an optional external document ID such as a CMS record ID. Metadata values are strings, numbers, booleans or null.
+
+Sending an external document ID that already exists replaces that document, so a workflow can keep one document in sync with a record. Unchanged content comes back ready at once, with `processing: "complete"`.
+
+Otherwise processing is asynchronous. The node returns as soon as Radioso accepts the document, with `documentId`, `status`, and `processing: "asynchronous"`. Chunking and embedding happen in the background, and an agent can cite the document once its status is ready. See [Document upload](/guides/document-upload).
+
+## Get a conversation
+
+**Conversation → Get** reads a transcript by conversation id. The output holds `conversationId`, `agentId`, `agentName`, `sourceChannel`, `title`, `createdAt`, `updatedAt`, `messageCount`, `conversationOwner`, `messages` (each with `source`, `content` and `createdAt`, system rows left out), a `transcript` of `source: content` lines, and `transcriptIsPartial`, which is `true` when older messages are not included.
+
+The visitor's profile, the request context (including the IP address), page URLs and debug data stay out of the output. Message text is the visitor's own words and can contain personal data they typed. The node reads the latest 100 messages; **Message Limit** and **Message Offset** page through longer conversations.
+
+## Use the node as an AI agent tool
+
+Add the Radioso node to an AI Agent node's **Tool** input. The model fills the fields from the conversation, so a support workflow can let the model search your knowledge or fetch a transcript when it needs one. Current n8n versions list the node there without a setting; older 1.x versions need `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true` on a self-hosted n8n. Get a conversation returns message text, so attach it only to an agent whose model you are comfortable seeing that text.
+
+## Start a workflow from Radioso events
+
+Say a visitor leaves their contact details and your sales team should hear about it in the next minute. The trigger nodes start a workflow on a Radioso event and hand it the event's data. Both emit one item per event with `id`, `type`, `version`, `occurredAt`, `workspaceId` and `data`; the `data` of each type is described in the [workspace event log](/api/workspace-event-log).
+
+Choose at least one of these events in the node's **Events** field:
+
+| Event | Starts the workflow when |
+|---|---|
+| Conversation Started | A conversation is created with its first message |
+| Contact Request Created | A visitor leaves contact details |
+| Handoff Requested | The agent hands a conversation to a person |
+| Routine Completed | A routine run ends, whichever way it ends |
+| Decision Pending | A routine stops at a decision step and waits for a teammate |
+
+Decision Pending only notifies. A teammate decides in the Radioso Inbox, because a service-account token can't list or resolve decisions.
+
+The service account needs the `member` role, which holds the permission to manage event subscriptions. Conversation events also need access to history, and Decision Pending also needs the takeover permission. A token that lacks one gets `403` with `event_type_not_permitted`.
+
+### Radioso Trigger
+
+Radioso Trigger receives events as they happen. When you activate the workflow, the node subscribes in Radioso with its own webhook URL and keeps the subscription's signing secret. Each push carries `X-Radioso-Signature`, an HMAC-SHA256 of the timestamp and the raw body. The node checks it, refuses a timestamp more than five minutes away from now, and answers `401` without starting the workflow when a check fails. Deactivating the workflow deletes the subscription.
+
+- Radioso must reach n8n over public HTTPS. On a self-hosted n8n, set `WEBHOOK_URL` to its public address; Radioso refuses a local or plain-http target with `invalid_target_url`.
+- A new subscription starts at the newest event and does not backfill.
+- **Listen for test event** works with n8n's test webhook URL. The node subscribes for the test and removes the subscription when it ends. n8n listens for about two minutes and the subscription does not backfill, so trigger an event in Radioso while it listens.
+- Delivery is at-least-once, so a workflow that must run once per event de-duplicates on `id`.
+- Changing the chosen events and activating again replaces the subscription.
+
+Create one service account for each workflow. A subscription belongs to the service account that made it, so revoking that account's token disables its subscriptions and leaves the other workflows running. A workspace holds up to 25 subscriptions, and Radioso disables one whose deliveries fail for 24 hours.
+
+### Radioso Poll Trigger
+
+Radioso Poll Trigger asks Radioso for new events on a schedule, which suits an n8n that Radioso can't reach: behind a firewall, on a private network, or without a public HTTPS address. It needs no subscription, only a token that can read the event log and the chosen types.
+
+- The first run records where the log ends and emits nothing, so the workflow doesn't start on old events. **Fetch test event** emits the newest three events as sample data.
+- Each later run emits the events since the saved position, oldest first, without repeating an `id`.
+- Radioso keeps events for 30 days. When the saved position has expired, or Radioso no longer accepts it, the node starts over like a first run: it records where the log ends and emits nothing, so events from the gap are not delivered.
+- Changing the chosen events, or pointing the credential at another instance, starts over the same way.
+
+Events arrive up to one poll interval late. See [Workspace event log](/api/workspace-event-log) for how the cursor works.
+
+## Permissions
+
+Every operation works with a service account on the `member` role.
+
+| Operation | Radioso route | Permission |
+|---|---|---|
+| Agent list (dropdown) | `GET /api/v1/agents` | `workspace.agents.read` |
+| Agent → Ask | `POST /api/v1/assistant/chat` | `workspace.chat.use` |
+| Knowledge → Search, Answer | `POST /api/v1/retrieval/search`, `/answer` | `workspace.retrieval.query` |
+| Document → Add or Replace | `POST /api/v1/document` | `workspace.documents.manage` |
+| Conversation → Get | `GET /api/v1/history/chat/{id}` | `workspace.history.read` |
+| Radioso Trigger | `/api/v1/workspace/event-subscriptions` | `workspace.event_subscriptions.manage` |
+| Radioso Poll Trigger | `GET /api/v1/workspace/events` | `workspace.events.read` |
+
+Each event type also needs its own read permission: conversation events, Contact Request Created, Handoff Requested and Routine Completed need `workspace.history.read`, and Decision Pending needs `workspace.history.read` and `workspace.conversation.takeover`. The `member` role holds all of these.
+
+The nodes do not reply as an operator or resolve decisions. Those routes accept a signed-in dashboard session only, so a service-account token can't call them.
+
+## Common failure modes
+
+- **"Radioso rejected the credential" (401).** The token is expired, revoked, or from the other cloud region. Create a new one under **Settings → API access** and check the instance on the credential.
+- **"The token is not allowed to do this" (403).** The service account's role lacks the permission in the table above. Use the `member` role or higher.
+- **"Radioso could not find it" (404).** The agent or conversation id belongs to another workspace, or the agent has never been published.
+- **"Radioso is rate limiting this token" (429).** Authenticated chat, search and answer share one limit of 60 requests per 60 seconds per token by default. Add a wait, or turn on **Retry On Fail** for the node. Self-hosted operators tune it in [Deployment](/operators/deployment).
+- **"Radioso cannot deliver events to this n8n instance" (400 `invalid_target_url`).** Radioso needs a public `https://` webhook URL for n8n. Set `WEBHOOK_URL` on a self-hosted n8n to its public address, or use Radioso Poll Trigger.
+- **"This workspace has reached its limit of event subscriptions" (409).** A workspace holds up to 25. Delete subscriptions that are no longer used under **Settings → API access**, or switch the workflow to Radioso Poll Trigger.
+- **"This Radioso instance cannot store webhook secrets yet" (503 `encryption_not_configured`).** The operator of a self-hosted instance has to configure encryption. Radioso Poll Trigger works without it.
+- **A test run waits and nothing arrives.** The test listener lasts about two minutes and does not backfill. Trigger a new event in Radioso while it listens.
+- **"Could not reach Radioso".** n8n can't open a connection to the instance. For a self-hosted instance, check that the API origin in the credential is reachable from where n8n runs.
+
+## Read next
+
+- [Workspace event log](/api/workspace-event-log) for every event type and its data.
+- [Authentication](/guides/authentication) for service accounts and roles.
+- [Document upload](/guides/document-upload) for what happens after a document is accepted.
+- [TypeScript SDK](/sdk/typescript-getting-started) when the workflow belongs in code instead.

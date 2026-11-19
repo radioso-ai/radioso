@@ -27,6 +27,15 @@ function serverMessage(body: unknown): string | undefined {
 	return typeof record.message === 'string' ? record.message : undefined;
 }
 
+function errorCode(body: unknown): string | undefined {
+	const parsed = parseBody(body);
+	if (typeof parsed !== 'object' || parsed === null) return undefined;
+	const nested = (parsed as Record<string, unknown>).error;
+	if (typeof nested !== 'object' || nested === null) return undefined;
+	const code = (nested as Record<string, unknown>).code;
+	return typeof code === 'string' ? code : undefined;
+}
+
 function retryAfterSeconds(body: unknown): number | undefined {
 	const parsed = parseBody(body);
 	if (typeof parsed !== 'object' || parsed === null) return undefined;
@@ -39,8 +48,24 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 	const detail = serverMessage(body);
 	const withDetail = (hint: string) => (detail ? `${detail} ${hint}`.trim() : hint);
 
+	const code = errorCode(body);
+
 	switch (statusCode) {
 		case 400:
+			if (code === 'invalid_target_url') {
+				return {
+					message: 'Radioso cannot deliver events to this n8n instance',
+					description: withDetail(
+						'Radioso needs a public https:// webhook URL for n8n. Set WEBHOOK_URL on n8n to its public address, or use the Radioso Poll Trigger node instead.',
+					),
+				};
+			}
+			if (code === 'cursor_filter_mismatch' || code === 'invalid_cursor') {
+				return {
+					message: 'Radioso did not accept the saved position in the event log',
+					description: withDetail('Deactivate and reactivate the workflow to start from the newest event.'),
+				};
+			}
 			return {
 				message: 'Radioso rejected the request',
 				description: withDetail('Check the values you sent.'),
@@ -52,6 +77,14 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 					'Use a service-account token (radioso_svc_v1_...) issued by this instance. It may be expired, revoked, or from the other cloud region.',
 			};
 		case 403:
+			if (code === 'event_type_not_permitted') {
+				return {
+					message: 'The token cannot read one of the chosen event types',
+					description: withDetail(
+						'Conversation events need a role that reads history; Decision Pending also needs the takeover permission. Use the member role or drop the event type.',
+					),
+				};
+			}
 			return {
 				message: 'The token is not allowed to do this',
 				description: withDetail(
@@ -64,9 +97,33 @@ export function describeApiError(statusCode: number, body: unknown): DescribedAp
 				description: withDetail('Check the agent or conversation id belongs to this workspace.'),
 			};
 		case 409:
+			if (code === 'event_subscription_limit_reached') {
+				return {
+					message: 'This workspace has reached its limit of event subscriptions',
+					description: withDetail(
+						'Delete subscriptions that are no longer used in Settings, or switch this workflow to the Radioso Poll Trigger node.',
+					),
+				};
+			}
 			return {
 				message: 'Radioso could not apply the request right now',
 				description: withDetail('Another change got there first. Run the step again.'),
+			};
+		case 410:
+			return {
+				message: 'The saved position in the Radioso event log has expired',
+				description: 'The node starts again from the newest events.',
+			};
+		case 503:
+			if (code === 'encryption_not_configured') {
+				return {
+					message: 'This Radioso instance cannot store webhook secrets yet',
+					description: withDetail('Ask the operator to configure encryption, or use the Radioso Poll Trigger node.'),
+				};
+			}
+			return {
+				message: 'Radioso reported a server error',
+				description: withDetail('Try again; if it keeps failing, check the instance status.'),
 			};
 		case 413:
 			return {

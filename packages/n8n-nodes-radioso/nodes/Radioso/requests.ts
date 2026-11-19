@@ -4,7 +4,7 @@ import { NodeOperationError } from 'n8n-workflow';
 export type Resource = 'agent' | 'knowledge' | 'document' | 'conversation';
 
 export interface RadiosoRequest {
-	method: 'GET' | 'POST';
+	method: 'GET' | 'POST' | 'DELETE';
 	path: string;
 	qs?: Record<string, string | number>;
 	body?: Record<string, unknown>;

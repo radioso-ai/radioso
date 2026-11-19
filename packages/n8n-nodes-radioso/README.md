@@ -1,6 +1,6 @@
 # @radioso/n8n-nodes-radioso
 
-The Radioso community node for [n8n](https://n8n.io). A workflow can ask a Radioso agent a question, search your knowledge, add a document, or read a conversation, and the node doubles as a tool for n8n's AI Agent node.
+The Radioso community nodes for [n8n](https://n8n.io). A workflow can ask a Radioso agent a question, search your knowledge, add a document, or read a conversation, and the **Radioso** node doubles as a tool for n8n's AI Agent node. Two trigger nodes start a workflow when something happens in Radioso: a visitor starts a conversation, leaves contact details, is handed to a person, finishes a routine, or is waiting on a decision.
 
 ## Install
 
@@ -50,7 +50,37 @@ Replying as an operator and resolving decisions need a signed-in dashboard sessi
 
 ### Use as an AI Agent tool
 
-The node is marked usable as a tool, and current n8n versions list it on the AI Agent node's **Tool** input without a setting. Older 1.x versions need `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true` on self-hosted n8n. Because Get a conversation returns message text, only attach it to an agent whose model you are comfortable seeing that text.
+The Radioso node is marked usable as a tool, and current n8n versions list it on the AI Agent node's **Tool** input without a setting. Older 1.x versions need `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true` on self-hosted n8n. Because Get a conversation returns message text, only attach it to an agent whose model you are comfortable seeing that text.
+
+## Start a workflow from Radioso events
+
+Both trigger nodes use the same **Events** list and emit one item per event: `id`, `type`, `version`, `occurredAt`, `workspaceId` and `data`. The `data` of each type is described in the [workspace event log](https://docs.radioso.ai/api/workspace-event-log) reference. Choose at least one of Conversation Started, Contact Request Created, Handoff Requested, Routine Completed and Decision Pending. Decision Pending only notifies: a teammate decides in the Radioso Inbox, because a service-account token can't resolve a decision.
+
+A service account's role needs `workspace.event_subscriptions.manage` (the `member` role holds it) plus read access to each chosen type. Conversation events need history access, and Decision Pending also needs the takeover permission. Radioso answers `403` with `event_type_not_permitted` otherwise.
+
+### Radioso Trigger
+
+The webhook trigger. When you activate the workflow, the node subscribes in Radioso with its own webhook URL, labelled `n8n`, and keeps the subscription id and signing secret in the workflow's static data. Radioso pushes each event to n8n as it happens, signed with `X-Radioso-Signature` (HMAC-SHA256 over `{timestamp}.{raw body}`). The node checks the signature against the raw request body, refuses a timestamp more than five minutes away, and answers `401` without starting the workflow when either check fails. Deactivating the workflow deletes the subscription.
+
+- n8n needs a public `https://` address, so set `WEBHOOK_URL` on a self-hosted n8n. Radioso refuses a local or plain-http target with `invalid_target_url`.
+- A new subscription starts at the newest event and does not backfill. **Listen for Test Event** works against n8n's test webhook URL; it subscribes for the test and removes the subscription when the test ends.
+- Delivery is at-least-once. If your workflow must not run twice for one event, de-duplicate on `id`.
+- Change the chosen events and re-activate to replace the subscription.
+
+Use **one service account per workflow**. A subscription belongs to the credential that created it, so revoking that service account's token disables every subscription it made. A shared token takes every workflow down together.
+
+A workspace holds at most 25 subscriptions. Radioso disables a subscription whose deliveries fail for 24 hours; re-activating the workflow subscribes again.
+
+### Radioso Poll Trigger
+
+The polling alternative, for an n8n instance Radioso can't reach: behind a firewall, on a private network, or without a public HTTPS address. It reads the event log on the schedule you set and needs no subscription, so it uses a token with `workspace.events.read` and the read access for each type.
+
+- The first run records where the log ends and emits nothing, so the workflow does not start on old events. **Fetch Test Event** emits the newest three events as sample data.
+- Each later run emits the events since the saved position, oldest first, and skips any id it has already emitted.
+- Radioso keeps events for 30 days. After a long pause the saved position expires, and the node starts again from the newest events.
+- Changing the chosen events restarts from the end of the log.
+
+Polling adds delay up to the poll interval; the webhook trigger is immediate.
 
 ## Example workflow
 

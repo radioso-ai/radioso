@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     includeReadme: options.includeReadme,
   });
 
-  documents.push(...(await buildWebsitePageDocuments(options.websitePages)));
+  documents.push(...(await buildWebsitePageDocuments(options.websitePages, citationBase)));
 
   console.log(`Built ${documents.length} document(s) (citation base: ${citationBase}).`);
   for (const document of documents) {

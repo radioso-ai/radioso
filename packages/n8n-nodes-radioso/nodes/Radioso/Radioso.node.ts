@@ -1,96 +1,17 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
-	IHttpRequestOptions,
 	ILoadOptionsFunctions,
-	INode,
 	INodeExecutionData,
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
-	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { radiosoProperties } from './descriptions';
-import { describeApiError } from './errors';
-import { RadiosoConfigError, resolveBaseUrl, type RadiosoCredentials } from './instance';
-import { buildRequest, shapeResponse, type RadiosoRequest, type Resource } from './requests';
-
-type Context = IExecuteFunctions | ILoadOptionsFunctions;
-
-/**
- * Sends one authenticated request and returns the JSON body of a successful answer. A non-2xx
- * answer becomes a NodeApiError with the mapped message; a 2xx that is not a JSON object (an HTML
- * page from the wrong URL) and a credential that names no usable instance become
- * NodeOperationErrors.
- */
-async function callRadioso(
-	context: Context,
-	request: RadiosoRequest,
-	itemIndex?: number,
-): Promise<Record<string, unknown>> {
-	const node = context.getNode();
-	const credentials = (await context.getCredentials('radiosoApi')) as RadiosoCredentials;
-	let baseUrl: string;
-	try {
-		baseUrl = resolveBaseUrl(credentials);
-	} catch (error) {
-		// resolveBaseUrl only throws RadiosoConfigError: a credential that names no usable instance.
-		const message = error instanceof RadiosoConfigError ? error.message : String(error);
-		throw new NodeOperationError(node, message, { itemIndex });
-	}
-
-	const options: IHttpRequestOptions = {
-		method: request.method,
-		url: `${baseUrl}${request.path}`,
-		qs: request.qs,
-		body: request.body,
-		json: true,
-		returnFullResponse: true,
-		ignoreHttpStatusErrors: true,
-		timeout: request.timeoutMs,
-	};
-	const response = (await context.helpers.httpRequestWithAuthentication.call(
-		context,
-		'radiosoApi',
-		options,
-	)) as { statusCode: number; body: unknown };
-
-	if (response.statusCode < 200 || response.statusCode >= 300) {
-		const { message, description } = describeApiError(response.statusCode, response.body);
-		throw new NodeApiError(node, (response.body ?? {}) as JsonObject, {
-			message,
-			description,
-			httpCode: String(response.statusCode),
-			itemIndex,
-		});
-	}
-	if (typeof response.body !== 'object' || response.body === null) {
-		throw new NodeOperationError(node, 'Radioso answered with something other than JSON', {
-			itemIndex,
-			description: `${baseUrl} did not return Radioso API JSON. A self-hosted API URL often ends in /backend.`,
-		});
-	}
-	return response.body as Record<string, unknown>;
-}
-
-function sentence(text: string): string {
-	return text.endsWith('.') ? text : `${text}.`;
-}
-
-/** Keeps errors that already carry n8n context; anything else is a transport failure. */
-function toNodeError(node: INode, error: unknown, itemIndex: number): Error {
-	if (error instanceof NodeApiError || error instanceof NodeOperationError) return error;
-	return new NodeApiError(node, error as JsonObject, {
-		message: 'Could not reach Radioso',
-		description:
-			error instanceof Error
-				? `${sentence(error.message)} Check the instance in the Radioso credential and that it is reachable from n8n.`
-				: undefined,
-		itemIndex,
-	});
-}
+import { buildRequest, shapeResponse, type Resource } from './requests';
+import { callRadioso, toNodeError } from './client';
 
 /** What a Continue On Fail item carries, so a workflow can branch on the cause. */
 function failureJson(error: unknown): IDataObject {

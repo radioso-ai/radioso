@@ -37,6 +37,36 @@ The Postgres side is `db/repositories/workspaceEventLogRepository.ts`: the state
 the snapshot read, the 30-day retention rule and the consent withholder, which removes a
 withdrawn routine's events by structure (routine id, slot keys) as well as by value.
 
+## Subscriptions and delivery (#1852)
+
+A subscription is a URL an automation client registered to receive the log's events as signed
+POSTs. This module knows:
+
+- the subscription lifecycle (`subscriptionService.ts`): a type is subscribed only by a caller who
+  may read it from the log, the target passes the outbound URL rule
+  (`normalizeWebhookTargetUrl`) and carries no userinfo, the URL and secret are sealed
+  (`subscriptionSecrets.ts`), a workspace holds at most 25, and subscribing a URL again replaces
+  its subscription with a new id (matched by a keyed hash of the URL; an active one's cursor carries over); the view (`subscriptionView.ts`, published
+  as `EventSubscription`) shows the target's host, never its URL;
+- delivery (`deliveryDrain.ts`): up to ten of one subscription's events per run, in log order,
+  read through the `WorkspaceEventLogStore`, one signed POST each, after `EventSubscriptionOwnerCheck`
+  (`ownerCheck.ts`) confirms the creator may still read them; `2xx` advances the cursor, `410`
+  deletes the subscription, anything else records a failure and backs off with newer events behind
+  it;
+- the retry policy (`deliveryPolicy.ts`): `min(30 s × 2^(n−1), 1 h)`, disabled after 24 h of
+  failures with at least five tries;
+- the job and the sweep (`deliveryJob.ts`): one `workspace_events.deliver` job per subscription,
+  level-triggered, and the scheduler that starts every due drain (the periodic sweep) or one
+  workspace's (the post-commit wake).
+
+It knows nothing about how credentials are stored or roles resolved (the owner check is a port
+the composition adapts from machine access and account access), nor which change recorded an
+event. The subscription store ports (lifecycle and delivery) and the wake port live in
+`backend/src/shared/domain/workspaceEventSubscriptions.ts`; the Postgres store is
+`db/repositories/workspaceEventSubscriptionRepository.ts`. `app/composition/workspaceEventLog.ts`
+builds the service, the drain's job handler, the every-minute `workspace-event-delivery`
+periodic task, and the wake the chat turn's persistence fires after commit.
+
 ## Adding an event type
 
 1. Add the type, its version and its `data` schema to `shared/domain/workspaceEventLog.ts`.
@@ -49,5 +79,5 @@ withdrawn routine's events by structure (routine id, slot keys) as well as by va
 
 ## Tests
 
-- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/contract/workspace-event-log.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/contract/workspace-event-log.contract.test.ts tests/contract/workspace-event-subscriptions.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/workspace-event-subscriptions.integration.test.ts --no-file-parallelism`

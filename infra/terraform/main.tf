@@ -76,6 +76,10 @@ locals {
     var.identity_nonce_prune_schedule,
     "*/15 * * * *",
   )
+  # Every minute, matching WORKSPACE_EVENT_DELIVERY_INTERVAL_MS in workspaceEventLog.ts: it bounds how
+  # late a subscribed URL hears of an event whose post-commit wake was lost. Cloud Scheduler's
+  # finest cadence.
+  workspace_event_delivery_schedule = "* * * * *"
   agent_bundle_import_cleanup_schedule = coalesce(
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",

@@ -12,6 +12,7 @@ import type { ConversationActivityRecorder } from "../../conversationActivity/co
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
@@ -299,6 +300,9 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly consentMessageWithholding?: MessageWithholdingBinding,
     // Records the pictures a reply's cards show from a skill's result, with the reply.
     private readonly toolImageRows?: ToolImageRowWriter,
+    // Asks, once the turn has committed, for the workspace's event subscriptions to be delivered:
+    // what the turn recorded, and the conversation's start, which its first turn follows.
+    private readonly eventDeliveryWake?: WorkspaceEventDeliveryWake,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
@@ -438,20 +442,30 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       ? await run(input.transaction)
       : await this.db.transaction().execute(async (trx) => run(trx));
 
-    await this.requestActionDrain(input.actions);
+    // A transaction this method opened has committed, so the drain goes now. A supplied one commits
+    // after this returns, so its drain waits for `afterCommit`: pushed now, the Cloud Tasks round
+    // trip would hold that transaction, and its id, open.
+    const drainsAfterCommit = input.transaction !== undefined && this.requestsActionDrain(input.actions);
+    if (!input.transaction) {
+      await this.requestActionDrain(input.actions);
+    }
     const queue = insertedBackgroundJobs > 0 ? this.backgroundJobs : undefined;
     const consentReport = this.consentReport(input, consentWritten);
-    if (!queue && !consentReport) {
+    const eventDelivery = this.eventDeliveryWake;
+    if (!queue && !consentReport && !drainsAfterCommit && !eventDelivery) {
       return result;
     }
     // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
     // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
-    // and the worker's sweep runs a job whose wake was lost.
+    // the drain logs a failed push, and the worker's sweeps run what a lost wake or push left; a
+    // lost event delivery wake waits for the delivery sweep.
     return {
       ...result,
       afterCommit: () => {
         if (queue) void queue.wake();
+        if (drainsAfterCommit) void this.requestActionDrain(input.actions);
         consentReport?.();
+        eventDelivery?.requestDelivery(input.workspaceId);
       },
     };
   }
@@ -573,16 +587,17 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     });
   }
 
+  private requestsActionDrain(actions: CompleteAssistantTurnInput["actions"]): boolean {
+    return Boolean(actions?.length && this.actionDrainDispatcher);
+  }
+
   /**
-   * Best-effort push: never fails the turn that already committed. In the normal
-   * (self-managed transaction) path this fires strictly after commit. In the rarer
-   * externally-supplied-transaction path (HITL decision resume) it can fire a few
-   * microseconds before that outer transaction's own commit lands — accepted, since a
-   * Cloud Tasks round trip is far slower than the remaining in-process work before that
-   * commit, and any residual race is covered by the recovery sweep, not silently lost.
+   * Best-effort push: never fails the turn, and fires strictly after the turn's transaction
+   * commits (directly for a transaction this persistence opened, through `afterCommit` for one
+   * the caller supplied, such as a decision's resume). A lost push is covered by the recovery sweep.
    */
   private async requestActionDrain(actions: CompleteAssistantTurnInput["actions"]): Promise<void> {
-    if (!actions?.length || !this.actionDrainDispatcher) {
+    if (!this.requestsActionDrain(actions) || !this.actionDrainDispatcher) {
       return;
     }
     try {

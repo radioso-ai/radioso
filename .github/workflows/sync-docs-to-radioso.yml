@@ -13,7 +13,9 @@ on:
       - backend/openapi.json
       - packages/radioso-docs-importer/**
       - .github/workflows/sync-docs-to-radioso.yml
-      # READMEs are imported as product surface, so changes to any of them re-sync.
+      # Only product-facing READMEs are imported (see PRODUCT_README_PATHS in the
+      # importer). The glob is broader than that list, so an edit to an internal README
+      # runs a sync that changes nothing.
       - "**/README.md"
       - "**/readme.md"
   workflow_dispatch:

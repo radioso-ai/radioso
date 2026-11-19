@@ -42,6 +42,7 @@ locals {
     "${local.resource_name_prefix}-conversation-retention",
     "${local.resource_name_prefix}-voice-recording-erasure-recovery",
     "${local.resource_name_prefix}-identity-nonce-prune",
+    "${local.resource_name_prefix}-workspace-event-delivery",
   ] : []
 
   # Cloud Monitoring filters use one_of(); Cloud Logging filters use (a OR b). The two

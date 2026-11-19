@@ -1,7 +1,7 @@
 {
   "name": "@radioso/n8n-nodes-radioso",
   "version": "0.1.0",
-  "description": "n8n community node for Radioso: ask an agent, search knowledge, add documents and read conversations from a workflow.",
+  "description": "n8n community nodes for Radioso: ask an agent, search knowledge, add documents, read conversations, and start workflows from Radioso events.",
   "license": "MIT",
   "homepage": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme",
   "keywords": [
@@ -42,7 +42,9 @@
       "dist/credentials/RadiosoApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/Radioso/Radioso.node.js"
+      "dist/nodes/Radioso/Radioso.node.js",
+      "dist/nodes/RadiosoTrigger/RadiosoTrigger.node.js",
+      "dist/nodes/RadiosoPollTrigger/RadiosoPollTrigger.node.js"
     ]
   },
   "devDependencies": {

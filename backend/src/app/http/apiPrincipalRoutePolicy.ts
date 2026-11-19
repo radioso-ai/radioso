@@ -128,6 +128,10 @@ const declarations: readonly PolicyDeclaration[] = [
   // The workspace event log; each type it serves also needs the permission that reads its subject
   // elsewhere (history, decisions), checked by the route.
   allow("GET", "/api/v1/workspace/events", "workspace.events.read"),
+  // Event subscriptions: an automation client (Zapier, n8n) creates and deletes its own with the
+  // token it was given; each subscribed type also needs its event log read permission.
+  ...[["POST", ""], ["GET", ""], ["GET", "/:subscriptionId"], ["DELETE", "/:subscriptionId"]]
+    .map(([method, path]) => allow(method, `/api/v1/workspace/event-subscriptions${path}`, "workspace.event_subscriptions.manage")),
   // Erasure is a destructive workspace act like document deletion; a data-subject request
   // pipeline erases over the API with an admin credential.
   ...["/chat/:conversationId", "/visitors/:visitorId"]

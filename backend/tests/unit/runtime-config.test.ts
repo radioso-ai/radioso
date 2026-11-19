@@ -1079,6 +1079,10 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "identity_nonce_prune"');
     expect(schedulerTf).toContain("schedule         = local.identity_nonce_prune_schedule");
     expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/identity-nonce-prune/run");
+    // So is the workspace event delivery sweep, which drains every event subscription with an event waiting.
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "workspace_event_delivery"');
+    expect(schedulerTf).toContain("schedule         = local.workspace_event_delivery_schedule");
+    expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/workspace-event-delivery/run");
     // How long deleted conversation data survives in backups and logs is what the data retention
     // docs state, so the windows are pinned rather than left to provider defaults. Turning
     // point-in-time recovery on restarts the instance, so it stays a per-stack choice defaulting to
@@ -1099,6 +1103,7 @@ describe("runtime configuration", () => {
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-voice-recording-erasure-recovery",');
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-identity-nonce-prune",');
+    expect(monitoringTf).toContain('"${local.resource_name_prefix}-workspace-event-delivery",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
     // An environment that keeps its logs in its own region holds them for the same 30 days.

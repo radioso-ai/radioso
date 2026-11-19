@@ -39,4 +39,5 @@ export const registerWorkspaceEventLogPaths = (
       410: errorResponse("The cursor is older than the log's retention window; start again without one"),
     },
   });
+  return { WorkspaceEventSchema: log.WorkspaceEventSchema };
 };

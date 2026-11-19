@@ -4,6 +4,9 @@ import {
   parseWebsitePageSpec,
   websitePageExternalId,
 } from "../src/website/buildWebsitePageDocuments.ts";
+import { syncDocuments } from "../src/import/sync.ts";
+import type { DocumentInput } from "../src/import/buildDocuments.ts";
+import type { ExistingDocument, RadiosoDocsClient } from "../src/radioso/client.ts";
 
 const spec = { markdownUrl: "https://radioso.example/pricing.md", citationUrl: "https://radioso.example/pricing" };
 
@@ -28,15 +31,19 @@ describe("parseWebsitePageSpec", () => {
 });
 
 describe("buildWebsitePageDocuments", () => {
-  it("builds one document with the heading as title, the page origin as source, and the citation URL", async () => {
-    const documents = await buildWebsitePageDocuments([spec], page("Intro\n\n# Pricing\n\nPlanet is 579.   \n\n"));
+  const common = "https://docs.radioso.example";
+
+  it("builds one document with the heading as title, the common source, and the citation URL", async () => {
+    const documents = await buildWebsitePageDocuments([spec], common, page("Intro\n\n# Pricing\n\nPlanet is 579.   \n\n"));
 
     expect(documents).toEqual([
       {
         externalDocumentId: "radioso-website:/pricing",
         title: "Pricing",
         content: "Intro\n\n# Pricing\n\nPlanet is 579.",
-        source: { kind: "website", url: "https://radioso.example" },
+        // The page's own origin would put it under a second source, which the
+        // per-upsert prune deletes as a migration leftover.
+        source: { kind: "website", url: common },
         metadata: { section: "radioso-website", url: "https://radioso.example/pricing" },
       },
     ]);
@@ -48,17 +55,65 @@ describe("buildWebsitePageDocuments", () => {
   });
 
   it("fails loudly on a non-2xx response", async () => {
-    await expect(buildWebsitePageDocuments([spec], page("nope", { ok: false, status: 503 }))).rejects.toThrow(/503/);
+    await expect(buildWebsitePageDocuments([spec], common, page("nope", { ok: false, status: 503 }))).rejects.toThrow(/503/);
   });
 
   it("fails loudly on a network error", async () => {
     const failing = async () => {
       throw new Error("connect ECONNREFUSED");
     };
-    await expect(buildWebsitePageDocuments([spec], failing)).rejects.toThrow(/ECONNREFUSED/);
+    await expect(buildWebsitePageDocuments([spec], common, failing)).rejects.toThrow(/ECONNREFUSED/);
   });
 
   it("fails on an empty page", async () => {
-    await expect(buildWebsitePageDocuments([spec], page("  \n"))).rejects.toThrow(/empty/);
+    await expect(buildWebsitePageDocuments([spec], common, page("  \n"))).rejects.toThrow(/empty/);
+  });
+});
+
+describe("website page in a pruning sync", () => {
+  // Like the backend: each distinct source URL gets its own source id.
+  function sourceAwareClient() {
+    const state: ExistingDocument[] = [];
+    const deleted: string[] = [];
+    const sourceIds = new Map<string, string>();
+    const client: RadiosoDocsClient = {
+      listAll: async () => [...state],
+      create: async (input) => {
+        const sourceId = sourceIds.get(input.source.url) ?? `source-${sourceIds.size + 1}`;
+        sourceIds.set(input.source.url, sourceId);
+        const id = `id-${input.externalDocumentId}`;
+        if (!state.some((document) => document.id === id)) {
+          state.push({ id, externalDocumentId: input.externalDocumentId, sourceId, metadata: input.metadata });
+        }
+        return { documentId: id, status: "queued" };
+      },
+      delete: async (id) => {
+        deleted.push(id);
+        state.splice(state.findIndex((document) => document.id === id), 1);
+      },
+      deleteSource: async () => {},
+    };
+    return { client, state, deleted };
+  }
+
+  it("keeps the page after the per-upsert prune", async () => {
+    const common = "https://docs.radioso.example";
+    const mdx: DocumentInput = {
+      externalDocumentId: "mdx-docs:index",
+      title: "Index",
+      content: "body",
+      source: { kind: "website", url: common },
+      metadata: { section: "mdx-docs", slug: "index", url: `${common}/` },
+    };
+    const pages = await buildWebsitePageDocuments([spec], common, page("# Pricing\n\nPlanet is 579."));
+    const { client, state, deleted } = sourceAwareClient();
+
+    await syncDocuments(client, [mdx, ...pages], {
+      prune: true,
+      pruneSections: new Set(["mdx-docs", "radioso-website"]),
+    });
+
+    expect(deleted).toEqual([]);
+    expect(state.map((document) => document.externalDocumentId)).toContain("radioso-website:/pricing");
   });
 });

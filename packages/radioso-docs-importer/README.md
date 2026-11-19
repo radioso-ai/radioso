@@ -24,10 +24,12 @@ REST API.
 
 - **Website pages** (opt in) — `--website-page <markdownUrl>=<citationUrl>`, repeatable.
   Fetches a public markdown page (for example `https://radioso.ai/pricing.md`) and
-  imports it as one document: title from the first `# ` heading, source the page's
-  origin, `metadata.url` the citation URL, `externalDocumentId`
-  `radioso-website:<citation path>`. A fetch failure, non-2xx, or empty page fails
-  the run, so the page is never silently dropped and then pruned.
+  imports it as one document: title from the first `# ` heading, the same common
+  source as every other imported document, `metadata.url` the citation URL (which
+  is what citations link to), `externalDocumentId` `radioso-website:<citation path>`.
+  The source must be the common one: pruning deletes a desired document under any
+  other source as a migration leftover. A fetch failure, non-2xx, or empty page
+  fails the run, so the page is never silently dropped and then pruned.
 
 ## Sync semantics
 

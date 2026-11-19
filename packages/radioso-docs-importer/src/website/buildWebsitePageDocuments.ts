@@ -31,9 +31,16 @@ export function websitePageExternalId(citationUrl: string): string {
 /**
  * Fetch each page and build its document. Any failure (network, non-2xx, empty
  * body) throws: a silently dropped page would be pruned from the workspace.
+ *
+ * The page goes under the importer's common source like every other imported
+ * document. Pruning treats a desired document under any other source as a leftover
+ * from a source migration and deletes it right after the upsert; that is what
+ * happened to the pricing page when it used its own origin as the source.
+ * Citations still link to the page: they come from `metadata.url`.
  */
 export async function buildWebsitePageDocuments(
   specs: WebsitePageSpec[],
+  commonSourceUrl: string,
   fetchPage: FetchLike = (url) => fetch(url, { headers: { accept: "text/markdown, text/plain;q=0.9" } }),
 ): Promise<DocumentInput[]> {
   const documents: DocumentInput[] = [];
@@ -55,7 +62,7 @@ export async function buildWebsitePageDocuments(
       externalDocumentId: websitePageExternalId(spec.citationUrl),
       title: markdown.match(/^#\s+(.+?)\s*$/m)?.[1] ?? spec.citationUrl,
       content: markdown,
-      source: { kind: "website", url: new URL(spec.markdownUrl).origin },
+      source: { kind: "website", url: commonSourceUrl },
       metadata: { section: WEBSITE_SECTION, url: spec.citationUrl },
     });
   }

@@ -3,6 +3,7 @@ import type { DocumentInput } from "../import/buildDocuments.ts";
 /** A document already stored in the target workspace (subset we read). */
 export interface ExistingDocument {
   id: string;
+  title?: string;
   externalDocumentId: string | null;
   sourceId: string | null;
   metadata: Record<string, unknown> | null;
@@ -62,7 +63,13 @@ export function createRadiosoDocsClient(config: HttpClientConfig): RadiosoDocsCl
           nextCursor?: string | null;
           hasMore?: boolean;
         };
-        documents.push(...page.documents.map((document) => ({ ...document, sourceId: document.sourceId ?? null })));
+        documents.push(
+          ...page.documents.map((document) => ({
+            ...document,
+            sourceId: document.sourceId ?? null,
+            metadata: document.metadata ?? null,
+          })),
+        );
         cursor = page.hasMore && page.nextCursor ? page.nextCursor : undefined;
       } while (cursor);
       return documents;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  conversationChannelLabel,
   formatConversationChannelContextDetails,
   formatConversationLocation,
   formatConversationSource,
@@ -118,5 +119,14 @@ describe('history source formatting', () => {
 
   it('keeps the channel location vocabulary stable', () => {
     expect(formatConversationLocation(conversation({ sourceChannel: 'authenticated_chat' })).text).toBe('Dashboard chat')
+  })
+})
+
+describe('conversationChannelLabel', () => {
+  it('names a channel by its badge, else its source, else the dashboard chat', () => {
+    expect(conversationChannelLabel('website_embed')).toBe('Embedded')
+    expect(conversationChannelLabel('voice')).toBe('Voice')
+    expect(conversationChannelLabel('whatsapp')).toBe('whatsapp')
+    expect(conversationChannelLabel(null)).toBe('Dashboard chat')
   })
 })

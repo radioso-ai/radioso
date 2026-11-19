@@ -197,3 +197,10 @@ export function formatConversationSource(
 
   return sourceChannel
 }
+
+/**
+ * A conversation's channel as one short name, from its stored source channel alone: the badge's
+ * label, else the source description, else the dashboard chat a channel-less conversation came from.
+ */
+export const conversationChannelLabel = (sourceChannel: string | null): string =>
+  getConversationSourceBadge(sourceChannel)?.label ?? formatConversationSource(sourceChannel) ?? 'Dashboard chat'

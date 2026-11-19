@@ -1,8 +1,9 @@
 'use client'
 
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
-
 import { Button } from '@/components/ui/button'
+import { DeltaChip } from '@/components/dashboard/shared/delta-chip'
+import { Sparkline } from '@/components/dashboard/shared/sparkline'
+import { StatTile } from '@/components/dashboard/shared/stat-tile'
 import { cn } from '@/lib/utils'
 import type { QualityStats, QualityStatsRange } from '@/lib/api'
 import {
@@ -23,21 +24,8 @@ import {
   type QualityDeltaTone,
   type QualityMetricDescriptor,
 } from '@/lib/quality-stats'
-import { Sparkline } from './sparkline'
 
-const TONE_CLASS: Record<QualityDeltaTone, string> = {
-  good: 'text-emerald-700 dark:text-emerald-400',
-  bad: 'text-destructive',
-  neutral: 'text-muted-foreground',
-}
-
-const TREND_ICON = {
-  up: ArrowUp,
-  down: ArrowDown,
-  flat: Minus,
-} as const
-
-function DeltaChip({
+function QualityDeltaChip({
   descriptor,
   stats,
 }: {
@@ -50,9 +38,7 @@ function DeltaChip({
     descriptor.readWindow(stats.previous),
   )
   if (delta.kind === 'insufficient_data') {
-    return (
-      <span className="text-xs text-muted-foreground">Not enough data to compare</span>
-    )
+    return <DeltaChip delta={null} />
   }
 
   const text = formatDelta(delta)
@@ -62,16 +48,7 @@ function DeltaChip({
   }
 
   const tone: QualityDeltaTone = delta.kind === 'unchanged' ? 'neutral' : delta.tone
-  const Icon = TREND_ICON[trend]
-
-  return (
-    <span className={cn('inline-flex items-center gap-1 text-xs font-medium', TONE_CLASS[tone])}>
-      <Icon className="h-3 w-3 shrink-0" aria-hidden />
-      <span>
-        {text} {previousRangeLabel(stats.range)}
-      </span>
-    </span>
-  )
+  return <DeltaChip delta={{ text: `${text} ${previousRangeLabel(stats.range)}`, trend, tone }} />
 }
 
 function HealthTile({
@@ -87,26 +64,21 @@ function HealthTile({
     descriptor.kind === 'volume' ? formatCount(value) : formatRate(value)
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4" data-testid={`quality-tile-${descriptor.id}`}>
-      <p className="text-sm text-muted-foreground">{descriptor.label}</p>
-      {/* Proportional figures: this is a standalone number, not a table column. */}
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-        {formatMetricValue(descriptor, sample)}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {formatMetricSubtext(descriptor, sample)}
-      </p>
-      <div className="mt-2">
-        <DeltaChip descriptor={descriptor} stats={stats} />
-      </div>
-      <div className="mt-3">
+    <StatTile
+      testId={`quality-tile-${descriptor.id}`}
+      label={descriptor.label}
+      value={formatMetricValue(descriptor, sample)}
+      subtext={formatMetricSubtext(descriptor, sample)}
+      delta={<QualityDeltaChip descriptor={descriptor} stats={stats} />}
+      chart={(
         <Sparkline
           points={series}
           formatValue={formatPoint}
           ariaLabel={`${descriptor.label}, ${sparklineSpanLabel(series.length)}`}
+          testId="quality-sparkline"
         />
-      </div>
-    </div>
+      )}
+    />
   )
 }
 

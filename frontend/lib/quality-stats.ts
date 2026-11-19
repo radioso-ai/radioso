@@ -6,6 +6,7 @@ import {
   type QualityStatsWindow,
   type QualityVoiceStats,
 } from '@/lib/api-quality'
+import type { SparklinePoint } from '@/lib/sparkline-series'
 
 export { QUALITY_STATS_RANGES }
 
@@ -181,13 +182,6 @@ export const computeQualityDelta = (
     return { kind: 'unchanged' }
   }
   return { kind: 'rate', points, tone: toneFor(descriptor.direction, points) }
-}
-
-export interface SparklinePoint {
-  /** YYYY-MM-DD, the UTC day this point covers. */
-  date: string
-  /** Rate (0..1) for rate metrics, count for volume metrics; null when undefined for the day. */
-  value: number | null
 }
 
 /**

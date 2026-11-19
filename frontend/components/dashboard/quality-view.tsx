@@ -80,7 +80,7 @@ import {
   type QualityResolutionReasonFilter,
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
-import { formatConversationSource, getConversationSourceBadge } from '@/lib/history-source'
+import { conversationChannelLabel } from '@/lib/history-source'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
@@ -1620,7 +1620,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                             {getAgentOperatorLabel({ internalName: turn.agentInternalName, name: turn.agentName }, '—')}
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {getConversationSourceBadge(turn.channel)?.label ?? formatConversationSource(turn.channel) ?? 'Dashboard chat'}
+                            {conversationChannelLabel(turn.channel)}
                           </span>
                         </div>
                       </DashboardTableCell>

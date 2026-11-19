@@ -1,0 +1,159 @@
+---
+title: "Call Radioso from n8n, Zapier and Make"
+description: "Create a service-account token, test the connection, and ask an agent, search knowledge, or add a document from an HTTP step in n8n, Zapier or Make."
+last_updated: 2026-11-19
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Call Radioso from n8n, Zapier and Make
+
+A workflow can put a question to your agent, look something up in your documents, or file a new document as soon as it exists. All three are plain HTTPS calls, so any step that sends a request with a header and a JSON body can make them: the HTTP Request node in n8n, Webhooks by Zapier, or the HTTP module in Make.
+
+This page sets up one credential, proves it works, then walks through the same four calls in each tool.
+
+## Create a service-account token
+
+Use a service account rather than your personal token: the workflow keeps working when you leave, and you can disable it on its own.
+
+1. Open **Settings → API access** and create a service account named after the workflow, such as `n8n lead intake`.
+2. Choose the **Member** role. It covers every call on this page. Choose **Admin** only when the workflow needs more than this page uses.
+3. Set an expiry. A service-account credential can last up to 365 days.
+4. Copy the secret when the dialog shows it. It starts with `radioso_svc_v1_` and Radioso never shows it again.
+
+Store the secret in the automation tool's credential store, not in a step's text field where teammates read it. [Personal tokens and service accounts](/api/workspaces-and-tokens) covers rotation and revocation.
+
+Every request carries the token as a bearer header, plus `Content-Type: application/json` when it has a body:
+
+```text
+Authorization: Bearer radioso_svc_v1_example
+Content-Type: application/json
+```
+
+## Test the connection
+
+`GET /api/v1/workspace/summary` takes a bearer token, has no side effects, and returns counts for your workspace:
+
+```bash
+curl -sS -H "Authorization: Bearer $RADIOSO_TOKEN" \
+  https://api.radioso.ai/api/v1/workspace/summary
+```
+
+A `200` response with `documentCount`, `readyDocumentCount` and `conversationCount` means the host, the token and its permissions are right. Use your [instance URL](/automation#pick-the-instance-url) in place of `https://api.radioso.ai`.
+
+## Set up the HTTP step
+
+<Tabs items={['n8n', 'Zapier', 'Make']}>
+  <Tabs.Tab>
+    1. Create a credential once: **Credentials → New → Header Auth**, with **Name** `Authorization` and **Value** `Bearer radioso_svc_v1_…`.
+    2. Add an **HTTP Request** node. Set **Method** and **URL**, set **Authentication** to **Generic Credential Type → Header Auth**, and choose the credential.
+    3. For a call with a body, turn on **Send Body**, set **Body Content Type** to **JSON**, and choose **Specify Body → Using JSON**.
+
+    The node returns the response as JSON items, so later nodes read `{{ $json.answer }}` directly.
+  </Tabs.Tab>
+  <Tabs.Tab>
+    1. Add an action with **Webhooks by Zapier** and choose the **Custom Request** event.
+    2. Set **Method** and **URL**. For a call with a body, put the JSON in **Data**.
+    3. In **Headers**, add `Authorization` with the value `Bearer radioso_svc_v1_…` and `Content-Type` with the value `application/json`.
+
+    The response fields appear in later steps as the step's output, so map `answer` from there.
+  </Tabs.Tab>
+  <Tabs.Tab>
+    1. Add the **HTTP** app's **Make a request** module.
+    2. Set **URL** and **Method**. Under **Headers**, add `Authorization` with `Bearer radioso_svc_v1_…`.
+    3. For a call with a body, set **Body type** to **Raw**, **Content type** to **JSON (application/json)**, and put the JSON in **Request content**. Set **Parse response** to **Yes**.
+
+    With **Parse response** on, later modules pick `answer` and the other fields from a list.
+  </Tabs.Tab>
+</Tabs>
+
+The bodies below are the same in all three tools. In a real workflow, map a field from an earlier step into the JSON rather than typing the value.
+
+## Ask an agent
+
+`POST /api/v1/assistant/chat` sends one message to an agent and returns its answer. The *assistant* in the path is the chat surface that runs your agents, so this call talks to an agent.
+
+```json
+{
+  "agentId": "6f1c0a52-3b1e-4f8a-9b7d-2f0a6c9d1e11",
+  "message": "What is your refund window for annual plans?"
+}
+```
+
+Leave `agentId` out and the workspace's default agent answers. The response carries the reply and its sources:
+
+```json
+{
+  "conversationId": "b0e5d0c4-5f0b-4a43-8f55-0d9e9f0d7a31",
+  "assistantMessageId": "…",
+  "agentName": "Support",
+  "answer": "Annual plans can be refunded within 30 days of purchase.",
+  "citations": [
+    { "documentId": "…", "chunkId": "…", "title": "Refund policy" }
+  ]
+}
+```
+
+Map `answer` into the next step, such as a reply in your helpdesk. To continue the same conversation, send the returned `conversationId` with the next message. `userExpectedLocale` and `userTimeZone` are optional and make "today" and the reply language follow the person you are answering for. Keep `stream` at its default `false`: a workflow step waits for one complete response, not a stream.
+
+The permission this route needs is `workspace.chat.use`, which both Member and Admin service accounts hold.
+
+<Callout type="info" emoji="i">
+  `POST /api/v1/agents/{agentId}/chat` is a different route with a different credential. It takes an agent's own REST credential from **Channels → API**, not a service-account token, and a service-account token receives `401` there. Use `assistant/chat` for workspace automations, and see [Chat and history](/api/chat-and-history) for the per-agent route.
+</Callout>
+
+## Search knowledge
+
+`POST /api/v1/retrieval/search` returns the document passages that match a query, without any agent wording around them. Use it to enrich a record with the relevant policy text, or to let a workflow decide based on what the documents say.
+
+```json
+{
+  "query": "refund window annual plan",
+  "topK": 3
+}
+```
+
+`query` is required (up to 4,000 characters). `topK` is optional, from 1 to 100. The `results` array holds one entry per passage with `documentId`, `chunkId`, `title`, `content` and `metadata`. Pass `agentId` to search only what that agent can see, and `metadataFilter` to narrow by document metadata.
+
+When you want a written answer instead of passages, `POST /api/v1/retrieval/answer` takes the same `query` and returns `answer`, `citations` and a `validation.status` of `supported`, `unsupported` or `not_checked`. It answers from your documents alone, with no agent persona or directives. Both routes need `workspace.retrieval.query`.
+
+## Add a document
+
+`POST /api/v1/document` queues text for processing, so a new wiki page, a closed ticket or a published post becomes searchable by your agents.
+
+```json
+{
+  "title": "Refund policy",
+  "content": "Annual plans can be refunded within 30 days of purchase.",
+  "metadata": { "category": "billing" },
+  "externalDocumentId": "wiki-4812"
+}
+```
+
+`title` and `content` are required. `externalDocumentId` is your own identifier for the document; set it to the record id from the source system so you can find the document again. `metadata` takes strings, numbers, booleans and nulls.
+
+The response is `202` with `documentId` and `status`. Processing continues in the background, so the document is searchable a short while later. [Documents and search](/api/documents-and-search) shows how to list documents and read their processing state.
+
+To send a file rather than text, `POST /api/v1/document/import` accepts `multipart/form-data` with a `file` field and optional `title` and `metadata` fields. In n8n, set the HTTP Request node's body to **Form-Data** with `file` as an **n8n Binary File**. Both document writes need `workspace.documents.manage`, which Member service accounts hold.
+
+## Read a conversation back
+
+`GET /api/v1/history/chat/{conversationId}` returns the saved transcript, for a workflow that archives conversations or checks how a turn went. It needs `workspace.history.read`. Pass the `conversationId` from an earlier chat response in the URL, and read `messages` from the result.
+
+## Common failure modes
+
+- **`401` on every call.** The token is expired, revoked, or from the other region's host. Run the summary call against the host you are using.
+- **`401` only on `agents/{agentId}/chat`.** That route wants an agent REST credential. Switch to `assistant/chat` with the service-account token.
+- **`403` on a call.** The service account's role lacks the permission the route names. Change the role in **Settings → API access**.
+- **`400` with field details.** The body failed validation: an empty `message`, a `topK` above 100, or a malformed `agentId`. The error lists the field.
+- **The API rejects the body as malformed.** The `Content-Type: application/json` header is missing, or the JSON in the step has a stray quote from a mapped value. Map values into a body that is valid JSON.
+- **A document is missing from search.** It is still processing. Check its status with `GET /api/v1/document/{documentId}`.
+
+## Read next
+
+- [Send data to an automation](/automation/webhook-skills)
+- [n8n AI agents over MCP](/automation/n8n-ai-agents)
+- [Personal tokens and service accounts](/api/workspaces-and-tokens)
+- [Chat and history](/api/chat-and-history)
+- [Documents and search](/api/documents-and-search)
+- [API Reference](/api-reference)

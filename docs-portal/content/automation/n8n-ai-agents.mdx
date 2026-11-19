@@ -1,0 +1,73 @@
+---
+title: "n8n AI agents over MCP"
+description: "Connect n8n's MCP Client Tool node to the Radioso MCP server so an n8n AI agent can consult a Radioso agent and start its routines."
+last_updated: 2026-11-19
+---
+
+import { Steps } from 'nextra/components'
+
+# n8n AI agents over MCP
+
+An n8n AI Agent node decides for itself which tools to call. Give it a Radioso agent as one of those tools and it can answer "what is our refund window?" from your documents, hand a customer through a booking routine, or ask the agent that knows your product before it drafts a reply. The Radioso agent answers with its own persona, directives and grounding, so the n8n agent passes along answers the workspace's rules already shaped.
+
+This works through the [MCP server](/guides/mcp-server): n8n's **MCP Client Tool** node connects to it, and the agent's tools show up in the n8n agent's tool list.
+
+<Steps>
+### Issue an MCP credential
+
+Open the Radioso agent's **Channels → MCP** card and choose **Connect a client**. Pick **Other MCP clients**, name the connection `n8n`, and copy the secret. It starts with `radioso_mcp_v1_` and is shown once. The card also shows the server URL, which ends in `/mcp`.
+
+This credential is bound to that one agent. It is not a service-account token: a service-account token gets `401` from the MCP server. [MCP server](/guides/mcp-server#connect-a-client) covers expiry, rotation and revocation.
+
+### Save the secret in n8n
+
+In n8n, create a credential of type **Header Auth** with **Name** `Authorization` and **Value** `Bearer radioso_mcp_v1_…`. n8n's MCP Client Tool node can also use its **Bearer Auth** option; either sends the same header.
+
+### Add the MCP Client Tool node
+
+Add an **AI Agent** node with a chat model, then add an **MCP Client Tool** node to its **Tool** input. Set:
+
+- **Endpoint** to the server URL from the **Channels → MCP** card.
+- **Server Transport** to **HTTP Streamable**.
+- **Authentication** to the credential from the previous step.
+- **Tools to Include** to **All**, or select the ones you want the n8n agent to use.
+
+### Tell the n8n agent when to use it
+
+The AI Agent node's **System Message** decides when a tool is worth calling. Name the situation rather than the tool, for example:
+
+```text
+You answer customer emails for Example Co. For any question about
+products, pricing or policies, ask the Radioso agent and base your
+reply on its answer. If it says it cannot answer, say so and escalate.
+```
+</Steps>
+
+## What the n8n agent gets
+
+The connection lists these tools:
+
+- **`ask_agent`** sends one message to the Radioso agent and returns its answer with a reply envelope: whether the question was answered, who owns the conversation, and the state of any routine. It continues the same conversation across calls, so the Radioso agent remembers earlier turns of a thread.
+- **One tool per exposed routine**, with typed inputs built from the routine's slots. Expose a routine in the routine editor and publish the agent; the tool appears in the next session. Calling it starts the routine with those values already filled.
+- **`radioso_docs` and `radioso_doc_page`**, which read Radioso's own documentation. They help when you are building the workflow with an AI assistant, and you can leave them out of **Tools to Include** for a production agent.
+
+[Connect a calling agent](/guides/agent-converse) explains the reply envelope, routine tools and handoffs in full. When a person has taken over a conversation, the envelope says so, and the n8n agent should stop answering for it.
+
+## When to use REST instead
+
+MCP suits a model choosing among tools. A fixed step in a workflow, such as "search the knowledge base and write the result to a sheet", is better as an HTTP Request node, with the same behavior every run and no model deciding to call it. [Call Radioso from n8n, Zapier and Make](/automation/call-radioso) covers those calls.
+
+## Common failure modes
+
+- **The node reports `401`.** The secret is wrong, expired, revoked, or a service-account token. Issue an MCP credential from the agent's **Channels → MCP** card.
+- **The card says MCP is not enabled on this deployment.** A self-hosted Radioso needs `RADIOSO_MCP_PUBLIC_URL` set on the frontend. [MCP server](/guides/mcp-server#deployment-enablement) lists the steps.
+- **A routine tool is missing.** The session opened before the routine was exposed and published. Run the n8n workflow again to open a new session.
+- **The connection fails to open.** The endpoint must be the full `/mcp` URL. A transport set to SSE against an HTTP endpoint fails, so keep **HTTP Streamable**.
+- **The n8n agent never calls the tool.** The system message does not say when the Radioso agent applies. Name the questions it should handle.
+
+## Read next
+
+- [MCP server](/guides/mcp-server)
+- [Connect a calling agent](/guides/agent-converse)
+- [Call Radioso from n8n, Zapier and Make](/automation/call-radioso)
+- [Authentication](/guides/authentication)

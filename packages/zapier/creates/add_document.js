@@ -1,6 +1,4 @@
-'use strict'
-
-const { radiosoRequest } = require('../lib/client')
+import { radiosoRequest } from '../lib/client.js'
 
 const addDocument = async (z, bundle) => {
   const input = bundle.inputData
@@ -11,13 +9,13 @@ const addDocument = async (z, bundle) => {
   return { id: body.documentId, document_id: body.documentId, status: body.status }
 }
 
-module.exports = {
+export default {
   key: 'add_document',
   noun: 'Document',
   display: {
     label: 'Add a Document',
     description:
-      'Adds a text document to the workspace knowledge. Radioso accepts it at once and processes it in the background, so the status is not "ready" when this step finishes.',
+      'Adds a text document to the workspace knowledge. Radioso processes it in the background, so a new document is not ready when this step finishes; check Processing status. Sending an External ID that already exists replaces that document, and unchanged content comes back ready at once.',
   },
   operation: {
     inputFields: [
@@ -27,7 +25,8 @@ module.exports = {
         key: 'external_document_id',
         label: 'External ID',
         required: false,
-        helpText: 'An ID from your own system that identifies this document, such as a record ID.',
+        helpText:
+          'An ID from your own system, such as a record ID. Sending the same ID again replaces the document it created, so a Zap can keep one document in sync with a record.',
       },
     ],
     perform: addDocument,

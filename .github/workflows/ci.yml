@@ -753,13 +753,11 @@ jobs:
       - name: Install Zapier integration dependencies
         run: pnpm install --frozen-lockfile --filter @radioso/zapier...
 
+      # Local schema validation and the nock tests only. `zapier-platform validate` without
+      # `--without-style` and `build` call Zapier's servers; the owner runs those before a push.
       - name: Validate and test Zapier integration
         working-directory: packages/zapier
         run: pnpm test
-
-      - name: Build Zapier integration
-        working-directory: packages/zapier
-        run: pnpm run build
 
   wordpress-companion:
     name: WordPress Companion Plugin

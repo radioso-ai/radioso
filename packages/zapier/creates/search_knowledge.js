@@ -1,7 +1,5 @@
-'use strict'
-
-const { radiosoRequest } = require('../lib/client')
-const { agentField } = require('../lib/fields')
+import { radiosoRequest } from '../lib/client.js'
+import { agentField } from '../lib/fields.js'
 
 const searchKnowledge = async (z, bundle) => {
   const input = bundle.inputData
@@ -27,7 +25,7 @@ const searchKnowledge = async (z, bundle) => {
   }
 }
 
-module.exports = {
+export default {
   key: 'search_knowledge',
   noun: 'Knowledge result',
   display: {

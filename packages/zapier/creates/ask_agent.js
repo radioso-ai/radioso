@@ -1,13 +1,13 @@
-'use strict'
-
-const { radiosoRequest } = require('../lib/client')
-const { agentField } = require('../lib/fields')
+import { radiosoRequest } from '../lib/client.js'
+import { agentField } from '../lib/fields.js'
 
 const askAgent = async (z, bundle) => {
   const input = bundle.inputData
   const request = { message: input.message }
-  if (input.agent_id) request.agentId = input.agent_id
+  // A conversation belongs to the agent that started it, and the API answers 404 when a different
+  // agent is named alongside it, so the agent is sent only for a new conversation.
   if (input.conversation_id) request.conversationId = input.conversation_id
+  else if (input.agent_id) request.agentId = input.agent_id
   if (input.locale) request.userExpectedLocale = input.locale
 
   const reply = await radiosoRequest(z, bundle, { method: 'POST', path: '/assistant/chat', body: request })
@@ -16,9 +16,10 @@ const askAgent = async (z, bundle) => {
     url: citation.sourceUrl || null,
   }))
   return {
-    id: reply.assistantMessageId,
+    // While a teammate owns the conversation the API returns an empty assistantMessageId.
+    id: reply.assistantMessageId || reply.conversationId,
     conversation_id: reply.conversationId,
-    assistant_message_id: reply.assistantMessageId,
+    assistant_message_id: reply.assistantMessageId || null,
     agent_id: reply.agentId || null,
     agent_name: reply.agentName || null,
     answer: reply.answer,
@@ -28,26 +29,27 @@ const askAgent = async (z, bundle) => {
   }
 }
 
-module.exports = {
+export default {
   key: 'ask_agent',
   noun: 'Answer',
   display: {
     label: 'Ask an Agent',
     description:
-      "Sends a message to a Radioso agent and returns its answer. Zapier stops an action after about 30 seconds, so a turn that runs a long routine or several skills can time out as a failed step.",  },
+      "Sends a message to a Radioso agent and returns its answer. Zapier stops an action after about 30 seconds, so a turn that runs a long routine or several skills can fail as a timeout. A first turn that times out returns no Conversation ID to look up, and Zapier's Autoreplay can send the same message again. When a teammate has taken the conversation over, Reply suppressed is true and Answer holds a waiting message, so add a Filter on Reply suppressed before using the Answer.",
+  },
   operation: {
     inputFields: [
       { key: 'message', label: 'Message', required: true, helpText: 'Up to 4,000 characters.' },
       agentField({
         required: false,
-        helpText: 'The agent to ask. Leave empty to use the workspace default agent.',
+        helpText: 'The agent to ask. Leave empty to use the workspace default agent. Ignored when Conversation ID is set.',
       }),
       {
         key: 'conversation_id',
         label: 'Conversation ID',
         required: false,
         helpText:
-          'Leave empty to start a new conversation. Map the Conversation ID from an earlier Ask an Agent step to continue it.',
+          'Leave empty to start a new conversation. To continue one, map the Conversation ID from an earlier Ask an Agent step. The conversation stays with the agent that started it.',
       },
       {
         key: 'locale',

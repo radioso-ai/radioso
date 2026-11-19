@@ -35,21 +35,49 @@ describe('authentication', () => {
     await appTester(App.authentication.test, { authData: { ...authData, instance_url: `${ORIGIN}/api/v1/` } })
   })
 
-  it('rejects a token the instance does not accept as an expired connection', async () => {
+  it('treats a rejected token as an expired connection', async () => {
     radioso().get('/api/v1/workspace/summary').reply(401, { error: { code: 'unauthorized', message: 'Invalid credential' } })
-    await expect(appTester(App.authentication.test, { authData })).rejects.toThrow(/Invalid credential/)
+    const failure = await appTester(App.authentication.test, { authData }).catch((error) => error)
+    expect(failure.name).toBe('ExpiredAuthError')
+    expect(failure.message).toMatch(/Invalid credential/)
   })
 
-  it('rejects an instance URL that is not a URL before sending anything', async () => {
-    await expect(
-      appTester(App.authentication.test, { authData: { ...authData, instance_url: 'radioso' } }),
-    ).rejects.toThrow(/Instance URL must start with https/)
+  it('reaches a self-hosted API served under /backend', async () => {
+    nock('https://app.example', { reqheaders: { authorization: `Bearer ${TOKEN}` } })
+      .get('/backend/api/v1/workspace/summary')
+      .reply(200, { documentCount: 1 })
+    await appTester(App.authentication.test, { authData: { ...authData, instance_url: 'https://app.example/backend' } })
+  })
+
+  it('accepts https only and sends nothing for another scheme', async () => {
+    for (const instance_url of ['radioso', 'http://localhost:8080']) {
+      await expect(appTester(App.authentication.test, { authData: { ...authData, instance_url } })).rejects.toThrow(
+        /Instance URL must start with https/,
+      )
+    }
+  })
+
+  it('explains a URL that answers with something other than JSON', async () => {
+    radioso().get('/api/v1/workspace/summary').reply(200, '<html>Sign in</html>', { 'Content-Type': 'text/html' })
+    await expect(appTester(App.authentication.test, { authData })).rejects.toThrow(/did not answer with JSON/)
+  })
+
+  it('explains a JSON answer that is not a Radioso workspace summary', async () => {
+    radioso().get('/api/v1/workspace/summary').reply(200, { ok: true })
+    await expect(appTester(App.authentication.test, { authData })).rejects.toThrow(/not like a Radioso API/)
+  })
+
+  it('copes with a long run of trailing slashes', async () => {
+    radioso().get('/api/v1/workspace/summary').reply(200, { documentCount: 0 })
+    await appTester(App.authentication.test, { authData: { ...authData, instance_url: `${ORIGIN}${'/'.repeat(50000)}` } })
   })
 
   it('labels the connection with the workspace name, else the instance host', async () => {
-    const label = (inputData) => appTester(App.authentication.connectionLabel, { inputData })
-    expect(await label({ instance_url: ORIGIN, workspace_name: 'Support' })).toBe('Support')
-    expect(await label({ instance_url: `${ORIGIN}/` })).toBe('api.example')
+    // Zapier passes the auth fields in authData; inputData holds the test call's response.
+    const label = (fields) =>
+      appTester(App.authentication.connectionLabel, { authData: fields, inputData: { documentCount: 3 } })
+    expect(await label({ instance_url: ORIGIN, api_token: TOKEN, workspace_name: 'Support' })).toBe('Support')
+    expect(await label({ instance_url: `${ORIGIN}/`, api_token: TOKEN })).toBe('api.example')
   })
 })
 
@@ -88,23 +116,45 @@ describe('Ask an Agent', () => {
     })
   })
 
-  it('continues an existing conversation and leaves the agent to the conversation', async () => {
+  it('continues a conversation without naming the agent, even when the Zap sets one', async () => {
+    // The API answers 404 when the agent named differs from the conversation's, so agentId is omitted.
     radioso()
       .post('/api/v1/assistant/chat', { message: 'And for sale items?', conversationId: CONVERSATION_ID })
       .reply(200, chatReply)
     await appTester(App.creates.ask_agent.operation.perform, {
       authData,
-      inputData: { message: 'And for sale items?', conversation_id: CONVERSATION_ID },
+      inputData: { message: 'And for sale items?', conversation_id: CONVERSATION_ID, agent_id: AGENT_ID },
+    })
+  })
+
+  it('flags a reply held back while a teammate owns the conversation', async () => {
+    radioso()
+      .post('/api/v1/assistant/chat')
+      .reply(200, {
+        conversationId: CONVERSATION_ID,
+        assistantMessageId: '',
+        answer: 'A teammate will answer shortly.',
+        ownership: { state: 'human_owned', suppressed: true },
+      })
+    const result = await appTester(App.creates.ask_agent.operation.perform, {
+      authData,
+      inputData: { message: 'Hello?', conversation_id: CONVERSATION_ID },
+    })
+    expect(result).toMatchObject({
+      id: CONVERSATION_ID,
+      assistant_message_id: null,
+      conversation_owner: 'human_owned',
+      reply_suppressed: true,
     })
   })
 
   it('reports an agent that is not published with the API message', async () => {
     radioso()
       .post('/api/v1/assistant/chat')
-      .reply(404, { error: { code: 'agent_not_published', message: 'This agent has not been published.' } })
+      .reply(404, { error: { code: 'agent_not_published', message: 'Agent is not published' } })
     await expect(
       appTester(App.creates.ask_agent.operation.perform, { authData, inputData: { message: 'Hi', agent_id: AGENT_ID } }),
-    ).rejects.toThrow(/not been published/)
+    ).rejects.toThrow(/Agent is not published/)
   })
 })
 
@@ -172,8 +222,9 @@ describe('Find Conversation', () => {
         requestContext: { ip: '203.0.113.9' },
         visitor: { email: 'visitor@example.test' },
         messages: [
-          { id: 'm1', role: 'user', content: 'How long do I have?' },
-          { id: 'm2', role: 'assistant', content: '30 days.' },
+          { id: 'm0', role: 'system', source: 'system', content: 'Conversation started' },
+          { id: 'm1', role: 'user', source: 'customer', content: 'How long do I have?' },
+          { id: 'm2', role: 'assistant', source: 'human_agent', content: '30 days.' },
         ],
         ownership: { state: 'human_owned' },
       })
@@ -184,10 +235,18 @@ describe('Find Conversation', () => {
     expect(conversation).toMatchObject({
       id: CONVERSATION_ID,
       conversation_owner: 'human_owned',
-      transcript: 'user: How long do I have?\nassistant: 30 days.',
+      transcript: 'customer: How long do I have?\nhuman_agent: 30 days.',
       transcript_is_partial: false,
     })
     expect(JSON.stringify(conversation)).not.toMatch(/203\.0\.113\.9|visitor@example/)
+  })
+
+  it('finds nothing for an id that is not a conversation id, without calling the API', async () => {
+    const found = await appTester(App.searches.find_conversation.operation.perform, {
+      authData,
+      inputData: { conversation_id: 'not-a-uuid' },
+    })
+    expect(found).toEqual([])
   })
 
   it('finds nothing for an unknown conversation so the Zap can branch', async () => {

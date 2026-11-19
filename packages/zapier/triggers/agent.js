@@ -1,6 +1,4 @@
-'use strict'
-
-const { radiosoRequest } = require('../lib/client')
+import { radiosoRequest } from '../lib/client.js'
 
 /**
  * Hidden trigger that feeds the "Agent" dropdown on actions (`dynamic: 'agent.id.name'`). It is
@@ -11,7 +9,7 @@ const listAgents = async (z, bundle) => {
   return (body.agents || []).map((agent) => ({ id: agent.id, name: agent.name }))
 }
 
-module.exports = {
+export default {
   key: 'agent',
   noun: 'Agent',
   display: {

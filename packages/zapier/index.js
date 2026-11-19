@@ -1,18 +1,16 @@
-'use strict'
+import zapier from 'zapier-platform-core'
 
-const { version: platformVersion } = require('zapier-platform-core')
-const { version } = require('./package.json')
+import authentication from './authentication.js'
+import addDocument from './creates/add_document.js'
+import askAgent from './creates/ask_agent.js'
+import searchKnowledge from './creates/search_knowledge.js'
+import findConversation from './searches/find_conversation.js'
+import agent from './triggers/agent.js'
+import pkg from './package.json' with { type: 'json' }
 
-const authentication = require('./authentication')
-const agent = require('./triggers/agent')
-const askAgent = require('./creates/ask_agent')
-const searchKnowledge = require('./creates/search_knowledge')
-const addDocument = require('./creates/add_document')
-const findConversation = require('./searches/find_conversation')
-
-module.exports = {
-  version,
-  platformVersion,
+export default {
+  version: pkg.version,
+  platformVersion: zapier.version,
   flags: { cleanInputData: false },
   authentication,
   triggers: { [agent.key]: agent },

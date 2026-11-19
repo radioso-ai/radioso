@@ -1,6 +1,4 @@
-'use strict'
-
-const { instanceHost, normalizeInstanceUrl, radiosoRequest } = require('./lib/client')
+import { instanceHost, radiosoRequest } from './lib/client.js'
 
 const EU_CLOUD = 'https://api.radioso.ai'
 
@@ -13,17 +11,18 @@ const EU_CLOUD = 'https://api.radioso.ai'
  * optional "Workspace name" field and falls back to the instance host.
  */
 const testAuth = async (z, bundle) => {
-  if (!/^https?:\/\/[^/\s]+/i.test(normalizeInstanceUrl(bundle.authData.instance_url))) {
+  const summary = await radiosoRequest(z, bundle, { path: '/workspace/summary' })
+  if (typeof summary.documentCount !== 'number') {
     throw new z.errors.Error(
-      'Instance URL must start with https:// (or http:// for a local deployment), for example https://api.radioso.ai.',
+      'That URL answered, but not like a Radioso API. Set Instance URL to the URL your API answers on.',
       'invalid_instance_url',
       400,
     )
   }
-  return radiosoRequest(z, bundle, { path: '/workspace/summary' })
+  return summary
 }
 
-module.exports = {
+export default {
   type: 'custom',
   fields: [
     {
@@ -33,7 +32,7 @@ module.exports = {
       required: true,
       default: EU_CLOUD,
       helpText:
-        'Where your Radioso workspace runs. Use `https://api.radioso.ai` for the EU cloud, `https://api-us.radioso.ai` for the US cloud, or the backend origin of your self-hosted deployment. A token only works on the instance that issued it.',
+        'The URL your Radioso API answers on, over https. Use `https://api.radioso.ai` for the EU cloud or `https://api-us.radioso.ai` for the US cloud. A self-hosted deployment often serves the API at its app address plus `/backend`, such as `https://app.example.com/backend`. A token only works on the instance that issued it.',
     },
     {
       key: 'api_token',
@@ -52,6 +51,7 @@ module.exports = {
     },
   ],
   test: testAuth,
+  // In a connection-label function the auth fields are in `authData`; `inputData` holds the test response.
   connectionLabel: (z, bundle) =>
-    `${bundle.inputData.workspace_name || instanceHost(bundle.inputData.instance_url)}`.trim(),
+    `${bundle.authData.workspace_name || instanceHost(bundle.authData.instance_url)}`.trim(),
 }

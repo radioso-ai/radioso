@@ -187,10 +187,4 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
     },
   },
-
-  // The Zapier app is a CommonJS module: Zapier's build and runtime load it with require().
-  {
-    files: ['packages/zapier/**/*.js'],
-    rules: { '@typescript-eslint/no-require-imports': 'off' },
-  },
 )

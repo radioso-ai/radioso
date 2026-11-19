@@ -3,7 +3,6 @@ const meta = {
   'mcp-server': 'MCP server',
   'agent-converse': 'Connect a calling agent',
   'a2a-converse': 'Connect an A2A client',
-  zapier: 'Connect Zapier',
   'publish-an-agent': 'Publish and open an agent',
   'document-upload': 'Document upload',
   'document-metadata': 'Extract document metadata',

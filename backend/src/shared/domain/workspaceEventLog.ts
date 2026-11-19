@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { CALLER_KINDS } from "./conversationSource.js";
-import { CONVERSATION_OWNERSHIP_REASONS } from "./conversationOwnershipReasons.js";
+import { CONVERSATION_OWNERSHIP_REASONS, type ConversationOwnershipReasonCode } from "./conversationOwnershipReasons.js";
 import type { Db } from "../infra/kysely/types.js";
 
 /**
@@ -54,8 +54,36 @@ const conversationEventSubjectSchema = z.object({
   visitorId: z.string().uuid().nullable().describe("The visitor the conversation belonged to when the event was recorded, when the channel identifies one."),
 });
 
-/** What each type adds to the conversation it names. */
-const workspaceEventDetailSchemas = {
+/**
+ * What each type adds to the conversation it names, as its owner builds it. Written out rather than
+ * inferred from the schemas below, which keeps the type checker's work small; the contract and
+ * integration tests parse every served event against those schemas.
+ */
+interface WorkspaceEventDetails {
+  "conversation.started": Record<string, never>;
+  "contact_request.created": { contactRequestId: string; values: Record<string, unknown> };
+  "handoff.requested": { reason: ConversationOwnershipReasonCode };
+  "routine.completed": {
+    routineId: string;
+    executionId: string | null;
+    outcome: RoutineEventOutcome;
+    values: Record<string, unknown>;
+    sensitiveSlotKeys: string[];
+  };
+  "decision.pending": {
+    decisionHandle: string;
+    routineId: string;
+    stepId: string;
+    reason: string | null;
+    options: Array<{ id: string; label: string }>;
+    deadline: string | null;
+  };
+}
+
+export type WorkspaceEventDetail<T extends WorkspaceEventType> = WorkspaceEventDetails[T];
+
+/** The published schema of what each type adds. */
+const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObject>> = {
   "conversation.started": z.object({}),
   "contact_request.created": z.object({
     contactRequestId: z.string().uuid().describe("The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`."),
@@ -79,12 +107,10 @@ const workspaceEventDetailSchemas = {
     options: z.array(z.object({ id: z.string(), label: z.string() })),
     deadline: z.string().datetime().nullable(),
   }),
-} as const satisfies Record<WorkspaceEventType, z.ZodObject>;
-
-export type WorkspaceEventDetail<T extends WorkspaceEventType> = z.infer<typeof workspaceEventDetailSchemas[T]>;
+};
 
 /** The `data` of one type as served: the conversation it names, then what the type adds. */
-export const workspaceEventDataSchema = <T extends WorkspaceEventType>(type: T) =>
+export const workspaceEventDataSchema = (type: WorkspaceEventType): z.ZodObject =>
   conversationEventSubjectSchema.extend(workspaceEventDetailSchemas[type].shape);
 
 /** One event as the log serves it, and as a subscription receives it. */

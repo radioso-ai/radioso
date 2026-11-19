@@ -15,7 +15,7 @@ const componentName = (type: WorkspaceEventType): string =>
 
 /** The workspace event log's envelope, one schema per type with its typed `data`. */
 export const registerWorkspaceEventLogSchemas = (registry: OpenAPIRegistry) => {
-  const eventSchema = <T extends WorkspaceEventType>(type: T) => registry.register(componentName(type), z.object({
+  const eventSchema = (type: WorkspaceEventType) => registry.register(componentName(type), z.object({
     id: z.string().uuid().describe("The event's id: stable, and the key a delivery or a poller deduplicates on."),
     type: z.literal(type),
     version: z.literal(WORKSPACE_EVENT_VERSIONS[type]).describe("The version of this type's `data` schema the event was written with."),

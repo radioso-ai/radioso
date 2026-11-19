@@ -2979,6 +2979,34 @@ Related docs and specs:
 - `specs/043-mcp-context-server/`
 - `specs/061-mcp-deployment-modes/`
 
+## n8n Community Node
+
+Owns the `@radioso/n8n-nodes-radioso` package: the Radioso API credential and the
+Radioso action node (ask an agent, search and answer from knowledge, add a
+document, get a conversation), usable as an AI Agent tool.
+
+Should not import the TypeScript SDK or any runtime dependency: n8n verifies
+community nodes only when the package has none, so requests go through n8n's own
+HTTP helpers. Backend and frontend never import it. Its linter is `n8n-node lint`
+(the root ESLint config ignores it); it installs with npm and its own
+`package-lock.json` outside the pnpm workspace, so n8n's tooling advisories stay
+out of the root lockfile. It has its own CI job and provenance publish workflow.
+
+Primary paths:
+
+- `packages/n8n-nodes-radioso/nodes/Radioso/requests.ts` (operation to request mapping)
+- `packages/n8n-nodes-radioso/nodes/Radioso/errors.ts` (HTTP status to n8n error text)
+- `packages/n8n-nodes-radioso/credentials/RadiosoApi.credentials.ts`
+- `.github/workflows/publish-n8n-node.yml`
+
+Focused checks:
+
+- `cd packages/n8n-nodes-radioso && npm ci && npm run lint && npm test && npm run build`
+
+Every route the node calls must stay machine-eligible in
+`backend/src/app/http/apiPrincipalRoutePolicy.ts`; operator reply and decision
+routes are session-only, so the node does not expose them.
+
 ## TypeScript SDK
 
 Owns the first-party TypeScript client surface, generated or synchronized API

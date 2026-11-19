@@ -25585,6 +25585,226 @@
           "hasMore"
         ]
       },
+      "EventSubscription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "zapier",
+              "n8n",
+              "custom"
+            ],
+            "description": "Which client registered it."
+          },
+          "targetHost": {
+            "type": "string",
+            "description": "The host events are POSTed to. The full target URL is never returned after create."
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "conversation.started",
+                "contact_request.created",
+                "handoff.requested",
+                "routine.completed",
+                "decision.pending"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "description": "`disabled` receives nothing more until its client subscribes the same URL again."
+          },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delivery_failing",
+              "creator_revoked",
+              null
+            ],
+            "description": "`delivery_failing` after a day of failed deliveries; `creator_revoked` once the credential or teammate that created it may no longer read its types."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "service_account",
+                  "personal_token",
+                  "teammate"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The service account's or token's name, or the teammate's display name, as it reads now. Null for a teammate without a display name."
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ],
+            "additionalProperties": false
+          },
+          "lastDelivery": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "delivered",
+                  "failed"
+                ]
+              },
+              "statusCode": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The target's HTTP status, or null when no response came back (a timeout, a refused or unresolvable host)."
+              }
+            },
+            "required": [
+              "at",
+              "outcome",
+              "statusCode"
+            ],
+            "additionalProperties": false
+          },
+          "failingSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current run of failed deliveries began; null while delivering."
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "targetHost",
+          "eventTypes",
+          "status",
+          "disabledReason",
+          "createdAt",
+          "createdBy",
+          "lastDelivery",
+          "failingSince"
+        ],
+        "additionalProperties": false
+      },
+      "EventSubscriptionCreated": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/EventSubscription"
+          },
+          "signingSecret": {
+            "type": "string",
+            "description": "Verifies `X-Radioso-Signature` on every push. Returned only here; store it now. Subscribing the same URL again issues a new one."
+          }
+        },
+        "required": [
+          "subscription",
+          "signingSecret"
+        ]
+      },
+      "CreateEventSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "targetUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id."
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "conversation.started",
+                "contact_request.created",
+                "handoff.requested",
+                "routine.completed",
+                "decision.pending"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "The event types to receive. Each needs the permission that reads it from the event log."
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "zapier",
+              "n8n",
+              "custom"
+            ],
+            "description": "Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings."
+          }
+        },
+        "required": [
+          "targetUrl",
+          "eventTypes",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "EventSubscriptionList": {
+        "type": "object",
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventSubscription"
+            }
+          }
+        },
+        "required": [
+          "subscriptions"
+        ]
+      },
+      "EventSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/EventSubscription"
+          }
+        },
+        "required": [
+          "subscription"
+        ]
+      },
       "ConversationConsent": {
         "type": "object",
         "properties": {
@@ -53917,6 +54137,264 @@
         }
       }
     },
+    "/api/v1/workspace/event-subscriptions": {
+      "post": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Subscribe a URL to workspace events",
+        "description": "Each event of `eventTypes` recorded from now on is POSTed to `targetUrl`, one event per request, in the order `GET /api/v1/workspace/events` lists them. The response carries `signingSecret` once; verify every push's `X-Radioso-Signature` with it. Subscribing a URL the workspace already subscribed replaces that subscription with a new one: a new `id` and a new secret, its place in the log carried over from an active one, the newest events for a disabled one. The replaced `id` answers `404` from then on, so a create retried after a lost response never leaves two subscriptions delivering the same events, and a late unsubscribe of the replaced `id` leaves the new one alone. The target must be https, without a username or password, on a host that resolves to a public address. A target that answers `410 Gone` is unsubscribed. Each type also needs the permission that reads it from the event log. A workspace holds at most 25 subscriptions. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "createEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscribed, or the existing subscription for this URL replaced by a new one with a new `id`. `signingSecret` is shown only here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid body, or `invalid_target_url`: not https, or not a public host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required, or `event_type_not_permitted` for a type the caller may not read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`event_subscription_limit_reached`: the workspace already holds 25 subscriptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`encryption_not_configured`: the deployment has no key to store the secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "List event subscriptions",
+        "description": "The workspace's subscriptions, newest first, active and disabled. Target URLs are never returned; `targetHost` names where events go. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "listEventSubscriptions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workspace's subscriptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspace/event-subscriptions/{subscriptionId}": {
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Get an event subscription",
+        "description": "One subscription, to check it still exists and is `active`. Treat `404` or `disabled` as gone and subscribe the URL again. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "getEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "subscriptionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The subscription",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such subscription in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Delete an event subscription",
+        "description": "Stops pushes to its target. A push already in flight may still arrive. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "deleteEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "subscriptionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such subscription in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/retrieval/answer": {
       "post": {
         "tags": [
@@ -67759,5 +68237,66 @@
       }
     }
   },
-  "webhooks": {}
+  "webhooks": {
+    "workspaceEvent": {
+      "post": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "A workspace event pushed to a subscription",
+        "description": "Radioso POSTs one event per request to the subscription's target, in log order. The body is the same envelope `GET /api/v1/workspace/events` lists. Verify `X-Radioso-Signature` before trusting the body: `sha256=` and the hex HMAC-SHA256, keyed by the subscription's `signingSecret`, of `{X-Radioso-Timestamp}.{raw body}`. Delivery is at-least-once: deduplicate on `Idempotency-Key`, which is the event's `id`. Answer 2xx within 10 seconds to accept it. `410 Gone` deletes the subscription. Any other answer, a timeout or a redirect to another origin is a failure: the event is retried no sooner than 30 seconds later, the wait doubling after each failure to at most an hour, and newer events wait behind it. A subscription failing for 24 hours, after at least 5 attempts, is disabled.",
+        "operationId": "receiveWorkspaceEvent",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "`sha256=<hex HMAC-SHA256 of \"{timestamp}.{raw body}\" keyed by the signing secret>`"
+            },
+            "required": true,
+            "description": "`sha256=<hex HMAC-SHA256 of \"{timestamp}.{raw body}\" keyed by the signing secret>`",
+            "name": "X-Radioso-Signature",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Unix seconds when the request was signed. Refuse one far from your clock to block replays."
+            },
+            "required": true,
+            "description": "Unix seconds when the request was signed. Refuse one far from your clock to block replays.",
+            "name": "X-Radioso-Timestamp",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The event's `id`. The same event always carries the same key."
+            },
+            "required": true,
+            "description": "The event's `id`. The same event always carries the same key.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted: any 2xx moves the subscription past this event"
+          },
+          "410": {
+            "description": "Gone: the subscription is deleted and receives nothing more"
+          }
+        }
+      }
+    }
+  }
 }

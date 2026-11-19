@@ -56,6 +56,8 @@ export const ENCRYPTED_FIELD_LOCATIONS: readonly EncryptedFieldLocation[] = [
   }),
   location({ table: "voice_recording_erasures", keyColumns: ["id"], column: "sealed_api_key", shape: "text" }),
   location({ table: "workspace_webhook_destinations", keyColumns: ["id"], column: "secret_ciphertext", shape: "text" }),
+  location({ table: "workspace_event_subscriptions", keyColumns: ["id"], column: "target_url_ciphertext", shape: "text" }),
+  location({ table: "workspace_event_subscriptions", keyColumns: ["id"], column: "secret_ciphertext", shape: "text" }),
 ];
 
 /**

@@ -253,3 +253,59 @@ describe("syncDocuments", () => {
     expect(events).toContain("create:mdx-docs:a");
   });
 });
+
+describe("syncDocuments superseded copies", () => {
+  const url = "https://radioso.example/pricing";
+  const ours = "radioso-website:/pricing";
+  const websiteDoc = (): DocumentInput => ({
+    externalDocumentId: ours,
+    title: "Pricing",
+    content: "body",
+    source: { kind: "website", url: "https://radioso.example" },
+    metadata: { section: "radioso-website", url },
+  });
+  const supersede = [{ citationUrl: url, keepExternalDocumentId: ours }];
+  const options = { prune: true, pruneSections: new Set(["radioso-website"]), supersede };
+
+  it("deletes only exact-URL copies we do not own, after the upsert, and logs them", async () => {
+    const { client, deleted, deletedSources, events } = fakeClient([
+      { id: "hand", title: "Pricing", externalDocumentId: "https://radioso.example/pricing.md", sourceId: "src-hand", metadata: { url } },
+      { id: "nullid", externalDocumentId: null, sourceId: "src-x", metadata: { url } },
+      { id: "other", externalDocumentId: "x", sourceId: "src-x", metadata: { url: `${url}/enterprise` } },
+      { id: "plain", externalDocumentId: "y", sourceId: "src-x", metadata: null },
+    ]);
+    const logs: string[] = [];
+
+    await syncDocuments(client, [websiteDoc()], options, (message) => logs.push(message));
+
+    expect(deleted).toEqual(["hand", "nullid"]);
+    expect(deletedSources).toEqual([]);
+    expect(events.indexOf(`create:${ours}`)).toBeLessThan(events.indexOf("delete:hand"));
+    expect(logs.some((line) => line.includes("id=hand") && line.includes('title="Pricing"') && line.includes("sourceId=src-hand"))).toBe(true);
+  });
+
+  it("keeps our own document", async () => {
+    const { client, deleted } = fakeClient([
+      { id: "mine", externalDocumentId: ours, sourceId: "source-common", metadata: { section: "radioso-website", url } },
+    ]);
+    await syncDocuments(client, [websiteDoc()], options);
+    expect(deleted).toEqual([]);
+  });
+
+  it("does nothing without --prune", async () => {
+    const { client, deleted } = fakeClient([{ id: "hand", externalDocumentId: "z", sourceId: "s", metadata: { url } }]);
+    await syncDocuments(client, [websiteDoc()], { ...options, prune: false });
+    expect(deleted).toEqual([]);
+  });
+
+  it("warns and deletes nothing when the list carries no metadata", async () => {
+    const { client, deleted } = fakeClient([
+      { id: "mine", externalDocumentId: ours, sourceId: "source-common", metadata: null },
+      { id: "hand", externalDocumentId: "z", sourceId: "s", metadata: null },
+    ]);
+    const logs: string[] = [];
+    await syncDocuments(client, [websiteDoc()], options, (message) => logs.push(message));
+    expect(deleted).toEqual([]);
+    expect(logs.some((line) => line.startsWith("warning:"))).toBe(true);
+  });
+});

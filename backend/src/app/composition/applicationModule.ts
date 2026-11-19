@@ -371,6 +371,13 @@ interface ApplicationPeriodicTaskRegistration {
   create(context: ApplicationPeriodicTaskContext): ApplicationPeriodicTaskHandle;
 }
 
+/** The contributed periodic tasks, each built once with the context composition hands every module. */
+export const contributedPeriodicTasks = (
+  registrations: readonly ApplicationPeriodicTaskRegistration[],
+  context: ApplicationPeriodicTaskContext,
+): { id: string; intervalMs: number; handle: ApplicationPeriodicTaskHandle }[] =>
+  registrations.map((registration) => ({ id: registration.id, intervalMs: registration.intervalMs, handle: registration.create(context) }));
+
 interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];

@@ -36,6 +36,7 @@ export const realCatalogDependencies = () => {
     agentSkillsService: { list: stub() },
     operatorNoticeDestinations: { read: stub() },
     notificationDeliveries: { list: stub() },
+    eventSubscriptions: { list: stub() },
     skillCapabilityTargets: { list: stub() },
     contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {

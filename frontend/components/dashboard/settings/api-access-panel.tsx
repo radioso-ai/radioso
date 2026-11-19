@@ -33,6 +33,7 @@ import {
   type PersonalTokenDraft,
 } from './api-access-dialogs'
 import { CredentialDetailsDialog, CredentialIssuedDialog, RevokeConfirmDialog } from './credential-dialogs'
+import { EventSubscriptionsCard } from './event-subscriptions-card'
 import { ServiceAccountsCard } from './service-accounts-card'
 import { SettingsCard } from './settings-card'
 import { OperatorMcpAccessCard } from './operator-mcp-access-card'
@@ -121,6 +122,8 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
           ) : null}
 
           {canAudit ? <MemberPersonalTokensCard workspaceId={workspaceId} currentUserId={user?.userId} /> : null}
+
+          <EventSubscriptionsCard workspaceId={workspaceId} />
         </>
       ) : null}
     </div>

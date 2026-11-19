@@ -63,7 +63,8 @@ export const createAudiencePulseRoutes = (
     });
   }
 
-  router.post("/topics/:topicId/drafts", dashboardSession, documentsManage, async (req, res, next) => {
+  // Writing Pulse state needs the Pulse permission; naming a document needs the documents one.
+  router.post("/topics/:topicId/drafts", dashboardSession, qualityManage, documentsManage, async (req, res, next) => {
     try {
       const params = audiencePulseTopicParamsSchema.safeParse(req.params);
       const body = audiencePulseTopicDraftRequestSchema.safeParse(req.body ?? {});

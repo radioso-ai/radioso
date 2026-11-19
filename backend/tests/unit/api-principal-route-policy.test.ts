@@ -24,6 +24,16 @@ describe("API principal route policy", () => {
     }
   });
 
+  it("keeps every Audience Pulse topic-state write behind the quality manage permission", () => {
+    for (const key of [
+      "PUT /api/v1/quality/audience-pulse/topics/:topicId/dismissal",
+      "DELETE /api/v1/quality/audience-pulse/topics/:topicId/dismissal",
+      "POST /api/v1/quality/audience-pulse/topics/:topicId/drafts",
+    ]) {
+      expect(apiPrincipalRoutePolicy[key], key).toMatchObject({ permission: "workspace.quality.manage", sessionOnly: true });
+    }
+  });
+
   it("records account and application-contributed session routes explicitly", () => {
     for (const key of [
       "GET /api/v1/account/users",

@@ -300,7 +300,8 @@ marks a topic "not for us" in `audience_pulse_topic_dismissals`, and `DELETE`
 on the same path restores it; both need `workspace.quality.manage`. A
 dismissal changes no count. `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`
 with `{ "documentId": "…" }` records a document drafted from the topic in
-`audience_pulse_topic_drafts` and needs `workspace.documents.manage`. Every
+`audience_pulse_topic_drafts` and needs both `workspace.quality.manage` and
+`workspace.documents.manage`. Every
 read joins this state onto each content gap as `dismissedAt` and
 `latestDraft`. A surviving topic keeps its id across runs, so its state
 carries from one refresh to the next. Deleting the topic, the document, or the

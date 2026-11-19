@@ -379,7 +379,7 @@ describe("Audience Pulse routes", () => {
       expect(draft.status).toBe(404);
     });
 
-    it("links a draft document with 204 under the documents manage permission", async () => {
+    it("links a draft document with 204 under both the quality and the documents manage permissions", async () => {
       const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
       const service = new CapturingService();
 
@@ -387,7 +387,7 @@ describe("Audience Pulse routes", () => {
         .send({ documentId: DOCUMENT_ID });
 
       expect(response.status).toBe(204);
-      expect(calls.permissions).toEqual(["workspace.documents.manage"]);
+      expect(calls.permissions).toEqual(["workspace.quality.manage", "workspace.documents.manage"]);
       expect(service.topicActions).toEqual([{
         action: "draft",
         input: { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID },

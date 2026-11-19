@@ -109,7 +109,7 @@ export const registerAudiencePulsePaths = (
     path: "/api/v1/quality/audience-pulse/topics/{topicId}/drafts",
     tags: ["Audience Pulse"],
     summary: "Record a document drafted from a topic",
-    description: "Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session and workspace.documents.manage.",
+    description: "Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session, workspace.quality.manage and workspace.documents.manage.",
     operationId: "linkAudiencePulseTopicDraft",
     security: security.workspaceAdminSecurity,
     request: {
@@ -119,6 +119,6 @@ export const registerAudiencePulsePaths = (
         content: { "application/json": { schema: schemas.AudiencePulseTopicDraftLinkRequestSchema } },
       },
     },
-    responses: topicStateResponses("workspace.documents.manage"),
+    responses: topicStateResponses("workspace.quality.manage or workspace.documents.manage"),
   });
 };

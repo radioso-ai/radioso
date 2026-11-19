@@ -214,7 +214,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/quality/audience-pulse", "workspace.quality.read"),
   sessionOnly("PUT", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
   sessionOnly("DELETE", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
-  sessionOnly("POST", "/api/v1/quality/audience-pulse/topics/:topicId/drafts", "workspace.documents.manage"),
+  // The route also requires workspace.documents.manage for the document it names.
+  sessionOnly("POST", "/api/v1/quality/audience-pulse/topics/:topicId/drafts", "workspace.quality.manage"),
 
   ...["/snapshots", "/cases", "/cases/run", "/cases/:id/runs", "/runs"]
     .map((path) => allow("POST", `/api/v1/evals${path}`, "workspace.retrieval.query")),

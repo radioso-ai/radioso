@@ -4472,7 +4472,7 @@ export interface paths {
         put?: never;
         /**
          * Record a document drafted from a topic
-         * @description Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session and workspace.documents.manage.
+         * @description Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session, workspace.quality.manage and workspace.documents.manage.
          */
         post: operations["linkAudiencePulseTopicDraft"];
         delete?: never;
@@ -31336,7 +31336,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Caller lacks workspace.documents.manage */
+            /** @description Caller lacks workspace.quality.manage or workspace.documents.manage */
             403: {
                 headers: {
                     [name: string]: unknown;

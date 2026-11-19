@@ -56,15 +56,17 @@ Every event also carries its `id` and `occurredAt`, and the conversation fields 
 
 ### How a trigger works
 
-Turning a Zap on registers a subscription in Radioso for that one event type, and turning it off removes it. Radioso signs every delivery, and the app checks the signature and rejects a delivery whose timestamp is more than five minutes off before it starts the Zap. A subscription starts at the newest event, so a new Zap does not replay history. Zapier's test step shows the three most recent events of that type, so you can map fields before anything new happens.
+Turning a Zap on registers a subscription in Radioso for that one event type, and turning it off removes it. Radioso signs every delivery, and the app checks the signature and rejects a delivery whose timestamp is more than an hour off before it starts the Zap. A subscription starts at the newest event, so a new Zap does not replay history. Zapier's test step shows the three most recent events of that type, so you can map fields before anything new happens.
 
-Delivery is at-least-once and in order. If Zapier does not answer, Radioso retries the same event with a growing delay, and Zapier uses the event `id` to run the Zap once per event.
+Delivery is at-least-once and in order. If Zapier does not answer, Radioso retries the same event with a growing delay. The app remembers each event's `id` for two days and runs the Zap once per event, so a retry does not repeat it. If Zapier's cache is unavailable at that moment, the event is delivered rather than lost, so a rare repeat is possible; a Zap that must not repeat an action can also check the event `id` itself.
 
 ### One service account per Zap
 
-A subscription belongs to the token that created it. Revoking that service account disables the subscription, and the Zap stops receiving events. Give each Zap its own service account so revoking one does not stop the others. Besides the `member` role, the token needs permission to read the events: conversation events need `workspace.history.read`, and **Decision Pending** also needs `workspace.conversation.takeover`. The `member` role holds both.
+A subscription belongs to the token that created it. Revoking that service account disables the subscription, and the Zap stops receiving events. Give each Zap its own service account so revoking one does not stop the others.
 
-Subscriptions are listed under **Settings** in Radioso, with their state and last delivery, so you can see which Zap's subscription is failing or disabled.
+The token's role needs `workspace.event_subscriptions.manage`, `workspace.events.read`, and the read permission of each trigger: `workspace.history.read` for the conversation events, plus `workspace.conversation.takeover` for **Decision Pending**. The `member` role holds all of them.
+
+Subscriptions are listed in Radioso under **Settings → API access**, with their state and last delivery, so you can see which Zap's subscription is failing or disabled. A subscription whose service account was revoked stays listed as disabled until you delete it there, and it counts toward the workspace's limit of 25 until you do. Turning a Zap back on, or republishing it, replaces the subscription for the same hook URL rather than adding a second one.
 
 ## Ask an agent
 
@@ -111,7 +113,7 @@ Replying as an operator, taking a conversation over, handing it back, and resolv
 
 - **Zapier says the connection is invalid.** The token is expired or revoked, or the instance URL names the wrong instance. A token issued by the EU cloud does not work on the US cloud. Create a new credential and reconnect.
 - **A step returns `403`.** The service account's role lacks the permission the step needs. Use the `member` role or higher.
-- **A trigger stops firing.** Check the subscription under **Settings**. A subscription disabled because its service account was revoked needs a new service account and a reconnected Zap.
+- **A trigger stops firing.** Check the subscription under **Settings → API access**. A subscription disabled because its service account was revoked needs a new service account and a reconnected Zap.
 - **Turning a Zap on fails with a limit error.** A workspace holds up to 25 event subscriptions. Turn off or delete Zaps you no longer use.
 - **Ask an Agent returns `404 agent_not_published`.** The agent has never been published. Publish it from the agent's page.
 - **Ask an Agent times out.** The turn took longer than Zapier allows. See the note under [Ask an agent](#ask-an-agent).

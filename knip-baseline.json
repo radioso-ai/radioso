@@ -115,7 +115,6 @@
   "exports|frontend/components/ui/select.tsx|SelectSeparator",
   "exports|frontend/components/ui/sheet.tsx|SheetClose",
   "exports|frontend/components/ui/sidebar.tsx|SidebarGroupAction",
-  "exports|frontend/components/ui/sidebar.tsx|SidebarGroupLabel",
   "exports|frontend/components/ui/sidebar.tsx|SidebarInput",
   "exports|frontend/components/ui/sidebar.tsx|SidebarMenuAction",
   "exports|frontend/components/ui/sidebar.tsx|SidebarMenuSkeleton",

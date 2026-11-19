@@ -110,3 +110,7 @@ test('the dispatcher carries the chained hook’s header comments, so tools that
   assert.match(script, /# other-guard: refuses risky pushes\./)
   assert.doesNotMatch(script, /exec other-guard/)
 })
+
+test('the dispatcher skips the gates instead of blocking when node is missing, as in a GUI git client', () => {
+  assert.match(dispatcherScript(null), /command -v node/)
+})

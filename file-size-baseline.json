@@ -21,7 +21,7 @@
   "frontend/components/chat/public-chat-shell.tsx": 1178,
   "frontend/components/dashboard/agent-revision-test-chat.tsx": 2146,
   "frontend/components/dashboard/document-sources-view.tsx": 1177,
-  "frontend/components/dashboard/documents-view.tsx": 1263,
+  "frontend/components/dashboard/documents-view.tsx": 1262,
   "frontend/components/dashboard/eval-view.tsx": 2073,
   "frontend/components/dashboard/quality-view.tsx": 1833,
   "frontend/components/dashboard/settings/assistant-directives-section.tsx": 1194,

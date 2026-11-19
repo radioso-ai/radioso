@@ -6,7 +6,7 @@ import {
   type QualityStatsWindow,
   type QualityVoiceStats,
 } from '@/lib/api-quality'
-import type { SparklinePoint } from '@/lib/sparkline-series'
+import type { SparklinePoint, StatDelta } from '@/lib/stat-tile'
 
 export { QUALITY_STATS_RANGES }
 
@@ -39,7 +39,7 @@ export type QualityMetricDirection = 'higher_is_better' | 'lower_is_better' | 'n
 /** A volume metric's value is its count; a rate metric's value is count / denominator. */
 export type QualityMetricKind = 'volume' | 'rate'
 
-export type QualityDeltaTone = 'good' | 'bad' | 'neutral'
+export type QualityDeltaTone = StatDelta['tone']
 
 export type QualityMetricId = 'answers' | 'grounded' | 'negative_feedback' | 'skill_failures'
 

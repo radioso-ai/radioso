@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type Key } from 'react'
 import { Line, LineChart, Tooltip, type TooltipContentProps } from 'recharts'
 
 import { ChartTooltipCard } from '@/components/dashboard/chart-tooltip'
-import type { SparklinePoint } from '@/lib/sparkline-series'
+import type { SparklinePoint } from '@/lib/stat-tile'
 
 interface SparklineDotProps {
   cx?: number

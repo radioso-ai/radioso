@@ -269,6 +269,32 @@ export const audiencePulseApi = {
     )
   },
 
+  /** Marks a topic "not for us", which takes it out of the content queue and changes no count. */
+  async dismissTopic(topicId: string): Promise<void> {
+    await request<void>(
+      `${BASE_PATH}/topics/${encodeURIComponent(topicId)}/dismissal`,
+      { method: 'PUT' },
+      { withSession: true },
+    )
+  },
+
+  async restoreTopic(topicId: string): Promise<void> {
+    await request<void>(
+      `${BASE_PATH}/topics/${encodeURIComponent(topicId)}/dismissal`,
+      { method: 'DELETE' },
+      { withSession: true },
+    )
+  },
+
+  /** Records a document drafted from a topic; the link goes when the document does. */
+  async linkTopicDraft(input: { topicId: string; documentId: string }): Promise<void> {
+    await request<void>(
+      `${BASE_PATH}/topics/${encodeURIComponent(input.topicId)}/drafts`,
+      { method: 'POST', body: JSON.stringify({ documentId: input.documentId }) },
+      { withSession: true },
+    )
+  },
+
   async getEvidenceAnchor(input: {
     conversationId: string
     messageId: string

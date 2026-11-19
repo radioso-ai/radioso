@@ -1,12 +1,19 @@
 /* @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { linkTopicDraftMock } = vi.hoisted(() => ({ linkTopicDraftMock: vi.fn() }))
+
+vi.mock('@/lib/api-audience-pulse', () => ({
+  audiencePulseApi: { linkTopicDraft: linkTopicDraftMock },
+}))
 
 import {
   AUDIENCE_PULSE_DRAFT_SEED_KEY,
   clearAudiencePulseDraftSeed,
   consumeAudiencePulseDraftSeed,
   formatDraftQuestionsAsMarkdown,
+  linkAudiencePulseDraft,
   writeAudiencePulseDraftSeed,
 } from '@/lib/audience-pulse-draft-seed'
 
@@ -15,6 +22,44 @@ const scope = { accountId: 'account-1', workspaceId: 'workspace-1' }
 describe('audience-pulse-draft-seed', () => {
   beforeEach(() => {
     window.sessionStorage.clear()
+    linkTopicDraftMock.mockReset()
+  })
+
+  it('carries the topic a seed was drafted from', () => {
+    writeAudiencePulseDraftSeed({
+      ...scope,
+      seed: { title: 'Directions', questions: ['Is there a shuttle?'], topicId: 'topic-travel' },
+    })
+
+    expect(consumeAudiencePulseDraftSeed(scope)).toEqual({
+      title: 'Directions',
+      questions: ['Is there a shuttle?'],
+      topicId: 'topic-travel',
+    })
+  })
+
+  it('discards a stored seed whose topic is not an id', () => {
+    window.sessionStorage.setItem(AUDIENCE_PULSE_DRAFT_SEED_KEY, JSON.stringify({
+      ...scope,
+      title: 'Directions',
+      questions: [],
+      topicId: 42,
+      writtenAt: new Date().toISOString(),
+    }))
+
+    expect(consumeAudiencePulseDraftSeed(scope)).toBeNull()
+  })
+
+  it('links a saved document to its seed topic without letting a failure escape', async () => {
+    linkTopicDraftMock.mockRejectedValueOnce(new Error('offline'))
+
+    linkAudiencePulseDraft({ title: 'Directions', questions: [], topicId: 'topic-travel' }, 'document-1')
+    linkAudiencePulseDraft({ title: 'No topic', questions: [] }, 'document-2')
+    linkAudiencePulseDraft(null, 'document-3')
+    await Promise.resolve()
+
+    expect(linkTopicDraftMock).toHaveBeenCalledTimes(1)
+    expect(linkTopicDraftMock).toHaveBeenCalledWith({ topicId: 'topic-travel', documentId: 'document-1' })
   })
 
   it('round-trips a seed for the matching account and workspace, then clears storage', () => {

@@ -8,7 +8,7 @@ last_updated: 2026-11-19
 
 A subscription sends each new workspace event to a URL you choose, as it happens, so your workflow starts within seconds of a visitor leaving their details instead of on its next poll. Each push is one signed `POST` whose body is the same event the [workspace event log](/api/workspace-event-log) lists.
 
-Any receiver that accepts an HTTPS `POST` works. In n8n, for example, a **Webhook** node gives you the URL, and an **HTTP Request** node, run once with your token, subscribes it. Subscriptions are created over the API; Settings lists them and deletes them.
+Any receiver that accepts an HTTPS `POST` works. Zapier has a ready-made app with a trigger for each event type; see [Connect Radioso in Zapier](/automation/zapier). In n8n, for example, a **Webhook** node gives you the URL, and an **HTTP Request** node, run once with your token, subscribes it. Subscriptions are created over the API; Settings lists them and deletes them.
 
 ## Subscribe a URL
 

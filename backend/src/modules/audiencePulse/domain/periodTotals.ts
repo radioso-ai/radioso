@@ -5,6 +5,7 @@ import {
   type AudiencePulseAnswerStatusInput,
   type AudiencePulseAnswerSummary,
 } from "./answerStatus.js";
+import { audiencePulseUtcDay } from "../../../shared/domain/audiencePulseUtcDay.js";
 
 /*
  * Whole-window counts a report shows beside its topics. Every count reads `answerStatus` and the
@@ -67,8 +68,6 @@ export interface AudiencePulseChannelVolume {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-export const audiencePulseUtcDay = (date: Date): string => date.toISOString().slice(0, 10);
 
 interface Classified<Question extends AudiencePulseCountedQuestion> {
   question: Question;

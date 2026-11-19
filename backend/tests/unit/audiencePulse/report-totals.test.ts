@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { audiencePulseUtcDay } from "../../../src/shared/domain/audiencePulseUtcDay.js";
 import {
-  audiencePulseUtcDay,
   summarizeAudiencePulsePeriod,
   summarizeAudiencePulsePopulation,
 } from "../../../src/modules/audiencePulse/domain/periodTotals.js";

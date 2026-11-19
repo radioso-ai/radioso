@@ -22,6 +22,7 @@ import {
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { visibleMessagePhotoCountSql, visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import { audiencePulseCoverageGapEligible } from "../../shared/domain/audiencePulseContentGap.js";
+import { audiencePulseUtcDay } from "../../shared/domain/audiencePulseUtcDay.js";
 import type { AnswerCoverageRecord, AnswerCoverageRepositoryPort } from "../answerCoverage/public.js";
 
 interface AudiencePulseEligibleQuestionMetadataRow {
@@ -115,9 +116,6 @@ export const completeAudiencePulseWeeklyVolume = (input: {
   }
   return complete;
 };
-
-/** The UTC calendar day a question was asked, `YYYY-MM-DD`, as the evidence contract names it. */
-const audiencePulseUtcDay = (date: Date): string => date.toISOString().slice(0, 10);
 
 export const isAudiencePulseEndUserChannel = (sourceChannel: string | null): boolean =>
   sourceChannel === null || !(OPERATOR_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel);

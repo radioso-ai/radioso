@@ -14,6 +14,7 @@ import type { AudiencePulseServiceDependencies } from "../../../src/modules/audi
 import type {
   AudiencePulseHistorySnapshot,
   AudiencePulseHistorySource,
+  AudiencePulseQuestionOutcome,
   AudiencePulseSnapshotRecord,
   AudiencePulseTopicState,
   AudiencePulseTopicStateStore,
@@ -28,7 +29,30 @@ const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
 
-const noPreviousPeriod = () => ({ questionCount: 0, conversationCount: 0, answeredCount: 0, contentGapEligibleCount: 0 });
+/**
+ * Seven previous-window outcomes over five conversations: four answered, two with no answer in the
+ * content, and one unclear.
+ */
+const previousWindowOutcomes = (): AudiencePulseQuestionOutcome[] => [
+  ...["c-1", "c-2", "c-3", "c-4"].map((conversationId) => ({
+    reference: { conversationId },
+    grounding: "grounded" as const,
+    legacyCoverage: true,
+    contentGapEligible: false,
+  })),
+  ...["c-4", "c-5"].map((conversationId) => ({
+    reference: { conversationId },
+    grounding: "no_support" as const,
+    legacyCoverage: true,
+    contentGapEligible: true,
+  })),
+  { reference: { conversationId: "c-5" }, grounding: "unknown" as const, legacyCoverage: false, contentGapEligible: false },
+];
+
+/** A workspace old enough, and keeping conversations long enough, to compare against the 30 days before. */
+const longHistory = () => ({
+  async read() { return { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: null }; },
+});
 
 const history = (): AudiencePulseHistorySnapshot => ({
   period: { start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-07-31T00:00:00.000Z") },
@@ -187,7 +211,7 @@ const topicStateStoreWith = (overrides: Partial<AudiencePulseTopicStateStore> = 
 const historySourceWith = (overrides: Partial<AudiencePulseHistorySource> = {}): AudiencePulseHistorySource => ({
   async read() { return history(); },
   async listEligibleQuestionIds() { return []; },
-  async readPeriodTotals() { return noPreviousPeriod(); },
+  async readPeriodOutcomes() { return []; },
   async rehydrate(input) {
     return new Map(input.references.map((reference) => [reference.evidenceId, {
       evidenceId: reference.evidenceId,
@@ -221,7 +245,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     historySource: {
       async read() { return history(); },
       async listEligibleQuestionIds() { return []; },
-      async readPeriodTotals() { return noPreviousPeriod(); },
+      async readPeriodOutcomes() { return []; },
       async rehydrate(input) {
         return new Map(input.references.map((reference) => [reference.evidenceId, {
           evidenceId: reference.evidenceId,
@@ -307,6 +331,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       },
     },
     topicStateStore: topicStateStoreWith(),
+    historyHorizon: longHistory(),
     now: () => new Date("2026-08-01T00:00:00.000Z"),
     ...overrides,
   };
@@ -344,7 +369,7 @@ describe("AudiencePulseService", () => {
         historySource: {
           async read() { return photoQuestions(); },
           async listEligibleQuestionIds() { return []; },
-          async readPeriodTotals() { return noPreviousPeriod(); },
+          async readPeriodOutcomes() { return []; },
           async rehydrate() { return new Map(); },
           async readEvidenceAnchor() { return null; },
         },
@@ -826,7 +851,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -876,7 +901,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -986,7 +1011,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1191,7 +1216,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1311,7 +1336,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1400,7 +1425,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1462,7 +1487,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1509,7 +1534,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1555,7 +1580,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1585,7 +1610,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return closedGapHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1689,7 +1714,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2069,7 +2094,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return history(); },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor(input) {
           historyCalls.push(input);
@@ -2101,7 +2126,7 @@ describe("AudiencePulseService", () => {
           return { ...history(), coverage: { populationSize: 0, sampleSize: 0, sampled: false }, evidence: [] };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2131,7 +2156,7 @@ describe("AudiencePulseService", () => {
           return history();
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2200,7 +2225,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2280,7 +2305,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2420,7 +2445,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2473,7 +2498,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2584,7 +2609,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { throw historyFailure; },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2720,7 +2745,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return history(); },
         async listEligibleQuestionIds() { return []; },
-        async readPeriodTotals() { return noPreviousPeriod(); },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2981,16 +3006,18 @@ describe("whole-window counts and comparisons", () => {
     };
   };
 
-  it("reads the 30 days before the window as totals only, stores them, and logs the read once without content", async () => {
-    const periodReads: Array<{ workspaceId: string; analysisStart: Date; analysisEnd: Date }> = [];
+  it("counts the 30 days before the window from text-free outcomes, before any billing, and logs the read once", async () => {
+    const periodReads: Array<{ workspaceId: string; analysisStart: Date; analysisEnd: Date; signal?: AbortSignal }> = [];
     const logs: Array<{ context: Record<string, unknown>; message: string }> = [];
     const stored: AudiencePulseStoredReport[] = [];
-    const { service } = createService({
+    const controller = new AbortController();
+    const { service, calls } = createService({
       historySource: historySourceWith({
         async read() { return inWindowHistory(); },
-        async readPeriodTotals(input) {
+        async readPeriodOutcomes(input) {
           periodReads.push(input);
-          return { questionCount: 7, conversationCount: 5, answeredCount: 4, contentGapEligibleCount: 2 };
+          calls.lifecycle.push("previous-period");
+          return previousWindowOutcomes();
         },
       }),
       snapshotStore: {
@@ -3001,13 +3028,16 @@ describe("whole-window counts and comparisons", () => {
       logger: { info: (context, message) => logs.push({ context, message }), warn: () => undefined },
     });
 
-    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, signal: controller.signal });
 
     expect(periodReads).toEqual([{
       workspaceId: WORKSPACE_ID,
       analysisStart: new Date("2026-06-02T00:00:00.000Z"),
       analysisEnd: new Date("2026-07-02T00:00:00.000Z"),
+      signal: controller.signal,
     }]);
+    expect(calls.lifecycle.indexOf("previous-period")).toBeLessThan(calls.lifecycle.indexOf("reserve"));
+    expect(calls.lifecycle.indexOf("previous-period")).toBeLessThan(calls.lifecycle.indexOf("census"));
     const previousPeriod = {
       period: { start: "2026-06-02T00:00:00.000Z", end: "2026-07-02T00:00:00.000Z" },
       questionCount: 7,
@@ -3032,6 +3062,68 @@ describe("whole-window counts and comparisons", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+  });
+
+  it.each([
+    ["was created 40 days ago", { workspaceCreatedAt: new Date("2026-06-22T00:00:00.000Z"), conversationRetentionDays: null }],
+    ["keeps conversations 45 days", { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: 45 }],
+  ])("compares against nothing when the workspace %s, so part of the 30 days before is out of sight", async (_label, horizon) => {
+    let periodReads = 0;
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { periodReads += 1; return previousWindowOutcomes(); },
+      }),
+      historyHorizon: { async read() { return horizon; } },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+    expect(periodReads).toBe(0);
+  });
+
+  it("compares when retention still keeps the whole previous window", async () => {
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { return previousWindowOutcomes(); },
+      }),
+      historyHorizon: {
+        async read() { return { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: 60 }; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousPeriod).toMatchObject({ questionCount: 7 });
+  });
+
+  it.each([
+    ["throws", () => { throw new Error("statement timeout"); }],
+    ["is aborted", () => { throw new DOMException("The operation was aborted.", "AbortError"); }],
+  ])("completes and bills the refresh as usual, with no previous period, when that read %s", async (_label, failure) => {
+    const baseline = createService({ historySource: historySourceWith({ async read() { return inWindowHistory(); } }) });
+    await baseline.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    const warnings: Array<{ context: Record<string, unknown>; message: string }> = [];
+    const { service, calls } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { return failure(); },
+      }),
+      logger: { info: () => undefined, warn: (context, message) => warnings.push({ context, message }) },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+    const billing = (counts: typeof calls) => ({ reserve: counts.reserve, commit: counts.commit, release: counts.release, inference: counts.inference });
+    expect(billing(calls)).toEqual(billing(baseline.calls));
+    expect(warnings).toEqual([{
+      message: "audience_pulse_previous_period_read_failed",
+      context: { workspaceId: WORKSPACE_ID, durationMs: expect.any(Number), errorName: expect.any(String) },
+    }]);
   });
 
   it("returns and stores whole-window totals, days and channels with the refreshed report", async () => {
@@ -3074,6 +3166,19 @@ describe("whole-window counts and comparisons", () => {
     });
   });
 
+  it("names no compared snapshot when the prior one gave no topic a previous count", async () => {
+    const prior = priorNarrativeSnapshot();
+    const { service } = createService({
+      historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
+      snapshotStore: snapshotStoreFor({ ...prior, report: { ...prior.report, themes: [], contentGaps: [], recommendations: [] } }),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousGeneratedAt).toBeNull();
+    expect(result.kind === "completed" && result.report.themes[0]?.previousMemberCount).toBeNull();
+  });
+
   it("names the snapshot each topic's previous count was read from", async () => {
     const { service } = createService({
       historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
@@ -3090,7 +3195,7 @@ describe("whole-window counts and comparisons", () => {
     const { service } = createService({
       historySource: historySourceWith({
         async read() { return inWindowHistory(); },
-        async readPeriodTotals() { return { questionCount: 3, conversationCount: 3, answeredCount: 1, contentGapEligibleCount: 1 }; },
+        async readPeriodOutcomes() { return previousWindowOutcomes().slice(0, 3); },
       }),
       censusServiceFactory: {
         create: () => ({

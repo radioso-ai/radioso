@@ -20,6 +20,7 @@ export {
   type AudiencePulseEvidenceAnchor,
   type AudiencePulseHydratedEvidence,
   type AudiencePulsePromptEvidenceReference,
+  type AudiencePulseQuestionOutcome,
 } from "./contracts/history.js";
 
 export { AUDIENCE_PULSE_ANSWER_STATUSES };
@@ -68,6 +69,15 @@ export interface AudiencePulseInferenceFactory {
     workspaceContext: { workspaceId: string; accountId?: string | null };
     modelCallContext: ModelCallUsageContext;
   }): Promise<ModelInferencePipeline>;
+}
+
+/**
+ * How far back a workspace's history reaches: it has nothing from before it was created, and with
+ * conversation retention set, older conversations are being swept away.
+ */
+export interface AudiencePulseHistoryHorizonSource {
+  /** Null for a workspace that does not exist. */
+  read(workspaceId: string): Promise<{ workspaceCreatedAt: Date; conversationRetentionDays: number | null } | null>;
 }
 
 /** An operator's state on one topic, read beside the snapshot rather than stored in it. */

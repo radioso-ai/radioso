@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { AudiencePulseSnapshotRepository } from "../../../src/db/repositories/audiencePulseSnapshotRepository.js";
 import { AudiencePulseTopicStateRepository } from "../../../src/db/repositories/audiencePulseTopicStateRepository.js";
+import { AudiencePulseHistoryHorizonRepository } from "../../../src/db/repositories/audiencePulseHistoryHorizonRepository.js";
 import { MessageFacetRepository } from "../../../src/db/repositories/messageFacetRepository.js";
 import { TopicRepository } from "../../../src/db/repositories/topicRepository.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
@@ -88,6 +89,7 @@ describeIntegration("AudiencePulseService.refresh() (Postgres, real census)", ()
       },
       auditService: { async record() {} },
       topicStateStore: new AudiencePulseTopicStateRepository(database.kysely),
+      historyHorizon: new AudiencePulseHistoryHorizonRepository(database.kysely),
       now: () => REFRESH_NOW,
     };
     return new AudiencePulseService(deps);

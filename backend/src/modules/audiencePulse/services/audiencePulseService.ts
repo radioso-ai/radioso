@@ -12,7 +12,12 @@ import type {
   AudiencePulseReportCoverage,
   AudiencePulseStoredReport,
 } from "../domain/report.js";
-import { audiencePulsePreviousPeriod, type AudiencePulsePreviousPeriod } from "../domain/periodTotals.js";
+import {
+  audiencePulsePreviousPeriod,
+  audiencePulseVisibleFrom,
+  summarizeAudiencePulsePeriod,
+  type AudiencePulsePreviousPeriod,
+} from "../domain/periodTotals.js";
 import {
   applyAudiencePulseNarrative,
   AudiencePulseReportValidationError,
@@ -25,6 +30,7 @@ import type {
   AudiencePulseAuditPort,
   AudiencePulseEvidenceAnchor,
   AudiencePulseFacetDrainPort,
+  AudiencePulseHistoryHorizonSource,
   AudiencePulseHistorySource,
   AudiencePulseInferenceFactory,
   AudiencePulsePort,
@@ -78,6 +84,8 @@ export interface AudiencePulseServiceDependencies {
   auditService: AudiencePulseAuditPort;
   /** Dismissals and draft links, read beside every report and never stored in a snapshot. */
   topicStateStore: AudiencePulseTopicStateStore;
+  /** How far back the workspace's history is whole, which bounds the previous-period comparison. */
+  historyHorizon: AudiencePulseHistoryHorizonSource;
   logger?: SafeLogger;
   now?: () => Date;
   /**
@@ -429,6 +437,14 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "preparing" };
       }
 
+      // Depends on neither the census nor a reservation, and never fails the refresh.
+      const previousPeriod = await this.readPreviousPeriod({
+        workspaceId: input.workspaceId,
+        currentStart: analysisStart,
+        now: analysisEnd,
+        signal: input.signal,
+      });
+
       try {
         reservation = await this.deps.usageLimitPolicy.reserveAnswer({
           accountId: input.accountId,
@@ -481,7 +497,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         ...history.coverage,
         facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
       };
-      const previousPeriod = await this.readPreviousPeriod(input.workspaceId, analysisStart);
       const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
 
       if (censusResult.facetReadyQuestionCount === 0) {
@@ -529,6 +544,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       // carries over only model-authored narrative fields, never an old content-gap
       // decision or a recommendation that the domain no longer qualifies.
       let censusReport: ReturnType<typeof buildAudiencePulseCensusReport>;
+      const priorMemberCounts = previousThemeMemberCounts(priorSnapshot);
       try {
         const computedCensusReport = buildAudiencePulseCensusReport({
           period: { start: analysisStart, end: analysisEnd },
@@ -541,10 +557,11 @@ export class AudiencePulseService implements AudiencePulsePort {
           population: history.evidence,
           topics: censusTopics,
           dissolvedTopics: censusResult.dissolvedTopics,
-          previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+          previousThemeMemberCounts: priorMemberCounts,
           previousThemeShares: previousThemeShares(priorSnapshot),
           previousPeriod,
-          previousGeneratedAt: priorSnapshot?.report.generatedAt ?? null,
+          // Names the snapshot only when it gave some topic a previous count to compare with.
+          previousGeneratedAt: priorMemberCounts.size > 0 ? priorSnapshot?.report.generatedAt ?? null : null,
         });
         censusReport = {
           ...computedCensusReport,
@@ -761,23 +778,45 @@ export class AudiencePulseService implements AudiencePulsePort {
   }
 
   /**
-   * The previous window's totals, read with the same classification as the report's own window.
-   * It roughly doubles the per-question reads of a refresh, so its cost is logged.
+   * The 30 days before the report's window, counted with the same rule as the window itself from
+   * the history source's text-free outcomes. Null when part of those days is out of sight (the
+   * workspace is younger, or retention is sweeping them) and when the read fails: the comparison is
+   * a nicety, so it never fails or bills a refresh. The read roughly doubles a refresh's
+   * per-question reads, so its cost is logged once.
    */
-  private async readPreviousPeriod(workspaceId: string, currentStart: Date): Promise<AudiencePulsePreviousPeriod | null> {
-    const period = { start: new Date(currentStart.getTime() - ANALYSIS_WINDOW_MS), end: currentStart };
+  private async readPreviousPeriod(input: {
+    workspaceId: string;
+    currentStart: Date;
+    now: Date;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulsePreviousPeriod | null> {
+    const period = { start: new Date(input.currentStart.getTime() - ANALYSIS_WINDOW_MS), end: input.currentStart };
     const startedAt = this.now();
-    const totals = await this.deps.historySource.readPeriodTotals({
-      workspaceId,
-      analysisStart: period.start,
-      analysisEnd: period.end,
-    });
-    this.deps.logger?.info?.({
-      workspaceId,
-      questionCount: totals.questionCount,
-      durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
-    }, "audience_pulse_previous_period_read");
-    return audiencePulsePreviousPeriod({ period, totals });
+    const durationMs = () => Math.max(0, this.now().getTime() - startedAt.getTime());
+    try {
+      const horizon = await this.deps.historyHorizon.read(input.workspaceId);
+      if (!horizon || period.start < audiencePulseVisibleFrom({ ...horizon, now: input.now })) return null;
+      const outcomes = await this.deps.historySource.readPeriodOutcomes({
+        workspaceId: input.workspaceId,
+        analysisStart: period.start,
+        analysisEnd: period.end,
+        signal: input.signal,
+      });
+      const totals = summarizeAudiencePulsePeriod(outcomes);
+      this.deps.logger?.info?.({
+        workspaceId: input.workspaceId,
+        questionCount: totals.questionCount,
+        durationMs: durationMs(),
+      }, "audience_pulse_previous_period_read");
+      return audiencePulsePreviousPeriod({ period, totals });
+    } catch (error) {
+      this.deps.logger?.warn?.({
+        workspaceId: input.workspaceId,
+        durationMs: durationMs(),
+        errorName: error instanceof Error ? error.name : "unknown",
+      }, "audience_pulse_previous_period_read_failed");
+      return null;
+    }
   }
 
   /**

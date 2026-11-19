@@ -6,7 +6,6 @@ import type {
   AudiencePulseEvidenceReference,
   AudiencePulseWeeklyVolume,
 } from "../domain/report.js";
-import type { AudiencePulsePeriodTotals } from "../domain/periodTotals.js";
 
 /** Maximum source text exposed in either a refresh or saved-report response. */
 export const AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS = 1_200;
@@ -17,6 +16,17 @@ export interface AudiencePulseHistorySnapshot {
   weeklyVolume: AudiencePulseWeeklyVolume[];
   evidence: AudiencePulseEvidence[];
 }
+
+/**
+ * What happened to one question, with no word of it: the facts every Audience Pulse count reads.
+ * The same fields an `AudiencePulseEvidence` carries, so one counting rule serves both.
+ */
+export type AudiencePulseQuestionOutcome = Pick<
+  AudiencePulseEvidence,
+  "grounding" | "answerCoverage" | "legacyCoverage" | "contentGapEligible"
+> & {
+  reference: Pick<AudiencePulseEvidenceReference, "conversationId">;
+};
 
 export interface AudiencePulsePromptEvidenceReference extends AudiencePulseEvidenceReference {
   evidenceId: string;
@@ -82,14 +92,15 @@ export interface AudiencePulseHistorySource {
   }): Promise<string[]>;
   /**
    * The same eligibility and per-question classification `read()` applies, over another window,
-   * returned as counts only: no question is kept and no text is read. A refresh reads the 30 days
-   * before its own window this way to compare against.
+   * as one text-free outcome per question; an assessment carries its verdict, never the request
+   * it restates. A refresh reads the 30 days before its own window this way to compare against.
    */
-  readPeriodTotals(input: {
+  readPeriodOutcomes(input: {
     workspaceId: string;
     analysisStart: Date;
     analysisEnd: Date;
-  }): Promise<AudiencePulsePeriodTotals>;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulseQuestionOutcome[]>;
   rehydrate(input: {
     workspaceId: string;
     references: AudiencePulsePromptEvidenceReference[];
@@ -102,9 +113,3 @@ export interface AudiencePulseHistorySource {
 }
 
 export type { AudiencePulseEvidence, AudiencePulseWeeklyVolume } from "../domain/report.js";
-/** The day format and the counting rule a history source applies, owned by the report domain. */
-export {
-  audiencePulseUtcDay,
-  summarizeAudiencePulsePeriod,
-  type AudiencePulsePeriodTotals,
-} from "../domain/periodTotals.js";

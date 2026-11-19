@@ -9,6 +9,7 @@ import {
 } from "../../../modules/audiencePulse/composition.js";
 import { AudiencePulseSnapshotRepository } from "../../../db/repositories/audiencePulseSnapshotRepository.js";
 import { AudiencePulseTopicStateRepository } from "../../../db/repositories/audiencePulseTopicStateRepository.js";
+import { AudiencePulseHistoryHorizonRepository } from "../../../db/repositories/audiencePulseHistoryHorizonRepository.js";
 import { MessageFacetRepository } from "../../../db/repositories/messageFacetRepository.js";
 import { TopicRepository } from "../../../db/repositories/topicRepository.js";
 import { AnswerCoverageRepository } from "../../../db/repositories/answerCoverageRepository.js";
@@ -56,6 +57,7 @@ export const buildAudiencePulseService = (input: AudiencePulseBuilderInput): Aud
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
     topicStateStore: new AudiencePulseTopicStateRepository(input.kysely),
+    historyHorizon: new AudiencePulseHistoryHorizonRepository(input.kysely),
     logger: input.logger,
     censusServiceFactory: new ContextualCensusServiceFactory({
       historySource,

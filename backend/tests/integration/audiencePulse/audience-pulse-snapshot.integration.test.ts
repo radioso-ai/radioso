@@ -98,6 +98,7 @@ const unreachableReadDependencies = (input: {
     async restore() { throw new Error("read does not write operator state"); },
     async linkDraft() { throw new Error("read does not write operator state"); },
   },
+  historyHorizon: { async read() { throw new Error("read does not compare periods"); } },
 });
 
 describeIntegration("Audience Pulse snapshot persistence", () => {
@@ -184,7 +185,7 @@ describeIntegration("Audience Pulse snapshot persistence", () => {
     const historySource: AudiencePulseHistorySource = {
       async read() { throw new Error("not used by saved reads"); },
       async listEligibleQuestionIds() { throw new Error("not used by saved reads"); },
-      async readPeriodTotals() { throw new Error("not used by saved reads"); },
+      async readPeriodOutcomes() { throw new Error("not used by saved reads"); },
       async rehydrate(input) {
         if (input.references[0]?.evidenceId === "old-evidence") {
           const replacement = await repository.replace({

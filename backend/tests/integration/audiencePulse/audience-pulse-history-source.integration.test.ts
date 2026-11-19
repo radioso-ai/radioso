@@ -11,6 +11,7 @@ import {
   buildAudiencePulseQuestionAnswerQuery,
 } from "../../../src/modules/chat/audiencePulseHistorySource.js";
 import { AnswerCoverageRepository } from "../../../src/db/repositories/answerCoverageRepository.js";
+import { summarizeAudiencePulsePeriod } from "../../../src/modules/audiencePulse/domain/periodTotals.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
@@ -527,46 +528,68 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
     expect(evidence.get(earlyQuestionId)).toMatchObject({ day: "2026-07-15", channel: null });
   });
 
-  it("totals another window with the same eligibility and per-question classification, and nothing else", async () => {
+  /** One window of every kind of outcome, plus questions the eligibility rule leaves out. */
+  const seedOutcomeWindow = async () => {
     const conversationId = await createConversation("web");
     const secondConversationId = await createConversation();
     const operatorConversationId = await createConversation("authenticated_chat");
-    const answeredId = await createMessage({ conversationId, role: "user", content: "Answered question", createdAt: "2026-06-10T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "user", content: "Answered question", createdAt: "2026-06-10T10:00:00.000Z", source: "customer" });
     await createMessage({ conversationId, role: "assistant", content: "Grounded answer", createdAt: "2026-06-10T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "grounded", grounding: "grounded" });
     await createMessage({ conversationId, role: "user", content: "Unsupported question", createdAt: "2026-06-11T10:00:00.000Z", source: "customer" });
     await createMessage({ conversationId, role: "assistant", content: "No context", createdAt: "2026-06-11T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "no_context", grounding: "no_support" });
     const assessedId = await createMessage({ conversationId: secondConversationId, role: "user", content: "Assessed question", createdAt: "2026-06-12T10:00:00.000Z", source: null });
     const assessedReplyId = await createMessage({ conversationId: secondConversationId, role: "assistant", content: "Answer", createdAt: "2026-06-12T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "grounded", grounding: "degraded" });
     await database.query(
-      `INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, assistant_message_id, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Assessed question', $5, 'assessed', 'answered', 'sufficient_evidence', 1)`,
+      `INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, assistant_message_id, availability, coverage, reason, unresolved_request, schema_version) VALUES ($1, $2, $3, $4, $4, 'Contextualized assessed question', $5, 'assessed', 'partial', 'insufficient_evidence', 'Unresolved visitor detail', 1)`,
       [randomUUID(), workspaceId, secondConversationId, assessedId, assessedReplyId],
     );
     // Not counted: an operator test channel, a teammate's message, and a question outside the window.
     await createMessage({ conversationId: operatorConversationId, role: "user", content: "Operator probe", createdAt: "2026-06-13T10:00:00.000Z", source: "customer" });
     await createMessage({ conversationId, role: "user", content: "Teammate note", createdAt: "2026-06-14T10:00:00.000Z", source: "human_agent" });
     await createMessage({ conversationId, role: "user", content: "Current window question", createdAt: "2026-07-02T10:00:00.000Z", source: "customer" });
+    return { workspaceId, analysisStart: new Date("2026-06-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-01T00:00:00.000Z") };
+  };
 
+  it("reads another window's outcomes with the same eligibility and classification, and no text", async () => {
+    const window = await seedOutcomeWindow();
     const historySource = new PostgresAudiencePulseHistorySource(database.kysely, new AnswerCoverageRepository(database.kysely));
-    const window = { workspaceId, analysisStart: new Date("2026-06-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-01T00:00:00.000Z") };
-    const totals = await historySource.readPeriodTotals(window);
-    const snapshot = await historySource.read(window);
 
-    expect(totals).toEqual({
+    const outcomes = await historySource.readPeriodOutcomes(window);
+
+    expect(summarizeAudiencePulsePeriod(outcomes)).toEqual({
       questionCount: 3,
       conversationCount: 2,
-      answeredCount: 2,
-      contentGapEligibleCount: 1,
+      answeredCount: 1,
+      contentGapEligibleCount: 2,
     });
-    expect(snapshot.evidence.map((item) => item.id)).toEqual(expect.arrayContaining([answeredId, assessedId]));
-    expect(totals.questionCount).toBe(snapshot.coverage.populationSize);
+    const serialized = JSON.stringify(outcomes);
+    for (const text of ["Answered question", "Unsupported question", "Assessed question", "Contextualized", "Unresolved visitor detail"]) {
+      expect(serialized).not.toContain(text);
+    }
   });
 
-  it("totals an empty window as zeros", async () => {
-    await expect(source.readPeriodTotals({
+  it("counts a window's outcomes exactly as it counts the evidence read() returns for it", async () => {
+    const window = await seedOutcomeWindow();
+    const historySource = new PostgresAudiencePulseHistorySource(database.kysely, new AnswerCoverageRepository(database.kysely));
+
+    const fromOutcomes = summarizeAudiencePulsePeriod(await historySource.readPeriodOutcomes(window));
+    const fromEvidence = summarizeAudiencePulsePeriod((await historySource.read(window)).evidence);
+
+    expect(fromOutcomes).toEqual(fromEvidence);
+    expect(fromOutcomes.questionCount).toBe(3);
+  });
+
+  it("reads no outcomes for an empty window, and stops at an aborted signal", async () => {
+    const window = {
       workspaceId,
       analysisStart: new Date("2026-05-01T00:00:00.000Z"),
       analysisEnd: new Date("2026-06-01T00:00:00.000Z"),
-    })).resolves.toEqual({ questionCount: 0, conversationCount: 0, answeredCount: 0, contentGapEligibleCount: 0 });
+    };
+    await expect(source.readPeriodOutcomes(window)).resolves.toEqual([]);
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(source.readPeriodOutcomes({ ...window, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("reads an exact bounded anchor from its workspace and conversation after a long history", async () => {

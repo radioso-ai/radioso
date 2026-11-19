@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUDIENCE_PULSE_ID_LIST_CHUNK_SIZE,
+  listAudiencePulseAssessmentsInChunks,
   audiencePulseWeekStartUtc,
   classifyAudiencePulseQuestion,
   completeAudiencePulseWeeklyVolume,
@@ -128,5 +130,45 @@ describe("Audience Pulse history source helpers", () => {
         grounding_unsourced_claim_count: 1,
       }),
     ])).toEqual({ grounding: "degraded", contentGapEligible: true });
+  });
+});
+
+describe("listAudiencePulseAssessmentsInChunks", () => {
+  it("asks for a window's assessments in chunks, so no IN-list nears Postgres's bind-parameter limit", async () => {
+    const requested: number[] = [];
+    const repository = {
+      async listByRequestMessageIds(input: { workspaceId: string; requestMessageIds: readonly string[] }) {
+        requested.push(input.requestMessageIds.length);
+        return new Map(input.requestMessageIds.map((id) => [id, { requestMessageId: id }]));
+      },
+    };
+    const ids = Array.from({ length: 25 }, (_, index) => `question-${index}`);
+
+    const assessments = await listAudiencePulseAssessmentsInChunks(repository as never, {
+      workspaceId: "workspace",
+      requestMessageIds: ids,
+      chunkSize: 10,
+    });
+
+    expect(requested).toEqual([10, 10, 5]);
+    expect([...assessments.keys()]).toEqual(ids);
+    expect(AUDIENCE_PULSE_ID_LIST_CHUNK_SIZE).toBeLessThan(65_535);
+  });
+
+  it("stops between chunks once the signal aborts", async () => {
+    const controller = new AbortController();
+    const repository = {
+      async listByRequestMessageIds(input: { requestMessageIds: readonly string[] }) {
+        controller.abort();
+        return new Map(input.requestMessageIds.map((id) => [id, { requestMessageId: id }]));
+      },
+    };
+
+    await expect(listAudiencePulseAssessmentsInChunks(repository as never, {
+      workspaceId: "workspace",
+      requestMessageIds: ["a", "b", "c"],
+      chunkSize: 2,
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: "AbortError" });
   });
 });

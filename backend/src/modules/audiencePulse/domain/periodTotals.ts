@@ -25,7 +25,7 @@ interface AudiencePulsePopulationQuestion extends AudiencePulseCountedQuestion {
   channel: string | null;
 }
 
-export interface AudiencePulsePeriodTotals {
+interface AudiencePulsePeriodTotals {
   questionCount: number;
   /** Distinct conversations with at least one counted question. */
   conversationCount: number;
@@ -132,6 +132,21 @@ const compareChannels = (a: AudiencePulseChannelVolume, b: AudiencePulseChannelV
 export const summarizeAudiencePulsePeriod = (
   questions: readonly AudiencePulseCountedQuestion[],
 ): AudiencePulsePeriodTotals => periodTotalsOf(classify(questions));
+
+/**
+ * The earliest moment a workspace's history is whole: when it was created, or, with conversation
+ * retention set, `retentionDays` before now, since the sweep is removing anything older. A window
+ * that starts earlier would count only what survived, and read as growth that never happened.
+ */
+export const audiencePulseVisibleFrom = (input: {
+  workspaceCreatedAt: Date;
+  conversationRetentionDays: number | null;
+  now: Date;
+}): Date => {
+  if (input.conversationRetentionDays === null) return input.workspaceCreatedAt;
+  const retainedFrom = new Date(input.now.getTime() - input.conversationRetentionDays * DAY_MS);
+  return retainedFrom > input.workspaceCreatedAt ? retainedFrom : input.workspaceCreatedAt;
+};
 
 /** A previous window with no eligible question has nothing to compare against. */
 export const audiencePulsePreviousPeriod = (input: {

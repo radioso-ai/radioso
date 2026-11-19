@@ -285,14 +285,23 @@ day the window touches, zero-filled, and `channels` counts by the
 conversation's source channel, the largest first. A report still waiting on
 facets carries all three, with every question unclassified.
 
-`previousPeriod` counts the 30 days before the window by the same rule, read
-through the history source's `readPeriodTotals`, which classifies each
-question and keeps only the counts. The read roughly doubles a refresh's
-per-question reads, so it logs `audience_pulse_previous_period_read` once per
-refresh with the question count and duration. When those 30 days had no
-eligible question, `previousPeriod` is null. `previousGeneratedAt` names the
-saved report each topic's `previousMemberCount` and `previousShare` come from.
-Reports saved before these fields existed return without them.
+`previousPeriod` counts the 30 days before the window by the same rule. The
+history source's `readPeriodOutcomes` classifies each question in that window
+and returns one text-free outcome per question, and Audience Pulse sums them
+with the function it uses for the window itself. The comparison only runs
+when the workspace can see all 30 days: a workspace created during them, or
+one whose conversation retention reaches past their start (a workspace
+keeping 45 days has swept half of days 31 to 60), gets a null
+`previousPeriod`, since counting what survived would read as growth. The read
+runs before usage is reserved, roughly doubles a refresh's per-question reads,
+and logs `audience_pulse_previous_period_read` once with the question count
+and duration. A failed or cancelled read leaves `previousPeriod` null, logs
+`audience_pulse_previous_period_read_failed`, and the refresh completes and
+bills as it would have. When those 30 days had no eligible question,
+`previousPeriod` is null too. `previousGeneratedAt` names the saved report each
+topic's `previousMemberCount` and `previousShare` come from, and is null when
+that report gave no topic a previous count. Reports saved before these fields
+existed return without them.
 
 The content queue keeps operator state apart from the snapshot, which a
 refresh overwrites. `PUT /api/v1/quality/audience-pulse/topics/:topicId/dismissal`

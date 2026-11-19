@@ -2582,7 +2582,7 @@ Public surfaces and contracts:
 - `backend/src/modules/audiencePulse/contracts/topicCensus.ts` (`TopicRepositoryPort` and the run/topic/membership/transition input shapes)
 - `backend/src/modules/audiencePulse/contracts/topicLabel.ts` (`TopicNamingPort`, `TopicLabelPrivacyAuditPort`)
 - `backend/src/modules/audiencePulse/composition.ts`
-- `backend/src/modules/audiencePulse/contracts/history.ts` (`AudiencePulseHistorySource`, including `readPeriodTotals` for the previous window)
+- `backend/src/modules/audiencePulse/contracts/history.ts` (`AudiencePulseHistorySource`, including `readPeriodOutcomes`, the text-free per-question outcomes of the previous window)
 - `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, `POST /api/v1/quality/audience-pulse/evidence-anchor`, `PUT|DELETE /api/v1/quality/audience-pulse/topics/:topicId/dismissal`, and `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`)
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
@@ -2602,6 +2602,7 @@ Primary internals:
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
 - `backend/src/db/repositories/audiencePulseTopicStateRepository.ts` (`audience_pulse_topic_dismissals`, `audience_pulse_topic_drafts`)
+- `backend/src/db/repositories/audiencePulseHistoryHorizonRepository.ts` (workspace creation and conversation retention, which bound the previous-period comparison)
 - `backend/src/db/repositories/topicRepository.ts` (`topics`, `topic_census_runs`, `topic_memberships`, `topic_transitions`)
 - `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`, `263_audience_pulse_topic_state.sql`
 - `backend/prompts/audience-pulse.md`, `audience-pulse-topic-naming.md`, `audience-pulse-topic-fallback.md`, `audience-pulse-topic-audit.md`

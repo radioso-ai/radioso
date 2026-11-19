@@ -179,11 +179,14 @@ Staff identities are global to the deployment and carry one role:
 - `billing_write` — also change an organization's tier and edit the tier catalog.
 - `owner` — also manage staff identities and their roles.
 
-The organizations list shows each account's tier and the meter that tier bills
-on, for the current UTC month. A catalog-plan account reads the conversation
-meter (`12.5 / 50 conv`); an answer-metered profile such as `starter_100` reads
-the answer counter (`8 / 100`). An account with no assigned profile reads
-unlimited.
+The organizations list shows each account's tier and its usage for the current
+UTC month. A catalog-plan account reads the conversation meter (`12.5 / 50 conv`);
+an answer-metered profile such as `starter_100` reads the answer counter
+(`8 / 100`). An account with no assigned profile, or on a tier without a monthly
+limit, is metered in conversations too and is never refused, so it reads its
+real usage against no cap (`412.5 / unlimited conv`). Its customer conversations
+also count toward the spend average below. Assigning such an account a tier
+mid-month starts the tier's allowance from the usage already metered that month.
 
 The console API is mounted at:
 

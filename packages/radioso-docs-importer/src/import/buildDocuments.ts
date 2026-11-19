@@ -8,6 +8,7 @@ import { buildReadmeDocuments } from "../readme/buildReadmeDocuments.ts";
 export const MDX_SECTION = "mdx-docs";
 export const API_SECTION = "api-reference";
 export const README_SECTION = "repo-readme";
+export const WEBSITE_SECTION = "radioso-website";
 
 /** A document ready to upsert through the Radioso REST API. */
 export interface DocumentInput {

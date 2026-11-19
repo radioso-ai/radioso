@@ -9,6 +9,13 @@ export interface SyncOptions {
    * not build, otherwise it would wipe the other source set.
    */
   pruneSections: Set<string>;
+  /**
+   * Hand-uploaded copies of a page the importer now owns. With `prune` on, after
+   * the upserts succeed, any document whose `metadata.url` equals `citationUrl`
+   * exactly and whose `externalDocumentId` is not `keepExternalDocumentId` is
+   * deleted. Their sources are left alone: a source delete cascades.
+   */
+  supersede?: Array<{ citationUrl: string; keepExternalDocumentId: string }>;
 }
 
 export interface SyncReport {
@@ -80,7 +87,41 @@ export async function syncDocuments(
     );
   }
 
+  if (options.prune && options.supersede?.length) {
+    await deleteSupersededCopies(client, options.supersede, report, log);
+  }
+
   return report;
+}
+
+async function deleteSupersededCopies(
+  client: RadiosoDocsClient,
+  supersede: NonNullable<SyncOptions["supersede"]>,
+  report: SyncReport,
+  log: Logger,
+): Promise<void> {
+  const existing = await client.listAll();
+  for (const { citationUrl, keepExternalDocumentId } of supersede) {
+    // The document we just upserted must list with its metadata.url. If it does
+    // not, the list endpoint omits metadata and no match can be trusted.
+    const ours = existing.filter((document) => document.externalDocumentId === keepExternalDocumentId);
+    if (ours.length > 0 && ours.every((document) => document.metadata?.url !== citationUrl)) {
+      log(`warning: the document list carries no metadata, so superseded copies of ${citationUrl} cannot be identified; deleting nothing`);
+      continue;
+    }
+    for (const document of existing) {
+      if (document.metadata?.url !== citationUrl || document.externalDocumentId === keepExternalDocumentId) {
+        continue;
+      }
+      await client.delete(document.id);
+      report.pruned += 1;
+      report.prunedIds.push(document.id);
+      log(
+        `deleted superseded copy of ${citationUrl}: id=${document.id} title=${JSON.stringify(document.title ?? null)} ` +
+          `externalDocumentId=${document.externalDocumentId ?? "null"} sourceId=${document.sourceId ?? "null"}`,
+      );
+    }
+  }
 }
 
 const MANUAL_SOURCE_ID = "00000000-0000-0000-0000-000000000001";

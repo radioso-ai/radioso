@@ -19,6 +19,13 @@ REST API.
   generated and dependency directories. These are imported as raw markdown with one
   document per README.
 
+- **Website pages** (opt in) — `--website-page <markdownUrl>=<citationUrl>`, repeatable.
+  Fetches a public markdown page (for example `https://radioso.ai/pricing.md`) and
+  imports it as one document: title from the first `# ` heading, source the page's
+  origin, `metadata.url` the citation URL, `externalDocumentId`
+  `radioso-website:<citation path>`. A fetch failure, non-2xx, or empty page fails
+  the run, so the page is never silently dropped and then pruned.
+
 ## Sync semantics
 
 Every document is uploaded under one common `website` source URL, derived from
@@ -28,9 +35,16 @@ pages by content hash, so re-running is idempotent.
 
 `--prune` removes previously imported documents that are no longer present, scoped
 strictly to documents carrying our `metadata.section` (`mdx-docs` /
-`api-reference` / `repo-readme`) — it never touches other docs. Prune is also
+`api-reference` / `repo-readme`, plus `radioso-website` when `--website-page` is used) — it never touches other docs. Prune is also
 source-aware: it deletes obsolete importer-owned documents that still live under
 the old per-page sources, then removes those empty legacy sources.
+
+With `--prune` and `--website-page`, a hand-uploaded copy of the page is also deleted
+once the new document is upserted: any document whose `metadata.url` equals the
+citation URL exactly and whose `externalDocumentId` is not the importer's. Each
+deletion is logged (id, title, externalDocumentId, sourceId). Its source is left in
+place. If the document list returns no metadata at all, the importer logs a warning
+and deletes nothing.
 
 ## Usage
 
@@ -51,6 +65,7 @@ pnpm --filter @radioso/docs-importer run import -- --prune
 - `--dry-run` — build and list documents, upload nothing (no API token needed).
 - `--prune` — delete owned documents no longer present in the sources.
 - `--no-mdx` / `--no-api` / `--no-readme` — skip one source set.
+- `--website-page <markdownUrl>=<citationUrl>` — also import a public markdown page (repeatable).
 
 ### Environment
 

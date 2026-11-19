@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 68,
+  "pageCount": 69,
   "pages": [
     {
       "slug": "api",
@@ -1652,6 +1652,57 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Evaluate answer quality](https://docs.radioso.ai/guides/evals) — turn a captured turn into a repeatable check.\n* [Author a routine](https://docs.radioso.ai/guides/authoring-routines) — build a multi-step flow, then test its draft in a live chat.\n* [Human takeover](https://docs.radioso.ai/operators/human-takeover) — take over a real conversation from the AI."
+        }
+      ]
+    },
+    {
+      "slug": "guides/zapier",
+      "url": "https://docs.radioso.ai/guides/zapier",
+      "title": "Connect Radioso in Zapier",
+      "description": "Connect a Radioso workspace to Zapier with a service-account token, then ask an agent, search knowledge, add documents, and look up conversations in a Zap.",
+      "section": "Guides",
+      "lastUpdated": "2026-11-19",
+      "intro": "The Radioso app for Zapier lets a Zap put a question to an agent, search the workspace's documents, add a document, and pull up a saved conversation. A new row in a sheet, a form submission, or a support ticket can become a question to your agent, and its answer can go wherever the Zap sends it next.\n\nThe running example on this page is a Zap that reads a new support ticket, asks the Support agent about it, and writes the answer back into the ticket.",
+      "sections": [
+        {
+          "id": "connect-your-workspace",
+          "heading": "Connect your workspace",
+          "body": "### Create a service account\n\nOpen **Settings → API access** in Radioso and create a service account with the `member` role. Copy the token from its first credential. It starts with `radioso_svc_v1_` and is shown once. See [Personal tokens and service accounts](https://docs.radioso.ai/api/workspaces-and-tokens) for expiry and rotation.\n\n### Add the Radioso app in Zapier\n\nIn a Zap, choose **Radioso** as an action app and select **Sign in**.\n\n### Fill in the connection\n\n| Field                 | What to enter                                                                                                                                  |\n| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |\n| Instance URL          | `https://api.radioso.ai` for the EU cloud, `https://api-us.radioso.ai` for the US cloud, or the backend origin of your self-hosted deployment. |\n| Service-account token | The `radioso_svc_v1_…` token from the first step.                                                                                              |\n| Workspace name        | Optional. A name for this connection in Zapier's connection list. Without it, Zapier labels the connection with the instance host.             |\n\nA token only works on the instance that issued it, so pick the instance your workspace runs on. Zapier checks the connection with a call to `GET /api/v1/workspace/summary`."
+        },
+        {
+          "id": "ask-an-agent",
+          "heading": "Ask an agent",
+          "body": "**Ask an Agent** sends a message to an agent and returns its answer. In the example Zap, map the ticket text to **Message** and choose the Support agent in **Agent**. Leave **Agent** empty to use the workspace's default agent.\n\nThe step returns:\n\n* `conversation_id` and `assistant_message_id`, which identify the turn.\n* `answer`, the agent's reply.\n* `citations`, each with a `title` and, when the source has one, a `url`.\n* `conversation_owner`, which is `human_owned` while a teammate has taken the conversation over and `ai_owned` otherwise, and `reply_suppressed`, the API's flag that the agent's reply was held back.\n\nTo continue a conversation in a later step, map the earlier step's `conversation_id` into **Conversation ID**. The agent then sees the earlier turns.\n\nThe step calls the assistant chat API, `POST /api/v1/assistant/chat`, which is how a service account talks to an agent.\n\nZapier stops an action after about 30 seconds. An agent turn that runs a long routine or several skills can outlast that, and the step then fails with a timeout. Point Zaps at agents whose turns answer from documents, and use **Find Conversation** with the saved `conversation_id` to read what the agent produced."
+        },
+        {
+          "id": "search-knowledge",
+          "heading": "Search knowledge",
+          "body": "**Search Knowledge** returns the passages in your documents that best match a query, without agent behavior: no persona, no history, no handoff. Choose an **Agent** to search only the documents that agent can use, or leave it empty to search the whole workspace.\n\nThe step returns `result_count`, the best match as `top_title` and `top_content`, and the full `results` list with `document_id`, `chunk_id`, `title`, `content`, and `score`. A query with no match returns `result_count` `0` and does not fail the Zap. This is the retrieval search API, `POST /api/v1/retrieval/search`."
+        },
+        {
+          "id": "add-a-document",
+          "heading": "Add a document",
+          "body": "**Add a Document** sends a title and text to the workspace's knowledge. Radioso accepts the document and processes it in the background, chunking it and computing embeddings, so the step returns a `document_id` and a `status` while the document is still being processed. Search finds it once processing finishes. Set **External ID** to an identifier from your own system, such as a record ID, to tie the document to its source."
+        },
+        {
+          "id": "find-a-conversation",
+          "heading": "Find a conversation",
+          "body": "**Find Conversation** looks up a saved conversation by ID and returns its agent, channel, title, message count, owner, and a text transcript of up to 100 messages. `transcript_is_partial` is `true` for a longer conversation. When no conversation has that ID, the search finds nothing, so a Zap can branch on it or carry on without it.\n\nThe transcript holds message text only. The visitor's profile and request details stay out of the Zap."
+        },
+        {
+          "id": "what-the-app-does-not-cover",
+          "heading": "What the app does not cover",
+          "body": "Replying as an operator, taking a conversation over, handing it back, and resolving a decision need a signed-in teammate's session. A service-account token cannot do them, so the app has no step for them."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* **Zapier says the connection is invalid.** The token is expired or revoked, or the instance URL names the wrong instance. A token issued by the EU cloud does not work on the US cloud. Create a new credential and reconnect.\n* **A step returns `403`.** The service account's role lacks the permission the step needs. Use the `member` role or higher.\n* **Ask an Agent returns `404 agent_not_published`.** The agent has never been published. Publish it from the agent's page.\n* **Ask an Agent times out.** The turn took longer than Zapier allows. See the note under [Ask an agent](#ask-an-agent).\n* **A document is not found by Search Knowledge right after you add it.** Processing runs in the background. Check the document's status in **Sources**."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Authentication](https://docs.radioso.ai/guides/authentication) — sessions, personal tokens, and service accounts.\n* [Personal tokens and service accounts](https://docs.radioso.ai/api/workspaces-and-tokens) — issue and rotate the token this connection uses.\n* [Documents and search](https://docs.radioso.ai/api/documents-and-search) — the document and retrieval routes behind these steps.\n* [Document upload](https://docs.radioso.ai/guides/document-upload) — add whole files rather than text."
         }
       ]
     },

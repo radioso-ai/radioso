@@ -1,0 +1,23 @@
+{
+  "name": "@radioso/zapier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Radioso integration for Zapier, built with the Zapier Platform CLI.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "zapier-platform validate && vitest run",
+    "validate": "zapier-platform validate",
+    "build": "zapier-platform build"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.3.0"
+  },
+  "devDependencies": {
+    "nock": "^14.0.0",
+    "vitest": "^4.1.12",
+    "zapier-platform-cli": "19.3.0"
+  }
+}

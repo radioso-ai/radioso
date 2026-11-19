@@ -2,6 +2,10 @@
 -- what an operator decides about a topic lives here and is read beside the report. A topic keeps
 -- its id across census runs while it survives, so the state follows it from one refresh to the
 -- next. Each row goes with its workspace, its topic and, for a draft, its document.
+--
+-- Locks: two new tables, whose foreign keys take SHARE ROW EXCLUSIVE on workspaces, topics,
+-- documents and users for the instant each is created. The wait is bounded; a retry is safe.
+SET LOCAL lock_timeout = '3s';
 
 -- A topic the operator marked "not for us": out of the "Content to write" queue. No count changes.
 CREATE TABLE audience_pulse_topic_dismissals (

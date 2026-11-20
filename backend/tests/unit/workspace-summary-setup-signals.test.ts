@@ -21,6 +21,7 @@ const build = (state: { readyDocuments: boolean; conversations: number }) => {
     { summarizeWorkspace, hasReadyDocuments } as never,
     { countByWorkspaceId, hasAnyForWorkspace } as never,
     new InMemoryWorkspaceSetupStateRepository(),
+    { websiteCrawlerEnabled: true, chatReadiness: { isChatConfigured: async () => true } },
   );
   return { service, summarizeWorkspace, countByWorkspaceId };
 };

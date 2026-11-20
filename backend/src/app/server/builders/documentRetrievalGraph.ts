@@ -1,6 +1,7 @@
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 import { WorkspaceTimeZoneSettingsRepository } from "../../../db/repositories/workspaceTimeZoneSettingsRepository.js";
+import { createChatReadiness } from "../../../shared/infra/llm/chatReadiness.js";
 import {
   createAgentRetrievalScopeResolver,
   createDefaultDocumentJobDispatcher,
@@ -268,6 +269,7 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceSetupStateRepository: repositories.workspaceSetupStateRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
+    chatReadiness: createChatReadiness(llmCapabilityResolver),
   });
   return {
     agentRetrievalScope,

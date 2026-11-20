@@ -189,7 +189,7 @@ const declarations: readonly PolicyDeclaration[] = [
   // Importing a bundle creates an agent, so it sits with agent creation rather than
   // with the per-agent authoring routes below.
   allow("POST", "/api/v1/agents/bundle", "workspace.agents.manage"),
-  ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist"]
+  ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist", "/:agentId/starter-pack/draft", "/:agentId/starter-pack/apply"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("POST", "/api/v1/agents/:agentId/routines/:routineId/validate", "workspace.agents.read"),
   ...["/:agentId/assistant-logo", "/:agentId/default"]

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { AppError, notFound } from "../../shared/domain/errors.js";
+import { renderOutputLanguageInstruction } from "../../shared/domain/outputLanguageInstruction.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -319,17 +320,28 @@ export class RoutineDraftAssistService {
     );
   }
 
+  /**
+   * `options.outputLanguage` is a language label a caller already detected (for example
+   * "German"). Without one, the draft mirrors the procedure's own language.
+   */
   async draft(
     workspaceId: string,
     agentId: string,
     input: RoutineDraftAssistRequest,
+    options: { outputLanguage?: string } = {},
   ): Promise<RoutineDraftAssistResponse> {
     const parsedInput = routineDraftAssistRequestSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const actionCatalog = await this.resolveActionCatalog(workspaceId, agentId);
     const requestId = randomUUID();
     const variableHints = extractVariableHints(parsedInput.prose, actionCatalog);
-    const prompt = this.buildPrompt(agent, parsedInput, variableHints, actionCatalog);
+    const prompt = this.buildPrompt(
+      agent,
+      parsedInput,
+      variableHints,
+      actionCatalog,
+      renderOutputLanguageInstruction(options.outputLanguage, "the procedure"),
+    );
 
     const primary = await this.callLlm({
       workspaceId,
@@ -467,6 +479,7 @@ export class RoutineDraftAssistService {
     input: RoutineDraftAssistRequest,
     variableHints: string[],
     actionCatalog: RoutineDraftAssistActionCatalogEntry[],
+    outputLanguageInstruction: string,
   ): string {
     const template = loadPromptTemplate(PROMPT_PATH);
     return renderTemplate(template, {
@@ -479,6 +492,7 @@ export class RoutineDraftAssistService {
       permitted_action_catalog: serializePromptData(actionCatalog),
       variable_hints: serializePromptData(variableHints),
       procedure_text: input.prose,
+      output_language_instruction: outputLanguageInstruction,
     });
   }
 

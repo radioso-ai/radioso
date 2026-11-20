@@ -2385,6 +2385,41 @@ Related docs and specs:
 - [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md)
 - `specs/082-routines-as-data/`, `specs/069-conversation-routines/`
 
+## Agent Starter Pack
+
+Turns one sentence about an agent's purpose into up to six directives and exactly
+one routine for the operator to review, then applies the selected items. Drafting
+only reads; applying writes through the directive and routine services in one
+transaction under the agent's draft lock, with a stored idempotency record, so it
+is all or nothing and never overwrites an existing item. Applied items land in the
+agent draft and go live through the agent revision flow. See the module brief in
+`backend/src/modules/agentStarterPack/README.md`.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/agentStarterPack/public.ts` (request schemas, draft and apply services)
+- `backend/src/app/http/routes/agentRoutes.ts` (`POST /api/v1/agents/:agentId/starter-pack/draft` and `/apply`)
+- `backend/src/app/http/openapi/schemas/agentStarterPackSchemas.ts` (`draftAgentStarterPack`, `applyAgentStarterPack`)
+- `backend/prompts/agent-setup/starter-pack-draft.md` (pack prompt, with `{{output_language_instruction}}`)
+- `GET /api/v1/workspace/summary` `llmConfigured`, from `backend/src/shared/infra/llm/chatReadiness.ts` (also used by Ray's availability); `frontend/lib/llm-readiness.ts` reads either signal
+
+Primary internals:
+
+- `backend/src/modules/agentStarterPack/draftGenerator.ts`, `draftService.ts`, `applyService.ts`
+- `backend/src/app/composition/agentStarterPackComposition.ts` (the apply transaction and the transaction-bound authoring services)
+- `backend/src/db/repositories/agentStarterPackApplyRepository.ts`, migration `188`
+- `backend/src/shared/domain/outputLanguageInstruction.ts` (also renders the routine draft-assist prompt's language line)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/agentStarterPack tests/unit/eval-suite/starter-pack-draft-quality.test.ts tests/contract/agent-starter-pack.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/agent-starter-pack-apply.integration.test.ts` (rollback and concurrency against Postgres)
+- `cd frontend && pnpm exec vitest run tests/unit/llm-readiness.test.ts`
+
+Related docs and specs:
+
+- [Agents and skills API](../../docs-portal/content/api/agents-and-skills.mdx) (Starter pack section)
+
 ## Settings
 
 Owns settings validation, settings DTOs, provider ports, ingestion setting

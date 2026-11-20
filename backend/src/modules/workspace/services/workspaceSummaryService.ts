@@ -1,4 +1,5 @@
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ChatReadiness } from "../../../shared/infra/llm/chatReadiness.js";
 import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
 import type { WorkspaceSetupStateRepositoryPort, WorkspaceSetupStep } from "../../../db/repositories/workspaceSetupStateRepository.js";
 
@@ -25,6 +26,8 @@ interface WorkspaceSummary {
     hasNotifyDeliveryConfirmed: boolean;
     hasCredential: boolean;
   };
+  /** Whether the workspace can make chat model calls, so callers can offer LLM features or a setup step. */
+  llmConfigured: boolean;
 }
 
 export class WorkspaceSummaryService {
@@ -32,7 +35,10 @@ export class WorkspaceSummaryService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly setupStateRepository: WorkspaceSetupStateRepositoryPort,
-    private readonly featureFlags: { websiteCrawlerEnabled: boolean } = { websiteCrawlerEnabled: true },
+    private readonly options: {
+      websiteCrawlerEnabled: boolean;
+      chatReadiness: Pick<ChatReadiness, "isChatConfigured">;
+    },
   ) {}
 
   async updateSetupState(workspaceId: string, input: Parameters<WorkspaceSetupStateRepositoryPort["update"]>[1]): Promise<WorkspaceSummary> {
@@ -41,11 +47,12 @@ export class WorkspaceSummaryService {
   }
 
   async getSummary(workspaceId: string): Promise<WorkspaceSummary> {
-    const [documentSummary, conversationCount, setupState, outcomes] = await Promise.all([
+    const [documentSummary, conversationCount, setupState, outcomes, llmConfigured] = await Promise.all([
       this.documentRepository.summarizeWorkspace(workspaceId),
       this.conversationRepository.countByWorkspaceId(workspaceId),
       this.setupStateRepository.get(workspaceId),
       this.setupStateRepository.getOutcomeFlags(workspaceId),
+      this.options.chatReadiness.isChatConfigured(workspaceId),
     ]);
 
     // Projected field by field rather than spread: this summary is the onboarding
@@ -62,8 +69,9 @@ export class WorkspaceSummaryService {
       hasReadyDocuments: documentSummary.readyDocumentCount > 0,
       hasCompletedChat: conversationCount > 0,
       sampleDocumentsImported: documentSummary.sampleDocumentCount > 0,
-      websiteCrawlerEnabled: this.featureFlags.websiteCrawlerEnabled,
+      websiteCrawlerEnabled: this.options.websiteCrawlerEnabled,
       setup: projectSetup(setupState, outcomes, conversationCount > 0),
+      llmConfigured,
     };
   }
 

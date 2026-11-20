@@ -71,6 +71,8 @@ Full local stack:
 
 Workspace checks. Lint and the dead-code and file-size ratchets cover every area from one config,
 so run them from the repo root, not inside a package. See `docs/code-quality-gates.md`.
+`pnpm install` also installs a git pre-push hook that runs the file-size and dead-code gates, so a
+push that would fail them stops locally; fix what it reports rather than skipping it.
 
 ```bash
 pnpm run lint

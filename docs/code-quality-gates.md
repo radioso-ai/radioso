@@ -82,6 +82,25 @@ The `-- <reason>` half is the point. A bare disable comment tells the next reade
 
 That particular rule is worth a warning. `no-unnecessary-type-assertion` judges an assertion by whether it changes the type where it stands, so it flags assertions whose job is to stop TypeScript from *narrowing* a literal — `'variable' as RoutineChipKind`, `{} as Record<string, …>`, a `as const`-style pin on a ternary. Removing one of those typechecks fine in its own file and breaks a consumer several files away. Run `tsc` after `pnpm run lint:fix`, not just the tests.
 
+## The pre-push hook
+
+The file-size and dead-code ratchets are the gates a pull request fails most often, so they also run when you push. `pnpm install` at the repo root installs a git pre-push hook that runs `scripts/pre-push-gates.mjs`. The hook blocks the push when a gate fails, prints the same report CI would, and you fix it, commit, and push again.
+
+What it runs:
+
+- The file-size ratchet on every push, which takes about a second.
+- The dead-code ratchet when the branch changes anything knip reads: source files, `package.json` and other JSON config, `knip-baseline.json`, or `pnpm-lock.yaml`. That takes 10 to 60 seconds.
+
+Both gates read the working tree, so the hook checks a push only when the pushed commit is the one checked out. It lets a push through with a note, and leaves the gate to CI, in three cases:
+
+- You push a commit other than `HEAD`.
+- Dependencies aren't installed, so knip can't run. Run `pnpm install` and the next push is checked.
+- The checkout path has a dot directory, such as a worktree under `.claude/worktrees/` or `.context/`. knip loses the `packages/*` and `ee/packages/*` workspaces there and reports dozens of findings that aren't real, so the dead-code gate is skipped.
+
+The hook lives in the repository's shared `.git/hooks`, so every worktree uses it, and branches that predate `scripts/pre-push-gates.mjs` push without gates. A pre-push hook you already had is kept as `.git/hooks/pre-push.local` and runs first with the same refs. When `core.hooksPath` points somewhere else, the installer leaves it alone and says so.
+
+To run the same gates without pushing, use `pnpm run lint:file-size` and `pnpm run lint:dead-code:ci`. To skip them for one push and still run your other hooks, set `RADIOSO_SKIP_PUSH_GATES=1`.
+
 ## What the dead-code ratchet checks
 
 `knip` walks the import graph from each package's real entry points and reports what nothing reaches: unused files, unused exports, unused exported types. The configuration lives in `knip.json`, and entry points that no static analysis could find — the launcher script served as a raw asset, the Enterprise feature manifests loaded by path — are declared there.

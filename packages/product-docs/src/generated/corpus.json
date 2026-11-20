@@ -1219,7 +1219,7 @@
         {
           "id": "can-i-make-the-widget-match-my-brand",
           "heading": "Can I make the widget match my brand?",
-          "body": "Yes. Colors, logo, button text, corner, greeting, suggested questions, and interface wording are all dashboard settings, and an edit reaches visitors within about a minute without touching the snippet on your site. See [Customize the website widget](https://docs.radioso.ai/guides/customize-the-widget)."
+          "body": "Yes. Colors, logo, button text, corner, and interface wording are widget settings in the dashboard, and an edit reaches visitors within about a minute and a half without touching the snippet on your site. The agent's greeting and its suggested questions live on the agent's **Profile** and go live when you publish the agent. See [Customize the website widget](https://docs.radioso.ai/guides/customize-the-widget)."
         },
         {
           "id": "can-radioso-take-actions-or-is-it-just-a-chatbot",

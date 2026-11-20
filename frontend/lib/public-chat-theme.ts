@@ -1,4 +1,4 @@
-import { contrastRatio, mixHex, mixHexRgba, parseHex, pickForeground, relativeLuminance } from '@/lib/color'
+import { contrastRatio, mixHex, mixHexRgba, parseHex, pickForeground, relativeLuminance, shadeToContrast } from '@/lib/color'
 import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 
@@ -47,6 +47,18 @@ export const quietIconForeground = (theme: { inputBackground: string; inputForeg
   return ensureLegibleForeground(theme.inputBackground, faded, MIN_CONTROL_CONTRAST)
 }
 
+/**
+ * The colour of a link in an assistant answer: the theme's accent, shaded just far enough to read
+ * as text on the bubble, so a light brand colour keeps its hue instead of turning into body text.
+ * Undefined for a theme made of CSS variables, whose stylesheet supplies a link colour.
+ */
+export const messageLinkForeground = (theme: { accent: string; assistantBubbleBackground: string }): string | undefined => {
+  if (!parseHex(theme.accent) || !parseHex(theme.assistantBubbleBackground)) {
+    return undefined
+  }
+  return shadeToContrast(theme.accent, theme.assistantBubbleBackground, MIN_TEXT_CONTRAST)
+}
+
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {
     return null
@@ -55,6 +67,11 @@ export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings 
   const brand = theme.brand
   const text = ensureLegibleForeground(surface, theme.text)
   const brandText = ensureLegibleForeground(brand, theme.brandText)
+
+  // Muted text (citation markers, the Sources row) sits on the bubble and on the muted surface;
+  // the muted surface is the nearer of the two to the text colour, so reading there reads on both.
+  const mutedBackground = mixHex(surface, text, 0.06)
+  const mutedForeground = shadeToContrast(mixHex(text, surface, 0.45), mutedBackground, MIN_TEXT_CONTRAST)
 
   const isSurfaceDark = relativeLuminance(surface) < 0.5
   const shadowSurface = isSurfaceDark
@@ -75,8 +92,8 @@ export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings 
     panelShadow: shadowSurface,
     accent: brand,
     accentForeground: brandText,
-    mutedBackground: mixHex(surface, text, 0.06),
-    mutedForeground: mixHex(text, surface, 0.45),
+    mutedBackground,
+    mutedForeground,
     inputBackground: surface,
     inputForeground: text,
     inputBorder: mixHex(surface, text, 0.2),

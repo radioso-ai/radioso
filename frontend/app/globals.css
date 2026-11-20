@@ -59,6 +59,8 @@
   --popover-foreground: #142317;
   --primary: #5096e7;
   --primary-foreground: #f9f9f7;
+  /* Link text in answers: the primary darkened to read at 4.5:1 on the muted bubble. */
+  --link: #2b6cc4;
   --secondary: #ffc720;
   --secondary-foreground: #142317;
   --muted: #e8eae8;
@@ -97,6 +99,7 @@
   --popover-foreground: #f9f9f7;
   --primary: #5096e7;
   --primary-foreground: #10151d;
+  --link: #5096e7;
   --secondary: #ffc720;
   --secondary-foreground: #10151d;
   --muted: #252a33;
@@ -135,6 +138,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-link: var(--link);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);

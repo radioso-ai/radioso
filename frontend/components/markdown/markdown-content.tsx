@@ -42,7 +42,7 @@ export const isSafeHref = (href?: string): href is string => {
 // the underline as a non-colour affordance (WCAG 1.4.1) without the weight, and
 // hover restores it to full strength.
 export const MESSAGE_LINK_CLASS =
-  'text-[var(--message-link-fg,var(--color-primary))] underline decoration-current/30 decoration-1 underline-offset-2 transition-colors hover:text-[var(--message-link-hover-fg,var(--color-primary))] hover:decoration-current'
+  'text-[var(--message-link-fg,var(--color-link))] underline decoration-current/30 decoration-1 underline-offset-2 transition-colors hover:text-[var(--message-link-hover-fg,var(--color-link))] hover:decoration-current'
 
 const SAFE_IMAGE_PROTOCOLS = new Set(['http:', 'https:'])
 

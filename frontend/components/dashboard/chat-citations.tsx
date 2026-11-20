@@ -43,6 +43,7 @@ export function linkifyText(text: string): ReactNode[] {
 
 import { type AnswerSegment, type Citation } from '@/lib/api'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
+import { messageLinkForeground } from '@/lib/public-chat-theme'
 import { AssistantMarkdownContent } from './chat-markdown'
 import {
   getListItem,
@@ -149,9 +150,11 @@ const getCitationLabel = (citation: Citation, index: number, copy: CitationCopy)
 
 // Sized to sit tight against the word it annotates: the pill's own padding is what
 // reads as a space between the word, the marker and the punctuation that follows, so
-// it stays just wide enough to keep a single digit circular.
+// it stays just wide enough to keep a single digit circular. At rest it is quiet muted
+// text with no fill, so markers don't compete with the answer's links; hover and focus
+// fill it and lift it to the foreground.
 const CITATION_MARKER_BASE_CLASS =
-  'ml-px inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-primary/10 px-0.5 align-super text-[0.62em] font-semibold leading-none text-primary'
+  'ml-px inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full px-0.5 align-super text-[0.7em] font-semibold leading-none text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/50'
 
 // A marker is an atomic inline box, and UAX#14 allows a line break on either
 // side of one even with no whitespace there. So a marker — and the sentence
@@ -197,7 +200,7 @@ const CitationMarker = ({
           })
           onRevealSource(index)
         }}
-        className={`${CITATION_MARKER_BASE_CLASS} cursor-pointer hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
+        className={`${CITATION_MARKER_BASE_CLASS} cursor-pointer`}
         aria-label={fillTemplate(copy.publicChatShowSourceTemplate, { number: String(index + 1), title: label })}
         data-citation-index={index + 1}
       >
@@ -221,7 +224,7 @@ const CitationMarker = ({
         })
         void onOpenDocument(citation, index)
       }}
-      className={`${CITATION_MARKER_BASE_CLASS} hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
+      className={CITATION_MARKER_BASE_CLASS}
       aria-label={`Open source ${index + 1}: ${label}`}
       data-citation-index={index + 1}
     >
@@ -268,7 +271,7 @@ const CitationGroupMarker = ({
         onLinkClickAnalytics?.({ linkType: 'citation_marker' })
         onRevealSources(indices)
       }}
-      className={cn(CITATION_MARKER_BASE_CLASS, 'cursor-pointer px-1 hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none')}
+      className={cn(CITATION_MARKER_BASE_CLASS, 'cursor-pointer px-1')}
       aria-label={fillTemplate(copy.publicChatShowSourcesTemplate, { numbers: label })}
       data-citation-group={label}
     >
@@ -306,7 +309,7 @@ const SourceChip = ({
         highlighted ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-border bg-card'
       }`}
     >
-      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/10 px-1 text-[10px] font-semibold leading-none text-primary">
+      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold leading-none text-muted-foreground">
         {index + 1}
       </span>
       {interactive ? (
@@ -349,7 +352,7 @@ const SourceChip = ({
               destinationUrl: safeSourceUrl,
             })
           }}
-          className="inline-flex shrink-0 items-center text-primary hover:text-primary/80"
+          className="inline-flex shrink-0 items-center text-[var(--message-link-fg,var(--color-link))] hover:text-foreground"
           aria-label={fillTemplate(copy.publicChatOpenSourceLinkTemplate, { title: label })}
           title={safeSourceUrl}
         >
@@ -453,10 +456,11 @@ export function AssistantMessageContent({
   const noticeScope = `${content}|${effectiveCitations.length}|${effectiveAnswerSegments?.length ?? 0}`
   const rawSegments = getRenderableSegments(content, effectiveAnswerSegments)
   const segments = redistributeLeadingPunctuation(rawSegments.flatMap(splitClosingBulletRun), effectiveCitations)
-  const contentThemeVars = theme
+  const linkForeground = theme ? messageLinkForeground(theme) : undefined
+  const contentThemeVars = linkForeground
     ? ({
-        '--message-link-fg': theme.accent,
-        '--message-link-hover-fg': theme.accent,
+        '--message-link-fg': linkForeground,
+        '--message-link-hover-fg': linkForeground,
       } as CSSProperties)
     : undefined
 

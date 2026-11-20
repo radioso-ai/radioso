@@ -7,6 +7,9 @@ const meta = {
       pagination: false,
     },
   },
+  faq: {
+    title: 'FAQ',
+  },
   'why-radioso': {
     title: 'Why Radioso',
   },

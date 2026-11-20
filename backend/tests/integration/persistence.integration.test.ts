@@ -5,6 +5,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
+import { documentEventEraser, workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
@@ -404,9 +405,9 @@ describeIfDatabase("persistence integration", () => {
 
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
     const chunkRepository = new ChunkRepository(database);
-    const jobRepository = new DocumentProcessingJobRepository(database.kysely);
+    const jobRepository = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
 
     const capturedTexts: string[] = [];
     const embeddingGateway: EmbeddingGenerationGateway = {
@@ -519,7 +520,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
     const chunkRepository = new ChunkRepository(database);
 
     const ownerAccount = await accountRepository.create({
@@ -589,7 +590,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("persists uploaded document source metadata and derived content updates", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
 
     const account = await accountRepository.create({
       name: "Imported Source Organization",
@@ -647,7 +648,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("enforces workspace-scoped external document identity uniqueness and supports idempotent queueing", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
 
     const accountA = await accountRepository.create({
       name: "External Id A Organization",

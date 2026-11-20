@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg, { type PoolClient } from "pg";
 
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceSetupStateRepository } from "../../src/db/repositories/workspaceSetupStateRepository.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
@@ -58,7 +59,7 @@ describeIfDatabase("migration 231 workspace setup state", () => {
 
   it("grandfathers a pre-existing workspace with documents out of first run", async () => {
     const service = new WorkspaceSummaryService(
-      new DocumentRepository(database.kysely),
+      new DocumentRepository(database.kysely, documentEventEraser),
       new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       new WorkspaceSetupStateRepository(database.kysely),
     );

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
@@ -36,7 +37,7 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     const workspace = await new WorkspaceRepository(database.kysely)
       .create(accountId, "Chunk Width Workspace");
     workspaceId = workspace.id;
-    const document = await new DocumentRepository(database.kysely).create({
+    const document = await new DocumentRepository(database.kysely, documentEventEraser).create({
       workspaceId,
       title: "Chunk Width Guide",
       sourceContent: "Body.",
@@ -102,7 +103,7 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
   });
 
   it("distinguishes a real zero-chunk document from a missing or cross-workspace document", async () => {
-    const emptyDocument = await new DocumentRepository(database.kysely).create({
+    const emptyDocument = await new DocumentRepository(database.kysely, documentEventEraser).create({
       workspaceId,
       title: "Empty Guide",
       sourceContent: "",

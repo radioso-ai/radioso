@@ -2,6 +2,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
+import { workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 
@@ -35,7 +36,7 @@ describe("canonical embedding coverage query", () => {
         } as unknown as Pool,
       }),
     });
-    const repository = new DocumentProcessingJobRepository(db);
+    const repository = new DocumentProcessingJobRepository(db, workspaceEventRecorder);
 
     try {
       await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);

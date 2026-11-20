@@ -1,17 +1,18 @@
 ---
 title: "Connect Radioso to your automations"
-description: "Call Radioso from n8n, Zapier or Make, send data from an agent to them, and give an n8n AI agent a Radioso agent as a tool."
-last_updated: 2026-11-19
+description: "Call Radioso from n8n, Zapier or Make, send data from an agent to them, start them on workspace events, and give an n8n AI agent a Radioso agent as a tool."
+last_updated: 2026-11-20
 ---
 
 # Connect Radioso to your automations
 
-Your team already runs work in n8n, Zapier or Make: a new lead lands in a CRM, a ticket changes state, a form comes in. Radioso connects to those tools in three ways, and each one is a route you can set up today from the dashboard and your automation tool, with no code to host.
+Your team already runs work in n8n, Zapier or Make: a new lead lands in a CRM, a ticket changes state, a form comes in. Radioso connects to those tools in four ways. Each needs no code to host: you set it up in the dashboard and your automation tool, or, for an event subscription, with one API call from your automation tool.
 
 | You want to | Direction | Use | Page |
 |---|---|---|---|
 | Ask an agent a question, search the knowledge base, or add a document from a workflow | Automation calls Radioso | The REST API with a service-account token | [Call Radioso from n8n, Zapier and Make](/automation/call-radioso) |
 | Hand an agent's collected data to a workflow, such as a lead or a booking request | Radioso calls the automation | A webhook skill that posts a signed request to a catch hook | [Send data to an automation](/automation/webhook-skills) |
+| Start a workflow when a conversation starts, a visitor leaves contact details, a routine ends, a conversation goes to a person, or a document finishes processing or fails | Radioso calls the automation, or the automation polls | An event subscription that pushes each event to a URL, or the event log polled by cursor | [Workspace event subscriptions](/api/workspace-event-subscriptions) and [Workspace event log](/api/workspace-event-log) |
 | Let an n8n AI agent consult a Radioso agent as one of its tools | Automation calls Radioso | The MCP server | [n8n AI agents over MCP](/automation/n8n-ai-agents) |
 
 ## Pick the instance URL
@@ -47,5 +48,6 @@ Radioso keeps credentials for different jobs apart, so an automation usually hol
 - [Call Radioso from n8n, Zapier and Make](/automation/call-radioso)
 - [Send data to an automation](/automation/webhook-skills)
 - [n8n AI agents over MCP](/automation/n8n-ai-agents)
+- [Workspace event subscriptions](/api/workspace-event-subscriptions)
 - [Connectors and webhooks](/api/connectors-and-webhooks)
 - [API Reference](/api-reference)

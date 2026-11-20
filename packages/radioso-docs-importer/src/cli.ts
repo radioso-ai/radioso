@@ -1,9 +1,15 @@
 #!/usr/bin/env -S node --experimental-strip-types
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_SECTION, MDX_SECTION, README_SECTION, buildDocuments } from "./import/buildDocuments.ts";
+import { API_SECTION, MDX_SECTION, README_SECTION, WEBSITE_SECTION, buildDocuments } from "./import/buildDocuments.ts";
 import { syncDocuments } from "./import/sync.ts";
 import { createRadiosoDocsClient } from "./radioso/client.ts";
+import {
+  buildWebsitePageDocuments,
+  parseWebsitePageSpec,
+  websitePageExternalId,
+  type WebsitePageSpec,
+} from "./website/buildWebsitePageDocuments.ts";
 
 interface CliOptions {
   dryRun: boolean;
@@ -11,6 +17,7 @@ interface CliOptions {
   includeMdx: boolean;
   includeApi: boolean;
   includeReadme: boolean;
+  websitePages: WebsitePageSpec[];
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -21,6 +28,9 @@ function parseArgs(argv: string[]): CliOptions {
     includeMdx: !flags.has("--no-mdx"),
     includeApi: !flags.has("--no-api"),
     includeReadme: !flags.has("--no-readme"),
+    websitePages: argv.flatMap((arg, index) =>
+      arg === "--website-page" ? [parseWebsitePageSpec(argv[index + 1] ?? "")] : [],
+    ),
   };
 }
 
@@ -49,6 +59,8 @@ async function main(): Promise<void> {
     includeReadme: options.includeReadme,
   });
 
+  documents.push(...(await buildWebsitePageDocuments(options.websitePages, citationBase)));
+
   console.log(`Built ${documents.length} document(s) (citation base: ${citationBase}).`);
   for (const document of documents) {
     console.log(`  - ${document.externalDocumentId} -> ${document.source.url}`);
@@ -76,8 +88,22 @@ async function main(): Promise<void> {
     pruneSections.add(README_SECTION);
   }
 
-  const report = await syncDocuments(client, documents, { prune: options.prune, pruneSections }, (message) =>
-    console.log(message),
+  if (options.websitePages.length > 0) {
+    pruneSections.add(WEBSITE_SECTION);
+  }
+
+  const report = await syncDocuments(
+    client,
+    documents,
+    {
+      prune: options.prune,
+      pruneSections,
+      supersede: options.websitePages.map((page) => ({
+        citationUrl: page.citationUrl,
+        keepExternalDocumentId: websitePageExternalId(page.citationUrl),
+      })),
+    },
+    (message) => console.log(message),
   );
   console.log(`Done: upserted ${report.upserted}, pruned ${report.pruned}, pruned sources ${report.prunedSourceIds.length}.`);
 }

@@ -67,6 +67,48 @@ describe("workspace events contract", () => {
     }
   });
 
+  it("serves a document event with the document it names and nothing about a conversation", async () => {
+    const h = await harness();
+    const documentId = randomUUID();
+    const sourceId = randomUUID();
+    const uploadsSourceId = randomUUID();
+    const processed = h.store.append({
+      workspaceId: h.owner.workspaceId,
+      type: "document.processed",
+      data: { documentId, revision: 3, title: "Opening hours", contentKind: "inline_text", sourceKind: "website", sourceId },
+    });
+    const failed = h.store.append({
+      workspaceId: h.owner.workspaceId,
+      type: "document.failed",
+      data: { documentId, revision: 4, title: "Opening hours", contentKind: "uploaded_file", sourceKind: "upload", sourceId: uploadsSourceId, failureCode: "provider_misconfigured" },
+    });
+
+    const page = await request(h.app).get("/api/v1/workspace/events?types=document.processed,document.failed").set(h.owner.headers).expect(200);
+
+    expect(page.body.events).toEqual([
+      {
+        id: processed.id,
+        type: "document.processed",
+        version: 1,
+        occurredAt: processed.occurredAt.toISOString(),
+        workspaceId: h.owner.workspaceId,
+        data: { documentId, revision: 3, title: "Opening hours", contentKind: "inline_text", sourceKind: "website", sourceId },
+      },
+      {
+        id: failed.id,
+        type: "document.failed",
+        version: 1,
+        occurredAt: failed.occurredAt.toISOString(),
+        workspaceId: h.owner.workspaceId,
+        data: { documentId, revision: 4, title: "Opening hours", contentKind: "uploaded_file", sourceKind: "upload", sourceId: uploadsSourceId, failureCode: "provider_misconfigured" },
+      },
+    ]);
+    for (const event of page.body.events) {
+      const served = servedEventSchema.parse(event);
+      expect(() => workspaceEventDataSchema(served.type as WorkspaceEventType).strict().parse(served.data)).not.toThrow();
+    }
+  });
+
   it("filters by type and refuses a cursor reused for other types", async () => {
     const h = await harness();
     h.store.append({ workspaceId: h.owner.workspaceId, type: "conversation.started" });
@@ -85,7 +127,7 @@ describe("workspace events contract", () => {
   it("refuses an invalid query", async () => {
     const h = await harness();
 
-    await request(h.app).get("/api/v1/workspace/events?types=document.processed").set(h.owner.headers).expect(400);
+    await request(h.app).get("/api/v1/workspace/events?types=source.synced").set(h.owner.headers).expect(400);
     await request(h.app).get("/api/v1/workspace/events?types=,").set(h.owner.headers).expect(400);
     await request(h.app).get("/api/v1/workspace/events?limit=101").set(h.owner.headers).expect(400);
     await request(h.app).get("/api/v1/workspace/events?after=not-a-cursor").set(h.owner.headers).expect(400);
@@ -135,6 +177,27 @@ describe("workspace events contract", () => {
 
       const named = await request(h.app).get("/api/v1/workspace/events?types=decision.pending").set(h.owner.headers).expect(403);
       expect(named.body.error.code).toBe("event_type_not_permitted");
+    });
+
+    it("leaves document events out for a caller who may not read documents, and refuses them by name", async () => {
+      const h = await harness();
+      h.store.append({ workspaceId: h.owner.workspaceId, type: "conversation.started" });
+      h.store.append({
+        workspaceId: h.owner.workspaceId,
+        type: "document.processed",
+        data: { documentId: randomUUID(), revision: 1, title: "Opening hours", contentKind: "inline_text", sourceKind: null, sourceId: null },
+      });
+      vi.spyOn(h.dependencies.accountAccessService, "requirePermission").mockResolvedValue(null);
+      vi.spyOn(h.dependencies.accountAccessService, "hasPermission")
+        .mockImplementation(async ({ permission }) => permission !== "workspace.documents.read");
+
+      const unfiltered = await request(h.app).get("/api/v1/workspace/events").set(h.owner.headers).expect(200);
+      expect(unfiltered.body.events.map((event: { type: string }) => event.type)).toEqual(["conversation.started"]);
+
+      for (const types of ["document.processed", "document.failed", "conversation.started,document.failed"]) {
+        const named = await request(h.app).get(`/api/v1/workspace/events?types=${types}`).set(h.owner.headers).expect(403);
+        expect(named.body.error.code).toBe("event_type_not_permitted");
+      }
     });
 
     it("answers 410 to a cursor older than the retention window", async () => {

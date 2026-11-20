@@ -264,15 +264,16 @@ describeIntegration("workspace event log (Postgres)", () => {
       metadata: { terminalKind: "complete", terminalStepId: "done" },
     };
 
-    await new PendingDecisionRepository(database.kysely).resolveInTransaction(
-      { handle: parked.handle, status: "resolved", decision: { optionId: "approve" }, decidedBy: null, contentHash: parked.contentHash },
-      async (_record, trx) => persistence.completeAssistantTurn({
+    const decisions = new PendingDecisionRepository(database.kysely);
+    await decisions.claimInTransaction({ handle: parked.handle, contentHash: parked.contentHash }, async (claim, trx) => {
+      await claim.resolve({ status: "resolved", decision: { optionId: "approve" }, decidedBy: null });
+      return persistence.completeAssistantTurn({
         ...turn(workspaceId, conversation.id),
         transaction: trx,
         routineStateTransition: await capturedSave(resumed),
         pendingDecisionTransition: chained,
-      }),
-    );
+      });
+    });
 
     expect((await eventsOf(workspaceId, start.nextCursor)).events.map((event) => [event.type, event.data])).toEqual([
       ["decision.pending", expect.objectContaining({ decisionHandle: chained.handle, stepId: "approve_deposit" })],

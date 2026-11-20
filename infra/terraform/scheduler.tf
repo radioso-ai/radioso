@@ -30,6 +30,7 @@ locals {
   conversation_retention_url           = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/conversation-retention/run" : null
   voice_recording_erasure_recovery_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/voice-recording-erasure-recovery/run" : null
   identity_nonce_prune_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/identity-nonce-prune/run" : null
+  workspace_event_delivery_url         = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/workspace-event-delivery/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -343,6 +344,33 @@ resource "google_cloud_scheduler_job" "identity_nonce_prune" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.identity_nonce_prune_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Starts the drain of every workspace event subscription that has an event waiting and is not
+# backing off. A turn's own wake usually delivers within seconds; this guarantees delivery within a
+# minute when a wake was lost, and is the only trigger for events recorded outside a chat turn.
+resource "google_cloud_scheduler_job" "workspace_event_delivery" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-workspace-event-delivery"
+  region           = var.region
+  schedule         = local.workspace_event_delivery_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.workspace_event_delivery_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.workspace_event_delivery_url
     }
   }
 

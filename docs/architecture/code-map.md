@@ -936,15 +936,33 @@ Owns the generic approval-gate primitive a routine step or Operator Copilot
 tool call pauses on: a pending decision proposal, its content hash, and the
 resume path once an operator decides.
 
+Resolving claims the decision (`PendingDecisionRepository.claimInTransaction`:
+an advisory lock on the handle and a plain read), then runs the `ResumeRunner`
+(`chat/services/approvalResumeTurn.ts`). The runner reaches the claim's
+transaction only through `commit(work)`, which it calls after its model calls
+and skill dispatches. `commit` locks the conversation row, writes the
+resolution and the `approval_decided` activity, then runs the turn's writes in
+the same transaction. So the transaction takes its transaction id only to
+commit, and the workspace event log keeps serving events while the routine
+resumes. Every write that changes a decision's status holds the
+`pending-decision:<handle>` advisory lock.
+
+The claim locks no rows while the routine resumes. An erasure, including the
+inactivity retention sweep, can therefore remove the conversation mid-resume.
+A skill that already acted has acted once, and the resolve returns `404`
+with nothing of the turn written.
+
 Public surfaces and key files:
 
 - `backend/src/modules/approvals/public.ts`
 - `backend/src/modules/approvals/decisionProposal.ts`
 - `backend/src/modules/approvals/service.ts`
+- `backend/src/db/repositories/pendingDecisionRepository.ts`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts tests/unit/approval-resume-time-zone.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/approvals --no-file-parallelism` (needs `INTEGRATION_DATABASE_URL`)
 - `cd backend && pnpm exec vitest run tests/integration/operatorMcp/operator-mcp-reviewed-approval.integration.test.ts`
 
 ## Operator Notifications
@@ -2582,6 +2600,14 @@ Where each type is recorded:
   transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
+- `document.processed`, `document.failed`: a vectorize job's terminal write
+  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
+  fence (`status = 'processing'` and the claimed attempt) hits, from drafts the
+  worker builds (`modules/documents/services/documentWorkspaceEvents.ts`); the
+  log copies the document's title, content kind and source from its row, and
+  records nothing for a revision the document has moved past. Deleting a
+  document removes its events through `DocumentEventEraser`, which
+  `DocumentRepository` takes from the composition seam
 
 Reads run in one repeatable-read snapshot and stop at
 `pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
@@ -2593,22 +2619,53 @@ span reports `workspace_events.horizon_xid_lag`. Events are kept 30 days (a
 and a withdrawn consent's events leave through a `MessageCopyWithholder` that
 removes them by routine and slot keys as well as by value.
 
+Event subscriptions (#1852) push the same events to URLs that receivers
+subscribe and unsubscribe over the API at
+`/api/v1/workspace/event-subscriptions` under
+`workspace.event_subscriptions.manage`. One `workspace_events.deliver`
+background job per subscription (`rerun`, keyed by the subscription) drains up
+to ten of its events per run, in log order through the log's own reader, and
+moves its cursor to the read's horizon when it catches up; one signed POST per event
+(`createSignedWebhookHeaders`, `Idempotency-Key` = event id), after re-checking
+the creating credential or teammate (`EventSubscriptionOwnerCheck`, adapted from
+machine access and account access in the composition seam). A `2xx` advances the
+subscription's cursor, `410` deletes it, anything else backs off
+`min(30 s × 2^(n−1), 1 h)` with newer events behind it, and a day of failures
+(five tries at least) disables it. The built-in `workspace-event-delivery`
+periodic task (every minute; Cloud Scheduler `workspace_event_delivery` in
+`infra/terraform/scheduler.tf`) starts every due drain, and the chat turn's
+`afterCommit` and the document worker's event-bearing completions and failures
+wake their workspace's drains sooner. Target URLs pass the outbound
+URL rule (`normalizeWebhookTargetUrl` in `shared/infra/http/signedWebhook.ts`,
+shared with webhook destinations) at create and the DNS-pinned guard at every
+hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`, and a keyed
+hash of the URL makes a create of a subscribed URL replace its subscription with a
+new id (carrying an active one's cursor). Settings
+lists and deletes them on the API access tab; Ray reads them with
+`list_event_subscriptions`.
+
 Public surfaces and key files:
 
 - `backend/src/shared/domain/workspaceEventLog.ts` (types, versions, data schemas, recorder and store ports)
-- `backend/src/modules/workspaceEventLog/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions)
+- `backend/src/shared/domain/workspaceEventSubscriptions.ts` (subscription store port, delivery wake port)
+- `backend/src/modules/workspaceEventLog/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions, `EventSubscriptionService`, `WorkspaceEventDeliveryDrain`, `WorkspaceEventDeliveryScheduler`)
 - `backend/src/db/repositories/workspaceEventLogRepository.ts` (recorder, snapshot reads, retention, withholder)
-- `backend/src/app/composition/workspaceEventLog.ts` (the recorder seam, the bridged activity recorder, the log)
+- `backend/src/db/repositories/workspaceEventSubscriptionRepository.ts` (subscriptions, cap under an advisory lock, due search)
+- `backend/src/app/composition/workspaceEventLog.ts` (the recorder seam, the bridged activity recorder, the log, delivery, the owner check, the wake)
 - `backend/src/app/http/routes/workspaceEventLogRoutes.ts` (`GET /api/v1/workspace/events`, `workspace.events.read`)
+- `backend/src/app/http/routes/workspaceEventSubscriptionRoutes.ts` (subscription CRUD; the push is the OpenAPI `workspaceEvent` webhook)
+- `frontend/components/dashboard/settings/event-subscriptions-card.tsx` (Settings → API access list and delete)
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/unit/deferred-routine-store.test.ts tests/contract/workspace-event-log.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/unit/deferred-routine-store.test.ts tests/contract/workspace-event-log.contract.test.ts tests/contract/workspace-event-subscriptions.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/workspace-event-subscriptions.integration.test.ts tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec playwright test tests/e2e/event-subscriptions.spec.ts`
 
 Related docs:
 
 - [Workspace event log](../../docs-portal/content/api/workspace-event-log.mdx)
+- [Workspace event subscriptions](../../docs-portal/content/api/workspace-event-subscriptions.mdx)
 - `specs/957-workspace-events/spec.md`
 
 ## Audience Pulse

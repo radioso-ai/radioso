@@ -79,7 +79,11 @@ describe("operator copilot catalog coverage", () => {
   //   2026-11-06: 114 -> 115 getAgentGreetingDraft, the draft read behind the dashboard's greeting
   //   editor. Ray's propose_greeting card shows only the proposed wording; it reads the wording
   //   it replaces once its adapter adopts this read.
-  const maxDeferredCatalogExclusions = 115;
+  //   2026-11-19: 115 -> 116 deleteEventSubscription (#1852). An event subscription's own client
+  //   creates and removes it; an operator deletes one in Settings, and list_event_subscriptions reads
+  //   them. A Ray removal silently stops an automation its client believes is live, so it waits on
+  //   its own proposal shape.
+  const maxDeferredCatalogExclusions = 116;
 
   it("keeps provider input-token caching outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({

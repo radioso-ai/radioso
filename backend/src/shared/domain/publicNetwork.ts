@@ -7,6 +7,17 @@ export class PublicNetworkPolicyError extends Error {
   }
 }
 
+/**
+ * The host did not resolve at all. Still a refusal, since no public address was confirmed, but a
+ * resolver outage rather than a host that points somewhere private.
+ */
+export class PublicHostUnresolvedError extends PublicNetworkPolicyError {
+  constructor() {
+    super("URL host could not be resolved");
+    this.name = "PublicHostUnresolvedError";
+  }
+}
+
 export const stripIpv6Brackets = (value: string): string =>
   value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
 

@@ -12,6 +12,7 @@ import {
   conversationSummaryRefreshHandler,
 } from "../../../modules/chat/composition.js";
 import { BackgroundJobRuntime, type BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import { PeriodicTaskRunner } from "../../composition/periodicTaskRunner.js";
 import { bindConsentMessageWithholding } from "../../composition/consentWithdrawal.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
@@ -169,6 +170,8 @@ export const buildChatServices = (input: {
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
   /** Where a turn hands work to the worker: the conversation summary refresh rides here. */
   backgroundJobs: BackgroundJobQueue;
+  /** Wakes event subscription delivery after a turn that recorded events commits. */
+  workspaceEventDelivery: WorkspaceEventDeliveryWake;
   composition: ApplicationComposition;
   /** Records the activity of a handoff a turn requests and an approval decided; reads a conversation's timeline. */
   conversationActivity: { recorder: ConversationActivityRecorder; reads: ConversationActivityTimelineReader };
@@ -521,6 +524,7 @@ export const buildChatServices = (input: {
     // A turn that raced a consent withdrawal withholds what it wrote, as the withdrawal would have.
     bindConsentMessageWithholding,
     toolImages.rows,
+    input.workspaceEventDelivery,
   );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({

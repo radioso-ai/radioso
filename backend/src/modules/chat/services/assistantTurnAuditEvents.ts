@@ -13,6 +13,7 @@ import type { ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
+import type { ProductAnalyticsEventInput } from "../../../shared/analytics/productAnalyticsService.js";
 
 export interface OwnershipHandoffInput {
   reason: ConversationOwnershipReason;
@@ -87,6 +88,25 @@ export const buildAssistantTurnSuccessAuditEvent = (input: AssistantTurnSuccessI
     },
   };
 };
+
+/** The product analytics event a completed turn records. */
+export const buildAssistantTurnCompletedAnalyticsEvent = (input: AssistantTurnSuccessInput): ProductAnalyticsEventInput => ({
+  eventName: "chat.completed",
+  workspaceId: input.workspaceId,
+  accountId: input.accountId,
+  subjectType: "conversation",
+  subjectId: input.conversationId,
+  properties: {
+    stream: input.stream,
+    answerOutcome: input.answerOutcome,
+    skillName: input.skillTurnOutcome.skillName,
+    skillOutcome: input.skillTurnOutcome.outcome,
+    skillStatus: input.skillTurnOutcome.status,
+    citationCount: input.citations.length,
+    suggestionCount: input.suggestions?.length ?? 0,
+  },
+  source: "backend",
+});
 
 export const buildAssistantTurnSuspendedAuditEvent = (input: AssistantTurnSuccessInput): AuditEventInput => ({
   accountId: input.accountId,

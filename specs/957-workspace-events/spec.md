@@ -29,7 +29,7 @@
 - **Naming (H2, L8).** The SSE contract suite is restored to main's `workspace-events.contract.test.ts`. New files use "event log" (`workspaceEventLog*`, `workspace-event-log.*`).
 - **Horizon (M1).** The five-minute idle-in-transaction timeout and the span lag are in (see the horizon section). The approvals restructure is the next small PR.
 - **Withholding by structure (M2).** See §8.
-- **Tests (M3, M4).** They separate xid order from position order, page one transaction's events across a page boundary, move a narrow filter's cursor to the horizon, and record through `resolveInTransaction` and `getOrCreateByAnonymousSession`. Every served event is parsed against its schema. The contract suite covers the takeover deny case and a 410 on an aged cursor.
+- **Tests (M3, M4).** They separate xid order from position order, page one transaction's events across a page boundary, move a narrow filter's cursor to the horizon, and record through `claimInTransaction` and `getOrCreateByAnonymousSession`. Every served event is parsed against its schema. The contract suite covers the takeover deny case and a 410 on an aged cursor.
 - **One seam (M5).** `app/composition/workspaceEventLog.ts` owns `workspaceEventRecorder` and `withWorkspaceEvents(activity)`. Every construction gets them injected, `PostgresSlackPersistence` included (through `SlackPlugin` and `buildSlackInboundJobComposition`).
 - **Descriptions (M6, M7, L4).**
   - `decision.pending` is described as a notification tokens cannot act on.
@@ -83,7 +83,7 @@ A read returns only rows whose transaction is older than every transaction still
 | Conversation erasure and DSAR erasure | At most 200 conversations per request (DSAR pages), each statement ≤ 15 s. |
 | Retention sweep | Bounded batches, one transaction each. |
 | Workspace or organization deletion (`personalCredentialLifecycleRepository.deleteWorkspace`) | One transaction cascading a whole workspace, in a handful of statements, each ≤ 15 s. The largest bounded writer: under a minute for a statement count this size. |
-| **Decision resolution** (`pendingDecisionRepository.resolveInTransaction`) | Holds its transaction, with an xid from the decision update, while the resumed routine turn runs: the reply's model call and any skill dispatch (webhooks time out at 10 s). Bounded by the model and skill timeouts, typically seconds. The longest *routine* staller. |
+| **Decision resolution** (`pendingDecisionRepository.claimInTransaction`) | Claims the decision with an advisory lock and a plain read, neither of which takes an xid, so the resumed routine turn's model calls and skill dispatches run under no xid. The xid is taken when the runner commits. From then until COMMIT the transaction runs only database statements: the conversation row lock, the decision update, its activity row, the turn's action-authorization reads, and the turn's writes. The outbox drain push and the completion analytics run after COMMIT. Milliseconds, each statement bounded by `statement_timeout`. Not a staller. |
 | **Migrations at deploy** (`db/runMigrations.ts:110-111`) | `SET LOCAL statement_timeout = 0`: unbounded per migration. A long migration delays events for its duration. |
 | **A transaction left open** | No `idle_in_transaction_session_timeout` is set on the pool (`database.ts:82-92`) or as a Cloud SQL flag (`infra/terraform/database.tf:60-69`, which sets only IAM and pgAudit flags). A connection idle inside an open transaction is bounded only by its process ending: a bug, or a Cloud Run instance whose CPU is throttled after its response while a detached promise holds the transaction. **Worst case unbounded.** |
 
@@ -95,7 +95,7 @@ Done in the review round:
 - The `workspace_events.list` span carries `workspace_events.horizon_xid_lag` (`pg_snapshot_xmax − pg_snapshot_xmin` from the read's own snapshot).
 - PR 3's `workspace_event_delivery_lag_ms` (now − `occurredAt` at delivery) shows a stall as a rising lag across every subscription at once.
 
-Follow-up PR, before PR 3: `fix(approvals): …`. It claims the decision with `pg_advisory_xact_lock(handle)` plus a plain `status = 'pending'` read, so no xid is taken while the routine resumes. It moves the `pending_decisions` UPDATE and the `approval_decided` activity insert to just before `completeAssistantTurn`, in the same transaction. The horizon stays global.
+Follow-up PR, before PR 3: `fix(approvals): resolve a decision without holding back the event log`. It claims the decision with `pg_advisory_xact_lock(hashtextextended('pending-decision:' || handle, 0))` plus a plain `status = 'pending'` read, so no xid is taken while the routine resumes. The resume runner reaches the transaction only through the port's `commit(work)`. It calls that after its model and skill work. `commit` locks the conversation row, writes the `pending_decisions` UPDATE and the `approval_decided` activity insert, then runs `work`, which is `completeAssistantTurn`, in the same transaction. The horizon stays global.
 
 ## 1. Placement
 
@@ -149,6 +149,7 @@ The port follows `ConversationActivityRecorder` (`modules/conversationActivity/c
 - The Postgres implementation is `db/repositories/workspaceEventLogRepository.ts`.
 - `draft.idempotencyKey`, when present, makes the write `ON CONFLICT DO NOTHING` on `(workspace_id, idempotency_key)`.
 - A conversation draft whose conversation is missing, is `purpose = 'operator_test'`, or is on an `OPERATOR_TEST_SOURCE_CHANNELS` channel inserts nothing. This is the same exclusion as history's default `end_user` scope (`shared/domain/conversationSource.ts:16-27`).
+- A document draft (`DocumentEventDraft`: `documentId`, `revision`, a required `idempotencyKey`) is written by `INSERT … SELECT FROM documents … FOR KEY SHARE` on id, workspace and revision. Its whole `data` is built in that statement: `documentId`, `revision`, `title` and `contentKind` (the row's `source_kind`) from the row, `sourceId` and `sourceKind` (its `document_sources.kind`, null without a source), then the type's detail. A document that is gone, or has moved past the draft's revision, inserts nothing; the newer revision records its own. The key-share lock orders the write against a deletion of the document (§8).
 
 | Type | Emit site (file:line) | Who calls the port | Idempotency key |
 |---|---|---|---|
@@ -157,8 +158,8 @@ The port follows `ConversationActivityRecorder` (`modules/conversationActivity/c
 | `handoff.requested` | Both handoff paths already record a `handoff_requested` activity in their transaction: `chat/infra/postgresAssistantTurnPersistence.ts:443` and `handoff/conversationOwnershipService.ts:318-326` (email review, ingest, mailbox policy change) | A `conversationActivity` bridge, `publishingWorkspaceEvents(recorder, events)`, exported from its `public.ts` and applied once in `app/composition/conversationActivity.ts:20`. Every `handoff_requested` record also records the event on the same `db` | none (each activity row is a distinct fact) |
 | `routine.completed` | The ended run is captured at `chat/services/routines/deferredRoutineStore.ts:61-68` (live turns) and `chat/services/approvalResumeTurn.ts:110` (resume after a decision). It is written at `postgresAssistantTurnPersistence.ts:372` (`applyRoutineStateTransition`) | Both capture sites add an `ending` field to the `save` transition, as they add `asksConsentField`. The field holds the routine id, execution id, terminal kind (from the `completedRoutineState` metadata, `packages/conversation-engine/src/routineEnding.ts:26-47`) and the declared-slot values masked by the engine's `declaredSlotVariables` (`packages/conversation-engine/src/routineSlotValues.ts:88`, newly exported through `modules/routines/domain.ts` and `public.ts`). The turn persistence records it | `routine.completed:{executionId}` |
 | `decision.pending` | `postgresAssistantTurnPersistence.ts:374` (`savePendingDecision`), the only production insert into `pending_decisions` | The turn persistence, from `input.pendingDecisionTransition` | `decision.pending:{handle}` |
-| `document.processed` | A vectorize job's fenced completion: `documents/services/documentProcessingWorker.ts:433` (normal), :228 (startup reconcile) and :654 (`completeAlreadyPublishedJob`). These call `db/repositories/documentProcessingJobRepository.ts:839` `markCompleted` | The worker passes a draft for vectorize jobs. The completion write records it in the same transaction, only when the `status = 'processing'` fence hit, so it records exactly once. `documentProcessingJobRepository.ts` is baselined at 1063 lines, so the terminal-outcome writes move to `documentProcessingJobOutcomes.ts` first (the file shrinks) | `document.processed:{documentId}:{revision}` |
-| `document.failed` | `documentProcessingWorker.ts:596` calls `documentProcessingJobRepository.ts:892` `markFailedIfDocumentMatches`, which already flips the document and the job in one transaction | The same extracted outcome writer records the event after the document update hits | `document.failed:{documentId}:{revision}` |
+| `document.processed` | A vectorize job's fenced completion. Every completion path in `documents/services/documentProcessingWorker.ts` (the normal run, the startup reconcile, and `completeAlreadyPublishedJob`) goes through its `markJobCompleted`, which calls `markCompleted(job, event)` with a draft for vectorize jobs only | The worker builds the draft (`documents/services/documentWorkspaceEvents.ts`). `db/repositories/documentProcessingJobOutcomes.ts`, extracted from the baselined job repository first (behaviour unchanged, its own commit), records it in the completion's transaction only when the fence hits: `status = 'processing'` and the caller's claimed `attempt_count`, so a run that lost its lease ends nothing. Without a draft the completion stays one statement. `DocumentProcessingJobRepository` takes the recorder as a required constructor argument, from the composition seam at `app/server/builders/infra.ts` | `document.processed:{documentId}:{revision}` |
+| `document.failed` | `markFailedIfDocumentMatches` in `documentProcessingJobOutcomes.ts`, which flips the document and the job in one transaction under the same claim fence; the worker passes `documentFailedEvent(job, errorCode)` | The outcome writer records it after the document and job updates hit. `failureCode` is the job's error code (`AppError.code`, else null), never its message. Keyed per attempt: a revision a credential fix queues again (`requeueProviderCredentialFailures`, same revision, next attempt) records its next failure, or `document.processed` once it succeeds | `document.failed:{documentId}:{revision}:{attemptCount}` |
 
 **Rejected emit points:**
 - `modules/documents/infra/chunkRepository.ts:149-158`, where the document flips to `ready`. It runs raw `pg` inside a pgvector adapter, so the Kysely recorder cannot join that transaction. The job completion is the authoritative moment per `modules/documents/README.md`.
@@ -228,7 +229,10 @@ Rules:
 | `routine.completed` | `routineId`, `executionId \| null`, `outcome` (`complete` \| `handoff` \| `action` \| `stuck` \| `consent_declined`), `values` (declared slots, sensitive ones as `[redacted]`), `sensitiveSlotKeys` |
 | `decision.pending` | `decisionHandle`, `routineId`, `stepId`, `options: [{ id, label }]`, `deadline \| null`, `reason \| null` (see open question 5) |
 
-**Document events** carry `documentId`, `revision`, `title`, `sourceKind` and `sourceId | null`. `document.failed` adds `failureCode | null`, the job's error code, never the message.
+**Document events** carry `documentId`, `revision`, `title`, `contentKind`, `sourceKind | null` and `sourceId | null`, and nothing about a conversation. `document.failed` adds `failureCode | null`, the job's error code, never the message.
+- `contentKind` is the document's own `source_kind` (`inline_text` | `uploaded_file`), which the Document resource publishes as `sourceKind`. `sourceKind` is the document source's kind (`website` | `api` | `connector` | `upload`, as `DocumentSourceSummary.kind`); every upload belongs to the workspace's `upload` source, so both source fields are null only for a document with no source, such as text added by hand. Together they let an automation filter.
+- One `document.processed` per document is recorded by a website crawl or connector sync (per page it adds or changes), by reprocessing every document from Settings, a whole source, or a reprocess Ray prepares with `prepare_document_reprocess`, and by a metadata change through a document's retrieval settings. That volume is accepted; the docs name these and point at the fields.
+- A title can name a person (an uploaded file's title comes from its file name), so a document's events go with the document (§8).
 
 **Masked:** sensitive slot values (#1543), exactly as notices and completion exports mask them. The values come from the engine's own projection, never from host-side redaction.
 
@@ -264,6 +268,7 @@ Consumers fetch a transcript with `workspace.history.read`.
 
 **Cost:** a long-running write transaction anywhere on the database delays (never drops) newer events until it ends.
 - Read-only transactions hold no xid and do not count.
+- Decision resolution does not pin the horizon. Its transaction holds no xid while the resumed routine calls models and skills, and writes the decision and the turn only at the end (see the horizon stall analysis).
 - Delivery lag is measured (§12).
 
 **Rejected alternatives:**
@@ -314,7 +319,8 @@ Both are added to `AccountPermission` and to the member list in `workspaceRoleAl
 **Erasure (#1540):**
 - `conversation_id` has a composite FK `(workspace_id, conversation_id) → conversations(workspace_id, id) ON DELETE CASCADE`, indexed. `workspace_id` cascades from `workspaces`.
 - A conversation erasure, a visitor erasure (which deletes the visitor's conversations), the per-workspace retention window, and workspace or organization deletion therefore remove the events with no `ConversationDataEraser`.
-- The port's own documentation names cascading keys as the default and erasers as the fallback for rows a key cannot reach. No event row is out of reach: document events carry no person.
+- The port's own documentation names cascading keys as the default and erasers as the fallback for rows a key cannot reach. Conversation events go by the key.
+- Document events carry no conversation, and a title can name a person. A narrow port beside the recorder, `DocumentEventEraser.forgetDocuments(db, { workspaceId, documentIds })`, deletes a workspace's `document.*` events whose `data->>'documentId'` is one of the ids. `DocumentRepository` takes it from the composition seam and calls it in all three delete paths (by id, by source, and the sync's prune of missing pages), in the deleting transaction, after the rows are locked `FOR UPDATE`. The recorder's `FOR KEY SHARE` on the document row means a completion that locked first commits before the deletion goes on to erase its event, and one that comes after finds no row.
 - `conversation-erasure-coverage.integration.test.ts` passes on the cascading key.
 
 **Consent withdrawal (#1544):** `WorkspaceEventValueWithholder` implements `MessageCopyWithholder`. It removes by structure, so it works after the routine's state (and with it the values) has expired: the conversation's `routine.completed` rows for the withdrawn routine, and its `contact_request.created` rows whose `values` name a covered slot (`?|`). It then removes any of the conversation's events whose strings contain a withdrawn value (`jsonbStringContainsAnyValueText`), as the audit withholder removes its copies. `WithheldMessages` carries `withdrawnRoutineSlots` (routine id and slot keys) for this. It is registered in `app/composition/consentWithdrawal.ts`.
@@ -508,11 +514,24 @@ Migration numbers are as of `origin/main` (latest `263`). Each PR runs `db:types
 
 ### PR 2: #1851 document events (merges after PR 3; closes #1851)
 
-Split out to keep PR 1 reviewable. It touches only documents:
-- `db/repositories/documentProcessingJobRepository.ts` (shrinks: extract `documentProcessingJobOutcomes.ts`);
-- `documents/services/{documentProcessingWorker.ts,documentWorkspaceEvents.ts}`;
-- composition wiring;
-- worker integration tests (processed once per revision under a lease takeover; failed carries the code, not the message).
+Split out to keep PR 1 reviewable. As built:
+
+- **No migration.** A document event keeps its whole subject in `data`; the shipped table has no `document_id` column. Deleting a document removes its events through `DocumentEventEraser` (§8), by `workspace_id`, `type` and `data->>'documentId'`; the 30-day window and workspace deletion remove the rest.
+- **Contract:** `shared/domain/workspaceEventLog.ts` adds the two types (version 1), the document subject schema, `DocumentEventDraft` beside the conversation draft, and `isDocumentEventType`. The OpenAPI `WorkspaceEvent` `oneOf` and its discriminator mapping gain `DocumentProcessedEvent` and `DocumentFailedEvent`; the SDK snapshot is regenerated.
+- **Log module:** `readPermissions.ts` maps both types to `workspace.documents.read`; `envelope.ts` serves a document event's `data` as written, without conversation fields.
+- **Recorder:** `db/repositories/workspaceEventLogRepository.ts` writes a document draft from the `documents` row (§2).
+- **Emitters:** `db/repositories/documentProcessingJobOutcomes.ts` (extracted first, in its own commit), `documentProcessingJobRepository.ts` (delegates; takes the recorder), `documents/services/{documentProcessingWorker.ts,documentWorkspaceEvents.ts}`.
+- **Wake:** the worker takes an optional `WorkspaceEventDeliveryWake` and calls it after an event-bearing completion or failure commits. There is one wake: `buildWorkspaceEventDelivery` returns its `WorkspaceEventDeliveryScheduler` as `wake`, and `dependencies.ts` hands `workspaceEventDelivery.wake` to both `buildChatServices` and `buildDocumentRetrievalGraph`. The dev worker (`documentWorker.ts`) and the Cloud Run worker (`documentWorkerServer.ts`) both run `buildDependencies`, so both have it. The periodic task list moved to `app/composition/periodicTasks.ts`, which keeps `dependencies.ts` under its baseline.
+- **Connectors:** the n8n trigger and poll trigger offer Document Processed and Document Failed; Zapier gains one REST hook trigger each, with document `outputFields` and samples from the factory's `subject: 'document'`. Both READMEs list the permissions per type.
+- **Ray:** `list_event_subscriptions` names the document types; the `listWorkspaceEvents` exclusion points at `document_status` and `list_documents`.
+- **Tests:** `tests/integration/document-workspace-events.integration.test.ts` runs the real worker and processing pipeline on Postgres:
+  - one `document.processed` per revision, with its content kind and source, for typed text, a crawled page, and a file uploaded through `DocumentImportService` (the workspace's `upload` source);
+  - once under a restart's reconcile with the cut-off run's late completion, a lease takeover, and a last-attempt recovery that finds the revision published;
+  - a run that lost its lease cannot fail the document the run that took it over completes;
+  - nothing for a revision the document moved past, and nothing from enrich, images or embedding-profile completions;
+  - `document.failed` carries the code and not the message; failed then processed, and failed then failed, after a credential requeue of the same revision;
+  - deleting a document by id, by source, or by a sync's prune removes its events;
+  - every served event parses against its schema; a `document.processed` subscription receives a signed push through the worker's wake. Contract tests cover the document envelope, the 403 for a caller without `workspace.documents.read`, and subscribing document types.
 
 ### PR 3: #1852 subscriptions, delivery and Settings (follows PR 1; its `scheduler.tf` entry needs a Terraform apply per stack before the image deploy)
 
@@ -554,6 +573,7 @@ PR 3 could split backend and frontend if the orchestrator prefers.
 
 **PR 1–2:**
 - No per-event log line: volume, and payloads hold contact data.
+- Document events add nothing new. They ride the job's terminal write, which the worker's `document.worker.job` span and its `document.worker.job_completed` and `document.worker.job_failed` telemetry already cover, and a failed wake warns through the scheduler (PR 3).
 - No write counter: it would count rolled-back writes. Volume is a `GROUP BY type` query.
 - A `workspace_events.list` span (workspace id, filter size, returned count, tail or after).
 - `workspace_events_cursor_expired_total`.
@@ -577,7 +597,7 @@ PR 3 could split backend and frontend if the orchestrator prefers.
 5. **`decision.pending.reason`.** It is the text the Inbox shows. PR 1 verifies the engine renders sensitive slots masked in it. If it does not, the field is dropped.
 6. **Shared queue.** Deliveries share the background-jobs Cloud Tasks queue. Is that fine for v1, or do they need their own queue? A separate queue needs Terraform and, against the brief, a queue-name variable.
 7. **Defaults.** Cap 25, retention 30 days, disable after 24 h. Change any?
-8. **Document event volume.** Website crawls and connector syncs produce one `document.processed` per changed page. `sourceKind` lets automations filter. Is a per-source `source.synced` wanted instead or as well?
+8. **Document event volume.** Website crawls and connector syncs produce one `document.processed` per changed page. Answered (PR 2): accepted, and reprocesses produce the same volume. `sourceKind`, `sourceId` and `contentKind` let automations filter. `source.synced` is cut.
 9. **PR count.** Four PRs (log + conversation events, document events, subscriptions + delivery + Settings), or fold PR 2 into PR 1?
 
 ## 14. What other slices need

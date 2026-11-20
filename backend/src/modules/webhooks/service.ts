@@ -6,6 +6,7 @@ import {
   encryptField,
   type FieldEncryptionKeyRing,
 } from "../../shared/infra/crypto/fieldEncryption.js";
+import { normalizeWebhookTargetUrl, WebhookTargetUrlError } from "../../shared/infra/http/signedWebhook.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import {
   toWebhookDestination,
@@ -104,24 +105,6 @@ const isPublishedRoutineReferenceError = (error: unknown): boolean => {
       record.constraint === "workspace_webhook_destinations_published_routine_reference" ||
       (typeof record.message === "string" && /referenced by (?:published|enabled) routines/.test(record.message))
     );
-};
-
-const isLocalDevelopmentHttpUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:") {
-      return false;
-    }
-    const hostname = url.hostname.toLowerCase();
-    return hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "host.docker.internal" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1" ||
-      hostname === "[::1]";
-  } catch {
-    return false;
-  }
 };
 
 export class WebhookDestinationService implements WebhookDestinationExistencePort {
@@ -340,22 +323,17 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
   }
 
   private async normalizeAllowedDestinationUrl(value: string): Promise<string> {
-    let url: URL;
     try {
-      url = new URL(value);
-    } catch {
-      throw badRequest("Webhook destination URL must be valid");
+      return await normalizeWebhookTargetUrl(value, {
+        assertPublicUrl: this.options.assertPublicUrl,
+        allowHttpLoopback: this.options.allowHttpLoopback,
+      });
+    } catch (error) {
+      if (error instanceof WebhookTargetUrlError) {
+        throw badRequest(error.problem === "invalid" ? "Webhook destination URL must be valid" : "Webhook destination URL must use https");
+      }
+      throw error;
     }
-
-    const normalized = value.replace(/^[A-Za-z][A-Za-z0-9+.-]*:/u, url.protocol);
-    if (url.protocol === "http:" && this.options.allowHttpLoopback === true && isLocalDevelopmentHttpUrl(value)) {
-      return normalized;
-    }
-    if (url.protocol !== "https:") {
-      throw badRequest("Webhook destination URL must use https");
-    }
-    await this.options.assertPublicUrl(normalized);
-    return normalized;
   }
 
   private async recordAudit(

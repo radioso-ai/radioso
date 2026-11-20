@@ -3,8 +3,16 @@ name: Sync Docs to Radioso
 # Imports the documentation portal into the production self-docs workspace so an
 # agent can answer questions about Radioso. Idempotent: unchanged pages are
 # skipped by content hash; --prune removes only previously imported docs.
+#
+# It also imports the radioso.ai pricing page (a public markdown file), so the
+# agent's price answers follow the site. The site repo cannot run this itself:
+# RADIOSO_DOCS_API_TOKEN is a secret of this repo's `live` environment. The
+# daily schedule picks up price changes while this repo is quiet; run the
+# workflow manually to refresh immediately.
 
 on:
+  schedule:
+    - cron: "17 5 * * *"
   push:
     branches:
       - main
@@ -13,7 +21,9 @@ on:
       - backend/openapi.json
       - packages/radioso-docs-importer/**
       - .github/workflows/sync-docs-to-radioso.yml
-      # READMEs are imported as product surface, so changes to any of them re-sync.
+      # Only product-facing READMEs are imported (see PRODUCT_README_PATHS in the
+      # importer). The glob is broader than that list, so an edit to an internal README
+      # runs a sync that changes nothing.
       - "**/README.md"
       - "**/readme.md"
   workflow_dispatch:
@@ -65,4 +75,5 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.prune }}" != "true" ]; then
             PRUNE_FLAG=""
           fi
-          pnpm --filter @radioso/docs-importer run import -- $PRUNE_FLAG
+          pnpm --filter @radioso/docs-importer run import -- $PRUNE_FLAG \
+            --website-page https://radioso.ai/pricing.md=https://radioso.ai/pricing

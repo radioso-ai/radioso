@@ -57,6 +57,7 @@ const serviceAccount: ServiceAccountRecord = {
 const createHarness = (credential: ApiCredentialRecord) => {
   const repository = {
     findCredentialByHash: vi.fn().mockResolvedValue(credential),
+    findCredential: vi.fn().mockResolvedValue(credential),
     findServiceAccount: vi.fn().mockResolvedValue(serviceAccount),
     touchCredentialUse: vi.fn().mockResolvedValue(undefined),
   };
@@ -112,6 +113,50 @@ describe("ApiPrincipalAuthenticator", () => {
       principalKind: "personal",
       reason: "authenticated",
     });
+  });
+
+  it("resolves a stored credential's principal by id as a request presenting it would be, without recording an authentication", async () => {
+    const live = createHarness(personalRecord("hash"));
+    await expect(live.authenticator.principalForCredential("credential-1")).resolves.toEqual({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      principal: { type: "personal_api_credential", userId: "user-1", credentialId: "credential-1", role: "member", workspaceId: "workspace-1" },
+    });
+    expect(live.repository.findCredential).toHaveBeenCalledWith("credential-1");
+    expect(live.authenticationObserver.recordAuthentication).not.toHaveBeenCalled();
+    // A re-check is not a use: the credential's last-used time stays the client's own.
+    expect(live.repository.touchCredentialUse).not.toHaveBeenCalled();
+
+    const revoked = createHarness({ ...personalRecord("hash"), revokedAt: now });
+    await expect(revoked.authenticator.principalForCredential("credential-1")).resolves.toBeNull();
+    const expired = createHarness({ ...personalRecord("hash"), expiresAt: now });
+    await expect(expired.authenticator.principalForCredential("credential-1")).resolves.toBeNull();
+    const memberGone = createHarness(personalRecord("hash"));
+    memberGone.accountAccess.findActiveMembershipById.mockResolvedValueOnce(null);
+    await expect(memberGone.authenticator.principalForCredential("credential-1")).resolves.toBeNull();
+    const missing = createHarness(personalRecord("hash"));
+    missing.repository.findCredential.mockResolvedValueOnce(null);
+    await expect(missing.authenticator.principalForCredential("credential-1")).resolves.toBeNull();
+  });
+
+  it("resolves a service credential by id only while its service account is enabled", async () => {
+    const serviceCredential: ApiCredentialRecord = {
+      ...personalRecord("hash"),
+      kind: "service",
+      roleCeiling: null,
+      ownerUserId: null,
+      accessTenureMembershipId: null,
+      serviceAccountId: "service-1",
+    };
+    const enabled = createHarness(serviceCredential);
+    await expect(enabled.authenticator.principalForCredential("credential-1")).resolves.toMatchObject({
+      principal: { type: "service_account_credential", serviceAccountId: "service-1", role: "member" },
+    });
+
+    const disabled = createHarness(serviceCredential);
+    disabled.repository.findServiceAccount.mockResolvedValueOnce({ ...serviceAccount, status: "disabled", disabledAt: now });
+    await expect(disabled.authenticator.principalForCredential("credential-1")).resolves.toBeNull();
+    expect(disabled.repository.touchCredentialUse).not.toHaveBeenCalled();
   });
 
   it("invalidates a personal credential when its exact membership tenure ends or changes account", async () => {

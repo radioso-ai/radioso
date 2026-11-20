@@ -32,6 +32,7 @@ export const registerWorkspaceEventLogSchemas = (registry: OpenAPIRegistry) => {
   }));
 
   return {
+    WorkspaceEventSchema,
     WorkspaceEventPageSchema,
     ListWorkspaceEventsQuerySchema: listWorkspaceEventsQuerySchema,
   };

@@ -4241,9 +4241,15 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     };
   }
 
-  async markCompleted(jobId: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  /** The job still processing under this claim, as the real repository's fence reads it. */
+  private claimed(claim: { id: string; attemptCount: number }): DocumentProcessingJobRecord | undefined {
+    const existing = this.items.get(claim.id);
+    return existing && existing.status === "processing" && existing.attemptCount === claim.attemptCount ? existing : undefined;
+  }
+
+  async markCompleted(claim: { id: string; attemptCount: number }): Promise<boolean> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return false;
     }
     this.update(jobId, {
@@ -4253,9 +4259,9 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return true;
   }
 
-  async markSkipped(jobId: string, reason: string): Promise<void> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  async markSkipped(claim: { id: string; attemptCount: number }, reason: string): Promise<void> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return;
     }
     this.update(jobId, {
@@ -4265,9 +4271,9 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  async markFailed(claim: { id: string; attemptCount: number }, errorMessage: string): Promise<boolean> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return false;
     }
     this.update(jobId, {
@@ -4279,18 +4285,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   }
 
   async markFailedIfDocumentMatches(input: {
-    jobId: string;
+    claim: { id: string; attemptCount: number };
     documentId: string;
     workspaceId: string;
     revision: number;
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
-    const existingJob = this.items.get(input.jobId);
     // Mirrors the real repository: confirm the job is still ours to fail
     // before touching the document at all. A run that was not actually dead
     // can complete it first.
-    if (!documentRepository || !existingJob || existingJob.status !== "processing") {
+    if (!documentRepository || !this.claimed(input.claim)) {
       return false;
     }
 
@@ -4306,7 +4311,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       updatedAt: new Date(),
     });
 
-    this.update(input.jobId, {
+    this.update(input.claim.id, {
       status: "failed",
       lastError: input.errorMessage,
       completedAt: new Date(),

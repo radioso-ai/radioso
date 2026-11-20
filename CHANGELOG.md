@@ -9,6 +9,42 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.35.0] - 2026-11-20
+
+### Added
+
+- **events:** record document processed and failed events ([#1875](https://github.com/radioso-ai/radioso/pull/1875))
+- **docs-importer:** import the radioso.ai pricing page and keep it current ([#1862](https://github.com/radioso-ai/radioso/pull/1862))
+- **zapier:** add REST hook triggers for Radioso events ([#1869](https://github.com/radioso-ai/radioso/pull/1869))
+- **n8n:** add webhook and polling triggers for Radioso events ([#1868](https://github.com/radioso-ai/radioso/pull/1868))
+- **events:** deliver workspace events to subscribed URLs ([#1866](https://github.com/radioso-ai/radioso/pull/1866))
+
+### Fixed
+
+- **docs-importer:** stop importing the MCP server README ([#1878](https://github.com/radioso-ai/radioso/pull/1878))
+- **documents:** parse DOCX uploads again by keeping mammoth on xmldom 0.8 ([#1877](https://github.com/radioso-ai/radioso/pull/1877))
+- **ee:** meter untiered accounts so the operator console shows their usage ([#1864](https://github.com/radioso-ai/radioso/pull/1864))
+- **docs-importer:** keep the website page under the common source so pruning keeps it ([#1874](https://github.com/radioso-ai/radioso/pull/1874))
+- **docs-importer:** import only product-facing READMEs ([#1859](https://github.com/radioso-ai/radioso/pull/1859))
+- **approvals:** resolve a decision without holding back the event log ([#1865](https://github.com/radioso-ai/radioso/pull/1865))
+
+### Documentation
+
+- answer the questions visitors actually ask, in their words ([#1879](https://github.com/radioso-ai/radioso/pull/1879))
+- make widget customization, site-builder installs, and booking findable; drop stale Enterprise labels ([#1860](https://github.com/radioso-ai/radioso/pull/1860))
+
+### Internal
+
+- **lint:** run the file-size and dead-code gates on git push ([#1867](https://github.com/radioso-ai/radioso/pull/1867))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `265_workspace_event_subscriptions.sql`
+
+[1.35.0]: https://github.com/radioso-ai/radioso/compare/v1.34.0...v1.35.0
+
 ## [1.34.0] - 2026-11-19
 
 ### Added

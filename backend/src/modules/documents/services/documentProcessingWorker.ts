@@ -207,12 +207,12 @@ export class DocumentProcessingWorker {
   private async reconcileInFlightJobAtStartup(job: DocumentProcessingJobRecord): Promise<void> {
     const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
     if (!document) {
-      await this.jobRepository.markSkipped(job.id, "document_deleted");
+      await this.jobRepository.markSkipped(job, "document_deleted");
       return;
     }
 
     if (document.revision !== job.documentRevision) {
-      await this.jobRepository.markSkipped(job.id, "stale_revision");
+      await this.jobRepository.markSkipped(job, "stale_revision");
       return;
     }
 
@@ -448,7 +448,7 @@ export class DocumentProcessingWorker {
             : outcome === "superseded"
               ? "profile_superseded"
               : "document_deleted";
-          await this.jobRepository.markSkipped(job.id, skipReason);
+          await this.jobRepository.markSkipped(job, skipReason);
           await this.emitJobTelemetry("document.worker.job_skipped", job, {
             durationMs: Date.now() - startedAt,
             outcome,
@@ -572,7 +572,7 @@ export class DocumentProcessingWorker {
         // no document-readiness signal to check first), this is a no-op —
         // leave the completion alone and skip the embedding-profile side
         // effect below rather than recording a failure after a success.
-        const stillProcessing = await this.jobRepository.markFailed(job.id, message, errorCode);
+        const stillProcessing = await this.jobRepository.markFailed(job, message, errorCode);
         if (!stillProcessing) {
           return;
         }
@@ -598,7 +598,7 @@ export class DocumentProcessingWorker {
         }
       } else {
         const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
-          jobId: job.id,
+          claim: job,
           documentId: job.documentId,
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
@@ -611,7 +611,7 @@ export class DocumentProcessingWorker {
           // some other way, in which case markSkipped's own status='processing'
           // fence leaves it alone.
           const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
-          await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+          await this.jobRepository.markSkipped(job, currentDocument ? "stale_revision" : "document_deleted");
         } else {
           this.publishDocumentStatusChanged(job.workspaceId);
           this.workspaceEventDelivery?.requestDelivery(job.workspaceId);
@@ -672,7 +672,7 @@ export class DocumentProcessingWorker {
   // workspace's event delivery once it has committed.
   private async markJobCompleted(job: DocumentProcessingJobRecord): Promise<boolean> {
     const event = job.kind === "vectorize" ? documentProcessedEvent(job) : undefined;
-    const completed = await this.jobRepository.markCompleted(job.id, event);
+    const completed = await this.jobRepository.markCompleted(job, event);
     if (completed && event) this.workspaceEventDelivery?.requestDelivery(job.workspaceId);
     return completed;
   }

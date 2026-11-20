@@ -2601,11 +2601,13 @@ Where each type is recorded:
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
 - `document.processed`, `document.failed`: a vectorize job's terminal write
-  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its
-  `status = 'processing'` fence hits, from drafts the worker builds
-  (`modules/documents/services/documentWorkspaceEvents.ts`); the log copies the
-  document's title and source from its row, and records nothing for a revision
-  the document has moved past
+  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
+  fence (`status = 'processing'` and the claimed attempt) hits, from drafts the
+  worker builds (`modules/documents/services/documentWorkspaceEvents.ts`); the
+  log copies the document's title, content kind and source from its row, and
+  records nothing for a revision the document has moved past. Deleting a
+  document removes its events through `DocumentEventEraser`, which
+  `DocumentRepository` takes from the composition seam
 
 Reads run in one repeatable-read snapshot and stop at
 `pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A

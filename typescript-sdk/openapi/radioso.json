@@ -25572,13 +25572,13 @@
               "revision": {
                 "type": "integer",
                 "exclusiveMinimum": 0,
-                "description": "The document revision the event is about. A changed document is processed again as its next revision."
+                "description": "The document revision the event is about. A changed or reprocessed document is processed again as its next revision."
               },
               "title": {
                 "type": "string",
-                "description": "The document's title when the event was recorded."
+                "description": "The document's title when the event was recorded. An uploaded file's title comes from its file name."
               },
-              "sourceKind": {
+              "contentKind": {
                 "type": "string",
                 "enum": [
                   "inline_text",
@@ -25586,19 +25586,34 @@
                 ],
                 "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
               },
+              "sourceKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "website",
+                  "api",
+                  "connector",
+                  "upload",
+                  null
+                ],
+                "description": "The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source."
+              },
               "sourceId": {
                 "type": [
                   "string",
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."
+                "description": "The document source the document belongs to. Null for a document with no source."
               }
             },
             "required": [
               "documentId",
               "revision",
               "title",
+              "contentKind",
               "sourceKind",
               "sourceId"
             ]
@@ -25653,13 +25668,13 @@
               "revision": {
                 "type": "integer",
                 "exclusiveMinimum": 0,
-                "description": "The document revision the event is about. A changed document is processed again as its next revision."
+                "description": "The document revision the event is about. A changed or reprocessed document is processed again as its next revision."
               },
               "title": {
                 "type": "string",
-                "description": "The document's title when the event was recorded."
+                "description": "The document's title when the event was recorded. An uploaded file's title comes from its file name."
               },
-              "sourceKind": {
+              "contentKind": {
                 "type": "string",
                 "enum": [
                   "inline_text",
@@ -25667,13 +25682,27 @@
                 ],
                 "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
               },
+              "sourceKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "website",
+                  "api",
+                  "connector",
+                  "upload",
+                  null
+                ],
+                "description": "The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source."
+              },
               "sourceId": {
                 "type": [
                   "string",
                   "null"
                 ],
                 "format": "uuid",
-                "description": "The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."
+                "description": "The document source the document belongs to. Null for a document with no source."
               },
               "failureCode": {
                 "type": [
@@ -25687,6 +25716,7 @@
               "documentId",
               "revision",
               "title",
+              "contentKind",
               "sourceKind",
               "sourceId",
               "failureCode"

@@ -41,8 +41,7 @@ import type { WorkspaceProviderCredentialsService } from "../../../modules/secur
 import type { Env } from "../../config/env.js";
 import type { WorkspacePersonalCredentialTerminationPort } from "../../../modules/workspace/services/workspaceService.js";
 import type { PersonalCredentialLifecyclePort } from "../../../modules/machineAccess/public.js";
-import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
-import { buildWorkspaceEventDeliveryWake } from "../../composition/workspaceEventLog.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */
 export const buildDocumentRetrievalGraph = (input: {
@@ -51,8 +50,8 @@ export const buildDocumentRetrievalGraph = (input: {
   infrastructure: ReturnType<typeof buildInfrastructure>;
   logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
-  /** The queue a document event's post-commit wake starts its subscriptions' delivery on. */
-  backgroundJobs: Pick<BackgroundJobQueue, "enqueue">;
+  /** Wakes event subscription delivery after the document worker records an event. */
+  workspaceEventDelivery: WorkspaceEventDeliveryWake;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort;
@@ -235,7 +234,7 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
     workspaceTimeZones,
     metricsRegistry: infrastructure.metricsRegistry,
-    workspaceEventDelivery: buildWorkspaceEventDeliveryWake({ db: infrastructure.database.kysely, queue: input.backgroundJobs, logger }),
+    workspaceEventDelivery: input.workspaceEventDelivery,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();

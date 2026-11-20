@@ -24,6 +24,7 @@ const subjectFields = {
     dataField('documentId', 'Document ID'),
     dataField('revision', 'Revision', { type: 'integer' }),
     dataField('title', 'Title'),
+    dataField('contentKind', 'Content kind'),
     dataField('sourceKind', 'Source kind'),
     dataField('sourceId', 'Source ID'),
   ],
@@ -140,7 +141,8 @@ const sampleSubjects = {
     documentId: '2c8e4f1a-9b3d-4a6e-8f2c-7d1b5e9a3c40',
     revision: 2,
     title: 'Opening hours',
-    sourceKind: 'inline_text',
+    contentKind: 'inline_text',
+    sourceKind: 'website',
     sourceId: '6d4b2a8e-1c7f-4e3a-9b5d-0f8c2e6a4d17',
   },
 }

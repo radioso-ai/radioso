@@ -142,8 +142,7 @@ import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitO
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
 import { createConsentWithdrawal } from "../composition/consentWithdrawal.js";
 import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
-import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
-import { identityNoncePrunePeriodicTask } from "../composition/identityNoncePrune.js";
+import { buildPeriodicTaskEntries } from "../composition/periodicTasks.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { createPostgresDataSubjectAccess } from "../composition/dataSubjectAccess.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
@@ -157,7 +156,6 @@ import { NotificationRecipientStateRepository } from "../../db/repositories/noti
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { createPeriodicTasks } from "../composition/periodicTaskRunner.js";
-import { contributedPeriodicTasks } from "../composition/applicationModule.js";
 import { wireVisitorImages } from "../composition/visitorImages.js";
 import { createAbuseControlComposition } from "../composition/abuseControl.js";
 import { createPublicConversationEventBus } from "../composition/publicConversationEvents.js";
@@ -279,8 +277,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const notificationDeliveries = buildNotificationDeliveryReader(infrastructure.database);
   const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database, notificationRecipientPolicy, infrastructure.usageLimitPolicy);
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
-    composition, env, infrastructure, logger, repositories,
-    backgroundJobs: backgroundJobs.queue,
+    composition,
+    env,
+    infrastructure,
+    logger,
+    repositories,
+    workspaceEventDelivery: workspaceEventDelivery.wake,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
@@ -357,6 +359,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     backgroundJobs: backgroundJobs.queue,
+    workspaceEventDelivery: workspaceEventDelivery.wake,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
     conversationActivity,
@@ -1160,22 +1163,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     invalidation: realtimePublisherComposition.publisher, auditLog: infrastructure.auditService,
   });
-  const periodicTaskEntries = [
-    // Built in: every deployment enforces the retention its workspaces set, through the erasure.
-    conversationRetentionPeriodicTask(createConversationRetentionSweep({
-      db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService,
-      logger, metrics: infrastructure.metricsRegistry,
-    })),
-    // Built in: recordings a deletion left pending with no job working on them are queued again.
-    voiceRecordings.erasureRecoveryTask,
-    // Built in: single-use nonces of verified visitor identities are deleted once their window has passed.
-    identityNoncePrunePeriodicTask({ nonces: repositories.identityNonceRepository, logger }),
-    // Built in: every event subscription with an event waiting is drained within a minute.
-    workspaceEventDelivery.periodicTask,
-    ...contributedPeriodicTasks(composition.periodicTaskRegistrations, {
-      database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null,
-    }),
-  ];
+  const periodicTaskEntries = buildPeriodicTaskEntries({
+    retention: { db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger, metrics: infrastructure.metricsRegistry },
+    identityNonces: { nonces: repositories.identityNonceRepository, logger },
+    voiceRecordingErasureRecovery: voiceRecordings.erasureRecoveryTask,
+    workspaceEventDelivery: workspaceEventDelivery.periodicTask,
+    contributed: {
+      registrations: composition.periodicTaskRegistrations,
+      context: { database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null },
+    },
+  });
   const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
   const conversationLinks = buildConversationLinkResolver({
     database: infrastructure.database,

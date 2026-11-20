@@ -103,14 +103,26 @@ Conversations a teammate runs to test an agent (Test Chat, workbench replays, Ra
 
 ### Document events
 
-A document event's `data` names the document revision it is about: `documentId`, `revision`, `title`, `sourceKind` (`inline_text` for text, `uploaded_file` for a file) and `sourceId`, the document source it belongs to, or `null` for a document added on its own. `title` is a copy taken when the event was recorded.
+A document event's `data` names the document revision it is about:
+
+- `documentId` and `revision`.
+- `title`, a copy taken when the event was recorded. An uploaded file's title comes from its file name.
+- `contentKind`: `inline_text` for text, `uploaded_file` for a file.
+- `sourceKind` and `sourceId`: the document source it belongs to. `sourceKind` is `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads (every uploaded file belongs to it) and `api` for an API source. Both are `null` for a document with no source, such as text added by hand.
 
 | Type | Recorded when | What `data` adds |
 |---|---|---|
 | `document.processed` | A document revision finishes processing and is ready for retrieval. Each revision records it once, however many times its processing was retried. | Nothing beyond the document. |
-| `document.failed` | Processing a document revision fails for good, on an error a retry cannot fix or after its last retry, and the document shows as failed. | `failureCode`: the error code, such as `provider_misconfigured`, or `null` when the failure carried none. The failure message stays on the document, as its `failureReason`. |
+| `document.failed` | Processing a document revision fails and the document shows as failed: on an error a retry cannot fix, or after its last retry. Each failed attempt records one. | `failureCode`: the error code, such as `provider_misconfigured`, or `null` when the failure carried none. The failure message stays on the document, as its `failureReason`. |
 
-A changed or reprocessed document is processed again as its next `revision`, so it records `document.processed` again. A website crawl or a connector sync records one for each page it adds or changes, which on a large site is hundreds of events from one sync. Filter on `sourceId` to follow one source, or to leave crawled and synced pages out, and on `sourceKind` to follow uploaded files only.
+A failed revision can still succeed. When a workspace fixes the provider credential that failed it, Radioso queues the document again at the same revision: you get `document.failed` and then `document.processed` with the same `documentId` and `revision`, or a second `document.failed` if it fails again. Treat the latest event for a revision as its state.
+
+A changed or reprocessed document is processed again as its next `revision`, so it records `document.processed` again. Some actions process many documents at once and record one event for each:
+
+- a website crawl or a connector sync, for each page it adds or changes, which on a large site is hundreds of events from one sync;
+- reprocessing every document from Settings, reprocessing a whole source, or a reprocess Ray prepares with `prepare_document_reprocess`, for each document it queues.
+
+Changing a document's metadata through its retrieval settings processes that document again too. Filter on `sourceKind` or `sourceId` to follow one kind of source or one source, and on `contentKind` to follow uploaded files.
 
 ```json
 {
@@ -123,8 +135,9 @@ A changed or reprocessed document is processed again as its next `revision`, so 
     "documentId": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
     "revision": 2,
     "title": "Price list",
-    "sourceKind": "uploaded_file",
-    "sourceId": null,
+    "contentKind": "uploaded_file",
+    "sourceKind": "upload",
+    "sourceId": "5e1c9a7b-3d2f-4b8e-a6c4-0f9d8e7c6b5a",
     "failureCode": "provider_misconfigured"
   }
 }
@@ -145,7 +158,7 @@ Without a `types` filter you get the types you may read. Naming one you may not 
 
 ## How long events are kept
 
-The log keeps an event for 30 days. A document event stays the full 30 days, also after its document is deleted. A conversation event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the conversation's `routine.completed` events for that routine and its contact requests that name a covered field are removed, with any other of its events that states one of the values.
+The log keeps an event for 30 days. A document event goes sooner when its document does: deleting the document, deleting its source, or a sync that removes the page removes its events in the same step, because a title can name a person. A conversation event goes sooner when its conversation does: deleting a conversation, erasing a visitor, or the workspace's own [conversation retention](/operators/data-retention) removes its events with it. When a visitor [withdraws a routine consent](/guides/authoring-routines#withdrawing-a-consent), the conversation's `routine.completed` events for that routine and its contact requests that name a covered field are removed, with any other of its events that states one of the values.
 
 A cursor stays usable for 29 days. An older one returns `410` with `cursor_expired`, because events after it may already be gone: start again without a cursor.
 

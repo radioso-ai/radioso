@@ -11896,18 +11896,23 @@ export interface components {
             data: {
                 /** Format: uuid */
                 documentId: string;
-                /** @description The document revision the event is about. A changed document is processed again as its next revision. */
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
                 revision: number;
-                /** @description The document's title when the event was recorded. */
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
                 title: string;
                 /**
                  * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
                  * @enum {string}
                  */
-                sourceKind: "inline_text" | "uploaded_file";
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
                 /**
                  * Format: uuid
-                 * @description The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own.
+                 * @description The document source the document belongs to. Null for a document with no source.
                  */
                 sourceId: string | null;
             };
@@ -11938,18 +11943,23 @@ export interface components {
             data: {
                 /** Format: uuid */
                 documentId: string;
-                /** @description The document revision the event is about. A changed document is processed again as its next revision. */
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
                 revision: number;
-                /** @description The document's title when the event was recorded. */
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
                 title: string;
                 /**
                  * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
                  * @enum {string}
                  */
-                sourceKind: "inline_text" | "uploaded_file";
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
                 /**
                  * Format: uuid
-                 * @description The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own.
+                 * @description The document source the document belongs to. Null for a document with no source.
                  */
                 sourceId: string | null;
                 /** @description Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included. */

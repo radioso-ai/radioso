@@ -6,7 +6,7 @@ export default eventTrigger({
   noun: 'Document',
   label: 'Document Processed',
   description:
-    'Triggers when a document revision finishes processing and is ready for retrieval. A website crawl or connector sync triggers once per page it adds or changes.',
+    'Triggers when a document revision finishes processing and is ready for retrieval. A crawl, sync or reprocess triggers once per document it adds or changes.',
   subject: 'document',
   detailFields: [],
   sample: sampleEvent('document.processed', {}, 'document'),

@@ -4,10 +4,12 @@ import type { ConversationDataRetentionRule } from "../../shared/domain/conversa
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domain/messageWithholding.js";
 import {
+  DOCUMENT_EVENT_TYPES,
   isDocumentEventDraft,
   WORKSPACE_EVENT_RETENTION_DAYS,
   WORKSPACE_EVENT_VERSIONS,
   type DocumentEventDraft,
+  type DocumentEventEraser,
   type LogPosition,
   type StoredLogEvent,
   type WorkspaceEventDraft,
@@ -64,11 +66,19 @@ const recordConversationEvent = async (db: Db, draft: Exclude<WorkspaceEventDraf
     .execute();
 };
 
+/** The document event's subject, from the document row and its source's kind. */
+const documentEventSubject = sql<unknown>`jsonb_build_object(
+  'documentId', documents.id, 'revision', documents.revision, 'title', documents.title,
+  'contentKind', documents.source_kind, 'sourceId', documents.source_id,
+  'sourceKind', (SELECT ds.kind FROM document_sources ds WHERE ds.id = documents.source_id AND ds.workspace_id = documents.workspace_id)
+)`;
+
 /**
  * Writes a document event in the caller's transaction, its `data` whole: the document's id,
- * revision, title and source from its row in the same statement, then what the type adds. A
- * document that is gone, or has moved on to a newer revision, yields no row; the newer revision
- * records its own.
+ * revision, title, content kind and source from its row in the same statement, then what the type
+ * adds. A document that is gone, or has moved on to a newer revision, yields no row; the newer
+ * revision records its own. The row is key-share locked, so a deletion that locked it first leaves
+ * nothing to record, and one that comes after waits for this write and then erases it.
  */
 const recordDocumentEvent = async (db: Db, draft: DocumentEventDraft): Promise<void> => {
   await db
@@ -81,11 +91,12 @@ const recordDocumentEvent = async (db: Db, draft: DocumentEventDraft): Promise<v
         sql<string>`${draft.type}::text`.as("type"),
         sql<number>`${WORKSPACE_EVENT_VERSIONS[draft.type]}::smallint`.as("version"),
         sql<string>`${draft.idempotencyKey}::text`.as("idempotency_key"),
-        sql<unknown>`jsonb_build_object('documentId', id, 'revision', revision, 'title', title, 'sourceKind', source_kind, 'sourceId', source_id) || ${toSanitizedJsonb(draft.detail)}`.as("data"),
+        sql<unknown>`${documentEventSubject} || ${toSanitizedJsonb(draft.detail)}`.as("data"),
       ])
       .where("id", "=", draft.documentId)
       .where("workspace_id", "=", draft.workspaceId)
-      .where("revision", "=", draft.revision))
+      .where("revision", "=", draft.revision)
+      .forKeyShare())
     .onConflict((conflict) => conflict
       .columns(["workspace_id", "idempotency_key"])
       .where("idempotency_key", "is not", null)
@@ -101,6 +112,19 @@ const recordWorkspaceEvent = (db: Db, draft: WorkspaceEventDraft): Promise<void>
  * its one owner and hands it to every module that records an event.
  */
 export const postgresWorkspaceEventRecorder: WorkspaceEventRecorder = { record: recordWorkspaceEvent };
+
+/** Deletes the document events of the documents a deletion has locked, in its transaction. */
+export const postgresDocumentEventEraser: DocumentEventEraser = {
+  async forgetDocuments(db, input) {
+    if (input.documentIds.length === 0) return;
+    await db
+      .deleteFrom("workspace_events")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("type", "in", [...DOCUMENT_EVENT_TYPES])
+      .where((eb) => sql<boolean>`${jsonbKeyText(eb.ref("data"), "documentId")} = ANY(${sql.val([...input.documentIds])}::text[])`)
+      .execute();
+  },
+};
 
 const storedEventColumns = [
   "id",

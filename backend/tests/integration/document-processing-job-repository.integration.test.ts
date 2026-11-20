@@ -332,7 +332,7 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     const claimed = await repository.claimById(first.id, new Date(Date.now() + 60_000));
     expect(claimed?.status).toBe("processing");
     const whileRunning = await repository.ensureFollowUpJob(capture);
-    await repository.markCompleted(first.id);
+    await repository.markCompleted(claimed!);
     const again = await repository.ensureFollowUpJob(capture);
 
     expect(first.kind).toBe("images");

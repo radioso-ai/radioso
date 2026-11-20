@@ -264,7 +264,9 @@ describe('sample data', () => {
     for (const key of ['document_processed', 'document_failed']) {
       const { sample, outputFields } = trigger(key)
       const keys = outputFields.map((field) => field.key)
-      expect(keys).toEqual(expect.arrayContaining(['data__documentId', 'data__revision', 'data__title', 'data__sourceKind', 'data__sourceId']))
+      expect(keys).toEqual(
+        expect.arrayContaining(['data__documentId', 'data__revision', 'data__title', 'data__contentKind', 'data__sourceKind', 'data__sourceId']),
+      )
       expect(keys).not.toContain('data__conversationId')
       expect(Object.keys(sample.data)).not.toContain('conversationId')
     }

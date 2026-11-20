@@ -36,8 +36,9 @@ its own facts:
 `app/composition/workspaceEventLog.ts` is the one seam: it owns the recorder and the bridged
 activity recorder, and every construction that records an event is handed them from there.
 The Postgres side is `db/repositories/workspaceEventLogRepository.ts`: the stateless recorder,
-the snapshot read, the 30-day retention rule and the consent withholder, which removes a
-withdrawn routine's events by structure (routine id, slot keys) as well as by value.
+the document event eraser that deleting documents calls (a title can name a person), the snapshot
+read, the 30-day retention rule and the consent withholder, which removes a withdrawn routine's
+events by structure (routine id, slot keys) as well as by value.
 
 ## Subscriptions and delivery (#1852)
 

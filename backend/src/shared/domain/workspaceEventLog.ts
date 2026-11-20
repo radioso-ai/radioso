@@ -22,7 +22,7 @@ const CONVERSATION_EVENT_TYPES = [
 ] as const;
 
 /** The types about a document: each one names the document revision it happened to. */
-const DOCUMENT_EVENT_TYPES = ["document.processed", "document.failed"] as const;
+export const DOCUMENT_EVENT_TYPES = ["document.processed", "document.failed"] as const;
 
 /** Every type the log records, by the name a client filters and subscribes by. */
 export const WORKSPACE_EVENT_TYPES = [...CONVERSATION_EVENT_TYPES, ...DOCUMENT_EVENT_TYPES] as const;
@@ -69,15 +69,16 @@ const conversationEventSubjectSchema = z.object({
 });
 
 /**
- * What every document event names. The log copies the title and source from the document when it
- * records the event.
+ * What every document event names. The log copies the title, content kind and source from the
+ * document and its source when it records the event.
  */
 const documentEventSubjectSchema = z.object({
   documentId: z.string().uuid(),
-  revision: z.number().int().positive().describe("The document revision the event is about. A changed document is processed again as its next revision."),
-  title: z.string().describe("The document's title when the event was recorded."),
-  sourceKind: z.enum(["inline_text", "uploaded_file"]).describe("How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."),
-  sourceId: z.string().uuid().nullable().describe("The document source the document belongs to: a crawled website, a connector or an API source. Null for a document added on its own."),
+  revision: z.number().int().positive().describe("The document revision the event is about. A changed or reprocessed document is processed again as its next revision."),
+  title: z.string().describe("The document's title when the event was recorded. An uploaded file's title comes from its file name."),
+  contentKind: z.enum(["inline_text", "uploaded_file"]).describe("How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."),
+  sourceKind: z.enum(["website", "api", "connector", "upload"]).nullable().describe("The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source."),
+  sourceId: z.string().uuid().nullable().describe("The document source the document belongs to. Null for a document with no source."),
 });
 
 /**
@@ -200,6 +201,14 @@ export const isDocumentEventDraft = (draft: WorkspaceEventDraft): draft is Docum
  */
 export interface WorkspaceEventRecorder {
   record(db: Db, draft: WorkspaceEventDraft): Promise<void>;
+}
+
+/**
+ * Removes the events of documents being deleted, in the deleting transaction, after it has locked
+ * their rows: a document's title can name a person, so its events go with it.
+ */
+export interface DocumentEventEraser {
+  forgetDocuments(db: Db, input: { workspaceId: string; documentIds: readonly string[] }): Promise<void>;
 }
 
 /** A place in the log: the writing transaction's id and the row's position, both decimal text. */

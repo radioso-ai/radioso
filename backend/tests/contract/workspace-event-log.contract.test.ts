@@ -71,15 +71,16 @@ describe("workspace events contract", () => {
     const h = await harness();
     const documentId = randomUUID();
     const sourceId = randomUUID();
+    const uploadsSourceId = randomUUID();
     const processed = h.store.append({
       workspaceId: h.owner.workspaceId,
       type: "document.processed",
-      data: { documentId, revision: 3, title: "Opening hours", sourceKind: "inline_text", sourceId },
+      data: { documentId, revision: 3, title: "Opening hours", contentKind: "inline_text", sourceKind: "website", sourceId },
     });
     const failed = h.store.append({
       workspaceId: h.owner.workspaceId,
       type: "document.failed",
-      data: { documentId, revision: 4, title: "Opening hours", sourceKind: "uploaded_file", sourceId: null, failureCode: "provider_misconfigured" },
+      data: { documentId, revision: 4, title: "Opening hours", contentKind: "uploaded_file", sourceKind: "upload", sourceId: uploadsSourceId, failureCode: "provider_misconfigured" },
     });
 
     const page = await request(h.app).get("/api/v1/workspace/events?types=document.processed,document.failed").set(h.owner.headers).expect(200);
@@ -91,7 +92,7 @@ describe("workspace events contract", () => {
         version: 1,
         occurredAt: processed.occurredAt.toISOString(),
         workspaceId: h.owner.workspaceId,
-        data: { documentId, revision: 3, title: "Opening hours", sourceKind: "inline_text", sourceId },
+        data: { documentId, revision: 3, title: "Opening hours", contentKind: "inline_text", sourceKind: "website", sourceId },
       },
       {
         id: failed.id,
@@ -99,7 +100,7 @@ describe("workspace events contract", () => {
         version: 1,
         occurredAt: failed.occurredAt.toISOString(),
         workspaceId: h.owner.workspaceId,
-        data: { documentId, revision: 4, title: "Opening hours", sourceKind: "uploaded_file", sourceId: null, failureCode: "provider_misconfigured" },
+        data: { documentId, revision: 4, title: "Opening hours", contentKind: "uploaded_file", sourceKind: "upload", sourceId: uploadsSourceId, failureCode: "provider_misconfigured" },
       },
     ]);
     for (const event of page.body.events) {
@@ -184,7 +185,7 @@ describe("workspace events contract", () => {
       h.store.append({
         workspaceId: h.owner.workspaceId,
         type: "document.processed",
-        data: { documentId: randomUUID(), revision: 1, title: "Opening hours", sourceKind: "inline_text", sourceId: null },
+        data: { documentId: randomUUID(), revision: 1, title: "Opening hours", contentKind: "inline_text", sourceKind: null, sourceId: null },
       });
       vi.spyOn(h.dependencies.accountAccessService, "requirePermission").mockResolvedValue(null);
       vi.spyOn(h.dependencies.accountAccessService, "hasPermission")

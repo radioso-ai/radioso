@@ -8,7 +8,7 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   DocumentProcessingJobOptions,
 } from "../../modules/documents/contracts/documentContracts.js";
-import { DocumentProcessingJobOutcomes } from "./documentProcessingJobOutcomes.js";
+import { DocumentProcessingJobOutcomes, type DocumentProcessingJobClaim } from "./documentProcessingJobOutcomes.js";
 import {
   documentProcessingJobColumns,
   mapJob,
@@ -19,6 +19,7 @@ import {
 } from "./documentProcessingJobRows.js";
 
 export type { DocumentProcessingJobRecord } from "./documentProcessingJobRows.js";
+export type { DocumentProcessingJobClaim } from "./documentProcessingJobOutcomes.js";
 
 export interface FollowUpJobInput {
   kind: FollowUpJobKind;
@@ -91,21 +92,25 @@ export interface DocumentProcessingJobRepositoryPort {
   }): Promise<DocumentProcessingJobRecord[]>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
-  // Returns false when the row was no longer "processing" (already terminal,
-  // from a concurrent writer or an earlier call), so a late-finishing run
-  // never overwrites a terminal state. `event` is recorded with the
-  // completion, only when this call is the one that completes the job.
-  markCompleted(jobId: string, event?: DocumentEventDraft): Promise<boolean>;
-  // Fenced on status='processing': a job already resolved some other way
-  // (most commonly a legitimate completion racing a recovery sweep) is left
-  // alone rather than overwritten with "skipped".
-  markSkipped(jobId: string, reason: string): Promise<void>;
+  // Every terminal write is fenced on the caller's claim: the job still
+  // "processing" at the attempt that claim took, so a run that lost its lease
+  // never ends a job another run has claimed since.
+  // Returns false when the row was no longer "processing" under this claim
+  // (already terminal, from a concurrent writer or an earlier call, or
+  // claimed again), so a late-finishing run never overwrites a terminal
+  // state. `event` is recorded with the completion, only when this call is
+  // the one that completes the job.
+  markCompleted(claim: DocumentProcessingJobClaim, event?: DocumentEventDraft): Promise<boolean>;
+  // A job already resolved some other way (most commonly a legitimate
+  // completion racing a recovery sweep) is left alone rather than
+  // overwritten with "skipped".
+  markSkipped(claim: DocumentProcessingJobClaim, reason: string): Promise<void>;
   // Returns false when the row was no longer "processing" — the run this
   // was failing was not actually dead and already completed it first. The
   // caller must treat false as "leave it alone", not retry the write.
-  markFailed(jobId: string, errorMessage: string, errorCode?: string | null): Promise<boolean>;
+  markFailed(claim: DocumentProcessingJobClaim, errorMessage: string, errorCode?: string | null): Promise<boolean>;
   markFailedIfDocumentMatches(input: {
-    jobId: string;
+    claim: DocumentProcessingJobClaim;
     documentId: string;
     workspaceId: string;
     revision: number;
@@ -844,16 +849,16 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     };
   }
 
-  markCompleted(jobId: string, event?: DocumentEventDraft): Promise<boolean> {
-    return this.outcomes.markCompleted(jobId, event);
+  markCompleted(claim: DocumentProcessingJobClaim, event?: DocumentEventDraft): Promise<boolean> {
+    return this.outcomes.markCompleted(claim, event);
   }
 
-  markSkipped(jobId: string, reason: string): Promise<void> {
-    return this.outcomes.markSkipped(jobId, reason);
+  markSkipped(claim: DocumentProcessingJobClaim, reason: string): Promise<void> {
+    return this.outcomes.markSkipped(claim, reason);
   }
 
-  markFailed(jobId: string, errorMessage: string, errorCode: string | null = null): Promise<boolean> {
-    return this.outcomes.markFailed(jobId, errorMessage, errorCode);
+  markFailed(claim: DocumentProcessingJobClaim, errorMessage: string, errorCode: string | null = null): Promise<boolean> {
+    return this.outcomes.markFailed(claim, errorMessage, errorCode);
   }
 
   markFailedIfDocumentMatches(input: Parameters<DocumentProcessingJobOutcomes["markFailedIfDocumentMatches"]>[0]): Promise<boolean> {

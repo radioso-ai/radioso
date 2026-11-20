@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 76,
+  "pageCount": 77,
   "pages": [
     {
       "slug": "api",
@@ -1183,6 +1183,72 @@
       ]
     },
     {
+      "slug": "faq",
+      "url": "https://docs.radioso.ai/faq",
+      "title": "Frequently asked questions",
+      "description": "Short answers to what people ask first about Radioso: self-hosting, open source, setup, putting an agent on a website, Shopify, bookings, handoff to a person, and pricing.",
+      "section": "Overview",
+      "lastUpdated": "2026-11-20",
+      "intro": "These are the questions people ask first, answered in a few sentences each. Every answer links to the page that goes deeper.",
+      "sections": [
+        {
+          "id": "can-i-self-host-radioso",
+          "heading": "Can I self-host Radioso?",
+          "body": "Yes. You can run Radioso on your own servers, and the whole product is open source. `./run-dev.sh` starts the dashboard, API, document worker, and database on one machine with Docker, as [Run locally in 5 minutes](https://docs.radioso.ai/quickstarts/run-locally) walks through. For a production deployment, see [Deployment](https://docs.radioso.ai/operators/deployment), and for backups, upgrades, and worker incidents, see [Self-hosting operations](https://docs.radioso.ai/operators/self-hosting-operations)."
+        },
+        {
+          "id": "is-radioso-open-source-or-is-there-a-paid-tier",
+          "heading": "Is Radioso open source, or is there a paid tier?",
+          "body": "Every product feature is open source under the Apache License 2.0, so a self-hosted install has all of them. Radioso Enterprise Edition, the `ee/` folder, holds what is needed to run Radioso as a cloud service for many separate organizations: organization creation, plans and billing, usage limits, managed models, Google sign-in, observability, and a staff console. It also holds the dashboard switch that hides \"Answers by Radioso\" in the widget. That folder is source-available and needs a commercial license. [Radioso Cloud](https://app.radioso.ai) is the hosted service, and its plans are on the [pricing page](https://radioso.ai/pricing)."
+        },
+        {
+          "id": "how-do-i-set-up-radioso",
+          "heading": "How do I set up Radioso?",
+          "body": "On Radioso Cloud, sign up at [app.radioso.ai](https://app.radioso.ai), create a workspace, and follow [Start here](https://docs.radioso.ai/operators/start-here). To run it yourself, start with [Run locally in 5 minutes](https://docs.radioso.ai/quickstarts/run-locally). Either way, the next steps are the same: [upload a document and get a grounded answer](https://docs.radioso.ai/quickstarts/first-answer), then [create your first agent](https://docs.radioso.ai/quickstarts/first-agent)."
+        },
+        {
+          "id": "how-do-i-put-a-radioso-agent-on-my-website",
+          "heading": "How do I put a Radioso agent on my website?",
+          "body": "Paste one script tag into your site. Turn on **Website widget** under the agent's **Channels**, then **Web chat**, copy the snippet, and add it to your pages. [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) covers the snippet and the origin check, and [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders) shows where each site builder takes it. The WordPress sync plugin and [Publish and open an agent](https://docs.radioso.ai/guides/publish-an-agent) are separate: they feed content in or publish discovery files, and do not add a chat to your pages."
+        },
+        {
+          "id": "does-radioso-work-with-shopify",
+          "heading": "Does Radioso work with Shopify?",
+          "body": "The chat widget installs on a Shopify store through the theme: you paste the script tag into `layout/theme.liquid`, as [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders#shopify) explains. The same page covers Wix, Webflow, Squarespace, WordPress, and Google Tag Manager. Radioso has no Shopify catalogue connector. To answer from your storefront's content, add it as a website source, as described in [Document upload](https://docs.radioso.ai/guides/document-upload). To look up something live, such as an order, a webhook skill can call an HTTP API your store or backend exposes, as in [Send data to an automation](https://docs.radioso.ai/automation/webhook-skills)."
+        },
+        {
+          "id": "can-i-make-the-widget-match-my-brand",
+          "heading": "Can I make the widget match my brand?",
+          "body": "Yes. Colors, logo, button text, corner, greeting, suggested questions, and interface wording are all dashboard settings, and an edit reaches visitors within about a minute without touching the snippet on your site. See [Customize the website widget](https://docs.radioso.ai/guides/customize-the-widget)."
+        },
+        {
+          "id": "can-radioso-take-actions-or-is-it-just-a-chatbot",
+          "heading": "Can Radioso take actions, or is it just a chatbot?",
+          "body": "An agent can act. Skills let it call your systems, post to Slack, email a customer, send data to a webhook, or call tools on your own MCP server. A routine carries a request across several turns until the job is done. [What agents can do](https://docs.radioso.ai/why-radioso/capabilities) lists them, and [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) builds one."
+        },
+        {
+          "id": "can-a-radioso-agent-take-bookings",
+          "heading": "Can a Radioso agent take bookings?",
+          "body": "Yes. A routine collects the date, party size, and contact details, then a skill step checks availability in your booking system over its HTTP API or its MCP server. The visitor can tap a free time shown as a card, and an approval step can bring a teammate in before the booking is confirmed. The last skill step writes the booking into your system. [Use cases](https://docs.radioso.ai/why-radioso/use-cases#take-a-booking-and-get-it-signed-off) walks through the whole flow."
+        },
+        {
+          "id": "how-does-a-handoff-to-a-person-work",
+          "heading": "How does a handoff to a person work?",
+          "body": "A routine reaches a handoff ending, or an agent with **Hand off on retrieval miss** turned on can't find support for an answer. The conversation then lands in the dashboard **Inbox**, the AI stays quiet, and a teammate replies as a person until they hand it back. See [Human takeover](https://docs.radioso.ai/operators/human-takeover)."
+        },
+        {
+          "id": "what-happens-when-radioso-can-t-answer",
+          "heading": "What happens when Radioso can't answer?",
+          "body": "The agent says so instead of guessing. An answer comes from your documents with citations, and when nothing supports a claim, the agent says it can't confirm it. You can also have the agent hand the conversation to a person in that case. See [Grounded answers](https://docs.radioso.ai/why-radioso/grounded-answers) and [Human takeover](https://docs.radioso.ai/operators/human-takeover)."
+        },
+        {
+          "id": "where-do-i-find-pricing",
+          "heading": "Where do I find pricing?",
+          "body": "On the [Radioso pricing page](https://radioso.ai/pricing). Plans and prices live there so they stay current."
+        }
+      ]
+    },
+    {
       "slug": "guides/a2a-converse",
       "url": "https://docs.radioso.ai/guides/a2a-converse",
       "title": "Connect an A2A client",
@@ -1917,7 +1983,7 @@
       "description": "Give an agent a public id, publish its agent card, MCP server card, and catalog entry, and let a visiting agent connect with no credential at all.",
       "section": "Guides",
       "lastUpdated": "2026-11-09",
-      "intro": "A calling agent has to find yours before it can talk to it, and somebody has to decide whether it needs a credential first. This page covers both: the public id an agent is known by, the three documents that describe it to a visiting agent, and the credential-free door you can open for callers you have never met.\n\nEverything here is off until an operator turns it on, agent by agent, under **Channels → MCP**.",
+      "intro": "This page publishes agent-discovery files so other agents can find yours. It does not add a chat to your website. To put your agent in front of visitors, see [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) and [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders).\n\nA calling agent has to find yours before it can talk to it, and somebody has to decide whether it needs a credential first. This page covers both: the public id an agent is known by, the three documents that describe it to a visiting agent, and the credential-free door you can open for callers you have never met.\n\nEverything here is off until an operator turns it on, agent by agent, under **Channels → MCP**.",
       "sections": [
         {
           "id": "the-agent-s-public-id",
@@ -3253,7 +3319,7 @@
       "description": "Follow the operator path from a local Radioso stack through a grounded answer, an acting agent, team access, and production preparation.",
       "section": "Operator guides",
       "lastUpdated": "2026-10-13",
-      "intro": "This is the operator path for getting a useful agent in front of real people. Each step leaves you with something you can verify before you take the next one.\n\n1. [Run locally](https://docs.radioso.ai/quickstarts/run-locally) — start the dashboard, API, worker, and database.\n2. [Get your first grounded answer](https://docs.radioso.ai/quickstarts/first-answer) — upload a document and check its citation.\n3. [Create your first agent](https://docs.radioso.ai/quickstarts/first-agent) — give one agent a clear name and job.\n4. [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) — deliver a notice and hand a conversation to a person.\n5. [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) — approve an origin and test the visitor experience.\n6. [Invite your team](https://docs.radioso.ai/quickstarts/invite-team) — bring in the people who handle the work.\n7. [Prepare for production](https://docs.radioso.ai/operators/deployment) — configure the services, secrets, storage, and operational controls for your environment.",
+      "intro": "This is how you set up Radioso and get a useful agent in front of real people. On Radioso Cloud, sign up at [app.radioso.ai](https://app.radioso.ai), create a workspace, and continue from step 2. To self-host, which is open source, start with step 1 and run the stack yourself. Each step leaves you with something you can verify before you take the next one.\n\n1. [Run locally](https://docs.radioso.ai/quickstarts/run-locally) (self-hosted only) — start the dashboard, API, worker, and database.\n2. [Get your first grounded answer](https://docs.radioso.ai/quickstarts/first-answer) — upload a document and check its citation.\n3. [Create your first agent](https://docs.radioso.ai/quickstarts/first-agent) — give one agent a clear name and job.\n4. [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) — deliver a notice and hand a conversation to a person.\n5. [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) — approve an origin and test the visitor experience.\n6. [Invite your team](https://docs.radioso.ai/quickstarts/invite-team) — bring in the people who handle the work.\n7. [Prepare for production](https://docs.radioso.ai/operators/deployment) — configure the services, secrets, storage, and operational controls for your environment.",
       "sections": [
         {
           "id": "choose-a-side-path-when-it-fits",
@@ -3305,7 +3371,7 @@
       "description": "Sync WordPress pages, posts, and WooCommerce products into a workspace, and filter retrieval on shop values such as price and stock status.",
       "section": "Operator guides",
       "lastUpdated": null,
-      "intro": "Point Radioso at a WordPress site and its published content becomes workspace documents an agent can answer from — pages, posts, and any custom post type the site registers, including WooCommerce products. Publishes, edits, and deletes flow through as they happen, so a shopper asking what a book costs hears the price the shop is showing today.",
+      "intro": "This page syncs your WordPress content into Radioso and publishes agent-discovery files from the plugin. It does not add a chat to your pages. To put the chat widget on a WordPress site, follow [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders#wordpress).\n\nPoint Radioso at a WordPress site and its published content becomes workspace documents an agent can answer from — pages, posts, and any custom post type the site registers, including WooCommerce products. Publishes, edits, and deletes flow through as they happen, so a shopper asking what a book costs hears the price the shop is showing today.",
       "sections": [
         {
           "id": "how-content-reaches-radioso",
@@ -3612,7 +3678,7 @@
       "description": "Launch the Radioso embed flow against a local test site, then adapt it for production.",
       "section": "Quickstarts",
       "lastUpdated": "2026-11-19",
-      "intro": "This walks you through putting the hosted Radioso website widget on a public site and proving it's locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.",
+      "intro": "This is how you put your Radioso agent on your website: one script tag opens the hosted chat widget on every page that carries it. The walkthrough then proves the widget is locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.",
       "sections": [
         {
           "id": "the-happy-path",

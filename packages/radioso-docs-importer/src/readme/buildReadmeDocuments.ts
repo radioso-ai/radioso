@@ -19,7 +19,6 @@ const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", ".next", "build",
 const PRODUCT_README_PATHS: ReadonlySet<string> = new Set([
   "readme.md", // product overview and quick start
   "typescript-sdk/readme.md", // published SDK
-  "packages/radioso-mcp-server/readme.md", // MCP server setup and client configuration
   "packages/wordpress-companion/readme.md", // WordPress plugin install
 ]);
 

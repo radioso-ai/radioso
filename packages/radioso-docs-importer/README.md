@@ -17,9 +17,11 @@ REST API.
   schemas with local `$ref`s dereferenced).
 - **Repo READMEs** — only the READMEs listed in `PRODUCT_README_PATHS`
   (`src/readme/buildReadmeDocuments.ts`): the ones a person outside the team installs,
-  runs, or integrates with (repo overview, TypeScript SDK, MCP server, WordPress
-  plugin). Area briefs for coding agents, test fixtures, spec contracts, infra, and
-  internal packages are not imported. Imported as raw markdown, one document per
+  runs, or integrates with (repo overview, TypeScript SDK, WordPress plugin). The
+  MCP server README is left out because `guides/mcp-server` covers the same setup
+  for readers, and its env-var steps outranked the getting-started guides. Area
+  briefs for coding agents, test fixtures, spec contracts, infra, and internal
+  packages are not imported. Imported as raw markdown, one document per
   README. A new README is internal until it is added to the list.
 
 - **Website pages** (opt in) — `--website-page <markdownUrl>=<citationUrl>`, repeatable.

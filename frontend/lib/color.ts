@@ -88,16 +88,22 @@ export const contrastRatio = (a: string, b: string): number => {
 const SHADE_SEARCH_STEPS = 12
 
 /**
- * `color` mixed toward black or white, whichever stands further from `background`, just far enough
- * to read at `minContrast` on it, so it keeps its hue; `color` itself when it already reads, and
- * unchanged when either is not a hex colour. The pole is reached at most, which every background
- * reads against at 4.58:1 or better.
+ * `color` mixed toward the pole on its own side of `background` (white for a colour lighter than it,
+ * black for a darker one) just far enough to read at `minContrast` on it, so it keeps its hue and its
+ * polarity; toward the other pole only when its own cannot reach `minContrast`. `color` itself when it
+ * already reads, and unchanged when either is not a hex colour. The pole is reached at most, which
+ * every background reads against at 4.58:1 or better in one direction.
  */
 export const shadeToContrast = (color: string, background: string, minContrast: number): string => {
   if (!parseHex(color) || !parseHex(background) || contrastRatio(background, color) >= minContrast) {
     return color
   }
-  const pole = contrastRatio(background, '#ffffff') >= contrastRatio(background, '#000000') ? '#ffffff' : '#000000'
+  const ownPole = relativeLuminance(color) >= relativeLuminance(background) ? '#ffffff' : '#000000'
+  const otherPole = ownPole === '#ffffff' ? '#000000' : '#ffffff'
+  const ownPoleContrast = contrastRatio(background, ownPole)
+  const pole = ownPoleContrast >= minContrast || ownPoleContrast >= contrastRatio(background, otherPole) ? ownPole : otherPole
+  // Readability rises with the weight toward the pole, past a dip when the mix crosses the
+  // background, and the unmixed colour already falls short; so it flips from short to readable once.
   let readable = 1
   let unreadable = 0
   for (let step = 0; step < SHADE_SEARCH_STEPS; step += 1) {

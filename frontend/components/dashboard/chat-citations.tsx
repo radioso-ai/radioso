@@ -1,9 +1,9 @@
 'use client'
 
-import { Fragment, type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { Fragment, type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ExternalLink, FileText } from 'lucide-react'
 
-import { MESSAGE_LINK_CLASS, isSafeHref } from '../markdown/markdown-content'
+import { LINK_UNDERLINE_CLASS, isSafeHref } from '../markdown/markdown-content'
 import { cn } from '@/lib/utils'
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
@@ -25,7 +25,7 @@ export function linkifyText(text: string): ReactNode[] {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className={MESSAGE_LINK_CLASS}
+            className={LINK_UNDERLINE_CLASS}
           >
             {url}
           </a>
@@ -352,7 +352,7 @@ const SourceChip = ({
               destinationUrl: safeSourceUrl,
             })
           }}
-          className="inline-flex shrink-0 items-center text-[var(--message-link-fg,var(--color-link))] hover:text-foreground"
+          className="inline-flex shrink-0 items-center text-link hover:text-foreground"
           aria-label={fillTemplate(copy.publicChatOpenSourceLinkTemplate, { title: label })}
           title={safeSourceUrl}
         >
@@ -456,13 +456,10 @@ export function AssistantMessageContent({
   const noticeScope = `${content}|${effectiveCitations.length}|${effectiveAnswerSegments?.length ?? 0}`
   const rawSegments = getRenderableSegments(content, effectiveAnswerSegments)
   const segments = redistributeLeadingPunctuation(rawSegments.flatMap(splitClosingBulletRun), effectiveCitations)
-  const linkForeground = theme ? messageLinkForeground(theme) : undefined
-  const contentThemeVars = linkForeground
-    ? ({
-        '--message-link-fg': linkForeground,
-        '--message-link-hover-fg': linkForeground,
-      } as CSSProperties)
-    : undefined
+  const contentThemeVars = useMemo(
+    () => (theme ? ({ '--link': messageLinkForeground(theme) } as CSSProperties) : undefined),
+    [theme],
+  )
 
   const handleCitationOpen = async (citation: Citation, index: number) => {
     try {

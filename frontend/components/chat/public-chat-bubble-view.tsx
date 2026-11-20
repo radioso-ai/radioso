@@ -26,6 +26,7 @@ import {
   type WebsiteEmbedThemeOverrides,
 } from '@/lib/embed-widget'
 import type { AgentBrandingSettings } from '@/lib/api'
+import { disabledSendForeground } from '@/lib/public-chat-theme'
 
 const POWERED_BY_URL = 'https://radioso.ai'
 const POWERED_BY_LABEL = 'Radioso'
@@ -316,7 +317,7 @@ export function PublicChatBubbleComposerForm({
             // Disabled reads as neutral rather than as a faded brand color, which looks broken.
             style={
               sendDisabled
-                ? { background: theme.mutedBackground, color: theme.mutedForeground }
+                ? { background: theme.mutedBackground, color: disabledSendForeground(theme) }
                 : { background: theme.accent, color: theme.accentForeground }
             }
             aria-hidden={readOnly ? 'true' : undefined}

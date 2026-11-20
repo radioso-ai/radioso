@@ -59,7 +59,7 @@
   --popover-foreground: #142317;
   --primary: #5096e7;
   --primary-foreground: #f9f9f7;
-  /* Link text in answers: the primary darkened to read at 4.5:1 on the muted bubble. */
+  /* Link text in answers: the primary darkened to read at 4.5:1 on white and on the answer bubble (bg-muted/60). */
   --link: #2b6cc4;
   --secondary: #ffc720;
   --secondary-foreground: #142317;

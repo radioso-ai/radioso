@@ -55,9 +55,11 @@ describe("buildReadmeDocuments", () => {
       "docs/README.md",
       "ee/readme.md",
       "packages/radioso-mcp-server/src/README.md",
+      // Covered by guides/mcp-server; its env-var setup answered "How do I set up Radioso?".
+      "packages/radioso-mcp-server/README.md",
       "typescript-sdk/src/README.md",
     ];
-    for (const rel of [...internal, "readme.md", "packages/radioso-mcp-server/README.md"]) {
+    for (const rel of [...internal, "readme.md", "packages/wordpress-companion/README.md"]) {
       await mkdir(path.dirname(path.join(root, rel)), { recursive: true });
       await writeFile(path.join(root, rel), `# ${rel}\n`);
     }
@@ -69,7 +71,7 @@ describe("buildReadmeDocuments", () => {
     });
 
     expect(documents.map((document) => document.externalDocumentId)).toEqual([
-      "repo-readme:packages/radioso-mcp-server/README.md",
+      "repo-readme:packages/wordpress-companion/README.md",
       "repo-readme:readme.md",
     ]);
   });

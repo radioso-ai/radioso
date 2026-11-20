@@ -115,6 +115,23 @@ touching the document's status. A follow-up is created through
 is queued again when the content names new images. The message payload stays
 `{ jobId }`: the worker reads the kind from the row.
 
+A vectorize job's terminal write records its revision's workspace event in the
+same transaction: `document.processed` when the job completes, from the normal
+run, the startup reconcile, or the recovery that finds the revision already
+published, and `document.failed`, with the job's error code and never its
+message, when the job fails the document. Every terminal write in
+`db/repositories/documentProcessingJobOutcomes.ts` is fenced on the caller's
+claim (`status = 'processing'` and the `attempt_count` it claimed), so a run
+that lost its lease ends nothing, and an event is recorded only when the fence
+hits. `document.processed:{documentId}:{revision}` keys one completion per
+revision; `document.failed:{documentId}:{revision}:{attemptCount}` keys one per
+failed attempt, so a revision a credential fix queues again records its next
+failure too. `services/documentWorkspaceEvents.ts` builds the events, and the
+worker wakes event subscription delivery once one has committed. Deleting
+documents (by id, by source, or a sync's prune) removes their events in the same
+transaction through the `DocumentEventEraser` the composition hands
+`DocumentRepository`, because a title can name a person.
+
 ## Document Images
 
 Ingestion records the images a document's content names; the worker captures them.
@@ -234,5 +251,8 @@ Focused starting points:
   for placing, recording, capturing and sweeping document images.
 - `cd backend && pnpm exec vitest run tests/integration/document-image-repository.integration.test.ts tests/integration/document-image-capture.integration.test.ts`
   for the image rows, and a crawled page through the worker to an answer's offer.
+- `cd backend && pnpm exec vitest run tests/integration/document-workspace-events.integration.test.ts`
+  for `document.processed` and `document.failed`: once per revision across
+  takeovers and restarts, the code without the message, and the push.
 
 Use contract tests when document API response shape changes.

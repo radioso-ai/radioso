@@ -2600,6 +2600,14 @@ Where each type is recorded:
   transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
+- `document.processed`, `document.failed`: a vectorize job's terminal write
+  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
+  fence (`status = 'processing'` and the claimed attempt) hits, from drafts the
+  worker builds (`modules/documents/services/documentWorkspaceEvents.ts`); the
+  log copies the document's title, content kind and source from its row, and
+  records nothing for a revision the document has moved past. Deleting a
+  document removes its events through `DocumentEventEraser`, which
+  `DocumentRepository` takes from the composition seam
 
 Reads run in one repeatable-read snapshot and stop at
 `pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
@@ -2626,7 +2634,8 @@ subscription's cursor, `410` deletes it, anything else backs off
 (five tries at least) disables it. The built-in `workspace-event-delivery`
 periodic task (every minute; Cloud Scheduler `workspace_event_delivery` in
 `infra/terraform/scheduler.tf`) starts every due drain, and the chat turn's
-`afterCommit` wakes its workspace's drains sooner. Target URLs pass the outbound
+`afterCommit` and the document worker's event-bearing completions and failures
+wake their workspace's drains sooner. Target URLs pass the outbound
 URL rule (`normalizeWebhookTargetUrl` in `shared/infra/http/signedWebhook.ts`,
 shared with webhook destinations) at create and the DNS-pinned guard at every
 hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`, and a keyed

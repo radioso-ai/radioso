@@ -4,6 +4,8 @@ export const EVENT_TYPES = [
 	{ name: 'Contact Request Created', value: 'contact_request.created' },
 	{ name: 'Conversation Started', value: 'conversation.started' },
 	{ name: 'Decision Pending', value: 'decision.pending' },
+	{ name: 'Document Failed', value: 'document.failed' },
+	{ name: 'Document Processed', value: 'document.processed' },
 	{ name: 'Handoff Requested', value: 'handoff.requested' },
 	{ name: 'Routine Completed', value: 'routine.completed' },
 ] as const;

@@ -97,7 +97,7 @@ describe("DocumentProcessingWorker tick error reporting", () => {
     await expect(worker.runOnce()).resolves.toBe(true);
 
     expect(processingService.process).toHaveBeenCalledWith(job);
-    expect(jobRepository.markCompleted).toHaveBeenCalledWith(job.id);
+    expect(jobRepository.markCompleted).toHaveBeenCalledWith(job, expect.objectContaining({ type: "document.processed" }));
     expect(jobRepository.markFailedIfDocumentMatches).not.toHaveBeenCalled();
     expect(jobRepository.reschedule).not.toHaveBeenCalled();
     expect(auditService.record).not.toHaveBeenCalledWith(expect.objectContaining({

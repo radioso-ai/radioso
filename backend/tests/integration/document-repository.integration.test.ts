@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import type {
   DocumentCreateInput,
@@ -30,7 +31,7 @@ const settledDocument = async (
 
 describeIntegration("DocumentRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new DocumentRepository(database.kysely);
+  const repository = new DocumentRepository(database.kysely, documentEventEraser);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();

@@ -11870,7 +11870,103 @@ export interface components {
                 deadline: string | null;
             };
         };
-        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"];
+        DocumentProcessedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "document.processed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                documentId: string;
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
+                revision: number;
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
+                title: string;
+                /**
+                 * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
+                 * @enum {string}
+                 */
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
+                /**
+                 * Format: uuid
+                 * @description The document source the document belongs to. Null for a document with no source.
+                 */
+                sourceId: string | null;
+            };
+        };
+        DocumentFailedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "document.failed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                documentId: string;
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
+                revision: number;
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
+                title: string;
+                /**
+                 * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
+                 * @enum {string}
+                 */
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
+                /**
+                 * Format: uuid
+                 * @description The document source the document belongs to. Null for a document with no source.
+                 */
+                sourceId: string | null;
+                /** @description Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included. */
+                failureCode: string | null;
+            };
+        };
+        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
         WorkspaceEventPage: {
             events: components["schemas"]["WorkspaceEvent"][];
             /** @description Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place. */
@@ -11888,7 +11984,7 @@ export interface components {
             label: "zapier" | "n8n" | "custom";
             /** @description The host events are POSTed to. The full target URL is never returned after create. */
             targetHost: string;
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
             /**
              * @description `disabled` receives nothing more until its client subscribes the same URL again.
              * @enum {string}
@@ -11930,7 +12026,7 @@ export interface components {
             /** @description The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id. */
             targetUrl: string;
             /** @description The event types to receive. Each needs the permission that reads it from the event log. */
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
             /**
              * @description Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings.
              * @enum {string}

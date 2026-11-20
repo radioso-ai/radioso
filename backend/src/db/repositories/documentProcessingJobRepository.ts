@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import type { QueryResultRow } from "pg";
 
+import type { DocumentEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   DocumentProcessingJobOptions,
 } from "../../modules/documents/contracts/documentContracts.js";
+import { DocumentProcessingJobOutcomes, type DocumentProcessingJobClaim } from "./documentProcessingJobOutcomes.js";
 import {
   documentProcessingJobColumns,
   mapJob,
@@ -17,6 +19,7 @@ import {
 } from "./documentProcessingJobRows.js";
 
 export type { DocumentProcessingJobRecord } from "./documentProcessingJobRows.js";
+export type { DocumentProcessingJobClaim } from "./documentProcessingJobOutcomes.js";
 
 export interface FollowUpJobInput {
   kind: FollowUpJobKind;
@@ -89,25 +92,31 @@ export interface DocumentProcessingJobRepositoryPort {
   }): Promise<DocumentProcessingJobRecord[]>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
-  // Returns false when the row was no longer "processing" (already terminal,
-  // from a concurrent writer or an earlier call), so a late-finishing run
-  // never overwrites a terminal state.
-  markCompleted(jobId: string): Promise<boolean>;
-  // Fenced on status='processing': a job already resolved some other way
-  // (most commonly a legitimate completion racing a recovery sweep) is left
-  // alone rather than overwritten with "skipped".
-  markSkipped(jobId: string, reason: string): Promise<void>;
+  // Every terminal write is fenced on the caller's claim: the job still
+  // "processing" at the attempt that claim took, so a run that lost its lease
+  // never ends a job another run has claimed since.
+  // Returns false when the row was no longer "processing" under this claim
+  // (already terminal, from a concurrent writer or an earlier call, or
+  // claimed again), so a late-finishing run never overwrites a terminal
+  // state. `event` is recorded with the completion, only when this call is
+  // the one that completes the job.
+  markCompleted(claim: DocumentProcessingJobClaim, event?: DocumentEventDraft): Promise<boolean>;
+  // A job already resolved some other way (most commonly a legitimate
+  // completion racing a recovery sweep) is left alone rather than
+  // overwritten with "skipped".
+  markSkipped(claim: DocumentProcessingJobClaim, reason: string): Promise<void>;
   // Returns false when the row was no longer "processing" — the run this
   // was failing was not actually dead and already completed it first. The
   // caller must treat false as "leave it alone", not retry the write.
-  markFailed(jobId: string, errorMessage: string, errorCode?: string | null): Promise<boolean>;
+  markFailed(claim: DocumentProcessingJobClaim, errorMessage: string, errorCode?: string | null): Promise<boolean>;
   markFailedIfDocumentMatches(input: {
-    jobId: string;
+    claim: DocumentProcessingJobClaim;
     documentId: string;
     workspaceId: string;
     revision: number;
     errorMessage: string;
     errorCode?: string | null;
+    event: DocumentEventDraft;
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   // Atomically decides, for one expired claim, between releasing it back to the
@@ -327,7 +336,11 @@ export const insertEmbeddingProfileJobsForDocumentRevision = async (
 };
 
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
-  constructor(private readonly db: Db) {}
+  private readonly outcomes: DocumentProcessingJobOutcomes;
+
+  constructor(private readonly db: Db, events: WorkspaceEventRecorder) {
+    this.outcomes = new DocumentProcessingJobOutcomes(db, events);
+  }
 
   async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: RevisionProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
     const row = await this.db
@@ -836,121 +849,20 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     };
   }
 
-  async markCompleted(jobId: string): Promise<boolean> {
-    // Fenced on status='processing' so a late-finishing run can never overwrite
-    // a terminal state another caller already committed (a recovery sweep's
-    // own terminal write, or a second completion attempt after this one).
-    const row = await this.db
-      .updateTable("document_processing_jobs")
-      .set({
-        status: "completed",
-        completed_at: currentTimestamp(),
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", jobId)
-      .where("status", "=", "processing")
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+  markCompleted(claim: DocumentProcessingJobClaim, event?: DocumentEventDraft): Promise<boolean> {
+    return this.outcomes.markCompleted(claim, event);
   }
 
-  async markSkipped(jobId: string, reason: string): Promise<void> {
-    await this.db
-      .updateTable("document_processing_jobs")
-      .set({
-        status: "skipped",
-        last_error: reason,
-        completed_at: currentTimestamp(),
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", jobId)
-      // A late-finishing run that already resolved this job some other way
-      // (most commonly a legitimate completion racing a recovery sweep's
-      // terminal write) must not be overwritten.
-      .where("status", "=", "processing")
-      .execute();
+  markSkipped(claim: DocumentProcessingJobClaim, reason: string): Promise<void> {
+    return this.outcomes.markSkipped(claim, reason);
   }
 
-  async markFailed(jobId: string, errorMessage: string, errorCode: string | null = null): Promise<boolean> {
-    const row = await this.db
-      .updateTable("document_processing_jobs")
-      .set({
-        status: "failed",
-        last_error: errorMessage,
-        last_error_code: errorCode,
-        completed_at: currentTimestamp(),
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", jobId)
-      // See markSkipped — the same race applies here.
-      .where("status", "=", "processing")
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+  markFailed(claim: DocumentProcessingJobClaim, errorMessage: string, errorCode: string | null = null): Promise<boolean> {
+    return this.outcomes.markFailed(claim, errorMessage, errorCode);
   }
 
-  async markFailedIfDocumentMatches(input: {
-    jobId: string;
-    documentId: string;
-    workspaceId: string;
-    revision: number;
-    errorMessage: string;
-    errorCode?: string | null;
-  }): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
-      // Lock the job row and confirm it is still ours to fail before writing
-      // anything. A run that was not actually dead can complete the job
-      // between the caller's exhausted decision and this call — if it
-      // already has, this job update matches no row, so we return without
-      // touching the document at all; the document update below only ever
-      // runs once we know the job is still "processing".
-      const jobRow = await trx
-        .selectFrom("document_processing_jobs")
-        .select("id")
-        .where("id", "=", input.jobId)
-        .where("status", "=", "processing")
-        .forUpdate()
-        .executeTakeFirst();
-
-      if (!jobRow) {
-        return false;
-      }
-
-      const document = await trx
-        .updateTable("documents")
-        .set({
-          status: "failed",
-          failed_at: currentTimestamp(),
-          failure_reason: input.errorMessage,
-          updated_at: currentTimestamp(),
-        })
-        .where("id", "=", input.documentId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("revision", "=", input.revision)
-        .returning("id")
-        .executeTakeFirst();
-
-      if (!document) {
-        // Stale revision or deleted: the job is still processing, but this
-        // is not the document to fail. Leave the job untouched — the
-        // caller's own fallback (markSkipped) resolves it instead.
-        return false;
-      }
-
-      await trx
-        .updateTable("document_processing_jobs")
-        .set({
-          status: "failed",
-          last_error: input.errorMessage,
-          last_error_code: input.errorCode ?? null,
-          completed_at: currentTimestamp(),
-          updated_at: currentTimestamp(),
-        })
-        .where("id", "=", input.jobId)
-        .execute();
-
-      return true;
-    });
+  markFailedIfDocumentMatches(input: Parameters<DocumentProcessingJobOutcomes["markFailedIfDocumentMatches"]>[0]): Promise<boolean> {
+    return this.outcomes.markFailedIfDocumentMatches(input);
   }
 
   async requeueProviderCredentialFailures(workspaceId: string, limit = 100): Promise<number> {

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
@@ -64,7 +65,7 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
   it("reads active canonical embeddings scoped to the workspace", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const workspaceRepository = new WorkspaceRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
     const chunkRepository = new ChunkRepository(database);
 
     const account = await accountRepository.create({
@@ -151,7 +152,7 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
     const seed = async () => {
       const accountRepository = new AccountRepository(database.kysely);
       const workspaceRepository = new WorkspaceRepository(database.kysely);
-      const documentRepository = new DocumentRepository(database.kysely);
+      const documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
       const chunkRepository = new ChunkRepository(database);
 
       const account = await accountRepository.create({

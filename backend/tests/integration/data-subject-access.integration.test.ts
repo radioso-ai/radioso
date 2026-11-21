@@ -245,8 +245,9 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
     await database.query(
       `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data) VALUES
          ($1, $2, 'session', $3, '{"items": ["yoga mat"]}'::jsonb),
-         ($1, $2, 'customer', $4, '{"items": ["membership"]}'::jsonb)`,
-      [t.workspaceId, t.variableId, sessionId, who.verifiedCustomerId],
+         ($1, $2, 'customer', $4, '{"items": ["membership"]}'::jsonb),
+         ($1, $2, 'conversation', $5, '{"items": ["knee brace"]}'::jsonb)`,
+      [t.workspaceId, t.variableId, sessionId, who.verifiedCustomerId, webConversationId],
     );
     const [assistantMessage] = await database.query<{ id: string }>(
       "SELECT id FROM messages WHERE conversation_id = $1 AND role = 'assistant'",
@@ -443,10 +444,11 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
         expect.objectContaining({ conversationId: jane.webConversationId, summary: `Asked about booking with a knee injury (${JANE})` }),
       ]);
       expect(sections.context_values).toEqual(expect.arrayContaining([
-        expect.objectContaining({ variable: "cart", scope: "session", value: { items: ["yoga mat"] } }),
+        expect.objectContaining({ variable: "cart", scope: "session", value: { items: ["yoga mat"] }, writtenBy: "api" }),
         expect.objectContaining({ variable: "cart", scope: "customer", value: { items: ["membership"] } }),
+        expect.objectContaining({ variable: "cart", scope: "conversation", value: { items: ["knee brace"] } }),
       ]));
-      expect(sections.context_values).toHaveLength(2);
+      expect(sections.context_values).toHaveLength(3);
       expect(sections.answer_feedback).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, value: "down", comment: "Too slow" }),
       ]);

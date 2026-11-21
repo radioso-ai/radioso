@@ -41,11 +41,11 @@ import type {
   StructuredRewriteResult,
   WorkspaceTimeZoneReader,
 } from "../../retrieval/public.js";
-import { projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
+import { contextScopeLadder, projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
 import type {
   ResolvedTurnContext,
   ResolvedVariableInput,
-  ContextVariableScope,
+  ContextScopeKeys,
   ContextVariableResolutionReaderPort,
   AgentContextVariableEnablement,
   VisitorRequestFacts,
@@ -539,8 +539,7 @@ export class ChatSessionPreparer {
       this.resolveHostVariables(
         input,
         agent,
-        effectiveVerifiedCustomerId,
-        chatSessionId,
+        { conversationId: persistedConversation.id, verifiedCustomerId: effectiveVerifiedCustomerId, chatSessionId },
         revisionResolved.contextVariableEnablements,
       ));
     // Page context is not yet resolved on this initial pass (mirrors the `null`
@@ -862,15 +861,14 @@ export class ChatSessionPreparer {
 
   /**
    * Resolve the agent's enabled host-defined context variables for this turn, walking the
-   * scope ladder (session → agent → workspace; customer scope arrives with verified identity).
-   * Best-effort: a missing repository or a read failure degrades to no host variables so the
-   * turn always proceeds (page context still renders).
+   * scope ladder (conversation → session → customer → agent → workspace; customer scope arrives
+   * with verified identity). Best-effort: a missing repository or a read failure degrades to no
+   * host variables so the turn always proceeds (page context still renders).
    */
   private async resolveHostVariables(
     input: PrepareChatSessionInput,
     agent: AgentRecord,
-    effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
-    chatSessionId: string | null = input.chatSessionId ?? input.anonymousSessionId ?? null,
+    keys: Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId">,
     revisionContextVariableEnablements: readonly AgentContextVariableEnablement[] | null = null,
   ): Promise<ResolvedVariableInput[]> {
     // A resolver can be backed by a live agent-skill executor. Safe-test turns fail
@@ -879,15 +877,7 @@ export class ChatSessionPreparer {
     if (!this.contextVariableRepository || input.executionMode === "safe_test") {
       return [];
     }
-    const scopes: ContextVariableScope[] = [];
-    if (chatSessionId) {
-      scopes.push({ type: "session", id: chatSessionId });
-    }
-    if (effectiveVerifiedCustomerId) {
-      scopes.push({ type: "customer", id: effectiveVerifiedCustomerId });
-    }
-    scopes.push({ type: "agent", id: agent.id });
-    scopes.push({ type: "workspace", id: input.workspaceId });
+    const scopes = contextScopeLadder({ ...keys, agentId: agent.id, workspaceId: input.workspaceId });
     if (revisionContextVariableEnablements) {
       const resolved = await this.contextVariableRepository.resolveForEnablements(
         input.workspaceId,
@@ -938,6 +928,14 @@ export class ChatSessionPreparer {
     }
   }
 
+  private hostScopeKeys(input: PrepareChatSessionInput, session: PreparedSession) {
+    return {
+      conversationId: session.conversation.id,
+      verifiedCustomerId: input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+      chatSessionId: input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+    };
+  }
+
   async prepareRetrieval(
     input: PrepareChatSessionInput,
     session: PreparedSession,
@@ -947,8 +945,7 @@ export class ChatSessionPreparer {
     const variables = hostVariables ?? session.preResolvedHostVariables ?? (await this.resolveHostVariables(
       input,
       session.agent,
-      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
-      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+      this.hostScopeKeys(input, session),
       session.revisionContextVariableEnablements,
     ));
     const requestFacts = this.resolveVisitorRequestFacts(
@@ -993,8 +990,7 @@ export class ChatSessionPreparer {
     const variables = hostVariables ?? session.preResolvedHostVariables ?? (await this.resolveHostVariables(
       input,
       session.agent,
-      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
-      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+      this.hostScopeKeys(input, session),
       session.revisionContextVariableEnablements,
     ));
     const requestFacts = this.resolveVisitorRequestFacts(

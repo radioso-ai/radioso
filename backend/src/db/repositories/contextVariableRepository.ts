@@ -863,9 +863,9 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 }
 
 /**
- * Erases the values a host pushed about a person: `session` values keyed by a chat session only the
- * erased conversations carry, and `customer` values keyed by an erased visitor's verified customer
- * id. A session another conversation of the workspace still carries keeps its values. Agent and
+ * Erases the values stored about a person: `conversation` values of the erased conversations,
+ * `session` values keyed by a chat session only the erased conversations carry, and `customer`
+ * values keyed by an erased visitor's verified customer id. A session another conversation of the workspace still carries keeps its values. Agent and
  * workspace values describe the operator's own configuration and stay. A workspace's values cascade
  * with its variables, so the workspace scope has nothing to add.
  */
@@ -879,8 +879,14 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
       return 0;
     }
     const { workspaceId, conversationIds } = scope;
+    const conversationValues = await this.db
+      .deleteFrom("context_variable_values")
+      .where("workspace_id", "=", workspaceId)
+      .where("scope_type", "=", "conversation")
+      .where((eb) => anyOf(eb.ref("scope_id"), conversationIds, "text[]"))
+      .executeTakeFirst();
     // Runs before the conversations are deleted, while their chat session ids can still be read.
-    const result = await this.db
+    const sessionValues = await this.db
       .deleteFrom("context_variable_values")
       .where("workspace_id", "=", workspaceId)
       .where("scope_type", "=", "session")
@@ -897,7 +903,7 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
         .whereRef("other.anonymous_session_id", "=", "context_variable_values.scope_id")
         .where((inner) => inner.not(anyOf(inner.ref("other.id"), conversationIds, "uuid[]"))))))
       .executeTakeFirst();
-    return Number(result.numDeletedRows);
+    return Number(conversationValues.numDeletedRows) + Number(sessionValues.numDeletedRows);
   }
 
   async eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number> {
@@ -912,8 +918,9 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
 }
 
 /**
- * The export's `context_values` section: what the host or a skill stored about the subject, in the
- * chat sessions of their conversations and under their verified customer ids.
+ * The export's `context_values` section: what was stored about the subject, on their conversations,
+ * in the chat sessions of those conversations and under their verified customer ids, with the kind
+ * of writer that last set each value.
  */
 export class ContextVariableValueExporter implements DataSubjectDataExporter {
   readonly section = "context_values";
@@ -926,9 +933,13 @@ export class ContextVariableValueExporter implements DataSubjectDataExporter {
     const rows = await this.db
       .selectFrom("context_variable_values as v")
       .innerJoin("context_variables as cv", "cv.id", "v.variable_id")
-      .select(["cv.name", "v.scope_type", "v.data", "v.last_modified"])
+      .select(["cv.name", "v.scope_type", "v.data", "v.last_modified", "v.written_by_kind"])
       .where("v.workspace_id", "=", workspaceId)
       .where((eb) => eb.or([
+        eb.and([
+          eb("v.scope_type", "=", "conversation"),
+          anyOf(eb.ref("v.scope_id"), conversationIds, "text[]"),
+        ]),
         eb.and([
           eb("v.scope_type", "=", "session"),
           eb("v.scope_id", "in", eb
@@ -953,6 +964,7 @@ export class ContextVariableValueExporter implements DataSubjectDataExporter {
       scope: row.scope_type,
       value: exportJson(row.data),
       lastModified: exportTimestamp(row.last_modified),
+      writtenBy: row.written_by_kind,
     }));
   }
 }

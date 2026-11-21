@@ -179,6 +179,23 @@ const coverage: Record<string, ErasureCoverage> = {
 };
 
 /**
+ * `context_variable_values.scope_id` names a conversation, a chat session or a person through a
+ * generic column the name pattern above cannot see; its `scope_type` says which. Every scope type the
+ * table accepts needs an eraser or a reason, so a new one fails here until the eraser covers it.
+ */
+const contextValueScopeCoverage: Record<string, ErasureCoverage> = {
+  conversation: { kind: "eraser", owner: "context-variables", reason: "Keyed by the conversation's id; erased with the conversation." },
+  session: {
+    kind: "eraser",
+    owner: "context-variables",
+    reason: "Keyed by a chat session; erased once no remaining conversation of the workspace carries the session.",
+  },
+  customer: { kind: "eraser", owner: "context-variables", reason: "Keyed by a verified customer id; erased with that customer." },
+  agent: { kind: "not_a_conversation", reason: "The operator's own configuration for an agent." },
+  workspace: { kind: "not_a_conversation", reason: "The operator's own configuration for the workspace; cascades with its variables." },
+};
+
+/**
  * Keys that would hold back a conversation's cascade (`ON DELETE RESTRICT` or `NO ACTION` on a row
  * the cascade reaches), each with the eraser that clears the holding rows first. An unlisted one makes
  * every erasure of an affected conversation fail.
@@ -257,6 +274,17 @@ describeIntegration("conversation erasure schema coverage", () => {
   it("gives every conversation, session, visitor and message reference a cascade, an eraser, or a reason", () => {
     const uncovered = [...columns.keys()].filter((key) => !cascades(key) && !coverage[key]).sort();
     expect(uncovered).toEqual([]);
+  });
+
+  it("gives every scope a context value can be kept under an eraser or a reason", async () => {
+    const [constraint] = await database.query<{ definition: string }>(
+      "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'context_variable_values_scope_type_check'",
+    );
+    const scopeTypes = [...(constraint?.definition ?? "").matchAll(/'([a-z_]+)'::text/gu)].map((match) => match[1]);
+    expect(scopeTypes).toContain("conversation");
+    expect(scopeTypes.filter((scopeType) => !contextValueScopeCoverage[scopeType]).sort()).toEqual([]);
+    const owners = registeredOwners();
+    expect(Object.values(contextValueScopeCoverage).filter((entry) => entry.kind === "eraser" && !owners.has(entry.owner))).toEqual([]);
   });
 
   it("names only registered eraser owners", () => {

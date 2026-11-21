@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
+import {
+  ContextVariableRepository,
+  ContextVariableValueEraser,
+  ContextVariableValueExporter,
+} from "../../src/db/repositories/contextVariableRepository.js";
 import { contextScopeLadder, type ContextVariableOption } from "../../src/modules/context-variables/domain.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -130,5 +134,22 @@ describeIntegration("typed attributes (Postgres)", () => {
 
     const resolved = await repository.resolveForAgent(workspaceId, agentId, scopes);
     expect(resolved.find((variable) => variable.name === topic.name)?.value).toBe("billing");
+  });
+
+  it("erases a conversation's values with it and exports them with their writer", async () => {
+    const topic = await createTopic();
+    const erased = await createConversation();
+    const kept = await createConversation();
+    await repository.upsertValue(topic.id, { type: "conversation", id: erased }, "billing", api);
+    await repository.upsertValue(topic.id, { type: "conversation", id: kept }, "shipping", api);
+
+    const exported = await new ContextVariableValueExporter(database.kysely).export({
+      workspaceId, conversationIds: [erased], visitorIds: [], verifiedCustomerIds: [],
+    });
+    expect(exported).toEqual([expect.objectContaining({ variable: topic.name, scope: "conversation", value: "billing", writtenBy: "api" })]);
+
+    await new ContextVariableValueEraser(database.kysely).erase({ kind: "conversations", workspaceId, conversationIds: [erased] });
+    expect(await repository.readValue(topic.id, { type: "conversation", id: erased })).toBeNull();
+    expect(await repository.readValue(topic.id, { type: "conversation", id: kept })).toMatchObject({ data: "shipping" });
   });
 });

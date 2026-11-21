@@ -564,6 +564,27 @@ roles (`key`, `title`, `subtitle`, `image`, `link`) shows as cards in a later
 chat step. A step branches on the outcome: `completed`, `not_found`,
 `rejected`, `missing_input`, `invalid_input`, `unverified` or `failed`.
 
+Every step the routine reaches on the turn the request runs, a chat step or an
+ending, reads what it returned as typed lines, so a finish that says "Tell the
+visitor the customer's first name and city that the lookup returned" gives
+them. That reply says nothing was found, or that the request did not go
+through, only when the outcome says so, such as `not_found` or `failed`; a
+booking answered with `201 {}` or `204` reads as booked, with no value to
+quote. A routine keeps no skill result from one turn to the next: a step on a
+later turn reads only the `@` values the skill step set. Set each output a later
+step needs and write the value into that step, for example "Tell them order
+@order_number is @status." A skill without typed outputs, such as an MCP tool,
+reaches later steps through the `@` values it sets, and an ending hears only
+its outcome.
+
+Validation reports an `@` value a skill step sets written into a step or ending
+that some way through the routine reaches before that skill step runs
+(`referenced_variable_not_guaranteed`), since the text would show nothing there.
+A list output reads as nothing a visitor can follow in step text, so `@` in step
+text leaves list values out, and validation reports one written there
+(`referenced_list_variable`): show the list as cards, or check it in a **Rule**
+row.
+
 A skill name with no matching capability on the agent appears as **unknown
 skill**. Choose the intended skill, then validate the routine.
 
@@ -810,6 +831,12 @@ to normal answering when it finishes.
 
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before you publish the agent.
+
+Cards a step shows work in the test as they do for a visitor: **Select** fills
+the step's `item` value, and a typed answer such as "the second one" or a
+card's title resolves to the same card. A comparison sends a tap to both
+versions; a version whose own reply never showed that card reads it as the
+card's title, typed.
 
 A private test keeps skills with outward effects off by default. A tool step
 that calls an external MCP tool, a webhook, or a customer email or Slack skill

@@ -16,6 +16,8 @@ import type { WorkbenchReplayInput, WorkbenchReplayRunner } from "./workbenchRep
 import type { ChatBootstrapService } from "./chatBootstrapService.js";
 import type { ToolImagePreviewRecorder } from "../../toolImages/contracts/index.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
+import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
+import { readItemSelection, type SelectedItem } from "./replyBlocks/itemSelection.js";
 
 type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
@@ -46,6 +48,10 @@ const TEST_CHAT_CLIENT_CAPABILITIES: AssistantClientContextCapabilities = {
   "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"] } },
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A transcript entry as the chat reads a stored message: an answer keeps what its message stored beside its text, its cards among it. */
 const historyMessage = (entry: TestExecutionHistoryEntry, conversationId: string, workspaceId: string): MessageRecord => ({
   id: entry.messageId ?? `${entry.turnId}:${entry.role}:${entry.attemptId}`,
   conversationId,
@@ -53,7 +59,19 @@ const historyMessage = (entry: TestExecutionHistoryEntry, conversationId: string
   role: entry.role,
   content: entry.content,
   createdAt: entry.createdAt,
+  ...(entry.role === "assistant" && isRecord(entry.messageMetadata) ? { metadata: entry.messageMetadata } : {}),
 });
+
+/**
+ * The card a Test Chat message picks, read from the answer in this side's transcript that showed
+ * it, exactly as live chat reads a pick from the stored reply. Null when this side holds no such
+ * card, such as the other version's in a comparison: the side then runs the message as the card's
+ * words, which name the card wherever this side showed the same one.
+ */
+const pickedItem = (history: readonly MessageRecord[], conversationId: string, selection: ItemSelection): { item: SelectedItem; text: string } | null => {
+  const reading = readItemSelection(history.find((message) => message.id === selection.messageId) ?? null, conversationId, selection);
+  return reading.ok ? { item: reading.item, text: reading.text } : null;
+};
 
 const sampleVariables = (values: readonly FrozenTestValue[], revision: AgentRevision): ResolvedVariableInput[] => values.map((value) => {
   const enablement = revision.snapshot.contextVariableEnablements.find(
@@ -123,6 +141,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       turnTrace: replayed.turnTrace,
       continuation: replayed.continuation,
       ...(replayed.blocks?.length ? { blocks: replayed.blocks } : {}),
+      ...(replayed.messageReplyBlocks ? { messageMetadata: replayed.messageReplyBlocks } : {}),
     };
   }
 
@@ -142,6 +161,8 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     if (!revision) throw notFound("Agent revision is unavailable for test execution");
 
     const continuation = importTestExecutionReplayContinuation(input.continuation, input.conversationId);
+    const history = input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId));
+    const picked = input.itemSelection ? pickedItem(history, input.conversationId, input.itemSelection) : null;
     return {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
@@ -151,12 +172,13 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       userMessageId: input.userMessageId,
       candidateRevision: revision,
       baselineAgentConfig: agentConfig,
-      query: input.message,
+      query: picked?.text ?? input.message,
+      ...(picked ? { itemSelection: picked.item } : {}),
       clientContextCapabilities: TEST_CHAT_CLIENT_CAPABILITIES,
       // The operator chatting in Test Chat is the visitor of this turn, so their browser's zone
       // decides today the way a visitor's does, then the workspace's.
       visitorTimeZone: input.userTimeZone,
-      history: input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId)),
+      history,
       routineStartState: continuation.routineState
         ? (() => {
             const { sessionId: _sessionId, ...state } = continuation.routineState;

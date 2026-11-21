@@ -9,6 +9,63 @@ import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export { routineValidationCodes, type RoutineValidationCode };
 
+type AssignmentEntry = { stepId: string; outputKey: string; target: string };
+
+/**
+ * Whether a skill step's output is a list, by the step and output name, from the skill catalog.
+ * Without a catalog nothing is known to be a list, as on the compile path.
+ */
+const listOutputReader = (
+  steps: ReadonlyArray<RoutineDefinition["steps"][number]>,
+  skillDescriptors: ReadonlyMap<string, SkillAuthoringDescriptor> | undefined,
+): ((entry: AssignmentEntry) => boolean) => {
+  const toolRefByStep = new Map(steps.map((step) => [step.stableStepId, step.toolRef]));
+  return (entry) => {
+    const toolRef = toolRefByStep.get(entry.stepId);
+    const output = toolRef ? skillDescriptors?.get(toolRef)?.outputs.find((candidate) => candidate.name === entry.outputKey) : undefined;
+    return output?.type === "list";
+  };
+};
+
+/**
+ * A step or ending that writes `{{slot.<name>}}` for a variable only a skill step's outputs set
+ * reads it as text once that step has run. Like a required input bound to a variable not yet set
+ * (`unsatisfiable_required_input`), a reference no way to the node guarantees renders empty; a
+ * list renders as nothing a visitor can read, and is shown as cards or checked in a rule instead.
+ */
+const assignedVariableReferenceDiagnostics = (
+  nodes: ReadonlyArray<{ stableStepId: string; instruction: string | null }>,
+  assignments: readonly AssignmentEntry[],
+  context: {
+    slotKeys: ReadonlySet<string>;
+    guaranteedVariablesOnEntry: ReadonlyMap<string, ReadonlySet<string>>;
+    listOutputsOf: (entry: AssignmentEntry) => boolean;
+  },
+): RoutineValidationDiagnostic[] => {
+  const assignedOnly = new Set(assignments.map((entry) => entry.target).filter((name) => !context.slotKeys.has(name)));
+  const lists = new Set(assignments.filter(context.listOutputsOf).map((entry) => entry.target));
+  return nodes.flatMap((node) => {
+    const location = `step:${node.stableStepId}.instruction`;
+    const guaranteed = context.guaranteedVariablesOnEntry.get(node.stableStepId) ?? new Set<string>();
+    return [...new Set(collectSlotReferences(node.instruction))].filter((key) => assignedOnly.has(key)).flatMap((key) => [
+      ...(lists.has(key)
+        ? [{
+            code: "referenced_list_variable" as const,
+            location,
+            message: `referenced list variable: "${node.stableStepId}" writes "${key}", which a skill step sets from a list, into its text; show it as cards or check it in a rule.`,
+          }]
+        : []),
+      ...(guaranteed.has(key)
+        ? []
+        : [{
+            code: "referenced_variable_not_guaranteed" as const,
+            location,
+            message: `referenced variable not guaranteed: "${node.stableStepId}" writes "${key}" into its text, but not every way to it runs the skill step that sets it first.`,
+          }]),
+    ]);
+  });
+};
+
 const formatKnownStepList = (stepIds: ReadonlySet<string>): string => {
   const ids = [...stepIds].slice(0, 10);
   return ids.length > 0 ? ids.join(", ") : "none";
@@ -715,8 +772,10 @@ export const validateRoutineDefinition = (
     }
   }
 
+  // A step or ending that writes `{{slot.<name>}}` reads a declared slot or a variable a tool
+  // step's outputs set, by the same name-level rule a field guard and an input binding follow.
   for (const key of referencedSlotKeys) {
-    if (!slotKeys.has(key)) {
+    if (!knownVariableNames.has(key)) {
       diagnostics.push({
         code: "referenced_undeclared_slot",
         location: `slot:${key}`,
@@ -724,6 +783,11 @@ export const validateRoutineDefinition = (
       });
     }
   }
+  diagnostics.push(...assignedVariableReferenceDiagnostics(
+    [...steps, ...terminals],
+    outputAssignmentEntries,
+    { slotKeys, guaranteedVariablesOnEntry, listOutputsOf: listOutputReader(steps, context.skillDescriptors) },
+  ));
   for (const slot of definition.slots) {
     if (!referencedSlotKeys.has(slot.key)) {
       diagnostics.push({

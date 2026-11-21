@@ -37,6 +37,7 @@ function TreeNode({ label, value, segments, depth, pickedPaths, onPick }: {
   const isAddressable = isAddressablePath(segments)
   const canPick = isPickable && isAddressable
   const isPicked = pickedPaths.has(path)
+  const description = describeNode(value)
 
   return (
     <li>
@@ -52,8 +53,8 @@ function TreeNode({ label, value, segments, depth, pickedPaths, onPick }: {
             <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
           </button>
         ) : <span className="w-5" />}
-        <span className="font-mono text-xs text-foreground">{label}</span>
-        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{describeNode(value)}</span>
+        <span className="shrink-0 font-mono text-xs text-foreground">{label}</span>
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={description}>{description}</span>
         {canPick ? (
           <Button
             type="button"
@@ -97,7 +98,7 @@ export function ApiResponseTree({ body, pickedPaths, onPick }: {
   onPick: (segments: readonly JsonPathSegment[], value: unknown) => void
 }) {
   return (
-    <ul aria-label="Response body" className="max-h-72 overflow-auto rounded-md border border-border bg-muted/20 p-2">
+    <ul aria-label="Response body" className="max-h-72 min-w-0 overflow-auto rounded-md border border-border bg-muted/20 p-2">
       <TreeNode label="response" value={body} segments={[]} depth={0} pickedPaths={pickedPaths} onPick={onPick} />
     </ul>
   )

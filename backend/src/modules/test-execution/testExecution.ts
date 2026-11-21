@@ -12,7 +12,7 @@ import type { AgentRevision } from "../agents/public.js";
 import { revisionTakesPhotos, type VisitorImageRevisionSwitch } from "../visitorImages/contracts/revisionSwitch.js";
 import type { VisitorImageClaim, VisitorImageOwner } from "../visitorImages/contracts/turnInput.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
-import type { MessageImageInput } from "../../shared/domain/chatInputMetadata.js";
+import type { ItemSelection, MessageImageInput } from "../../shared/domain/chatInputMetadata.js";
 import { visibleMessageText } from "../../shared/domain/visibleMessageText.js";
 import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
@@ -58,6 +58,8 @@ export interface TestExecutionHistoryEntry {
   /** The sources an assistant answer cites and where its text cites them; absent when it cites none. */
   citations?: readonly ChatCitation[];
   answerSegments?: readonly AnswerSegment[];
+  /** The runner's own record of an assistant message ({@link TestExecutionRunnerResult.messageMetadata}); never presented. */
+  messageMetadata?: unknown;
   attemptId: string;
   createdAt: Date;
   /** The operator spoke this turn on a call, and heard its answer; absent on a typed turn. */
@@ -282,6 +284,8 @@ export interface TrustedTestExecutionRunnerPort {
     candidateRevision: AgentRevision;
     conversationId: string;
     message: string;
+    /** The card the message picks, named by the assistant message in `history` that showed it; the runner reads the card from that message. */
+    itemSelection?: ItemSelection;
     /** The id the side's transcript stores `message` under; the turn runs the message under it. */
     userMessageId?: string;
     history: readonly TestExecutionHistoryEntry[];
@@ -307,6 +311,13 @@ export interface TestExecutionRunnerResult {
   answerSegments?: readonly AnswerSegment[];
   /** The reply blocks the turn presents beside its answer, as Test Chat renders them. */
   blocks?: readonly ReplyBlock[];
+  /**
+   * Opaque, runner-owned: what the runner's chat keeps on the answer's message beside its text,
+   * such as its cards with where they came from. The transcript keeps it on the answer's entry and
+   * hands it back with the history on the side's later turns, so a typed answer or a pick reads
+   * the cards a reply showed. Never presented.
+   */
+  messageMetadata?: unknown;
   /** The runner's presentation trace stays with the private execution evidence. */
   turnTrace?: unknown;
   /** Opaque, versioned runtime continuation owned by the runner adapter. */
@@ -841,7 +852,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}), history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, ...(identity.selection ? { itemSelection: identity.selection } : {}), ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}), history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
       let streamed = "";
       let step = await turn.next();
       while (!step.done) {
@@ -928,5 +939,7 @@ interface TestExecutionMessageInput {
   spoken?: true;
   /** Photos uploaded for this message, in the order they were attached, and who uploaded them. */
   photos?: { ids: readonly string[]; owner: VisitorImageOwner };
+  /** The card this message picks; every side runs it, and a side that showed the card takes it as the pick. */
+  selection?: ItemSelection;
 }
-interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message" | "photos"> { sideId: string; }
+interface TestExecutionRetryInput extends Omit<TestExecutionMessageInput, "message" | "photos" | "selection"> { sideId: string; }

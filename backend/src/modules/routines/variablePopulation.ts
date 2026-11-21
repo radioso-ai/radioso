@@ -38,6 +38,11 @@ const setIntersection = (sets: ReadonlyArray<ReadonlySet<string>>, universe: Rea
 const setsEqual = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean =>
   left.size === right.size && [...left].every((value) => right.has(value));
 
+/**
+ * The variables guaranteed set on entry to each step and each ending: what every way there sets
+ * first. An ending holds what every step that reaches it holds on leaving. A node nothing reaches
+ * holds every variable, so it is never reported for one.
+ */
 export const analyzeGuaranteedVariablesOnEntry = (
   definition: RoutineDefinition,
 ): ReadonlyMap<string, ReadonlySet<string>> => {
@@ -91,6 +96,15 @@ export const analyzeGuaranteedVariablesOnEntry = (
         changed = true;
       }
     }
+  }
+
+  const exitOf = (stepId: string): Set<string> =>
+    setUnion(onEntry.get(stepId) ?? new Set(), producersByStep.get(stepId) ?? new Set());
+  for (const terminal of definition.terminals) {
+    const predecessors = definition.transitions
+      .filter((transition) => transition.toRef === terminal.stableStepId && stepIds.has(transition.fromStep))
+      .map((transition) => exitOf(transition.fromStep));
+    onEntry.set(terminal.stableStepId, setIntersection(predecessors, universe));
   }
 
   return onEntry;

@@ -187,8 +187,10 @@ const runner = (cards: boolean, content: string) => new DefaultRoutineRunner(
     stuckHandoffPromptTemplate: loadPromptTemplate("chat/routine-step-stuck-handoff.md"),
     stepProgressPromptTemplate: loadPromptTemplate("chat/routine-step-progress.md"),
     stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
+    stepToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-tool-results.md"),
     contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
     stepSourcesPromptTemplate: loadPromptTemplate("chat/routine-step-sources.md"),
+    stepSourcesToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-sources-tool-results.md"),
     stepSourcesNonePromptTemplate: loadPromptTemplate("chat/routine-step-sources-none.md"),
     steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),
     groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({

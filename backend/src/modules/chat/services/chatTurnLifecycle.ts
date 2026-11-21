@@ -97,11 +97,8 @@ import {
 } from "../../../shared/domain/directiveAdherence.js";
 import type { ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
-import {
-  reviewedTurnDraft,
-  reviewTurnFacts,
-  type ReviewTurnCorrelation,
-} from "./reviewDraft.js";
+import { reviewedTurnDraft, reviewTurnFacts, type ReviewTurnCorrelation } from "./reviewDraft.js";
+import { messageReplyBlocks } from "./replyBlocks/messageReplyBlocks.js";
 import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
 import {
   freezePageReadOutcome,
@@ -429,7 +426,7 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
-      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}), ...(input.presentation.listedItems ? { listedItems: [input.presentation.listedItems] } : {}),
+      ...messageReplyBlocks(input.presentation),
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),

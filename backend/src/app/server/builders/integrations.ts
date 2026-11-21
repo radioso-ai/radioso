@@ -300,7 +300,6 @@ export const buildIntegrationServices = (input: {
     db: input.infrastructure.database.kysely,
     env: input.env,
     auditService: input.infrastructure.auditService,
-    assertPublicUrl: input.assertPublicUrl,
   });
   const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
     mcp_tool: async ({ workspaceId }) =>

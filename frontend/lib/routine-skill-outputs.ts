@@ -2,21 +2,12 @@ import type { SkillAuthoringOutput } from './api-routine-skill-catalog'
 import type { RoutineFieldGuardOp, RoutineSlotType } from './api-types'
 import { fieldGuardOpsForType } from './routine-prose'
 
-type VariableRef = { id: string; type: RoutineSlotType }
-
 /**
  * The routine variable type a skill output is stored as, which is what decides the checks a guard
  * offers on it. A list has no variable type of its own, so it is kept as text.
  */
 export const outputVariableType = (output: SkillAuthoringOutput): RoutineSlotType =>
   output.type === 'list' ? 'text' : output.type
-
-/** The existing variables an output can be stored in without changing what a guard on them offers. */
-export const variablesFittingOutput = (
-  variables: readonly VariableRef[],
-  output: SkillAuthoringOutput | undefined,
-): VariableRef[] =>
-  output ? variables.filter((variable) => variable.type === outputVariableType(output)) : [...variables]
 
 /** The next declared output not yet assigned to a variable, for the Output button. */
 export const nextUnassignedOutput = (
@@ -32,6 +23,39 @@ type AssigningStep = {
 }
 
 /**
+ * A variable a skill step sets from one of its outputs. The assignment is its whole declaration:
+ * it is never a field the routine collects, so it is not a slot, and a slot of the same name is a
+ * collision. Its type is the catalog's type for that output; an output the catalog does not
+ * declare is text. `setBy` is the skill of the first step that sets it.
+ */
+type AssignedVariable = { id: string; type: RoutineSlotType; holdsList: boolean; setBy: string }
+
+const stepSkillRef = (step: AssigningStep): string =>
+  (step.kind === 'tool' ? step.toolRef : step.kind === 'action' ? step.actionType : '') ?? ''
+
+/** Every variable the steps set from skill outputs, once each, in the order the steps set them. */
+export const assignedVariables = (
+  steps: readonly AssigningStep[],
+  outputsOfSkill: (skillRef: string) => readonly SkillAuthoringOutput[] | undefined,
+): AssignedVariable[] => {
+  const byId = new Map<string, AssignedVariable>()
+  for (const step of steps) {
+    const ref = stepSkillRef(step)
+    if (!ref) continue
+    const outputs = outputsOfSkill(ref)
+    for (const [outputName, variableId] of Object.entries(step.outputAssignments ?? {})) {
+      if (!variableId) continue
+      const output = outputs?.find((candidate) => candidate.name === outputName)
+      const holdsList = output?.type === 'list'
+      const known = byId.get(variableId)
+      if (known) known.holdsList ||= holdsList
+      else byId.set(variableId, { id: variableId, type: output ? outputVariableType(output) : 'text', holdsList, setBy: ref })
+    }
+  }
+  return [...byId.values()]
+}
+
+/**
  * The variables a step assigns from a list output. A list has no variable type of its own, so the
  * editor knows a variable holds one only through the step that sets it and the catalog's type for
  * that output.
@@ -39,17 +63,22 @@ type AssigningStep = {
 export const listBackedVariableIds = (
   steps: readonly AssigningStep[],
   outputsOfSkill: (skillRef: string) => readonly SkillAuthoringOutput[] | undefined,
-): Set<string> => {
-  const ids = new Set<string>()
-  for (const step of steps) {
-    const ref = (step.kind === 'tool' ? step.toolRef : step.kind === 'action' ? step.actionType : '') ?? ''
-    const outputs = ref ? outputsOfSkill(ref) : undefined
-    if (!outputs) continue
-    for (const [outputName, variableId] of Object.entries(step.outputAssignments ?? {})) {
-      if (variableId && outputs.find((output) => output.name === outputName)?.type === 'list') ids.add(variableId)
-    }
-  }
-  return ids
+): Set<string> => new Set(assignedVariables(steps, outputsOfSkill).filter((variable) => variable.holdsList).map((variable) => variable.id))
+
+/**
+ * The values an outcome rule on a skill step can match, once each. A step reports the outcome's
+ * name as its status, so the name is what the rule compares; the catalog's `status` is only the
+ * outcome's broad class and repeats across names (an API request's `not_found` is `completed`).
+ */
+export const outcomeRuleChoices = (
+  outcomes: ReadonlyArray<{ name: string; displayName: string }>,
+): Array<{ value: string; label: string }> => {
+  const seen = new Set<string>()
+  return outcomes.flatMap((outcome) => {
+    if (seen.has(outcome.name)) return []
+    seen.add(outcome.name)
+    return [{ value: outcome.name, label: outcome.displayName }]
+  })
 }
 
 const LIST_GUARD_OPS: readonly RoutineFieldGuardOp[] = ['is_present', 'is_absent']

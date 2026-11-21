@@ -48,6 +48,20 @@ describe("collectedSlotsByStep", () => {
     expect(collected.get("ask_order")).toEqual(["order_number"]);
   });
 
+  it("never collects a variable a tool step's outputs set: a step that names it only reads it", () => {
+    const lookup: SlotCollectionStep = {
+      ...step("lookup", 1, "Look up the customer.", "tool"),
+      metadata: { outputAssignments: { first_name: "first_name", city: "home_city" } },
+    };
+    const collected = collectedSlotsByStep([
+      step("ask_number", 0, "Customer number? {{slot.customer_id}}"),
+      lookup,
+      step("confirm", 2, "Is {{slot.first_name}} from {{slot.home_city}} right? {{slot.confirmed}}"),
+    ]);
+    expect(collected.get("ask_number")).toEqual(["customer_id"]);
+    expect(collected.get("confirm")).toEqual(["confirmed"]);
+  });
+
   it("omits steps that collect nothing", () => {
     const collected = collectedSlotsByStep([step("say_hi", 0, "Hello there")]);
     expect(collected.size).toBe(0);

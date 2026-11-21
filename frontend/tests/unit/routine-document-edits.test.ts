@@ -136,6 +136,104 @@ describe('routine document edits', () => {
         'llm:step_1',
       ])
     })
+
+    it('appends a step after the last one, taking over its ending rather than an earlier branch’s', () => {
+      // A product finder: a search whose "nothing found" rule finishes early, then a step that
+      // shows the results and finishes with a confirmation.
+      const result = routineToBlockDoc({
+        name: 'Product finder',
+        activation: { triggerDescription: 'The visitor looks for a product', priority: 0 },
+        slots: [{ stableSlotId: 'query', key: 'query', type: 'text', required: true, description: null, ordinal: 0 }],
+        steps: [
+          { stableStepId: 'step_1', kind: 'chat', instruction: 'Ask what they want {{slot.query}}.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+          { stableStepId: 'step_2', kind: 'tool', instruction: 'Search.', toolRef: 'search_products', actionType: null, ordinal: 1, metadata: { outputAssignments: { products: 'found_products' } } },
+          { stableStepId: 'step_3', kind: 'chat', instruction: 'Show the products.', toolRef: null, actionType: null, ordinal: 2, metadata: {} },
+        ],
+        transitions: [
+          { fromStep: 'step_1', toRef: 'step_2', guardKind: 'default', guardText: null, ordinal: 0 },
+          { fromStep: 'step_2', toRef: 'no_products', guardKind: 'field', guardText: null, fieldRef: 'found_products', fieldOp: 'is_absent', ordinal: 1 },
+          { fromStep: 'step_2', toRef: 'step_3', guardKind: 'default', guardText: null, ordinal: 2 },
+          { fromStep: 'step_3', toRef: 'confirm', guardKind: 'default', guardText: null, ordinal: 3 },
+        ],
+        terminals: [
+          { stableStepId: 'no_products', kind: 'complete', instruction: 'Suggest a different search.', ordinal: 0 },
+          { stableStepId: 'confirm', kind: 'complete', instruction: 'Confirm completion.', ordinal: 1 },
+        ],
+      })
+      if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+
+      const appended = addStep(result.doc, 'chat')
+
+      expect(transitionTargets(appended)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_3:default',
+        'step_3->step_4:default',
+        'step_4->confirm:default',
+      ])
+      expect(draftFromBlockDoc(appended).terminals.map((terminal) => terminal.stableStepId)).toEqual(['no_products', 'confirm'])
+    })
+
+    // A search whose "nothing found" rule finishes early, then two steps, then an authored finish.
+    const finder = () => {
+      const result = routineToBlockDoc({
+        name: 'Product finder',
+        activation: { triggerDescription: 'The visitor looks for a product', priority: 0 },
+        slots: [{ stableSlotId: 'query', key: 'query', type: 'text', required: true, description: null, ordinal: 0 }],
+        steps: [
+          { stableStepId: 'step_1', kind: 'chat', instruction: 'Ask what they want {{slot.query}}.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+          { stableStepId: 'step_2', kind: 'tool', instruction: 'Search.', toolRef: 'search_products', actionType: null, ordinal: 1, metadata: { outputAssignments: { products: 'found_products' } } },
+          { stableStepId: 'step_3', kind: 'chat', instruction: 'Show the products.', toolRef: null, actionType: null, ordinal: 2, metadata: {} },
+          { stableStepId: 'step_4', kind: 'chat', instruction: 'Ask which one they like.', toolRef: null, actionType: null, ordinal: 3, metadata: {} },
+        ],
+        transitions: [
+          { fromStep: 'step_1', toRef: 'step_2', guardKind: 'default', guardText: null, ordinal: 0 },
+          { fromStep: 'step_2', toRef: 'no_products', guardKind: 'field', guardText: null, fieldRef: 'found_products', fieldOp: 'is_absent', ordinal: 1 },
+          { fromStep: 'step_2', toRef: 'step_3', guardKind: 'default', guardText: null, ordinal: 2 },
+          { fromStep: 'step_3', toRef: 'step_4', guardKind: 'default', guardText: null, ordinal: 3 },
+          { fromStep: 'step_4', toRef: 'confirm', guardKind: 'default', guardText: null, ordinal: 4 },
+        ],
+        terminals: [
+          { stableStepId: 'no_products', kind: 'complete', instruction: 'Suggest a different search.', ordinal: 0 },
+          { stableStepId: 'confirm', kind: 'handoff', instruction: 'Tell them a specialist will follow up on the product.', ordinal: 1 },
+        ],
+      })
+      if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+      return result.doc
+    }
+
+    it('removes the last step before a finish, the step before it continuing to that same finish', () => {
+      const removed = removeStep(finder(), 'step_4')
+
+      expect(transitionTargets(removed)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_3:default',
+        'step_3->confirm:default',
+      ])
+      expect(draftFromBlockDoc(removed).terminals).toEqual(draftFromBlockDoc(finder()).terminals)
+    })
+
+    it('removes a middle step, the step before it continuing to the step after', () => {
+      const removed = removeStep(finder(), 'step_3')
+
+      expect(transitionTargets(removed)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_4:default',
+        'step_4->confirm:default',
+      ])
+      expect(draftFromBlockDoc(removed).terminals).toEqual(draftFromBlockDoc(finder()).terminals)
+    })
+
+    it('keeps the finish of a removed step nothing else reaches', () => {
+      const single = removeStep(removeStep(removeStep(finder(), 'step_4'), 'step_3'), 'step_2')
+      const removed = removeStep(single, 'step_1')
+
+      expect(draftFromBlockDoc(removed).terminals.map((terminal) => [terminal.stableStepId, terminal.kind, terminal.instruction])).toEqual(
+        expect.arrayContaining([['confirm', 'handoff', 'Tell them a specialist will follow up on the product.']]),
+      )
+    })
   })
 
   describe('renaming the names the compiler uses', () => {
@@ -343,6 +441,34 @@ describe('routine document edits', () => {
     expect(renamed.steps[0].inputBindings?.recipient).toEqual({ kind: 'variableRef', ref: 'customer_email' })
     expect(renamed.steps[0].branches[0].guard).toMatchObject({ slotKeys: ['customer_email'] })
     expect(slotReferences(renamed, 'customer_email')).toEqual(expect.arrayContaining(['instruction in ask_email', 'binding in ask_email', 'output in ask_email', 'guard in ask_email']))
+  })
+
+  it('lets a field that collides with a Sets variable of the same name go, keeping the row and what reads the name', () => {
+    // A draft from before Sets declared variables: the row also created a field of its name.
+    const tool = addStep(source(), 'tool')
+    const withLookup = updateBindings(tool, 'step_1', { outputAssignments: { first_name: 'first_name' } })
+    const withField = updateSlot(addSlot(withLookup), 'slot_1', { key: 'first_name' })
+    const reading = replaceInstruction(withField, 'ask_email', [
+      { kind: 'text', text: 'Greet ' },
+      { kind: 'slotReference', key: 'first_name', source: '{{slot.first_name}}' },
+    ])
+    const branched = addBranch(reading, 'step_1', 'field')
+    const fieldBranch = branched.steps[1].branches.length - 1
+    const damaged = updateBranchGuard(branched, 'step_1', fieldBranch, { fieldRef: 'first_name', fieldOp: 'is_present' })
+
+    expect(slotReferences(damaged, 'first_name')).toEqual(expect.arrayContaining(['instruction in ask_email', 'output in step_1', 'guard in step_1']))
+    expect(slotRemovalBlockers(damaged, 'first_name')).toEqual([])
+    const repaired = removeSlot(damaged, 'slot_1')
+    expect(repaired.information.map((slot) => slot.key)).toEqual(['email'])
+    expect(repaired.steps[1].outputAssignments).toEqual({ first_name: 'first_name' })
+  })
+
+  it('still keeps a field that only a field can be, such as one an ending notice names, when a Sets variable shares its name', () => {
+    const tool = addStep(source(), 'tool')
+    const withLookup = updateBindings(tool, 'step_1', { outputAssignments: { email: 'email' } })
+    const noticed = setEndingNotice(withLookup, 'complete', { subject: 'Request from {{slot.email}}', intro: null })
+
+    expect(slotRemovalBlockers(noticed, 'email')).toEqual(['notice in complete'])
   })
 
   it('keeps typed binding edits through the block-document round trip', () => {

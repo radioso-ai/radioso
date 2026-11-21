@@ -279,6 +279,18 @@ describe("TestExecutionService", () => {
     expect(runner.mock.calls[2]?.[0].userMessageId).toBe(failed.history.find((entry) => entry.role === "user")?.messageId);
   });
 
+  // #1763: each side reads the pick against its own transcript; a side that never showed the card runs the words.
+  it("hands a card pick to every side's runner turn", async () => {
+    const selection = { messageId: ids[8], blockId: "b1", itemKey: "122" };
+    const runner = vi.fn(async (_input: RunnerInput): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[8], continuation: null }));
+    const { service } = setup(runner);
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "Phone Two", selection, generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.map(([input]) => [input.message, input.itemSelection])).toEqual([["Phone Two", selection], ["Phone Two", selection]]);
+  });
+
   it("runs a turn without a time zone when the client sent none", async () => {
     const { service, runner } = setup();
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });

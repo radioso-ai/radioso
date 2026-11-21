@@ -91,13 +91,14 @@ export function routineBlockDocToFlowGraph(doc: RoutineBlockDoc): RoutineFlowGra
   const slotNames = new Map(doc.information.map((slot) => [slot.key, slot.key]))
 
   // Block-doc steps arrive in ordinal order, so the index is the ordinal the shared
-  // collection rule needs.
+  // collection rule needs. A skill step's Sets go along: a variable they set is never collected.
   const collected = collectedSlotsByStep(
     doc.steps.map((step, ordinal) => ({
       stableStepId: step.stableStepId,
       kind: step.kind,
       instruction: blockSegmentsToInstruction(step.instruction),
       ordinal,
+      metadata: { outputAssignments: step.outputAssignments },
     })),
   )
 

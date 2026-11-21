@@ -354,6 +354,27 @@ function SkillCatalogDetails({
           </p>
         ) : null}
       </div>
+
+      {(descriptor.outputs ?? []).length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase text-muted-foreground">Data outputs</p>
+          <div className="space-y-1.5">
+            {(descriptor.outputs ?? []).map((output) => (
+              <div key={output.name} className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-foreground">{output.name}</span>
+                  <span className="rounded border border-border px-1.5 py-0.5 text-muted-foreground">{output.type}</span>
+                  {output.required ? <span className="text-muted-foreground">required</span> : null}
+                </div>
+                {output.description ? <p className="mt-1 leading-5 text-muted-foreground">{output.description}</p> : null}
+                {output.fields && output.fields.length > 0 ? (
+                  <p className="mt-1 text-muted-foreground">{output.fields.map((field) => `${field.name} (${field.type})`).join(', ')}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

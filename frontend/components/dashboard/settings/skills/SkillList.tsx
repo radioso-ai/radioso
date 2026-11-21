@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Server } from 'lucide-react'
+import { Braces, Server } from 'lucide-react'
 
 import { ConfirmDeleteDialog, useDeleteConfirmation } from '@/components/dashboard/settings/confirm-delete-dialog'
 import { QuietList, QuietListGroup, QuietListRow } from '@/components/dashboard/settings/quiet-list'
@@ -25,6 +25,7 @@ import {
 } from '@/lib/api-skills'
 import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import { CapabilityPicker } from './CapabilityPicker'
+import { ApiConnectionsPanel } from './ApiConnectionsPanel'
 import { McpServersPanel } from './McpServersPanel'
 import { RecentNotifications } from './RecentNotifications'
 import { isRetrievalAnswerSkill, RetrievalAnswersSwitch, type RetrievalAnswersControl } from './RetrievalAnswersSwitch'
@@ -80,6 +81,7 @@ export function SkillList({
   const [formOpen, setFormOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [serversOpen, setServersOpen] = useState(false)
+  const [apiConnectionsOpen, setApiConnectionsOpen] = useState(false)
   const [builtInsOpen, setBuiltInsOpen] = useState(false)
   const [sheetSelection, setSheetSelection] = useState<SheetSelection | null>(null)
   const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null)
@@ -239,10 +241,16 @@ export function SkillList({
         <p className="text-sm text-muted-foreground">
           Skill changes apply live, outside Review &amp; Publish.
         </p>
-        <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setServersOpen(true)}>
-          <Server className="h-4 w-4" />
-          Manage MCP connections
-        </Button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setApiConnectionsOpen(true)}>
+            <Braces className="h-4 w-4" />
+            Manage API connections
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setServersOpen(true)}>
+            <Server className="h-4 w-4" />
+            Manage MCP connections
+          </Button>
+        </div>
       </div>
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
@@ -330,6 +338,11 @@ export function SkillList({
         onOpenChange={setPickerOpen}
         onSelect={selectCapability}
         onConnectionsChanged={() => void load()}
+      />
+      <ApiConnectionsPanel
+        open={apiConnectionsOpen}
+        onOpenChange={setApiConnectionsOpen}
+        onChanged={() => void load()}
       />
       <McpServersPanel
         agentId={agentId}

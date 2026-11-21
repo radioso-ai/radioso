@@ -15,18 +15,18 @@ Take a shop at `https://api.shop.example/v1`. A visitor asks where order A-10042
 <Steps>
 ### Add an API connection
 
-Open **Settings** and add an API connection. A connection holds the address and credential for one API, and every agent in the workspace can build skills on it.
+Open the agent's **Skills** list and choose **Manage API connections**, then **Add API connection**. A connection holds the address and credential for one API, and every agent in the workspace can build skills on it.
 
 - **Name:** `shop-api`. Unique in the workspace, ignoring case.
 - **Base URL:** `https://api.shop.example/v1`. It must be HTTPS and resolve to a public address, with no credentials, query or fragment in it.
 - **Authentication:** `none`, `bearer` (a token), `header` (a custom header name and value) or `basic` (`username:password`).
 - **Default headers:** optional, non-secret headers sent on every request.
 
-The credential is stored encrypted and never shown again. The connection lists only a mask: the last four characters behind asterisks. Leave the credential blank when you edit a connection to keep the stored one.
+The credential is stored encrypted and never shown again. The connection lists only a mask: the last four characters behind asterisks. Leave the credential blank when you edit a connection to keep the stored one. Enter it again when you change the base URL's host, the authentication or the header name.
 
 ### Check the request
 
-Before you build a skill, send a test request from the connection. Choose a method and a path, fill sample values, and send it. The test sends one real request exactly as a skill would, so a `POST` creates a real record. The result shows the HTTP status, the duration, the parsed response body (cut to 16 KB) and any required output the response left out. Use the body to pick your output paths.
+While you build the skill, use **Send test request** at the bottom of the form. Fill a sample value for each input and send it. The test sends one real request exactly as a skill would, so a `POST` creates a real record. The result shows the HTTP status, the duration, the parsed response body (cut to 16 KB) and any required output the response left out. Click a field in the body tree to add it as an output, or click an array to add a list output. The path and type are filled from the sample.
 
 ### Add the skill
 

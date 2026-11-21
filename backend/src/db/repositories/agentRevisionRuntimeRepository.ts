@@ -4,6 +4,7 @@ import {
   type AgentRevision,
   type AgentRevisionRuntimeReaderPort,
 } from "../../modules/agents/public.js";
+import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 const mapRevision = (row: {
@@ -77,5 +78,26 @@ export class AgentRevisionRuntimeRepository implements AgentRevisionRuntimeReade
       .where("id", "=", input.revisionId)
       .executeTakeFirst();
     return row ? mapRevision(row) : null;
+  }
+
+  /**
+   * The skills of the release a stored conversation is pinned to (`ConversationReleaseSkillsReader`):
+   * `null` when the conversation is pinned to none, `agentSkills` absent when that release predates
+   * skill tracking.
+   */
+  async findConversationRelease(input: { workspaceId: string; conversationId: string }): Promise<{ agentSkills?: ConversationSkillSet } | null> {
+    const row = await this.db
+      .selectFrom("conversations as c")
+      .innerJoin("agent_revisions as r", (join) =>
+        join.onRef("r.id", "=", "c.agent_revision_id")
+          .onRef("r.workspace_id", "=", "c.workspace_id"),
+      )
+      .select("r.snapshot as snapshot")
+      .where("c.workspace_id", "=", input.workspaceId)
+      .where("c.id", "=", input.conversationId)
+      .executeTakeFirst();
+    if (!row) return null;
+    const { agentSkills } = parseAgentRevisionSnapshot(row.snapshot);
+    return agentSkills ? { agentSkills } : {};
   }
 }

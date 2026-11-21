@@ -6679,6 +6679,16 @@ export interface components {
             greeting: components["schemas"]["AgentGreetingDraft"];
             validation: components["schemas"]["AgentGreetingValidation"];
         };
+        AgentRevisionSkill: {
+            name: string;
+            kind: string;
+            invocationMode: string;
+            enabled: boolean;
+            targetType: string | null;
+            targetId: string | null;
+            /** @description The skill has settings; they are not shown, since they can hold recipients, payloads and tool settings. */
+            configRedacted: boolean;
+        };
         AgentRevisionDetailResponse: {
             revision: components["schemas"]["AgentRevisionSummary"] & {
                 /** @enum {number} */
@@ -6729,6 +6739,18 @@ export interface components {
                         change: "added" | "removed" | "changed";
                         before?: unknown;
                         after?: unknown;
+                    }[];
+                    /** @description Skills this revision adds, removes or changes against its base release, by name. The default-answer skill is not listed: retrieval settings apply without publishing. */
+                    agentSkills: {
+                        /** Format: uuid */
+                        skillId: string;
+                        skillName: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        /** @description For a changed skill: whether its settings changed. They are not shown. */
+                        settingsChanged?: boolean;
+                        before?: components["schemas"]["AgentRevisionSkill"];
+                        after?: components["schemas"]["AgentRevisionSkill"];
                     }[];
                     greeting: {
                         before: components["schemas"]["AgentGreetingDraft"];

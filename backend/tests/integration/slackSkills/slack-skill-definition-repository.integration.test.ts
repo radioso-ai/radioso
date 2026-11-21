@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg, { type PoolClient } from "pg";
 
+import { writeAgentSkillIntoDraft } from "../../../src/modules/agentSkills/public.js";
 import { SlackSkillDefinitionRepository } from "../../../src/modules/slackSkills/repository.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
@@ -109,7 +110,7 @@ describeIfDatabase("slack skill definition repository (postgres, kysely)", () =>
       [installationId, slackConnectionId, workspaceId],
     );
 
-    repository = new SlackSkillDefinitionRepository(createKyselyDatabase(asPool(client)));
+    repository = new SlackSkillDefinitionRepository(createKyselyDatabase(asPool(client)), writeAgentSkillIntoDraft);
   });
 
   afterAll(async () => {

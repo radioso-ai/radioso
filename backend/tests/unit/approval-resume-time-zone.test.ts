@@ -1,6 +1,7 @@
 import type { ConversationEngine, TurnContext } from "@radioso/conversation-contract";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentRecord } from "../../src/modules/agents/domain.js";
 import type { PendingDecisionRecord } from "../../src/db/repositories/pendingDecisionRepository.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { ApprovalResumeTurn } from "../../src/modules/chat/services/approvalResumeTurn.js";
@@ -35,11 +36,18 @@ const setup = async (input: {
   /** Another conversation of the workspace, whose visitor message is newer than this one's. */
   otherConversationMetadata?: Record<string, unknown>;
   presentingSteps?: RoutinePresentingSteps;
+  /** The release the conversation is pinned to. */
+  agentRevisionId?: string;
+  agentRevisionRuntimeResolver?: ConstructorParameters<typeof ApprovalResumeTurn>[0]["agentRevisionRuntimeResolver"];
 }) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const agent = await new InMemoryAgentRepository().create(workspaceId, { name: "Support" });
-  const conversation = await conversationRepository.create({ workspaceId, agentId: agent.id });
+  const conversation = await conversationRepository.create({
+    workspaceId,
+    agentId: agent.id,
+    ...(input.agentRevisionId ? { agentRevisionId: input.agentRevisionId } : {}),
+  });
   await messageRepository.create({
     conversationId: conversation.id,
     workspaceId,
@@ -101,6 +109,7 @@ const setup = async (input: {
     conversationRepository,
     messageRepository,
     agentService: { resolve: async () => agent },
+    ...(input.agentRevisionRuntimeResolver ? { agentRevisionRuntimeResolver: input.agentRevisionRuntimeResolver } : {}),
     chatGateway: { answer: async () => "unused", streamAnswer: async function* () { yield "unused"; } },
     chatAnswerPresenter: {
       presentRoutineAnswer: (answer: string) => ({
@@ -155,7 +164,7 @@ const setup = async (input: {
     const engineTrace = (completeAssistantTurn.mock.calls[0] as unknown as [{ engineTrace: { stages: Stage[] } }])[0].engineTrace;
     return { engineTurn, engineTrace, readWorkspaceTimeZone };
   };
-  return { resume, forTurn, resumeAwaitingDecision, commit: commitSpy, completeAssistantTurn, decisionTransaction };
+  return { resume, forTurn, resumeAwaitingDecision, commit: commitSpy, completeAssistantTurn, decisionTransaction, agent };
 };
 
 // The decision's transaction must hold no transaction id while the routine calls the model, or it
@@ -194,6 +203,41 @@ describe("an approval resume's routine steps that show a skill step's results", 
 
     expect(render).toHaveBeenCalledOnce();
     expect(reply.answer).toBe("Two homes match.");
+  });
+});
+
+// #1793: an operator's approval resumes the routine on the conversation's release, so a skill
+// edited or switched off in the draft since then does not reach the visitor before publish.
+describe("an approval resume's skills", () => {
+  const releaseSkills = [{ skillName: "book_table", kind: "webhook", enabled: true, settings: { payload: "release" } }];
+
+  it("runs the skills of the release the conversation is pinned to", async () => {
+    const resolvePinned = vi.fn(async (input: { agent: AgentRecord; revisionId: string }) => ({
+      agent: { ...input.agent, authoredAgentSkills: releaseSkills } as unknown as AgentRecord,
+    }));
+    const { resume, forTurn, agent } = await setup({
+      workspaceTimeZone: null,
+      agentRevisionId: "revision-1",
+      agentRevisionRuntimeResolver: { resolvePinned } as never,
+    });
+
+    await resume();
+
+    expect(resolvePinned).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, revisionId: "revision-1", agent }));
+    expect(forTurn.mock.calls[0][0]).toEqual(expect.objectContaining({
+      agentRevisionId: "revision-1",
+      conversationSkills: releaseSkills,
+    }));
+  });
+
+  it("leaves the live skills to a conversation pinned to no release", async () => {
+    const resolvePinned = vi.fn();
+    const { resume, forTurn } = await setup({ workspaceTimeZone: null, agentRevisionRuntimeResolver: { resolvePinned } });
+
+    await resume();
+
+    expect(resolvePinned).not.toHaveBeenCalled();
+    expect(forTurn.mock.calls[0][0]).not.toHaveProperty("conversationSkills");
   });
 });
 

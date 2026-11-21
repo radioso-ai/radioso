@@ -65,11 +65,14 @@ export function SkillList({
   assistantBehaviorSettings,
   isAssistantBehaviorLoading,
   onAssistantBehaviorDraft,
+  onDraftSaved,
 }: {
   agentId: string
   assistantBehaviorSettings: AssistantBehaviorSettings | null
   isAssistantBehaviorLoading: boolean
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
+  /** A skill write changes the agent's draft, so Publish and Test Chat read the draft again. */
+  onDraftSaved: () => void
 }) {
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [platformSkills, setPlatformSkills] = useState<PlatformAnswerSkill[]>([])
@@ -178,6 +181,7 @@ export function SkillList({
       } else {
         await agentSkillsApi.createSkill(agentId, input)
       }
+      onDraftSaved()
       setFormOpen(false)
       setEditingSkill(null)
       setSelectedCapabilityId(null)
@@ -196,6 +200,7 @@ export function SkillList({
     const outcome = await rowMutations.run(skill.id, () => agentSkillsApi.updateSkill(agentId, skill.id, { enabled }))
     if (outcome.status === 'applied') {
       setSkills((current) => current.map((item) => item.id === skill.id ? outcome.value.skill : item))
+      onDraftSaved()
     } else if (outcome.status === 'failed') {
       setError(getApiErrorMessage(outcome.error, 'Failed to update skill.'))
     }
@@ -207,6 +212,7 @@ export function SkillList({
     if (outcome.status === 'applied') {
       setSkills((current) => current.filter((item) => item.id !== skill.id))
       setSheetSelection(null)
+      onDraftSaved()
     } else if (outcome.status === 'failed') {
       setError(getApiErrorMessage(outcome.error, 'Failed to delete skill.'))
     }
@@ -237,7 +243,7 @@ export function SkillList({
     <section id="assistant-skills-list" className="space-y-4 scroll-mt-24">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Skill changes apply live, outside Review &amp; Publish.
+          Skill changes are saved with the draft and go live on publish. Retrieval answers apply live.
         </p>
         <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setServersOpen(true)}>
           <Server className="h-4 w-4" />

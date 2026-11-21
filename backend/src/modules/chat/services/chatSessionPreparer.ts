@@ -879,11 +879,9 @@ export class ChatSessionPreparer {
     }
     const scopes = contextScopeLadder({ ...keys, agentId: agent.id, workspaceId: input.workspaceId });
     if (revisionContextVariableEnablements) {
+      // Resolver skills run as the release froze them (`authoredAgentSkills`).
       const resolved = await this.contextVariableRepository.resolveForEnablements(
-        input.workspaceId,
-        agent.id,
-        revisionContextVariableEnablements,
-        scopes,
+        input.workspaceId, agent.id, revisionContextVariableEnablements, scopes, agent.authoredAgentSkills,
       );
       return input.verifiedIdentity
         ? [...resolved, {

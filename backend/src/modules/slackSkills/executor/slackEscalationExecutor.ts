@@ -16,7 +16,15 @@ import { setTraceAttributes, traceOperation } from "../../../shared/observabilit
 export const SLACK_SKILLS_ADAPTER = "slack-skills";
 
 interface SlackEscalationExecutorOptions {
-  skills: Pick<SlackSkillDefinitionRepositoryPort, "findEnabledByName">;
+  /** The skill's row for the conversation the invocation runs for (its context carries that conversation's skills). */
+  skills: {
+    findEnabledByName(
+      workspaceId: string,
+      agentId: string,
+      skillName: string,
+      context?: Readonly<Record<string, unknown>>,
+    ): ReturnType<SlackSkillDefinitionRepositoryPort["findEnabledByName"]>;
+  };
   outbox: SlackPostOutboxPort;
 }
 
@@ -55,7 +63,7 @@ export class SlackEscalationExecutor implements SkillExecutorPort {
     const conversationId = stringContext(invocation, "conversationId");
     if (!agentId || !workspaceId || !accountId) return failure("context_missing");
 
-    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name);
+    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name, invocation.context);
     if (!definition) return failure("skill_not_found");
 
     setTraceAttributes({

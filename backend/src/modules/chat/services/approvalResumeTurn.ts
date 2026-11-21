@@ -12,7 +12,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
-import type { AgentService } from "../../agents/public.js";
+import type { AgentRevisionRuntimeResolver, AgentService } from "../../agents/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatAnswerPresenter } from "./chatAnswerPresenter.js";
@@ -65,6 +65,8 @@ interface ApprovalResumeTurnOptions {
   conversationRepository: Pick<ConversationRepositoryPort, "findByIdAndWorkspaceId">;
   messageRepository: Pick<MessageRepositoryPort, "listRecentByConversationId">;
   agentService?: Pick<AgentService, "resolve">;
+  /** Projects the conversation's release over the agent, as a live turn does. */
+  agentRevisionRuntimeResolver?: Pick<AgentRevisionRuntimeResolver, "resolvePinned">;
   chatGateway: ChatGateway;
   chatAnswerPresenter: ChatAnswerPresenter;
   chatAnswerSupport?: ChatAnswerSupport;
@@ -198,6 +200,7 @@ export class ApprovalResumeTurn {
       workspaceId: session.conversation.workspaceId,
       accountId: input.decidedBy,
       pinnedRoutineIds: [input.record.routineId],
+      ...(session.agent.authoredAgentSkills ? { conversationSkills: session.agent.authoredAgentSkills } : {}),
       approvalResume: input.approvalResume,
       responseLanguage: session.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
@@ -339,7 +342,11 @@ export class ApprovalResumeTurn {
     if (!conversation || conversation.agentId !== record.agentId) {
       throw new Error("approval_resume_conversation_not_found");
     }
-    const agent = await this.options.agentService!.resolve(record.workspaceId, record.agentId);
+    const agent = await this.resolveConversationAgent(
+      record,
+      await this.options.agentService!.resolve(record.workspaceId, record.agentId),
+      conversation.agentRevisionId,
+    );
     const history = await this.options.messageRepository.listRecentByConversationId(
       record.workspaceId,
       record.conversationId,
@@ -377,6 +384,29 @@ export class ApprovalResumeTurn {
         links: [],
       },
     };
+  }
+
+  /**
+   * The agent as the conversation's release froze it, so the resumed routine runs that release's
+   * skills and contact switch, not draft edits made while it waited for the decision. The release
+   * id is the one stored on the conversation, never a caller's, so a Test Chat conversation pinned
+   * to its candidate resumes on that candidate.
+   */
+  private async resolveConversationAgent(
+    record: PendingDecisionRecord,
+    agent: PreparedSession["agent"],
+    agentRevisionId: string | null | undefined,
+  ): Promise<PreparedSession["agent"]> {
+    if (!agentRevisionId || !this.options.agentRevisionRuntimeResolver) {
+      return agent;
+    }
+    const pinned = await this.options.agentRevisionRuntimeResolver.resolvePinned({
+      workspaceId: record.workspaceId,
+      agent,
+      revisionId: agentRevisionId,
+      allowCandidate: true,
+    });
+    return pinned.agent;
   }
 
   private directDecisionResumeRetrieval(

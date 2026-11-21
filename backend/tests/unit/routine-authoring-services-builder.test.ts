@@ -88,7 +88,7 @@ describe("routine authoring services builder", () => {
         agentRepository: { findByIdAndWorkspaceId: async () => ({ assistantDefaultLocale: "en" }) },
         routineDefinitionRepository: {},
       } as never,
-      routineInvocableSkillNames: { listForAgent: async () => [], listByKindForAgent: unused },
+      routineInvocableSkillNames: { listForAgent: async () => [] },
       routineTriggerEmbeddingService: {} as never,
       skillAuthoringCatalog,
       webhookDestinations: { existsByIdAndWorkspace: async () => false },

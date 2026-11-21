@@ -1,6 +1,7 @@
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import type { AgentRevision } from "../../modules/agents/public.js";
+import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import {
   compileRoutineDefinition,
   legacyCompiledRoutineId,
@@ -28,7 +29,22 @@ interface PublishedRoutineRegistrationSourceOptions {
   onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
   onPinnedDefinitionError?: (input: { agentId: string; routineId: string; definitionId?: string; error: unknown }) => void;
   onPreviewDefinitionError?: (input: { agentId: string; routineId: string; error: unknown }) => void;
-  resolveCompletionExport?: (definition: RoutineDefinition) => Promise<RoutineCompletionExport | null>;
+  /**
+   * The routine's skill-backed completion export. `scope` names the agent's workspace and, for a
+   * routine served from a release, the skills that release froze (absent when it recorded none).
+   */
+  resolveCompletionExport?: (
+    definition: RoutineDefinition,
+    scope: CompletionExportScope,
+  ) => Promise<RoutineCompletionExport | null>;
+}
+
+/**
+ * Where a routine's completion export is read from: the release the routine is served from (its
+ * skills absent when it recorded none), or no release for a routine served live.
+ */
+export interface CompletionExportScope {
+  release?: { workspaceId: string; agentSkills?: ConversationSkillSet };
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -49,8 +65,9 @@ class PinnedRevisionRoutineNotFoundError extends Error {
 const registrationFromDefinition = async (
   definition: RoutineDefinition,
   options: PublishedRoutineRegistrationSourceOptions,
+  scope: CompletionExportScope = {},
 ): Promise<RoutineRegistration> => {
-  const skillBackedCompletionExport = await options.resolveCompletionExport?.(definition);
+  const skillBackedCompletionExport = await options.resolveCompletionExport?.(definition, scope);
   const routine = compileRoutineDefinition({
     ...definition,
     ...(skillBackedCompletionExport ? { completionExport: skillBackedCompletionExport } : {}),
@@ -72,7 +89,7 @@ export const createPublishedRoutineRegistrationSource = (
   async load({ agentId, workspaceId, agentRevisionId }) {
     if (agentRevisionId) {
       const revision = await loadRuntimeRevision(options, { workspaceId, agentId, agentRevisionId });
-      return compileFrozenDefinitions(revision.snapshot.routines, options);
+      return compileFrozenDefinitions(revision.snapshot.routines, options, releaseScope(workspaceId, revision));
     }
     const definitions = await repository.listActiveByAgent(agentId);
     const registrations: RoutineRegistration[] = [];
@@ -120,6 +137,7 @@ export const createPublishedRoutineRegistrationSource = (
         [...revision.snapshot.routines, ...(revision.snapshot.retainedRoutineDefinitions ?? [])],
         uniqueRoutineIds,
         options,
+        releaseScope(workspaceId, revision),
       );
     }
 
@@ -209,16 +227,22 @@ const loadRuntimeRevision = async (
   return revision;
 };
 
+/** A release is read only with its workspace (`loadRuntimeRevision` requires one). */
+const releaseScope = (workspaceId: string | undefined, revision: AgentRevision): CompletionExportScope => workspaceId
+  ? { release: { workspaceId, ...(revision.snapshot.agentSkills ? { agentSkills: revision.snapshot.agentSkills } : {}) } }
+  : {};
+
 const compileFrozenDefinitions = async (
   definitions: AgentRevision["snapshot"]["routines"],
   options: PublishedRoutineRegistrationSourceOptions,
+  scope: CompletionExportScope,
 ): Promise<RoutineRegistration[]> => {
   const registrations: RoutineRegistration[] = [];
   // A released revision carries every authored routine, parked ones included, so a routine an
   // operator took out of service must not activate here. Pinned resume below is deliberately
   // unfiltered: a visitor mid-routine finishes it.
   for (const definition of definitions.filter(routineCanActivate)) {
-    registrations.push(await registrationFromDefinition(definition, options));
+    registrations.push(await registrationFromDefinition(definition, options, scope));
   }
   return registrations;
 };
@@ -227,6 +251,7 @@ const compileFrozenPinnedDefinitions = async (
   definitions: AgentRevision["snapshot"]["routines"],
   routineIds: string[],
   options: PublishedRoutineRegistrationSourceOptions,
+  scope: CompletionExportScope,
 ): Promise<RoutineRegistration[]> => {
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const legacyById = new Map<string, RoutineDefinition>();
@@ -246,7 +271,7 @@ const compileFrozenPinnedDefinitions = async (
     if (!definition) {
       throw new PinnedRevisionRoutineNotFoundError(routineId);
     }
-    const registration = await registrationFromDefinition(definition, options);
+    const registration = await registrationFromDefinition(definition, options, scope);
     registrations.push(uuidPattern.test(routineId)
       ? registration
       : { ...registration, routine: { ...registration.routine, id: routineId } });

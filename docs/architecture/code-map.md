@@ -1118,7 +1118,7 @@ Public surfaces and key files:
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
 - `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query)
-- `backend/src/db/migrations/268_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns, filter index)
+- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns, filter index)
 - `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
 - `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)

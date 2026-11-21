@@ -1,3 +1,4 @@
+import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import type {
   AgentContextVariableEnablement,
   ContextValueWriter,
@@ -139,6 +140,8 @@ export interface ContextVariableResolutionReaderPort {
     agentId: string,
     enablements: readonly AgentContextVariableEnablement[],
     scopes: ContextVariableScope[],
+    /** The skills the conversation runs (its release's), which resolver skills are read from. */
+    conversationSkills?: ConversationSkillSet,
   ): Promise<ResolvedVariableInput[]>;
 }
 

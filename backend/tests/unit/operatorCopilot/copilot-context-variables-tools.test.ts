@@ -4,6 +4,7 @@ import {
   createContextVariableProposalCopilotTools,
   createContextVariablesCopilotTools,
 } from "../../../src/modules/operatorCopilot/tools/contextVariables.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -82,6 +83,41 @@ describe("context_variables reader", () => {
 
     expect(ports.get).toHaveBeenCalledWith("workspace-1", "agent-9");
     expect(ports.listByAgent).not.toHaveBeenCalled();
+  });
+
+  it("reads every option of a Choice attribute up to the most it can have, since a proposal restates them all", async () => {
+    const ports = contextVariablePorts();
+    const options = Array.from({ length: CONTEXT_VARIABLES_BEHAVIOR.enumOptions.maxOptions }, (_, index) => ({
+      key: `option_${index}`, label: `Option ${index}`, description: null, archived: false,
+    }));
+    ports.listByWorkspace.mockResolvedValueOnce([{
+      id: "variable-2", name: "topic", description: "What the conversation is about.", valueType: "enum", options: options as never,
+      trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    }]);
+    const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
+
+    const result = descriptor.outputSchema.parse(await descriptor.createTool(context).invoke({}, {} as never)) as {
+      variables: Array<{ options: unknown[] }>;
+      truncation?: unknown;
+    };
+
+    expect(result.variables[0]?.options).toEqual(options);
+    expect(result.truncation).toBeUndefined();
+  });
+
+  it("says so when it cuts a long list of variables, and the mark survives the output schema", async () => {
+    const ports = contextVariablePorts();
+    const [variable] = await ports.listByWorkspace();
+    ports.listByWorkspace.mockResolvedValueOnce(Array.from({ length: 45 }, (_, index) => ({ ...variable, id: `variable-${index}` })));
+    const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
+
+    const result = descriptor.outputSchema.parse(await descriptor.createTool(context).invoke({}, {} as never)) as {
+      variables: unknown[];
+      truncation?: { entries: Array<{ path: string }> };
+    };
+
+    expect(result.variables).toHaveLength(40);
+    expect(result.truncation?.entries).toEqual([expect.objectContaining({ path: "$.variables", reason: "array_length" })]);
   });
 
   it("falls back to the page context agent and links the agent entity", async () => {

@@ -9,7 +9,7 @@ import type {
   CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
+import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   citedEvidenceSchema,
@@ -32,7 +32,11 @@ const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 
 const readerInputSchema = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() }).strict();
-const readerOutputSchema = z.object({ variables: z.array(z.record(z.string(), z.unknown())), enablements: z.array(z.record(z.string(), z.unknown())) });
+const readerOutputSchema = z.object({
+  variables: z.array(z.record(z.string(), z.unknown())),
+  enablements: z.array(z.record(z.string(), z.unknown())),
+  truncation: truncationRecordSchema,
+});
 
 const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
@@ -146,7 +150,7 @@ const describeContextVariableAgent = (
 export const createContextVariablesCopilotTools = (
   deps: ContextVariablesCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source, resolver skill, and surfacing. Never reads a variable's per-visitor runtime value.";
+  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source, resolver skill, and surfacing. A Choice attribute's options are listed in full, every key a proposal must restate. Never reads a variable's per-visitor runtime value.";
   return [
     {
       name: "context_variables", shape: "read", verificationCost: () => 0, uiLabel: "Reading context variables", contributingModule: "contextVariables", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
@@ -161,10 +165,13 @@ export const createContextVariablesCopilotTools = (
             deps.contextVariables.listByWorkspace(context.workspaceId),
             deps.contextVariables.listByAgent(context.workspaceId, resolvedAgentId),
           ]);
-          return boundPayload({
-            variables: variables.map(projectDefinition),
-            enablements: enablements.map(projectEnablement),
-          });
+          // A proposal restates a Choice attribute's options whole, so they are read whole: the
+          // definition schema bounds them at `maxOptions`, above the generic array cap.
+          return boundPayload(
+            { variables: variables.map(projectDefinition), enablements: enablements.map(projectEnablement) },
+            undefined,
+            new Set(variables.map((_, index) => `$.variables[${index}].options`)),
+          );
         },
       }),
       describeEntity: (input, context) => describeContextVariableAgent(deps, input as { agentId?: string; agentName?: string }, context),

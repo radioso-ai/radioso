@@ -172,6 +172,10 @@ not own it. A variable a tool step's `outputAssignments` set is never collected:
 a chat step or an ending that writes `{{slot.first_name}}` for it reads the value
 the skill returned, and the validator counts the reference as declared by the
 assignment, the same name-level rule a field guard and an input binding follow.
+It reports such a reference on a step or ending that some way reaches before the
+tool step runs (`referenced_variable_not_guaranteed`, from the same
+guaranteed-on-entry analysis as a required input binding), and, with the skill
+catalog, one to a variable set from a list output (`referenced_list_variable`).
 Caveat: "first" is ordinal order, not execution order. In a branching
 routine where two branches each ask the same slot, only the lower-ordinal branch is
 treated as collecting it; if the other branch runs, it won't auto-gate/fast-forward

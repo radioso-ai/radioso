@@ -5420,6 +5420,8 @@ components:
                   - present_slot_not_item
                   - present_selection_mismatch
                   - item_slot_without_presenting_step
+                  - referenced_variable_not_guaranteed
+                  - referenced_list_variable
               location:
                 type: string
               message:

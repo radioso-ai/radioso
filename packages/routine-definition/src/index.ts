@@ -105,6 +105,8 @@ export const routineValidationCodes = [
   "present_slot_not_item",
   "present_selection_mismatch",
   "item_slot_without_presenting_step",
+  "referenced_variable_not_guaranteed",
+  "referenced_list_variable",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;

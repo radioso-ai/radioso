@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/domain.js";
 import { validateRoutineDefinition } from "../../../src/modules/routines/validator.js";
+import type { SkillAuthoringDescriptor } from "../../../src/modules/skills/public.js";
 
 /**
  * A variable a skill step's Sets assign is declared by the assignment alone, never as a field the
@@ -130,5 +131,71 @@ describe("a reference to a variable a skill step's outputs set", () => {
     const reply = vi.mocked(renderer.render).mock.calls[0][0];
     expect(reply.step.id).toBe("done");
     expect(reply.step.action).toBe("Tell them Emily lives in Phoenix.");
+  });
+});
+
+describe("a reference to a variable a skill step's outputs set, before the value can be set", () => {
+  const notGuaranteed = (definition: RoutineDefinition) =>
+    validateRoutineDefinition(definition).diagnostics.filter((diagnostic) => diagnostic.code === "referenced_variable_not_guaranteed");
+
+  it("is reported on a step that runs before the tool step", () => {
+    const early: Step = { ...askNumber, instruction: "Greet {{slot.first_name}} and ask for their customer number {{slot.customer_id}}." };
+
+    expect(notGuaranteed(routineWith([early, lookup]))).toEqual([
+      expect.objectContaining({ location: "step:ask_number.instruction" }),
+    ]);
+  });
+
+  it("is reported on an ending a branch reaches without running the tool step", () => {
+    const base = routineWith([askNumber, lookup]);
+    const definition: RoutineDefinition = {
+      ...base,
+      transitions: [
+        { fromStep: "ask_number", toRef: "unknown", guardKind: "field", guardText: null, fieldRef: "customer_id", fieldOp: "is_absent", ordinal: 0 },
+        ...base.transitions.map((transition) => ({ ...transition, ordinal: transition.ordinal + 1 })),
+      ],
+      terminals: [...base.terminals, { stableStepId: "unknown", kind: "complete", instruction: "Tell {{slot.first_name}} we could not find them.", ordinal: 1 }],
+    };
+
+    expect(notGuaranteed(definition)).toEqual([expect.objectContaining({ location: "step:unknown.instruction" })]);
+  });
+
+  it("is not reported when every way to the step runs the tool step first", () => {
+    expect(notGuaranteed(routineWith([askNumber, lookup, confirm]))).toEqual([]);
+  });
+});
+
+describe("a reference in step text to a variable a skill step sets from a list", () => {
+  const listLookup: Step = {
+    ...lookup,
+    toolRef: "find_orders",
+    metadata: { outputAssignments: { orders: "found_orders", status: "order_status" } },
+  };
+  const descriptor: SkillAuthoringDescriptor = {
+    skillName: "find_orders",
+    displayName: "Find orders",
+    category: "api_request",
+    inputs: [],
+    outcomes: [{ name: "completed", displayName: "completed", status: "completed" }],
+    hasDataOutputs: true,
+    outputs: [
+      { name: "orders", type: "list", required: false, fields: [{ name: "title", type: "text", role: "title" }] },
+      { name: "status", type: "text", required: false },
+    ],
+  };
+  const listed = (finish: string, withCatalog = true) =>
+    validateRoutineDefinition(routineWith([askNumber, listLookup], finish), withCatalog ? { skillDescriptors: new Map([["find_orders", descriptor]]) } : {})
+      .diagnostics.filter((diagnostic) => diagnostic.code === "referenced_list_variable");
+
+  it("is reported, since a list renders as nothing a visitor can read", () => {
+    expect(listed("Tell them {{slot.found_orders}}.")).toEqual([expect.objectContaining({ location: "step:done.instruction" })]);
+  });
+
+  it("is not reported for a scalar output the same step sets", () => {
+    expect(listed("Tell them the status is {{slot.order_status}}.")).toEqual([]);
+  });
+
+  it("is checked only where the skill catalog is known", () => {
+    expect(listed("Tell them {{slot.found_orders}}.", false)).toEqual([]);
   });
 });

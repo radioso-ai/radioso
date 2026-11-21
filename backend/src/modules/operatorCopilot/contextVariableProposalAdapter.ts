@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
 import {
+  CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
   normalizeContextVariableOption,
@@ -15,7 +16,6 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 // Proposal shape remains Ray-owned; the context-variable module validates the
 // resulting full enablement before drafts and applies can persist it.
-const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
@@ -44,7 +44,7 @@ const contextVariableOptionStoredSchema = contextVariableOptionSchema.strict();
 const contextVariableProposalPayloadSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
-  valueType: z.enum(contextVariableValueTypes).optional(),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional(),
   options: z.array(contextVariableOptionInputSchema).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers).optional(),
   sensitivity: z.enum(contextVariableSensitivities).optional(),
@@ -56,7 +56,7 @@ const contextVariableProposalPayloadSchema = z.object({
 const contextVariableDefinitionStoredSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
-  valueType: z.enum(contextVariableValueTypes),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES),
   options: z.array(contextVariableOptionStoredSchema).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers),
   sensitivity: z.enum(contextVariableSensitivities),

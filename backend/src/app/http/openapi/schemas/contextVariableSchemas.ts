@@ -3,12 +3,15 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import {
+  CONTEXT_VALUE_WRITER_KINDS,
+  CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
 } from "../../../../modules/context-variables/public.js";
 
 const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
-const ContextVariableValueTypeSchema = z.enum(["string", "json", "enum"]);
+const ContextVariableValueTypeSchema = z.enum(CONTEXT_VARIABLE_VALUE_TYPES);
 const ContextVariableTrustTierSchema = z.enum(["unverified", "signed"]);
 const ContextVariableSensitivitySchema = z.enum(["normal", "sensitive"]);
 const ContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
@@ -18,10 +21,10 @@ const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "re
 // agent_context_variables row, so advertising it as an accepted request value here would
 // describe an operation the route always rejects (contextVariableRoutes.ts superRefine).
 const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver"]);
-const ContextVariableScopeTypeSchema = z.enum(["conversation", "session", "customer", "agent", "workspace"]).openapi({
+const ContextVariableScopeTypeSchema = z.enum(CONTEXT_VARIABLE_SCOPE_TYPES).openapi({
   description: "Where a value is kept. A `conversation` scope id is the conversation's id.",
 });
-const ContextValueWriterKindSchema = z.enum(["api", "operator", "routine", "classifier"]);
+const ContextValueWriterKindSchema = z.enum(CONTEXT_VALUE_WRITER_KINDS);
 
 export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const JsonValueSchema = z.unknown().openapi({

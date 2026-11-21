@@ -5,12 +5,16 @@ import { AppError } from "../../shared/domain/errors.js";
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 import type { FrozenTestValue } from "./testValues.js";
 
-export type ContextVariableValueType = "string" | "json" | "enum";
+/** Every type a variable's value can have. Each surface that names a type takes it from here. */
+export const CONTEXT_VARIABLE_VALUE_TYPES = ["string", "json", "enum"] as const;
+export type ContextVariableValueType = typeof CONTEXT_VARIABLE_VALUE_TYPES[number];
 export type ContextVariableTrustTier = "unverified" | "signed";
 /** The same authored sensitivity a routine slot carries, with the same masking rule. */
 export type ContextVariableSensitivity = ValueSensitivity;
 export type ContextVariableSource = "pushed" | "browser" | "resolver" | "request";
-export type ContextVariableScopeType = "conversation" | "session" | "customer" | "agent" | "workspace";
+/** Every scope a value can be kept under, the types `context_variable_values.scope_type` accepts. */
+export const CONTEXT_VARIABLE_SCOPE_TYPES = ["conversation", "session", "customer", "agent", "workspace"] as const;
+export type ContextVariableScopeType = typeof CONTEXT_VARIABLE_SCOPE_TYPES[number];
 
 /**
  * One described choice of an `enum` variable. A stored value holds the key, which never changes;

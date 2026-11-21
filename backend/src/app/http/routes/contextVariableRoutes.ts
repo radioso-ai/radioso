@@ -9,18 +9,18 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
 import {
+  CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   deriveVisitorIdentitySigningKey,
   normalizeContextVariableOption,
 } from "../../../modules/context-variables/public.js";
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 
-const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
 const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
-const contextVariableScopeTypes = ["conversation", "session", "customer", "agent", "workspace"] as const;
 const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -40,7 +40,7 @@ const contextVariableOptionSchema = contextVariableOptionInputSchema.transform(n
 const contextVariableBodySchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullable().optional(),
-  valueType: z.enum(contextVariableValueTypes),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES),
   options: z.array(contextVariableOptionSchema).max(optionLimits.maxOptions).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers),
   sensitivity: z.enum(contextVariableSensitivities),
@@ -66,12 +66,12 @@ const conversationScopeIdIssue = (scope: { type: string; id: string }, ctx: z.Re
 };
 
 const contextVariableValueQuerySchema = z.object({
-  scopeType: z.enum(contextVariableScopeTypes),
+  scopeType: z.enum(CONTEXT_VARIABLE_SCOPE_TYPES),
   scopeId: z.string().min(1).max(500),
 }).superRefine((query, ctx) => conversationScopeIdIssue({ type: query.scopeType, id: query.scopeId }, ctx, "scopeId"));
 
 const contextVariableScopeSchema = z.object({
-  type: z.enum(contextVariableScopeTypes),
+  type: z.enum(CONTEXT_VARIABLE_SCOPE_TYPES),
   id: z.string().min(1).max(500),
 }).strict().superRefine((scope, ctx) => conversationScopeIdIssue(scope, ctx, "id"));
 

@@ -1,6 +1,7 @@
 import type { RoutineDefinition } from "./domain.js";
 import { collectContextVariableRefs, presentBindingOf, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
@@ -82,7 +83,7 @@ export interface RoutineValidationResult {
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
-  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" | "enum" }>;
+  availableContextVariables?: ReadonlyMap<string, AvailableContextVariable>;
   /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
@@ -151,7 +152,7 @@ const isSlotTypeCompatibleWithInput = (
 };
 
 const isContextVariableTypeCompatibleWithInput = (
-  valueType: "string" | "json" | "enum",
+  valueType: ContextVariableValueType,
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
   if (valueType === "json") {

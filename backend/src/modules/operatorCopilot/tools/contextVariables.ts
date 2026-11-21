@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
   type ContextVariableOption,
@@ -38,7 +39,6 @@ const readerOutputSchema = z.object({
   truncation: truncationRecordSchema,
 });
 
-const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
@@ -58,7 +58,7 @@ const proposalInputSchema = z.object({
   variableId: idSchema.optional(),
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
-  valueType: z.enum(contextVariableValueTypes).optional(),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional(),
   options: z.array(optionInputSchema).nullable().optional()
     .describe("Enum only: the full option list, every existing key included. Omit to keep the stored list."),
   trustTier: z.enum(contextVariableTrustTiers).optional(),
@@ -190,7 +190,7 @@ const contextVariableProposalPayloadSchema = z.object({
   definition: z.object({
     name: z.string(),
     description: z.string().nullable(),
-    valueType: z.enum(contextVariableValueTypes),
+    valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES),
     options: z.array(contextVariableOptionSchema.strict()).nullable().optional(),
     trustTier: z.enum(contextVariableTrustTiers),
     sensitivity: z.enum(contextVariableSensitivities),

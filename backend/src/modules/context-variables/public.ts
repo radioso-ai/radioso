@@ -4,6 +4,7 @@
  */
 export { renderContextBlockWithBound } from "./contextBlockRenderer.js";
 export { resolveAvailableContextVariables } from "./availableContextVariables.js";
+export type { AvailableContextVariable } from "./availableContextVariables.js";
 export { boundContextVariableFragments } from "./contextVariablesBound.js";
 export type { ContextVariableRenderBoundConfig } from "./contextVariablesBound.js";
 export { resolveContextForTurn, skillContextSnapshot } from "./contextResolutionService.js";
@@ -29,6 +30,8 @@ export type { ContextResolverPort } from "./contextVariableResolverService.js";
 export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
 export {
   CONTEXT_VALUE_WRITER_KINDS,
+  CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_VALUE_TYPES,
   contextScopeLadder,
   frozenTestValueInput,
   mayOverwrite,

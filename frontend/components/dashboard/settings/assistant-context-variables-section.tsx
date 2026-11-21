@@ -653,7 +653,7 @@ export function AssistantContextVariablesSection({
             {form.valueType === 'enum' ? (
               <AttributeOptionsEditor
                 options={form.options}
-                savedKeys={new Set(editingVariable?.options?.map((option) => option.key) ?? [])}
+                savedCount={editingVariable?.options?.length ?? 0}
                 onChange={(options) => setForm((current) => ({ ...current, options }))}
               />
             ) : null}

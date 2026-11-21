@@ -28,15 +28,17 @@ export const attributeOptionsError = (options: readonly ContextVariableOption[])
 /**
  * The options of an enum attribute. A saved option keeps its key and is archived rather than
  * removed, because stored values and filters name it by key; an option added in this edit can
- * still be removed.
+ * still be removed. The saved options are the first `savedCount` rows: the edit starts from them,
+ * appends new rows after them and removes only new rows, so a row's position says which it is
+ * whatever key a new row is given.
  */
 export function AttributeOptionsEditor({
   options,
-  savedKeys,
+  savedCount,
   onChange,
 }: {
   options: ContextVariableOption[]
-  savedKeys: ReadonlySet<string>
+  savedCount: number
   onChange: (options: ContextVariableOption[]) => void
 }) {
   const update = (index: number, patch: Partial<ContextVariableOption>) =>
@@ -46,7 +48,7 @@ export function AttributeOptionsEditor({
     <div className="space-y-3">
       <SettingFieldHeader label="Options" description="What a value can be. Archive an option to retire it." />
       {options.map((option, index) => {
-        const saved = savedKeys.has(option.key)
+        const saved = index < savedCount
         const name = option.label.trim() || option.key || `option ${index + 1}`
         return (
           <div

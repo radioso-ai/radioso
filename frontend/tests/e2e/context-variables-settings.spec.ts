@@ -92,13 +92,22 @@ test("an operator creates a choice attribute with described options, then archiv
   await expect(editDialog.getByLabel("Option 2 key")).toBeDisabled();
   await expect(editDialog.getByRole("button", { name: "Remove Shipping" })).toHaveCount(0);
   await editDialog.getByRole("button", { name: "Archive Shipping" }).click();
+
+  // A new option stays new while its key passes through a saved one on the way to its own.
+  await editDialog.getByRole("button", { name: "Add option" }).click();
+  await editDialog.getByLabel("Option 3 label").fill("Billing disputes");
+  await editDialog.getByLabel("Option 3 key").pressSequentially("billing_disputes");
+  await expect(editDialog.getByLabel("Option 3 key")).toHaveValue("billing_disputes");
+  await expect(editDialog.getByLabel("Option 3 key")).toBeEnabled();
+  await expect(editDialog.getByRole("button", { name: "Remove Billing disputes" })).toBeVisible();
   await editDialog.getByRole("button", { name: "Save attribute" }).click();
 
-  await expect(page.getByText("Choice · 1 option")).toBeVisible();
+  await expect(page.getByText("Choice · 2 options")).toBeVisible();
   await expect.poll(() => contextVariableRequests.find((request) => request.method === "PATCH")?.body).toMatchObject({
     options: [
       { key: "billing", archived: false },
       { key: "shipping", archived: true },
+      { key: "billing_disputes", label: "Billing disputes", archived: false },
     ],
   });
 });

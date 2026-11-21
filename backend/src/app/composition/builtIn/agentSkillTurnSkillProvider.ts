@@ -30,6 +30,7 @@ import { EXTERNAL_SKILLS_ADAPTER } from "../../../modules/externalSkills/executo
 import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../../modules/customerEmail/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../../modules/webhookSkills/public.js";
 import { SLACK_SKILLS_ADAPTER } from "../../../modules/slackSkills/public.js";
+import { API_REQUEST_SKILLS_ADAPTER } from "../../../modules/apiRequestSkills/public.js";
 import {
   RETRIEVAL_ANSWER_ADAPTER,
   readRetrievalResult,
@@ -73,7 +74,8 @@ interface RepositoryAgentSkillTurnSkillProviderOptions {
  * `retrieve` deliberately returns raw contexts (the chat turn loop owns answer
  * composition — routing it through the retrieval composer is the route-steering
  * follow-up), and the action kinds (webhook, slack, email, notify) settle with
- * outputs only, which leave the reply nothing to be written from.
+ * outputs only, which leave the reply nothing to be written from. `api_request`
+ * runs only from routines, which collect its inputs and branch on its outputs.
  */
 const TURN_BINDABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["external_mcp"]);
 const AGENTIC_STAGEABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["retrieve"]);
@@ -93,6 +95,7 @@ const requiredCapabilitiesForKind = (kind: AgentSkillKind): string[] => {
     case "customer_email":
     case "webhook":
     case "slack":
+    case "api_request":
       return [capabilityNames.externalSkills.invoke];
     case "notify":
       return [];
@@ -271,6 +274,8 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
       return { kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER, enqueue: false };
     case "notify":
       return { kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER, enqueue: false };
+    case "api_request":
+      return { kind: "internal", adapter: API_REQUEST_SKILLS_ADAPTER, enqueue: false };
   }
 };
 

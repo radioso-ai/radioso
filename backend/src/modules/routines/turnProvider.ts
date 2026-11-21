@@ -23,6 +23,7 @@ import {
 } from "@radioso/conversation-defaults";
 
 import type { AgentSkillRepositoryPort } from "../agentSkills/public.js";
+import type { ApiRequestRoutineSkillRecord } from "../apiRequestSkills/public.js";
 import { routineContextRenderer } from "../context-variables/public.js";
 import type { ClusteringEmbeddingPort } from "../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
@@ -411,6 +412,7 @@ export const createRoutineTurnProvider = (
       config?: Record<string, unknown>;
     }> = [];
     let notifySkills: Array<{ skillName: string; enabled: boolean; invocationMode: string }> = [];
+    let apiRequestSkills: ApiRequestRoutineSkillRecord[] = [];
     try {
       if (workspaceId) {
         const byKind = await dependencies.routineInvocableSkillNames.listByKindForAgent({ workspaceId, agentId });
@@ -445,11 +447,19 @@ export const createRoutineTurnProvider = (
             enabled: skill.enabled,
             invocationMode: skill.invocationMode,
           }));
+        apiRequestSkills = agentSkills
+          .filter((skill) => skill.kind === "api_request")
+          .map((skill) => ({
+            skillName: skill.skillName,
+            enabled: skill.enabled,
+            invocationMode: skill.invocationMode,
+            config: skill.config,
+          }));
       }
     } catch (error) {
       dependencies.logger.warn(
         { agentId, err: error },
-        "Retrieve and notify skill definitions failed to load for routine routing; continuing without them",
+        "Retrieve, notify and API request skill definitions failed to load for routine routing; continuing without them",
       );
     }
 
@@ -540,6 +550,7 @@ export const createRoutineTurnProvider = (
             slackSkillNames,
             retrieveSkills,
             notifySkills,
+            apiRequestSkills,
           }),
           dependencies.skillExecutorRegistry,
           {

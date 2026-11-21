@@ -65,6 +65,7 @@ import { EmailSkillDefinitionService } from "../../../modules/customerEmail/publ
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/contracts/index.js";
 import { MCP_OAUTH_CALLBACK_PATH } from "../../../modules/externalSkills/domain.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+import { buildApiConnectionService } from "./apiRequestSkills.js";
 import type { RecipientConfirmationRequester } from "../../../shared/domain/recipientConfirmationRequests.js";
 
 
@@ -295,6 +296,12 @@ export const buildIntegrationServices = (input: {
     repository: input.repositories.slackSkillDefinitionRepository,
     installations: input.repositories.slackInstallationRepository,
   });
+  const apiConnections = buildApiConnectionService({
+    db: input.infrastructure.database.kysely,
+    env: input.env,
+    auditService: input.infrastructure.auditService,
+    assertPublicUrl: input.assertPublicUrl,
+  });
   const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
     mcp_tool: async ({ workspaceId }) =>
       (await mcpConnectionRepository.listByWorkspace(workspaceId)).map((connection) => ({
@@ -320,6 +327,8 @@ export const buildIntegrationServices = (input: {
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    api_request: async ({ workspaceId }) =>
+      (await apiConnections.list(workspaceId)).map((connection) => ({ id: connection.id, label: connection.name })),
     retrieve: async ({ workspaceId }) => {
       const [sources, manualDocumentCount] = await Promise.all([
         input.repositories.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
@@ -349,6 +358,7 @@ export const buildIntegrationServices = (input: {
   return {
     agentSkillRepository,
     agentSkillsService,
+    apiConnections,
     customerEmailConnectionService,
     customerEmailOAuthService,
     emailSkillDefinitionService,

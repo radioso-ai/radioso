@@ -5,6 +5,7 @@ import { ExternalSkillRoutineSkillResolver } from "../externalSkills/public.js";
 import { CustomerEmailRoutineSkillResolver } from "../customerEmail/public.js";
 import { SlackRoutineSkillResolver } from "../slackSkills/public.js";
 import { WebhookRoutineSkillResolver } from "../webhookSkills/public.js";
+import { ApiRequestRoutineSkillResolver, type ApiRequestRoutineSkillRecord } from "../apiRequestSkills/public.js";
 import { StaticRoutineSkillResolver, type RoutineSkillResolver } from "./skillDispatcher.js";
 
 export interface RoutineSkillResolverChainInputs {
@@ -13,6 +14,7 @@ export interface RoutineSkillResolverChainInputs {
   slackSkillNames: readonly string[];
   retrieveSkills: readonly RetrieveRoutineSkillRecord[];
   notifySkills: readonly NotifyRoutineSkillRecord[];
+  apiRequestSkills: readonly ApiRequestRoutineSkillRecord[];
 }
 
 /**
@@ -33,6 +35,7 @@ export const createRoutineSkillResolverChain = ({
   slackSkillNames,
   retrieveSkills,
   notifySkills,
+  apiRequestSkills,
 }: RoutineSkillResolverChainInputs): RoutineSkillResolver =>
   new StaticRoutineSkillResolver(
     routineDispatchableBuiltInSkills,
@@ -44,7 +47,10 @@ export const createRoutineSkillResolverChain = ({
           slackSkillNames,
           new RetrieveRoutineSkillResolver(
             retrieveSkills,
-            new NotifyRoutineSkillResolver(notifySkills, new ExternalSkillRoutineSkillResolver()),
+            new NotifyRoutineSkillResolver(
+              notifySkills,
+              new ApiRequestRoutineSkillResolver(apiRequestSkills, new ExternalSkillRoutineSkillResolver()),
+            ),
           ),
         ),
       ),

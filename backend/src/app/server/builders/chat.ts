@@ -102,6 +102,8 @@ import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkil
 import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../../db/repositories/oauthConnectionRepository.js";
 import { FetchWebhookHttpClient, type WebhookDestinationRuntimePort } from "../../../modules/webhooks/public.js";
+import type { ApiConnectionService } from "../../../modules/apiRequestSkills/public.js";
+import { registerApiRequestSkillExecutor } from "./apiRequestSkills.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import { IngestionSettingsService } from "../../../modules/settings/composition.js";
@@ -194,6 +196,7 @@ export const buildChatServices = (input: {
   notificationListener: Pick<PostgresNotificationListener, "subscribe">;
   telemetryService: TelemetryService;
   webhookDestinations: WebhookDestinationRuntimePort;
+  apiConnections: ApiConnectionService;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
   customerEmailConnectionRepository: CustomerEmailConnectionRepository;
@@ -393,6 +396,14 @@ export const buildChatServices = (input: {
       }),
     });
   }
+  registerApiRequestSkillExecutor({
+    registry: input.composition.skillExecutorRegistry,
+    connections: input.apiConnections,
+    agentSkills: input.agentSkillRepository,
+    env: input.env,
+    metricsRegistry: input.metricsRegistry,
+    logger: input.logger,
+  });
   if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: SLACK_SKILLS_ADAPTER })) {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",

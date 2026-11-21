@@ -10,6 +10,7 @@ export const routineSkillCategories = [
   "webhook",
   "slack",
   "notify",
+  "api_request",
 ] as const;
 
 export type RoutineSkillCategory = (typeof routineSkillCategories)[number];

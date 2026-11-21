@@ -259,6 +259,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const {
     agentSkillRepository,
     agentSkillsService,
+    apiConnections,
     customerEmailConnectionService,
     customerEmailOAuthService,
     emailSkillDefinitionService,
@@ -380,6 +381,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationListener: infrastructure.notificationListener,
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
+    apiConnections,
     productAnalyticsService: infrastructure.productAnalyticsService,
     publicConversationEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
@@ -554,15 +556,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService,
     routineDraftAssistService,
   } = routineAuthoring;
-  // Constructed only once the routine authoring services exist: the agent-revision release
-  // gate needs RoutineDefinitionService's skill/capability/webhook-aware validation
-  // (validateForServing) to reject a candidate or publish whose enabled routine references a
-  // skill, capability, or webhook destination the workspace no longer has.
+  // Built after routine authoring: the agent-revision release gate validates through RoutineDefinitionService
+  // (validateForServing), refusing a release whose routine names a skill, capability or webhook destination now gone.
   const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
-    // Batched form: a candidate/publish snapshot's enabled routines all belong to one agent, so
-    // this resolves the workspace-scoped skill/context-variable state once for the whole release
-    // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
+    // Batched: a snapshot's enabled routines all belong to one agent, so the workspace-scoped skill and
+    // context-variable state resolves once per release check, not once per routine.
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
   }, logger);
   const testExecutionService = buildTestExecutionService({
@@ -1277,6 +1276,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,
+    apiConnections,
     workspaceLlmCapabilitySettingsService,
     llmCapabilityResolver,
     auditService: infrastructure.auditService,

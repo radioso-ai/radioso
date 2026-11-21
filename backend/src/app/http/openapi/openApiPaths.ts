@@ -12,6 +12,7 @@ import { registerAuthPaths } from "./paths/authPaths.js";
 import { registerAccountManagementPaths, registerAccountSessionPaths } from "./paths/accountPaths.js";
 import { registerWorkspacePaths } from "./paths/workspacePaths.js";
 import { registerSettingsPaths } from "./paths/settingsPaths.js";
+import { registerApiConnectionsPaths } from "./paths/apiConnectionsPaths.js";
 import { registerAgentsPaths } from "./paths/agentsPaths.js";
 import { registerRetrievalAnswerPaths, registerRetrievalSearchPaths } from "./paths/retrievalPaths.js";
 import { registerSkillsPaths } from "./paths/skillsPaths.js";
@@ -70,6 +71,7 @@ export const registerOpenApiPaths = (
   registerOperatorMcpPaths(registry, schemas, security);
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
+  registerApiConnectionsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);
   registerAgentVoiceConnectionPaths(registry, schemas, security);
   registerAgentWizardPaths(registry, schemas, security);

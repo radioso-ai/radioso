@@ -168,6 +168,9 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
       return { kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER, enqueue: false };
     case "notify":
       return { kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER, enqueue: false };
+    // API request skills run from routines only: a context variable is never resolved by one.
+    case "api_request":
+      return undefined;
   }
 };
 

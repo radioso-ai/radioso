@@ -41,6 +41,7 @@ const location = <T extends Extract<keyof DB, string>>(spec: {
  * name contains `ciphertext`, `sealed` or `encrypted` against this list.
  */
 export const ENCRYPTED_FIELD_LOCATIONS: readonly EncryptedFieldLocation[] = [
+  location({ table: "api_connections", keyColumns: ["id"], column: "credential_ciphertext", shape: "text" }),
   location({ table: "connector_configs", keyColumns: ["id"], column: "config_data", shape: "json_object_values" }),
   location({ table: "integration_oauth_connections", keyColumns: ["id"], column: "credential_ciphertext", shape: "text" }),
   location({ table: "integration_oauth_connections", keyColumns: ["id"], column: "oauth_client_ciphertext", shape: "text" }),

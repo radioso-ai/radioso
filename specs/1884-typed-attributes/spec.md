@@ -2,7 +2,7 @@
 
 **Branch**: `feat/typed-attributes-1884` (PR 1a)
 **Created**: 2026-11-21
-**Status**: Approved with changes (product owner review, 2026-11-21); see "Review outcome" below
+**Status**: Approved (product owner review, 2026-11-21, D9 and D13 confirmed); see "Review outcome" below
 **Issues**: #1884
 **Input**: An operator cannot label conversations with typed facts the agent fills in, see those labels in the Inbox, or filter by them. Extend context variables with typed values, more writers, a record of who wrote a value, and a scope every channel has.
 
@@ -42,7 +42,7 @@ Three items the design left unverified are now closed:
 - The value routes accept bearer tokens as well as dashboard sessions (`requireWorkspaceSession`, `backend/src/app/http/routes/contextVariableRoutes.ts:139`).
 - `on_reference` and `operator_only` are both kept out of the answer prompt: only `always` is rendered (`backend/src/modules/context-variables/contextResolutionService.ts:168-170`). The one difference is that a routine step's `{{context.<name>}}` renders an `on_reference` value and renders nothing for `operator_only` (`backend/src/modules/context-variables/routineContextRenderer.ts:9-11`).
 
-**Correction to an accepted decision.** The product owner accepted `operator_only` as the default surfacing for classified values, on the design's claim that it keeps them out of the answer prompt. The third finding above shows `on_reference` does that too, and `operator_only` would also stop a routine step from reading the value, which contradicts "template reading comes for free". This spec therefore uses `on_reference` (D13). The intent of the decision is unchanged. This needs the product owner's confirmation before 1b merges.
+**Correction to an accepted decision.** The product owner accepted `operator_only` as the default surfacing for classified values, on the design's claim that it keeps them out of the answer prompt. The third finding above shows `on_reference` does that too, and `operator_only` would also stop a routine step from reading the value, which contradicts "template reading comes for free". This spec therefore uses `on_reference` (D13). The intent of the decision is unchanged. The product owner confirmed `on_reference` on 2026-11-21.
 
 **One instruction is met in part.** The change request asked for classification before both the notice and `handoff.requested` are dispatched. The notice is covered. The event is not held: it is a transactional outbox row written beside the `handoff_requested` activity for every handoff path (`backend/src/modules/conversationActivity/workspaceEventLogBridge.ts:8-18`, `specs/957-workspace-events/spec.md` D2 and D5). Holding it for a model call would either put that call inside the turn on every handoff path or make the event non-transactional. Section 7 gives what automations get instead.
 
@@ -523,6 +523,4 @@ PR 1b is the largest at about 26 files. They are one new module plus one edit pe
 
 ## 16. Open items
 
-1. **Confirm D13.** `on_reference` in place of the accepted `operator_only`, for the reason in "Review outcome". Needed before 1b merges.
-2. **Confirm D9.** `handoff.requested` keeps its payload. Needed before slice 5.
-3. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; it could ship sooner as its own fix.
+1. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; it could ship sooner as its own fix.

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type ExpressionBuilder, type SelectQueryBuilder } from "kysely";
+import { sql, type Expression, type ExpressionBuilder, type SelectQueryBuilder, type SqlBool } from "kysely";
 
 import type {
   BulkDocumentProcessingJobOptions,
@@ -1165,42 +1165,34 @@ export class DocumentRepository implements DocumentRepositoryPort {
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
     const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
+    return this.deleteSourcePages(input, (eb) => keep.length > 0
+      ? eb.and([eb("external_document_id", "is not", null), sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`])
+      : eb("external_document_id", "is not", null));
+  }
 
+  /** Deletes the named pages of the source the way the crawl's removal of missing pages does. */
+  async deleteSourcePagesByIds(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    if (input.documentIds.length === 0) return { deletedCount: 0, deletedContentBytes: 0 };
+    return this.deleteSourcePages(input, (eb) => eb("id", "in", [...input.documentIds]));
+  }
+
+  private async deleteSourcePages(
+    input: { workspaceId: string; sourceId: string },
+    pages: (eb: ExpressionBuilder<DB, "documents">) => Expression<SqlBool>,
+  ): Promise<{ deletedCount: number; deletedContentBytes: number }> {
     const rows = await this.db.transaction().execute(async (trx) => {
-      let documentsQuery = trx
-        .selectFrom("documents")
-        .select("id")
-        .where("source_id", "=", input.sourceId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("external_document_id", "is not", null);
-      if (keep.length > 0) {
-        documentsQuery = documentsQuery.where(
-          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
-        );
-      }
-      const documents = await documentsQuery.forUpdate().execute();
+      const documents = await trx.selectFrom("documents").select("id")
+        .where("source_id", "=", input.sourceId).where("workspace_id", "=", input.workspaceId).where(pages)
+        .forUpdate().execute();
       await this.releaseDeletedDocuments(trx, input.workspaceId, documents.map((document) => document.id));
-      let deleteQuery = trx
-        .deleteFrom("documents")
-        .where("source_id", "=", input.sourceId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("external_document_id", "is not", null);
-      if (keep.length > 0) {
-        deleteQuery = deleteQuery.where(
-          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
-        );
-      }
-      return deleteQuery.returning(["id", "content_size_bytes"]).execute();
+      return trx.deleteFrom("documents")
+        .where("source_id", "=", input.sourceId).where("workspace_id", "=", input.workspaceId).where(pages)
+        .returning(["id", "content_size_bytes"]).execute();
     });
-
-    let deletedContentBytes = 0;
-    for (const row of rows) {
-      const raw = row.content_size_bytes;
-      const bytes = typeof raw === "string" ? Number(raw) : raw;
-      if (typeof bytes === "number" && Number.isFinite(bytes)) {
-        deletedContentBytes += bytes;
-      }
-    }
+    const deletedContentBytes = rows.reduce((total, row) => {
+      const bytes = Number(row.content_size_bytes ?? Number.NaN);
+      return Number.isFinite(bytes) ? total + bytes : total;
+    }, 0);
     return { deletedCount: rows.length, deletedContentBytes };
   }
 

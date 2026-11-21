@@ -3725,6 +3725,24 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     }
     return { deletedCount, deletedContentBytes };
   }
+
+  async deleteSourcePagesByIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    documentIds: readonly string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    let deletedCount = 0;
+    let deletedContentBytes = 0;
+    for (const id of input.documentIds) {
+      const doc = this.items.get(id);
+      if (doc && doc.workspaceId === input.workspaceId && doc.sourceId === input.sourceId) {
+        deletedContentBytes += doc.contentSizeBytes ?? 0;
+        this.items.delete(id);
+        deletedCount += 1;
+      }
+    }
+    return { deletedCount, deletedContentBytes };
+  }
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

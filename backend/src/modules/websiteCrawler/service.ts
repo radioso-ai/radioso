@@ -15,11 +15,14 @@ import type {
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import {
   emptyWebsiteCrawlCheckpoint,
+  isFreshWebsiteCrawlCheckpoint,
   normalizeWebsiteCrawlCheckpoint,
   normalizeWebsiteCrawlPolicy,
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
+import { reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
+import type { CrawlTrigger } from "./recrawlSchedule.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
 import { usageLimitExceeded } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -97,6 +100,7 @@ export class WebsiteCrawlerService {
     provider: WebsiteCrawlerProvider;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
+    missingPages?: WebsiteMissingPageStore;
     logger?: Pick<AppLogger, "warn">;
     assertCrawlUrlAllowed?: (url: string) => Promise<void>;
   }) {}
@@ -112,7 +116,11 @@ export class WebsiteCrawlerService {
     policy?: Partial<WebsiteCrawlPolicy>;
     checkpoint?: WebsiteCrawlCheckpoint | null;
     onCheckpoint?: (checkpoint: WebsiteCrawlCheckpoint) => Promise<void>;
+    /** Who started the crawl; `manual` unless the recrawl sweep queued it. */
+    trigger?: CrawlTrigger;
   }): Promise<WebsiteCrawlPublicationResult> {
+    const crawlStartedAt = new Date();
+    const startedFresh = isFreshWebsiteCrawlCheckpoint(input.checkpoint);
     const websiteBaseUrl = normalizeBaseUrl(input.url);
     const safeWebsiteBaseUrl = redactWebsiteCrawlerUrl(websiteBaseUrl);
     const policy = normalizeWebsiteCrawlPolicy(input.policy ?? {});
@@ -553,18 +561,25 @@ export class WebsiteCrawlerService {
       });
 
       const isFullSuccessfulCrawl =
-        !input.checkpoint &&
+        startedFresh &&
         result.failed === 0 &&
         result.status === "completed" &&
         // Until providers expose an explicit frontier-exhausted signal, exact
         // limit-sized crawls are treated as possibly capped and do not reap.
         result.accepted + result.skipped + result.failed < input.limit;
-      if (isFullSuccessfulCrawl && this.dependencies.documentIngestionService.reapMissingPages) {
+      if (isFullSuccessfulCrawl) {
         try {
-          await this.dependencies.documentIngestionService.reapMissingPages({
+          await reconcileMissingPages({
+            store: this.dependencies.missingPages,
+            ingestion: this.dependencies.documentIngestionService,
+            audit: this.dependencies.auditService,
+          }, {
+            trigger: input.trigger ?? "manual",
+            accountId: input.accountId,
             workspaceId: input.workspaceId,
             sourceId: documentSource.id,
-            keepExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
+            seenExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
+            crawlStartedAt,
           });
         } catch (error) {
           this.dependencies.logger?.warn(
@@ -657,7 +672,7 @@ export class WebsiteCrawlerService {
   }
 
   private async auditCrawlFailure(
-    input: { accountId?: string | null; workspaceId: string },
+    input: { accountId?: string | null; workspaceId: string; trigger?: CrawlTrigger },
     requestedUrl: string,
     error: unknown,
   ): Promise<void> {
@@ -672,6 +687,7 @@ export class WebsiteCrawlerService {
       eventStatus: "failure",
       metadata: {
         provider: redactSensitiveText(this.dependencies.provider.name),
+        trigger: input.trigger ?? "manual",
         requestedUrl,
         accepted: 0,
         skipped: 0,
@@ -683,7 +699,7 @@ export class WebsiteCrawlerService {
   }
 
   private async auditResult(
-    input: { accountId?: string | null; workspaceId: string },
+    input: { accountId?: string | null; workspaceId: string; trigger?: CrawlTrigger },
     result: WebsiteCrawlPublicationResult,
   ): Promise<void> {
     if (!this.dependencies.auditService) {
@@ -696,6 +712,7 @@ export class WebsiteCrawlerService {
       eventStatus: result.failed > 0 ? "failure" : "success",
       metadata: {
         provider: result.provider,
+        trigger: input.trigger ?? "manual",
         runId: result.runId,
         requestedUrl: result.requestedUrl,
         accepted: result.accepted,

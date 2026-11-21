@@ -52,6 +52,8 @@ export const buildSyntheticManualDocumentSource = (
   metadata: {},
   lastSyncStatus: null,
   lastSyncedAt: null,
+  recrawlCadence: "off",
+  nextRecrawlAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   documentCount,

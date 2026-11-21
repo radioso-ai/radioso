@@ -34,6 +34,7 @@ import {
 } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
+import { toWorkspaceDocumentSourceStatus } from "./documentSourceStatus.js";
 import { describeIndexedContent, mergeIndexedFields } from "./indexedDocumentContent.js";
 import type { DocumentImageCandidatesPort } from "./documentImageCaptureQueue.js";
 import type { DocumentImageCandidate, DocumentImageListing } from "../contracts/documentImages.js";
@@ -779,21 +780,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       this.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
       this.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
     ]);
-    return {
-      sources: sources.map((source) => ({
-        id: source.id,
-        kind: source.kind,
-        name: source.name,
-        externalId: source.externalId,
-        config: source.config,
-        lastSyncStatus: source.lastSyncStatus,
-        lastSyncedAt: source.lastSyncedAt,
-        documentCount: source.documentCount,
-        createdAt: source.createdAt,
-        updatedAt: source.updatedAt,
-      })),
-      documentsWithoutSourceCount,
-    };
+    return { sources: sources.map(toWorkspaceDocumentSourceStatus), documentsWithoutSourceCount };
   }
 
   /**
@@ -916,10 +903,17 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     sourceId: string;
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    const result = await this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
-    if (result.deletedCount > 0) {
-      this.publishDocumentStatusChanged(input.workspaceId);
-    }
+    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input));
+  }
+
+  /** The operator's removal of pages a scheduled crawl held, through the same deletion as {@link reapMissingPages}. */
+  async removeSourcePages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number }> {
+    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteSourcePagesByIds(input));
+  }
+
+  private async publishingDeletion<T extends { deletedCount: number }>(workspaceId: string, deletion: Promise<T>): Promise<T> {
+    const result = await deletion;
+    if (result.deletedCount > 0) this.publishDocumentStatusChanged(workspaceId);
     return result;
   }
 

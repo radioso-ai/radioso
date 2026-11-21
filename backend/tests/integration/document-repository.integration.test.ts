@@ -1081,6 +1081,34 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(result.deletedContentBytes).toBe(30);
   });
 
+  it("deleteSourcePagesByIds deletes only the named pages of the source and sums freed bytes", async () => {
+    const named = await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "named-1", contentSizeBytes: 40 }),
+      status: "ready",
+    });
+    const other = await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "other-1", contentSizeBytes: 50 }),
+      status: "ready",
+    });
+    const unsourced = await repository.create({
+      ...baseCreateInput({ sourceId: null, externalDocumentId: "manual-1", contentSizeBytes: 60 }),
+      status: "ready",
+    });
+
+    const result = await repository.deleteSourcePagesByIds({
+      workspaceId,
+      sourceId,
+      documentIds: [named.id, unsourced.id],
+    });
+
+    expect(result).toEqual({ deletedCount: 1, deletedContentBytes: 40 });
+    expect(await repository.findByIdAndWorkspaceId(named.id, workspaceId)).toBeNull();
+    expect(await repository.findByIdAndWorkspaceId(other.id, workspaceId)).not.toBeNull();
+    expect(await repository.findByIdAndWorkspaceId(unsourced.id, workspaceId)).not.toBeNull();
+    await expect(repository.deleteSourcePagesByIds({ workspaceId, sourceId, documentIds: [] }))
+      .resolves.toEqual({ deletedCount: 0, deletedContentBytes: 0 });
+  });
+
   it("lists a filtered, cursor-paginated document inventory without reading document content", async () => {
     const matching = await repository.create({
       ...baseCreateInput({

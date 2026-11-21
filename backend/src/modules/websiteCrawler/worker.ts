@@ -13,6 +13,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
+import type { WebsiteMissingPageStore } from "./missingPages.js";
 import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type WebsiteCrawlerAuditPort } from "./service.js";
 import {
   classifyWebsiteCrawlerFailure,
@@ -41,6 +42,7 @@ export class WebsiteCrawlWorker {
     dispatcher: WebsiteCrawlJobDispatcherPort;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
+    missingPages?: WebsiteMissingPageStore;
     errorReporter?: Pick<ErrorReporter, "report">;
     logger: AppLogger;
     pollIntervalMs?: number;
@@ -248,6 +250,7 @@ export class WebsiteCrawlWorker {
         provider: this.dependencies.provider,
         documentIngestionService: this.dependencies.documentIngestionService,
         auditService: this.dependencies.auditService,
+        missingPages: this.dependencies.missingPages,
         logger: this.dependencies.logger,
       });
       const result = await service.crawlAndPublish({
@@ -260,6 +263,7 @@ export class WebsiteCrawlWorker {
         signal: abortController.signal,
         policy: job.policy,
         checkpoint: job.checkpoint,
+        trigger: job.trigger,
         onCheckpoint: async (checkpoint) => {
           if (await this.dependencies.repository.updateCheckpoint(job.id, job.attemptCount, checkpoint)) {
             this.publish(job.workspaceId, "crawl.progress");

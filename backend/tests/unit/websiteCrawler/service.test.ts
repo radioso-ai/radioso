@@ -6,6 +6,7 @@ import {
 } from "../../../src/modules/websiteCrawler/service.js";
 import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
 import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "../../../src/modules/websiteCrawler/errors.js";
+import { emptyWebsiteCrawlCheckpoint } from "../../../src/modules/websiteCrawler/policy.js";
 
 const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"]>>["pages"]): WebsiteCrawlerProvider => ({
   name: "fake",
@@ -1633,5 +1634,95 @@ describe("website crawler service", () => {
     });
 
     expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("reaps after a fresh crawl the worker started from an empty checkpoint", async () => {
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{ sourceUrl: "https://example.com/a", canonicalUrl: "https://example.com/a", title: "A", content: "alpha", metadata: {} }]),
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages,
+      },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, checkpoint: emptyWebsiteCrawlCheckpoint() });
+
+    expect(reapMissingPages).toHaveBeenCalledOnce();
+  });
+
+  it("records who started the crawl on its audit event", async () => {
+    const record = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{ sourceUrl: "https://example.com/a", canonicalUrl: "https://example.com/a", title: "A", content: "alpha", metadata: {} }]),
+      documentIngestionService: { ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }) },
+      auditService: { record },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, trigger: "scheduled" });
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5 });
+
+    expect(record.mock.calls.map(([event]) => [event.eventType, event.metadata.trigger])).toEqual([
+      ["document.website_crawler.crawl", "scheduled"],
+      ["document.website_crawler.crawl", "manual"],
+    ]);
+  });
+
+  it("holds the missing pages of a scheduled crawl through the missing page store instead of reaping them", async () => {
+    const reapMissingPages = vi.fn();
+    const missingPages = {
+      reviewMissingPages: vi.fn().mockResolvedValue({
+        livePageCountBeforeCrawl: 4,
+        missingPages: [
+          { documentId: "doc-b", externalDocumentId: "website:https://example.com:https://example.com/b", kept: false },
+          { documentId: "doc-c", externalDocumentId: "website:https://example.com:https://example.com/c", kept: false },
+        ],
+      }),
+      holdMissingPages: vi.fn().mockResolvedValue(2),
+    };
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{ sourceUrl: "https://example.com/a", canonicalUrl: "https://example.com/a", title: "A", content: "alpha", metadata: {} }]),
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-a", status: "queued" }),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages,
+      },
+      missingPages,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", sourceId: "source-1", url: "https://example.com", limit: 5, trigger: "scheduled" });
+
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "source-1",
+      seenExternalDocumentIds: ["website:https://example.com:https://example.com/a"],
+      crawlStartedAt: expect.any(Date),
+    }));
+    expect(missingPages.holdMissingPages).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId: "source-1", documentIds: ["doc-b", "doc-c"] });
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("leaves a source a scheduled crawl stopped on its quota with a failed sync", async () => {
+    const usageLimitError = Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded", statusCode: 429 });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{ sourceUrl: "https://example.com/a", canonicalUrl: "https://example.com/a", title: "A", content: "alpha", metadata: {} }]),
+      documentIngestionService: {
+        ingest: vi.fn().mockRejectedValue(usageLimitError),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState,
+        reapMissingPages: vi.fn(),
+      },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({ workspaceId: "workspace-1", sourceId: "source-1", url: "https://example.com", limit: 5, trigger: "scheduled" }))
+      .rejects.toBe(usageLimitError);
+    expect(updateSourceSyncState).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId: "source-1", status: "failure" });
   });
 });

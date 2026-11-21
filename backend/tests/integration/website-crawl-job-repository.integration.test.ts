@@ -136,11 +136,11 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
       limit: 5,
     });
 
-    expect(valid).toMatchObject({ workspaceId, sourceId, status: "queued" });
+    expect(valid).toMatchObject({ created: true, job: { workspaceId, sourceId, status: "queued", trigger: "manual" } });
     expect(wrongWorkspace).toBeNull();
     expect(missingSource).toBeNull();
     await expect(repository.listForWorkspace(workspaceId)).resolves.toEqual([
-      expect.objectContaining({ id: valid?.id, sourceId }),
+      expect.objectContaining({ id: valid?.job.id, sourceId }),
     ]);
     await expect(repository.listForWorkspace(otherWorkspaceId)).resolves.toEqual([]);
   });
@@ -504,5 +504,40 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
     });
 
     expect(plan).toMatch(/idx_website_crawl_jobs_stale_(processing|paused_claim|paused_resume)/);
+  });
+  it("returns the source's queued or processing crawl instead of starting a second one", async () => {
+    const first = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/once", limit: 5 });
+    const whileQueued = await repository.createForSource({
+      accountId, workspaceId, sourceId, requestedUrl: "https://example.com/once", limit: 5, trigger: "scheduled",
+    });
+    expect(whileQueued).toEqual({ created: false, job: expect.objectContaining({ id: first!.job.id, trigger: "manual" }) });
+
+    const claimed = await repository.claimById(first!.job.id, new Date(first!.job.createdAt.getTime() + 60_000));
+    const whileProcessing = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/once", limit: 5 });
+    expect(whileProcessing).toMatchObject({ created: false, job: { id: first!.job.id, status: "processing" } });
+
+    await repository.markCompleted(first!.job.id, claimed!.attemptCount, { accepted: 1 });
+    const afterCompletion = await repository.createForSource({
+      accountId, workspaceId, sourceId, requestedUrl: "https://example.com/once", limit: 5, trigger: "scheduled",
+    });
+    expect(afterCompletion).toMatchObject({ created: true, job: { status: "queued", trigger: "scheduled" } });
+    expect(afterCompletion!.job.id).not.toBe(first!.job.id);
+  });
+
+  it("starts a new crawl next to a paused one, as before", async () => {
+    const paused = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/paused", limit: 5 });
+    await repository.pauseBySourceId(sourceId, workspaceId);
+
+    const next = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/paused", limit: 5 });
+    expect(next).toMatchObject({ created: true });
+    expect(next!.job.id).not.toBe(paused!.job.id);
+  });
+
+  it("lets one of two concurrent requests for a source create the crawl", async () => {
+    const results = await Promise.all([1, 2, 3].map(() =>
+      repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/race", limit: 5 })));
+
+    expect(results.filter((result) => result?.created)).toHaveLength(1);
+    expect(new Set(results.map((result) => result?.job.id)).size).toBe(1);
   });
 });

@@ -11,6 +11,7 @@ const createJob = (): WebsiteCrawlJobRecord => ({
   requestedUrl: "https://example.com",
   limit: 2,
   status: "processing",
+  trigger: "manual",
   attemptCount: 1,
   policy: {
     includeUrlPatterns: [],
@@ -1032,5 +1033,51 @@ describe("website crawl worker", () => {
     expect(markFailed).not.toHaveBeenCalled();
     expect(releasePausedClaim).toHaveBeenCalledWith(oldJob.id, oldJob.attemptCount);
     expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
+    const sourceId = "44444444-4444-4444-8444-444444444444";
+    const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10 };
+    const record = vi.fn().mockResolvedValue(undefined);
+    const missingPages = {
+      reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] }),
+      holdMissingPages: vi.fn(),
+    };
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted: vi.fn().mockResolvedValue(true),
+        markFailed: vi.fn().mockResolvedValue(true),
+        updateCheckpoint: vi.fn().mockResolvedValue(false),
+        releasePausedClaim: vi.fn().mockResolvedValue(false),
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          runId: "run-1",
+          status: "completed",
+          pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+        }),
+      },
+      dispatcher: createDispatcher(),
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
+        resolveSource: vi.fn().mockResolvedValue({ id: sourceId }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages: vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 }),
+      },
+      auditService: { record },
+      missingPages,
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+    });
+
+    await worker.runOnce();
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      metadata: expect.objectContaining({ trigger: "scheduled" }),
+    }));
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ trigger: "scheduled", sourceId }));
   });
 });

@@ -1,4 +1,5 @@
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
+import type { RecrawlCadence } from "../../websiteCrawler/public.js";
 import type { DocumentImageSummary } from "./documentImages.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
@@ -76,6 +77,9 @@ export interface WorkspaceDocumentSourceStatus {
   readonly config: Record<string, unknown>;
   readonly lastSyncStatus: string | null;
   readonly lastSyncedAt: Date | null;
+  /** How often a website source recrawls itself; `off` for every other kind. */
+  readonly recrawlCadence: RecrawlCadence;
+  readonly nextRecrawlAt: Date | null;
   readonly documentCount: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -367,6 +371,12 @@ export interface DocumentRepositoryPort {
     workspaceId: string;
     sourceId: string;
     keepExternalDocumentIds: string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
+  /** Deletes the named pages of the source the way {@link deleteMissingPagesBySourceAndExternalIds} does. */
+  deleteSourcePagesByIds(input: {
+    workspaceId: string;
+    sourceId: string;
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 

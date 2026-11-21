@@ -23,6 +23,7 @@ const contextVariablePorts = () => {
       name: "loyalty_tier",
       description: "The customer's loyalty tier.",
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "on_reference",
@@ -65,7 +66,7 @@ describe("context_variables reader", () => {
     expect(ports.listByWorkspace).toHaveBeenCalledWith("workspace-1");
     expect(ports.listByAgent).toHaveBeenCalledWith("workspace-1", "agent-1");
     expect(result.variables).toEqual([
-      { id: "variable-1", name: "loyalty_tier", description: "The customer's loyalty tier.", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      { id: "variable-1", name: "loyalty_tier", description: "The customer's loyalty tier.", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
     ]);
     expect(result.enablements).toEqual([
       { id: "enablement-1", variableId: "variable-1", variableName: "loyalty_tier", source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference", enabled: true },
@@ -153,6 +154,27 @@ describe("propose_context_variable", () => {
     // token from the second, fresher read, letting a concurrent edit slip past Apply's version
     // check undetected.
     expect((adapter as { readVersionToken: ReturnType<typeof vi.fn> }).readVersionToken).not.toHaveBeenCalled();
+  });
+
+  it("hands an enum attribute's options to the adapter with the rest of the definition", async () => {
+    const { descriptors, adapter } = buildTools();
+    const descriptor = descriptors.find((entry) => entry.name === "propose_context_variable");
+    const options = [{ key: "billing", label: "Billing", description: "Invoices and payments." }, { key: "legacy", label: "Legacy", archived: true }];
+
+    await descriptor!.createTool(context).invoke({
+      agentId: "agent-1",
+      name: "topic",
+      valueType: "enum",
+      options,
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "on_reference",
+    }, {} as never);
+
+    expect(adapter.validatePayload).toHaveBeenCalledWith("workspace-1", { agentId: "agent-1", variableId: null }, expect.objectContaining({
+      valueType: "enum",
+      options,
+    }));
   });
 
   it("targets an existing variable by id and falls back to the page agent", async () => {

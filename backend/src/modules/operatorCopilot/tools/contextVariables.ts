@@ -29,11 +29,18 @@ const entityNameSchema = z.string().trim().min(1).max(160);
 const readerInputSchema = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() }).strict();
 const readerOutputSchema = z.object({ variables: z.array(z.record(z.string(), z.unknown())), enablements: z.array(z.record(z.string(), z.unknown())) });
 
-const contextVariableValueTypes = ["string", "json"] as const;
+const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
 const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
+
+const optionInputSchema = z.object({
+  key: z.string().describe("Identifier the value stores; letters, digits, underscores. Never changes."),
+  label: z.string().describe("Name operators see."),
+  description: z.string().nullable().optional().describe("When this option applies, in the operator's language."),
+  archived: z.boolean().optional().describe("Archive an option instead of removing it."),
+}).strict();
 
 const proposalInputSchema = z.object({
   agentId: idSchema.optional(),
@@ -42,6 +49,8 @@ const proposalInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
   valueType: z.enum(contextVariableValueTypes).optional(),
+  options: z.array(optionInputSchema).nullable().optional()
+    .describe("Enum only: the full option list, every existing key included. Omit to keep the stored list."),
   trustTier: z.enum(contextVariableTrustTiers).optional(),
   sensitivity: z.enum(contextVariableSensitivities).optional(),
   defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
@@ -67,6 +76,7 @@ export interface CopilotContextVariableDefinitionRecord {
   readonly name: string;
   readonly description: string | null;
   readonly valueType: string;
+  readonly options: ReadonlyArray<{ readonly key: string; readonly label: string; readonly description: string | null; readonly archived: boolean }> | null;
   readonly trustTier: string;
   readonly sensitivity: string;
   readonly defaultSurfacing: string;
@@ -99,6 +109,7 @@ const projectDefinition = (variable: CopilotContextVariableDefinitionRecord) => 
   name: variable.name,
   description: variable.description,
   valueType: variable.valueType,
+  options: variable.options,
   trustTier: variable.trustTier,
   sensitivity: variable.sensitivity,
   defaultSurfacing: variable.defaultSurfacing,
@@ -167,6 +178,12 @@ const contextVariableProposalPayloadSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
     valueType: z.enum(contextVariableValueTypes),
+    options: z.array(z.object({
+      key: z.string(),
+      label: z.string(),
+      description: z.string().nullable(),
+      archived: z.boolean(),
+    }).strict()).nullable().optional(),
     trustTier: z.enum(contextVariableTrustTiers),
     sensitivity: z.enum(contextVariableSensitivities),
     defaultSurfacing: z.enum(contextVariableSurfacings),
@@ -226,12 +243,12 @@ export const createContextVariableProposalCopilotTools = (
         description,
         inputSchema: proposalInputSchema,
         outputSchema: proposalOutputSchema,
-        invoke: async ({ agentId, variableId, name, description: variableDescription, valueType, trustTier, sensitivity, defaultSurfacing, enablement, rationale, evidenceIds }) => {
+        invoke: async ({ agentId, variableId, name, description: variableDescription, valueType, options, trustTier, sensitivity, defaultSurfacing, enablement, rationale, evidenceIds }) => {
           const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
           const targetRef = { agentId: resolvedAgentId, variableId: variableId ?? null };
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const validated = await adapter.validatePayload(context.workspaceId, targetRef, {
-            name, description: variableDescription, valueType, trustTier, sensitivity, defaultSurfacing, enablement, rationale,
+            name, description: variableDescription, valueType, options, trustTier, sensitivity, defaultSurfacing, enablement, rationale,
           });
           const validatedPayload = validated.payload as { name: string; rationale?: string };
           // validatePayload is the version-token source (see CopilotContextVariableProposalAdapter's

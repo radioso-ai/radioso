@@ -1,13 +1,18 @@
 import { z } from "zod";
 
 import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
-import type { AgentContextVariableEnablement, ContextVariable, ContextVariableService } from "../context-variables/public.js";
+import type {
+  AgentContextVariableEnablement,
+  ContextVariable,
+  ContextVariableOption,
+  ContextVariableService,
+} from "../context-variables/public.js";
 import { isStale } from "./proposalVersioning.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 // Proposal shape remains Ray-owned; the context-variable module validates the
 // resulting full enablement before drafts and applies can persist it.
-const contextVariableValueTypes = ["string", "json"] as const;
+const contextVariableValueTypes = ["string", "json", "enum"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
@@ -30,20 +35,36 @@ const contextVariableEnablementInputSchema = z.object({
   surfacing: z.enum(contextVariableSurfacings),
   enabled: z.boolean().optional(),
 }).strict();
+// An enum's options as Ray drafts them; the context-variable module checks keys, labels and limits.
+const contextVariableOptionInputSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  description: z.string().nullable().optional(),
+  archived: z.boolean().optional(),
+}).strict();
+const contextVariableOptionStoredSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  description: z.string().nullable(),
+  archived: z.boolean(),
+}).strict();
 const contextVariableProposalPayloadSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
   valueType: z.enum(contextVariableValueTypes).optional(),
+  options: z.array(contextVariableOptionInputSchema).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers).optional(),
   sensitivity: z.enum(contextVariableSensitivities).optional(),
   defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
   enablement: contextVariableEnablementInputSchema.optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
 }).strict();
+// `options` is optional so a proposal stored before enum variables existed still parses.
 const contextVariableDefinitionStoredSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   valueType: z.enum(contextVariableValueTypes),
+  options: z.array(contextVariableOptionStoredSchema).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers),
   sensitivity: z.enum(contextVariableSensitivities),
   defaultSurfacing: z.enum(contextVariableSurfacings),
@@ -113,6 +134,7 @@ interface NormalizedContextVariableDefinition {
   readonly name: string;
   readonly description: string | null;
   readonly valueType: ContextVariable["valueType"];
+  readonly options: readonly ContextVariableOption[] | null;
   readonly trustTier: ContextVariable["trustTier"];
   readonly sensitivity: ContextVariable["sensitivity"];
   readonly defaultSurfacing: ContextVariable["defaultSurfacing"];
@@ -145,8 +167,18 @@ const findAgentContextVariableEnablement = async (
  * reader), never a draft from prose, so validation happens entirely in `validatePayload` — the
  * same shape as propose_skill_config.
  */
+const normalizeOptions = (
+  options: ReadonlyArray<z.infer<typeof contextVariableOptionInputSchema>> | null,
+): readonly ContextVariableOption[] | null =>
+  options?.map((option) => ({
+    key: option.key,
+    label: option.label,
+    description: option.description ?? null,
+    archived: option.archived ?? false,
+  })) ?? null;
+
 export const createContextVariableCopilotProposalAdapter = (deps: {
-  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertEnablementReferences" | "applyProposal">;
+  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertEnablementReferences" | "applyProposal">;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariables, workspaceId, agentId, variableId);
@@ -160,10 +192,11 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
    * payload carries, so a preview diff shows only fields a proposal can actually change - not
    * identity/audit columns (id, workspaceId, createdAt, updatedAt, ...) that would otherwise
    * render as spurious "removed" rows next to a payload that never carried them. */
-  const projectDefinitionForPreview = (definition: Pick<ContextVariable, "name" | "description" | "valueType" | "trustTier" | "sensitivity" | "defaultSurfacing">) => ({
+  const projectDefinitionForPreview = (definition: Pick<ContextVariable, "name" | "description" | "valueType" | "options" | "trustTier" | "sensitivity" | "defaultSurfacing">) => ({
     name: definition.name,
     description: definition.description,
     valueType: definition.valueType,
+    options: definition.options,
     trustTier: definition.trustTier,
     sensitivity: definition.sensitivity,
     defaultSurfacing: definition.defaultSurfacing,
@@ -211,7 +244,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     const existingEnablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
 
     const hasDefinitionFields = payload.name !== undefined || payload.description !== undefined
-      || payload.valueType !== undefined || payload.trustTier !== undefined
+      || payload.valueType !== undefined || payload.options !== undefined || payload.trustTier !== undefined
       || payload.sensitivity !== undefined || payload.defaultSurfacing !== undefined;
     if (!existing && !hasDefinitionFields) {
       throw badRequest("A new context variable needs a name, value type, trust tier, sensitivity, and default surfacing");
@@ -236,10 +269,15 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         name,
         description: "description" in payload ? payload.description ?? null : existing?.description ?? null,
         valueType,
+        // Options the proposal leaves out stay as stored while the type stays.
+        options: payload.options !== undefined
+          ? normalizeOptions(payload.options)
+          : valueType === existing?.valueType ? existing.options : null,
         trustTier,
         sensitivity,
         defaultSurfacing,
       };
+      await deps.contextVariables.assertDefinitionTypeFits(existing, definition);
 
       // A create, or a rename, that would collide with another variable's workspace+name identity
       // (context_variables_workspace_id_name_key) can never apply - refusing it here, at draft
@@ -410,7 +448,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
           workspaceId,
           agentId: targetRef.agentId,
           variableId: targetRef.variableId,
-          definition: payload.definition,
+          definition: payload.definition ? { ...payload.definition, options: payload.definition.options ?? null } : null,
           expectedVariableUpdatedAt: targetRef.variableId ? decoded.variableUpdatedAt : null,
           enablement: payload.enablement,
           expectedEnablementUpdatedAt: decoded.enablementUpdatedAt,

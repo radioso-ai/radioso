@@ -145,7 +145,11 @@ A value is stored as its key, and a turn reads it by its option. A directive
 condition sees both, as `{ "key": "billing", "label": "Billing" }`, so a
 condition written in your team's language matches the label. The answer prompt
 and a routine step's `{{context.topic}}` show the label. A skill input bound to
-the attribute receives the key, the identifier your own systems act on.
+the attribute receives the key, the identifier your own systems act on. When
+that input is a choice of its own, it has to accept every key of the attribute,
+archived ones included, because a value that holds an archived key keeps it.
+A routine that binds the attribute to an input missing one of its keys is
+refused with `context_variable_option_not_accepted`, naming the missing keys.
 
 The dashboard supports one source:
 

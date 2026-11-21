@@ -527,6 +527,29 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     ]);
   });
 
+  it("refuses a Choice attribute bound to a choice input that does not accept every one of its keys", () => {
+    const bound = (enumValues: string[]) => validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0],
+        metadata: { inputBindings: { topic: { kind: "contextVariableRef", contextVariable: "topic" } } },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [{ key: "topic", type: "enum", required: false, enumValues }])),
+      // `returns` is archived: a value that already holds it keeps it, so the input must accept it too.
+      availableContextVariables: new Map([["topic", { valueType: "enum", optionKeys: ["billing", "shipping", "returns"] }]]),
+    });
+
+    expect(bound(["billing", "shipping"]).diagnostics).toEqual([
+      expect.objectContaining({
+        code: "context_variable_option_not_accepted",
+        location: "step:lookup.inputBindings.topic",
+        message: expect.stringContaining("\"returns\""),
+      }),
+    ]);
+    expect(bound(["billing", "shipping", "returns", "other"]).diagnostics).toEqual([]);
+  });
+
   it("does not treat a required contextVariableRef as guaranteed on entry", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),

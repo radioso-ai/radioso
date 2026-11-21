@@ -84,6 +84,20 @@ describe("resolveAvailableContextVariables", () => {
     expect(result.size).toBe(BUILT_IN_CONTEXT_VARIABLES.length + 1);
   });
 
+  it("exposes every key an enum variable's value can hold, archived ones included", () => {
+    const topic: ContextVariable = {
+      ...variable("topic", "enum"),
+      options: [
+        { key: "billing", label: "Billing", description: null, archived: false },
+        { key: "legacy", label: "Legacy", description: null, archived: true },
+      ],
+    };
+
+    const result = resolveAvailableContextVariables([enablement({ variable: topic })]);
+
+    expect(result.get("topic")).toEqual({ valueType: "enum", optionKeys: ["billing", "legacy"] });
+  });
+
   it("lets an agent-scoped variable override a built-in of the same name", () => {
     const result = resolveAvailableContextVariables([
       enablement({ variable: variable("page_context", "string") }),

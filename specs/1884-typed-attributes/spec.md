@@ -523,4 +523,4 @@ PR 1b is the largest at about 26 files. They are one new module plus one edit pe
 
 ## 16. Open items
 
-1. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; it could ship sooner as its own fix.
+1. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; the product owner chose to ship it there rather than as a separate fix.

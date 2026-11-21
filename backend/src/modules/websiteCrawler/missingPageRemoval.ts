@@ -7,7 +7,7 @@ import type { CrawlTrigger } from "./recrawlSchedule.js";
  */
 export const MISSING_PAGE_HOLD_SHARE = 0.2;
 
-export type MissingPageRemoval = "remove" | "hold";
+type MissingPageRemoval = "remove" | "hold";
 
 /**
  * What a complete crawl does with the source's pages it no longer found. A crawl the operator

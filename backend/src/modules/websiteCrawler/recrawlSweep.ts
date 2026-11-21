@@ -11,15 +11,15 @@ import {
 } from "./recrawlSchedule.js";
 
 /** Rows one claim takes, and the most claims one run makes; a backlog drains over the next runs. */
-export const WEBSITE_RECRAWL_BATCH_SIZE = 50;
-export const WEBSITE_RECRAWL_MAX_BATCHES_PER_RUN = 10;
+const WEBSITE_RECRAWL_BATCH_SIZE = 50;
+const WEBSITE_RECRAWL_MAX_BATCHES_PER_RUN = 10;
 
 /** Queues a source's stored crawl. The documents module's recrawl, which reads the source's saved scope. */
 export interface ScheduledRecrawlPort {
   recrawlSource(input: { accountId: null; workspaceId: string; sourceId: string; trigger: CrawlTrigger }): Promise<unknown>;
 }
 
-export interface WebsiteRecrawlSweepCounts {
+interface WebsiteRecrawlSweepCounts {
   due: number;
   enqueued: number;
   /** Due sources that already had a crawl queued, running or paused; they wait for their next time. */

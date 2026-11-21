@@ -10,12 +10,12 @@ import type { WorkspaceDocumentSourceStatus } from "../../../modules/documents/c
 import type { ActiveRecrawlCadence } from "../../../modules/websiteCrawler/public.js";
 
 /** What a website source's presentation adds about its recrawl, read once per request. */
-export interface WebsiteRecrawlPresentation {
+interface WebsiteRecrawlPresentation {
   fastestRecrawlCadence: ActiveRecrawlCadence;
   heldPageCounts: ReadonlyMap<string, number>;
 }
 
-export interface WebsiteSourceCrawlSettings {
+interface WebsiteSourceCrawlSettings {
   url: string | null;
   limit: number;
   includeUrlPatterns: string[];
@@ -23,7 +23,7 @@ export interface WebsiteSourceCrawlSettings {
   preserveContentLinks: boolean;
 }
 
-export const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceCrawlSettings => {
+const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceCrawlSettings => {
   const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
     ? (config.policy as Record<string, unknown>)
     : {};
@@ -46,7 +46,7 @@ export const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceC
   };
 };
 
-export const buildSyntheticManualDocumentSource = (
+const buildSyntheticManualDocumentSource = (
   workspaceId: string,
   documentCount: number,
 ): DocumentSourceListRecord => ({

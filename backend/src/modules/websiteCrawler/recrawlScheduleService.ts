@@ -12,7 +12,7 @@ import {
   type RecrawlPlanPort,
 } from "./recrawlSchedule.js";
 
-export const RECRAWL_CADENCE_NOT_IN_PLAN_CODE = "recrawl_cadence_not_in_plan";
+const RECRAWL_CADENCE_NOT_IN_PLAN_CODE = "recrawl_cadence_not_in_plan";
 
 const recrawlCadenceNotInPlan = (fastestRecrawlCadence: ActiveRecrawlCadence): AppError =>
   new AppError(403, RECRAWL_CADENCE_NOT_IN_PLAN_CODE, `This plan recrawls a website ${fastestRecrawlCadence} at most`, {
@@ -34,7 +34,7 @@ export const requireWebsiteSource = async (
   return source;
 };
 
-export interface WebsiteRecrawlDescription {
+interface WebsiteRecrawlDescription {
   fastestRecrawlCadence: ActiveRecrawlCadence;
   heldPageCounts: Map<string, number>;
 }

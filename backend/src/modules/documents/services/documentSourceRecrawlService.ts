@@ -2,14 +2,14 @@ import type { DocumentSourceRepositoryPort } from "../../../db/repositories/docu
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { CrawlTrigger, WebsiteCrawlPolicy } from "../../websiteCrawler/public.js";
 
-export interface DocumentSourceRecrawlResult {
+interface DocumentSourceRecrawlResult {
   jobId: string;
   sourceId: string | null;
   requestedUrl: string;
   status: "queued";
 }
 
-export interface DocumentSourceRecrawlCrawlJobsPort {
+interface DocumentSourceRecrawlCrawlJobsPort {
   enqueueForSource(input: {
     accountId: string | null;
     workspaceId: string;
@@ -21,7 +21,7 @@ export interface DocumentSourceRecrawlCrawlJobsPort {
   }): Promise<DocumentSourceRecrawlResult>;
 }
 
-export interface DocumentSourceRecrawlCrawlerConfig {
+interface DocumentSourceRecrawlCrawlerConfig {
   defaultLimit: number;
   maxLimit: number;
 }

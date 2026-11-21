@@ -21869,19 +21869,35 @@
         ]
       },
       "ContextVariableOptionInput": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ContextVariableOption"
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "What a value stores. It never changes."
           },
-          {
-            "type": "object",
-            "properties": {
-              "archived": {
-                "type": "boolean"
-              }
-            }
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "archived": {
+            "type": "boolean"
           }
-        ]
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "additionalProperties": false
       },
       "ContextVariable": {
         "type": "object",

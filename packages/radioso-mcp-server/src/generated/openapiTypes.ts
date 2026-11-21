@@ -10784,7 +10784,11 @@ export interface components {
             /** @description An archived option is no longer offered or accepted as a new value; values that hold it keep it. */
             archived: boolean;
         };
-        ContextVariableOptionInput: components["schemas"]["ContextVariableOption"] & {
+        ContextVariableOptionInput: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description?: string | null;
             archived?: boolean;
         };
         ContextVariable: {

@@ -8,7 +8,11 @@ import { parseParams, parseQuery, validateBody } from "../middleware/validate.js
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
-import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
+import {
+  contextVariableOptionInputSchema,
+  deriveVisitorIdentitySigningKey,
+  normalizeContextVariableOption,
+} from "../../../modules/context-variables/public.js";
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 
 const contextVariableValueTypes = ["string", "json", "enum"] as const;
@@ -30,18 +34,8 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   ]),
 );
 
-// The context-variable module checks key syntax, uniqueness and that no stored key is dropped.
-const contextVariableOptionSchema = z.object({
-  key: z.string().min(1).max(optionLimits.maxKeyChars),
-  label: z.string().min(1).max(optionLimits.maxLabelChars),
-  description: z.string().max(optionLimits.maxDescriptionChars).nullable().optional(),
-  archived: z.boolean().optional(),
-}).strict().transform((option) => ({
-  key: option.key,
-  label: option.label,
-  description: option.description ?? null,
-  archived: option.archived ?? false,
-}));
+// The context-variable module also checks that keys are unique and that no stored key is dropped.
+const contextVariableOptionSchema = contextVariableOptionInputSchema.transform(normalizeContextVariableOption);
 
 const contextVariableBodySchema = z.object({
   name: z.string().min(1).max(120),

@@ -1,5 +1,6 @@
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import type { ContextVariable, ContextVariableOption, ContextVariableValueType } from "./domain.js";
+import { contextVariableOptionSchema } from "./optionSchema.js";
 
 type Verdict<Code extends string> = { ok: true } | { ok: false; code: Code };
 
@@ -35,16 +36,15 @@ export type OptionsValidationCode =
   | "option_description_too_long"
   | "option_removed";
 
-/** The slot-key pattern: an option key is an identifier, never matched against visitor text. */
-const optionKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const limits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
+/** The first field of an option that breaks the option schema, as its code. */
 const optionFault = (option: ContextVariableOption): OptionsValidationCode | null => {
-  if (option.key.length > limits.maxKeyChars || !optionKeyPattern.test(option.key)) return "invalid_option_key";
-  const label = option.label.trim();
-  if (label.length === 0 || label.length > limits.maxLabelChars) return "invalid_option_label";
-  if ((option.description?.length ?? 0) > limits.maxDescriptionChars) return "option_description_too_long";
-  return null;
+  const parsed = contextVariableOptionSchema.safeParse(option);
+  if (parsed.success) return null;
+  const field = parsed.error.issues[0]?.path[0];
+  if (field === "key") return "invalid_option_key";
+  return field === "description" ? "option_description_too_long" : "invalid_option_label";
 };
 
 /**

@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  contextVariableOptionInputSchema,
+  contextVariableOptionSchema,
+  type ContextVariableOption,
+} from "../../context-variables/public.js";
 import type {
   CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
@@ -35,12 +40,13 @@ const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
 const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 
-const optionInputSchema = z.object({
-  key: z.string().describe("Identifier the value stores; letters, digits, underscores. Never changes."),
-  label: z.string().describe("Name operators see."),
-  description: z.string().nullable().optional().describe("When this option applies, in the operator's language."),
-  archived: z.boolean().optional().describe("Archive an option instead of removing it."),
-}).strict();
+const optionFields = contextVariableOptionInputSchema.shape;
+const optionInputSchema = contextVariableOptionInputSchema.extend({
+  key: optionFields.key.describe("Identifier the value stores; letters, digits, underscores. Never changes."),
+  label: optionFields.label.describe("Name operators see."),
+  description: optionFields.description.describe("When this option applies, in the operator's language."),
+  archived: optionFields.archived.describe("Archive an option instead of removing it."),
+});
 
 const proposalInputSchema = z.object({
   agentId: idSchema.optional(),
@@ -76,7 +82,7 @@ export interface CopilotContextVariableDefinitionRecord {
   readonly name: string;
   readonly description: string | null;
   readonly valueType: string;
-  readonly options: ReadonlyArray<{ readonly key: string; readonly label: string; readonly description: string | null; readonly archived: boolean }> | null;
+  readonly options: readonly ContextVariableOption[] | null;
   readonly trustTier: string;
   readonly sensitivity: string;
   readonly defaultSurfacing: string;
@@ -178,12 +184,7 @@ const contextVariableProposalPayloadSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
     valueType: z.enum(contextVariableValueTypes),
-    options: z.array(z.object({
-      key: z.string(),
-      label: z.string(),
-      description: z.string().nullable(),
-      archived: z.boolean(),
-    }).strict()).nullable().optional(),
+    options: z.array(contextVariableOptionSchema.strict()).nullable().optional(),
     trustTier: z.enum(contextVariableTrustTiers),
     sensitivity: z.enum(contextVariableSensitivities),
     defaultSurfacing: z.enum(contextVariableSurfacings),

@@ -2,6 +2,10 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
+import {
+  contextVariableOptionInputSchema,
+  contextVariableOptionSchema,
+} from "../../../../modules/context-variables/public.js";
 
 const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 const ContextVariableValueTypeSchema = z.enum(["string", "json", "enum"]);
@@ -24,15 +28,12 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
     description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit.",
   });
 
+  const optionKeyDescription = { description: "What a value stores. It never changes." };
   const ContextVariableOptionSchema = registry.register(
     "ContextVariableOption",
-    z.object({
-      key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u).max(optionLimits.maxKeyChars).openapi({
-        description: "What a value stores. It never changes.",
-      }),
-      label: z.string().min(1).max(optionLimits.maxLabelChars),
-      description: z.string().max(optionLimits.maxDescriptionChars).nullable(),
-      archived: z.boolean().openapi({
+    contextVariableOptionSchema.extend({
+      key: contextVariableOptionSchema.shape.key.openapi(optionKeyDescription),
+      archived: contextVariableOptionSchema.shape.archived.openapi({
         description: "An archived option is no longer offered or accepted as a new value; values that hold it keep it.",
       }),
     }),
@@ -40,9 +41,8 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
 
   const ContextVariableOptionInputSchema = registry.register(
     "ContextVariableOptionInput",
-    ContextVariableOptionSchema.extend({
-      description: z.string().max(optionLimits.maxDescriptionChars).nullable().optional(),
-      archived: z.boolean().optional(),
+    contextVariableOptionInputSchema.extend({
+      key: contextVariableOptionInputSchema.shape.key.openapi(optionKeyDescription),
     }),
   );
 

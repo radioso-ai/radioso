@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
-import type {
-  AgentContextVariableEnablement,
-  ContextVariable,
-  ContextVariableOption,
-  ContextVariableService,
+import {
+  contextVariableOptionInputSchema,
+  contextVariableOptionSchema,
+  normalizeContextVariableOption,
+  type AgentContextVariableEnablement,
+  type ContextVariable,
+  type ContextVariableOption,
+  type ContextVariableService,
 } from "../context-variables/public.js";
 import { isStale } from "./proposalVersioning.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
@@ -35,19 +38,9 @@ const contextVariableEnablementInputSchema = z.object({
   surfacing: z.enum(contextVariableSurfacings),
   enabled: z.boolean().optional(),
 }).strict();
-// An enum's options as Ray drafts them; the context-variable module checks keys, labels and limits.
-const contextVariableOptionInputSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  description: z.string().nullable().optional(),
-  archived: z.boolean().optional(),
-}).strict();
-const contextVariableOptionStoredSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  description: z.string().nullable(),
-  archived: z.boolean(),
-}).strict();
+// An enum's options take their rules from the context-variable module; it also checks that keys are
+// unique and that no stored key is dropped.
+const contextVariableOptionStoredSchema = contextVariableOptionSchema.strict();
 const contextVariableProposalPayloadSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
@@ -170,12 +163,7 @@ const findAgentContextVariableEnablement = async (
 const normalizeOptions = (
   options: ReadonlyArray<z.infer<typeof contextVariableOptionInputSchema>> | null,
 ): readonly ContextVariableOption[] | null =>
-  options?.map((option) => ({
-    key: option.key,
-    label: option.label,
-    description: option.description ?? null,
-    archived: option.archived ?? false,
-  })) ?? null;
+  options?.map(normalizeContextVariableOption) ?? null;
 
 export const createContextVariableCopilotProposalAdapter = (deps: {
   readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertEnablementReferences" | "applyProposal">;

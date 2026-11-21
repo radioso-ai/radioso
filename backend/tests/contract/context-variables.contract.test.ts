@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
-import { deriveVisitorIdentitySigningKey } from "../../src/modules/context-variables/public.js";
+import {
+  CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
+  deriveVisitorIdentitySigningKey,
+} from "../../src/modules/context-variables/public.js";
 import { conflict } from "../../src/shared/domain/errors.js";
 
 const createAgent = async (app: ReturnType<typeof createTestApp>["app"], authorization: string) =>
@@ -32,6 +35,15 @@ describe("context variable HTTP API", () => {
     const valueWrite = createOpenApiDocument().paths?.["/api/v1/context-variables/{id}/values"]?.put;
 
     expect(Object.keys(valueWrite?.responses ?? {})).toEqual(expect.arrayContaining(["200", "400", "401", "404", "409"]));
+  });
+
+  it("documents an option as the API takes it: the key pattern it enforces, and a description and archived flag a writer may leave out", () => {
+    const schemas = createOpenApiDocument().components?.schemas ?? {};
+
+    for (const name of ["ContextVariableOption", "ContextVariableOptionInput"]) {
+      expect(schemas[name]).toMatchObject({ properties: { key: { pattern: CONTEXT_VARIABLE_OPTION_KEY_PATTERN.source } } });
+    }
+    expect(schemas.ContextVariableOptionInput).toMatchObject({ required: ["key", "label"] });
   });
 
   it("returns the existing typed conflict response when a pinned variable cannot be deleted", async () => {

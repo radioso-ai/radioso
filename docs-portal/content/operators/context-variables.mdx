@@ -104,18 +104,20 @@ page:
 The **Advanced** section is closed on a new attribute and opens by itself when
 the attribute has a non-default setting:
 
-- **Signed by your server** (`trustTier: signed`) accepts the value only when
-  your server signs it. Use it for facts that prove something, such as the
+- **Treat as proof** (`trustTier: signed`) lets skills that need a verified
+  identity accept the value. Radioso does not check a signature on the value
+  itself, so tick it only when your server alone sets it, such as the
   customer's plan. Unchecked (`trustTier: unverified`), the value is a hint.
 - **Private data** (`sensitivity: sensitive`) masks the value in logs, stored
   history and directive conditions, which see `[redacted]`. It does not hide
-  the value from replies: when **Used by** is "The agent, in every reply", the
-  agent still reads the raw value. Choose another **Used by** option to keep it
-  out of the reply.
-- **Used by** (`defaultSurfacing`) sets where the value is used:
-  "The agent, in every reply" (`always`), "Rules, routines and skills that name
-  it" (`on_reference`), or "Only your team" (`operator_only`). Each agent can
-  change it.
+  the value from replies: wherever an agent's **Used by** is "Every reply, and
+  rules, routines and skills", the agent still reads the raw value. Set the
+  agent's **Used by** to another option to keep it out of the reply.
+- **Used by (default)** (`defaultSurfacing`) is the setting each agent starts
+  with. Each agent sets its own **Used by** on its card. The options are "Every
+  reply, and rules, routines and skills" (`always`), "Only rules, routines and
+  skills that name it" (`on_reference`), and "Only your team"
+  (`operator_only`).
 
 A definition is shared: an edit applies at once to every agent that uses it,
 published versions included. Each agent then enables the attributes it should
@@ -177,7 +179,7 @@ configure them.
 ## Trust tiers
 
 The trust tier describes how much the system should trust the value. In the
-dashboard it is the **Signed by your server** checkbox.
+dashboard it is the **Treat as proof** checkbox.
 
 - `unverified` is suitable for page state and host-supplied hints. Do not use
   it to unlock account-specific answers.
@@ -358,9 +360,10 @@ matching altogether.
 Surfacing is the **Used by** setting in the dashboard. It controls whether a resolved value is shown to the model as part of
 the prompt context.
 
-- `always` includes the value whenever it resolves.
-- `on_reference` keeps the value available for turn logic and includes it only
-  when the turn needs it.
+- `always` includes the value in the answer prompt whenever it resolves, and
+  leaves it available to directives, routine steps and skill inputs.
+- `on_reference` keeps the value out of the answer prompt. Directives, routine
+  steps (`{{context.x}}`) and skill inputs that name it read it.
 - `operator_only` stores it for operator inspection and logic, but does not
   surface it into the answer prompt; a routine step that references it reads
   nothing.

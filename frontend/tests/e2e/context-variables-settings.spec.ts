@@ -31,7 +31,7 @@ test("agent attribute settings create, enable, and update surfacing", async ({ p
   await page.getByLabel("Enable cart").click();
   await expect(page.getByLabel("Disable cart")).toBeVisible();
   await page.getByLabel("Used by", { exact: true }).click();
-  await page.getByRole("option", { name: "The agent, in every reply" }).click();
+  await page.getByRole("option", { name: "Every reply, and rules, routines and skills" }).click();
 
   await expect.poll(() =>
     contextVariableRequests.some((request) =>
@@ -197,12 +197,12 @@ test("advanced attribute settings stay closed by default and open when one is se
   await page.getByRole("button", { name: "Add attribute" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add attribute" });
   await expect(createDialog.getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-expanded", "false");
-  await expect(createDialog.getByLabel("Signed by your server")).toBeHidden();
+  await expect(createDialog.getByLabel("Treat as proof")).toBeHidden();
 
   // Checking both boxes is sent as trustTier and sensitivity.
   await createDialog.getByLabel("Name", { exact: true }).fill("account_tier");
   await createDialog.getByRole("button", { name: "Advanced" }).click();
-  await createDialog.getByLabel("Signed by your server").check();
+  await createDialog.getByLabel("Treat as proof").check();
   await createDialog.getByLabel("Private data").check();
   await createDialog.getByRole("button", { name: "Add attribute" }).click();
   await expect.poll(() => contextVariableRequests.find((request) => request.method === "POST")?.body).toMatchObject({
@@ -215,6 +215,6 @@ test("advanced attribute settings stay closed by default and open when one is se
   await page.getByRole("button", { name: "Edit plan" }).click();
   const editDialog = page.getByRole("dialog", { name: "Edit attribute" });
   await expect(editDialog.getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-expanded", "true");
-  await expect(editDialog.getByLabel("Signed by your server")).toBeChecked();
+  await expect(editDialog.getByLabel("Treat as proof")).toBeChecked();
   await expect(editDialog.getByLabel("Private data")).not.toBeChecked();
 });

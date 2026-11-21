@@ -6,6 +6,7 @@ import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
 import { AttributeAdvancedFields } from '@/components/dashboard/settings/attribute-advanced-fields'
 import {
   attributeHelp,
+  defaultAdvancedSettings,
   sourceLabels,
   surfacingLabels,
   valueTypeLabels,
@@ -66,9 +67,7 @@ const emptyForm: VariableFormState = {
   description: '',
   valueType: 'json',
   options: [],
-  trustTier: 'unverified',
-  sensitivity: 'normal',
-  defaultSurfacing: 'on_reference',
+  ...defaultAdvancedSettings,
 }
 
 const activeOptionCount = (options: readonly ContextVariableOption[]): string => {
@@ -208,9 +207,8 @@ export function AssistantContextVariablesSection({
 
   const closeDialog = () => {
     if (isSaving) return
+    // The title and fields stay as they are until the dialog has animated out; opening resets them.
     setDialogOpen(false)
-    setEditingVariable(null)
-    setForm(emptyForm)
     setNameTouched(false)
     setOptionsTouched(false)
     setDialogError(null)
@@ -244,8 +242,6 @@ export function AssistantContextVariablesSection({
       if (!isCurrentSave(saveId)) return
       mergeCatalogVariable(response.contextVariable)
       setDialogOpen(false)
-      setEditingVariable(null)
-      setForm(emptyForm)
       setNameTouched(false)
       setOptionsTouched(false)
       markSaved()
@@ -448,9 +444,9 @@ export function AssistantContextVariablesSection({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="always">{surfacingLabels.always}</SelectItem>
-                            <SelectItem value="on_reference">{surfacingLabels.on_reference}</SelectItem>
-                            <SelectItem value="operator_only">{surfacingLabels.operator_only}</SelectItem>
+                            {(Object.keys(surfacingLabels) as SurfacingOption[]).map((surfacing) => (
+                              <SelectItem key={surfacing} value={surfacing}>{surfacingLabels[surfacing]}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -547,7 +543,6 @@ export function AssistantContextVariablesSection({
               />
             ) : null}
             <AttributeAdvancedFields
-              key={editingVariable?.id ?? 'new'}
               settings={form}
               onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
             />

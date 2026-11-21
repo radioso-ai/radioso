@@ -3,7 +3,13 @@
 import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
-import { attributeHelp, surfacingLabels, type SurfacingOption } from '@/components/dashboard/settings/attribute-copy'
+import {
+  attributeHelp,
+  defaultAdvancedSettings,
+  type AdvancedAttributeSettings,
+  surfacingLabels,
+  type SurfacingOption,
+} from '@/components/dashboard/settings/attribute-copy'
 import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Label } from '@/components/ui/label'
@@ -14,19 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ContextVariableCreateRequest } from '@/lib/api'
-
-type AdvancedAttributeSettings = Pick<
-  ContextVariableCreateRequest,
-  'trustTier' | 'sensitivity' | 'defaultSurfacing'
->
-
-const defaultAdvancedSettings: AdvancedAttributeSettings = {
-  trustTier: 'unverified',
-  sensitivity: 'normal',
-  defaultSurfacing: 'on_reference',
-}
-
 const hasNonDefaultAdvancedSettings = (settings: AdvancedAttributeSettings): boolean =>
   settings.trustTier !== defaultAdvancedSettings.trustTier ||
   settings.sensitivity !== defaultAdvancedSettings.sensitivity ||
@@ -80,7 +73,7 @@ export function AttributeAdvancedFields({
       <CollapsibleContent className="space-y-4 border-t border-border p-3">
         <CheckboxField
           id="contextVariableSigned"
-          label="Signed by your server"
+          label="Treat as proof"
           description={attributeHelp.signed.description}
           checked={settings.trustTier === 'signed'}
           onChange={(checked) => onChange({ trustTier: checked ? 'signed' : 'unverified' })}
@@ -95,7 +88,7 @@ export function AttributeAdvancedFields({
         <div className="space-y-2">
           <SettingFieldHeader
             htmlFor="contextVariableDefaultSurfacing"
-            label="Used by"
+            label="Used by (default)"
             description={attributeHelp.usedBy.description}
             tooltip={attributeHelp.usedBy.tooltip}
           />

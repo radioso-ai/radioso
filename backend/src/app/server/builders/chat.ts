@@ -408,14 +408,7 @@ export const buildChatServices = (input: {
       }),
     });
   }
-  registerApiRequestSkillExecutor({
-    registry: input.composition.skillExecutorRegistry,
-    connections: input.apiConnections,
-    agentSkills: input.agentSkillRepository,
-    env: input.env,
-    metricsRegistry: input.metricsRegistry,
-    logger: input.logger,
-  });
+  registerApiRequestSkillExecutor(input.composition.skillExecutorRegistry, conversationScopedSkills.apiRequest, input);
   if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: SLACK_SKILLS_ADAPTER })) {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",

@@ -13,6 +13,7 @@ export type { ApiRequestSender } from "./requestRunner.js";
 export {
   API_REQUEST_SKILLS_ADAPTER,
   ApiRequestSkillExecutor,
+  type ApiRequestSkillSource,
 } from "./executor/apiRequestSkillExecutor.js";
 export {
   ApiConnectionService,

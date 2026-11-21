@@ -22,7 +22,6 @@ const FailureReasonSchema = z.enum([
   "blocked",
   "response_too_large",
   "credential_unavailable",
-  "method_not_read_only",
   "skill_not_found",
   "invalid_config",
   "context_missing",

@@ -30,8 +30,17 @@ interface ApiRequestSkillRecord {
   config?: Record<string, unknown>;
 }
 
-interface ApiRequestSkillSource {
-  findByName(workspaceId: string, agentId: string, skillName: string): Promise<ApiRequestSkillRecord | null>;
+/**
+ * The skill's row for the conversation the invocation runs for: its release's, which the
+ * invocation's context carries. Only the connection the row targets is read live.
+ */
+export interface ApiRequestSkillSource {
+  findByName(
+    workspaceId: string,
+    agentId: string,
+    skillName: string,
+    context?: Readonly<Record<string, unknown>>,
+  ): Promise<ApiRequestSkillRecord | null>;
 }
 
 export type ApiConnectionTargetResolution =
@@ -86,12 +95,6 @@ const settledRun = (run: ApiRequestRun, outputContract: SkillOutputContract | un
 const failed = (reason: ApiRequestFailureReason): ApiRequestRun =>
   ({ outcome: "failed", reason, httpStatus: null, durationMs: 0, outputs: {} });
 
-/**
- * Whether the routine resolved the skill as read-only. The dispatcher hands over the resolver's
- * full skill definition, which carries `readOnly`; the executor port's own type does not name it.
- */
-const resolvedAsReadOnly = (skill: object): boolean => "readOnly" in skill && skill.readOnly === true;
-
 const contextString = (invocation: SkillInvocation, key: string): string =>
   typeof invocation.context?.[key] === "string" ? invocation.context[key] : "";
 
@@ -126,7 +129,7 @@ export class ApiRequestSkillExecutor implements SkillExecutorPort {
     };
     if (!workspaceId || !agentId) return finish(failed("context_missing"));
 
-    const skill = await this.options.skills.findByName(workspaceId, agentId, invocation.skill.name);
+    const skill = await this.options.skills.findByName(workspaceId, agentId, invocation.skill.name, invocation.context);
     if (!skill || skill.kind !== "api_request" || !skill.enabled || !skill.targetId) {
       return finish(failed("skill_not_found"));
     }
@@ -134,9 +137,6 @@ export class ApiRequestSkillExecutor implements SkillExecutorPort {
     const config = apiRequestSkillConfigSchema.safeParse(skill.config ?? {});
     if (!config.success) return finish(failed("invalid_config"));
     const method = config.data.method;
-    // The routine let this run as read-only (a safe test runs it) when the skill sent a GET; a
-    // method changed since then must not go out under that judgement.
-    if (resolvedAsReadOnly(invocation.skill) && method !== "GET") return finish(failed("method_not_read_only"), method);
     if (Object.keys(config.data.outputs).length > 0) outputContract = skillOutputContractFor(config.data.outputs);
 
     const params = resolveApiRequestParams(config.data, invocation.collected ?? {}, invocation.collectedOrigins ?? {});

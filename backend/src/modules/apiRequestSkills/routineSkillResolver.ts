@@ -40,7 +40,9 @@ const apiRequestRoutineSkillDefinition = (name: string, readOnly: boolean): Skil
  * Resolves a routine tool step's `toolRef` to an API request skill. Filters on
  * `enabled && invocationMode === "routine_named"`, the filter the authoring catalog applies, so a
  * name an author can pick is a name this resolver routes. It reads each skill's method only to say
- * whether running it acts outside the conversation; the executor reads the rest.
+ * whether running it acts outside the conversation; the executor reads the rest. Both read the
+ * skills the conversation runs (its release's), which the dispatcher hands the executor, so the
+ * method judged read-only here is the method the executor sends.
  *
  * Structurally a `RoutineSkillResolver`; it does not import the routines module, which imports it.
  */

@@ -1,10 +1,10 @@
 import { ApiConnectionRepository } from "../../../db/repositories/apiConnectionRepository.js";
-import type { AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
 import {
   API_REQUEST_SKILLS_ADAPTER,
   ApiConnectionService,
   ApiRequestSkillExecutor,
   type ApiRequestSender,
+  type ApiRequestSkillSource,
 } from "../../../modules/apiRequestSkills/public.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import type { SkillExecutorRegistry } from "../../../modules/skills/public.js";
@@ -45,23 +45,29 @@ export const buildApiConnectionService = (input: {
   });
 };
 
-/** Registers the API request skill executor unless an edition registered its own. */
-export const registerApiRequestSkillExecutor = (input: {
-  registry: SkillExecutorRegistry;
-  connections: ApiConnectionService;
-  agentSkills: Pick<AgentSkillRepositoryPort, "findByName">;
-  env: ApiRequestEnv;
-  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
-  logger: AppLogger;
-}): void => {
-  if (input.registry.resolve({ kind: "internal", adapter: API_REQUEST_SKILLS_ADAPTER })) return;
+/**
+ * Registers the API request skill executor unless an edition registered its own. `skills` reads the
+ * skill row for the conversation an invocation runs for (`buildConversationScopedSkillLookups`);
+ * the connection it targets is read live from `apiConnections`.
+ */
+export const registerApiRequestSkillExecutor = (
+  registry: SkillExecutorRegistry,
+  skills: ApiRequestSkillSource,
+  input: {
+    apiConnections: ApiConnectionService;
+    env: ApiRequestEnv;
+    metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+    logger: AppLogger;
+  },
+): void => {
+  if (registry.resolve({ kind: "internal", adapter: API_REQUEST_SKILLS_ADAPTER })) return;
   const allowHttpLoopback = allowsHttpLoopback(input.env);
-  input.registry.register({
+  registry.register({
     kind: "internal",
     adapter: API_REQUEST_SKILLS_ADAPTER,
     executor: new ApiRequestSkillExecutor({
-      skills: input.agentSkills,
-      connections: input.connections,
+      skills,
+      connections: input.apiConnections,
       send: (request, limits) => sendPublicHttpRequest(request, limits, { allowHttpLoopback }),
       metricsRegistry: input.metricsRegistry ?? null,
       logger: input.logger,

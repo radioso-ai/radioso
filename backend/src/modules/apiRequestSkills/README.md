@@ -41,7 +41,11 @@ Reference: `docs/api-request-skills.md`.
   audit.
 - `ApiRequestSender`: the HTTP transport, injected by composition in
   `app/server/builders/apiRequestSkills.ts`.
-- A structural skill source, satisfied by the agent skill repository.
+- `ApiRequestSkillSource`: the skill row the conversation runs, which its
+  release froze, satisfied by the conversation-scoped lookup in
+  `app/composition/conversationSkills.ts`. The routine resolver reads the same
+  set, so a draft edit reaches a conversation only once it is published. The
+  connection the row targets is read live, like a webhook destination.
 
 `public.ts` is the module's entry point. Routes live in
 `app/http/routes/settingsApiConnectionRoutes.ts`; migration
@@ -58,5 +62,5 @@ A URL, header, credential, body or value is never recorded.
 
 ## Tests
 
-- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/contract/settings-api-connections.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/unit/release-pinned-skill-runtime.test.ts tests/contract/settings-api-connections.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts tests/integration/agent-revision-skill-draft.integration.test.ts`

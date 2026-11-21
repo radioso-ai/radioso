@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createToolSkillExecutor } from "@radioso/conversation-tools";
 
 import { SkillBackedContextResolver } from "../../src/app/composition/builtIn/contextResolverModule.js";
+import { API_REQUEST_SKILLS_ADAPTER, ApiRequestSkillExecutor } from "../../src/modules/apiRequestSkills/public.js";
 import { buildConversationScopedSkillLookups } from "../../src/app/composition/conversationSkills.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { createCompletionExportResolver } from "../../src/app/composition/routineTurnProvider.js";
@@ -15,10 +16,16 @@ import { ConversationAgentWebhookPermissionResolver } from "../../src/modules/ch
 import { McpSkillExecutor } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import { SdkMcpToolService } from "../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import { NotifyExecutor } from "../../src/modules/notify/notifyExecutor.js";
-import { compileRoutineDefinition, createRoutineTurnProvider, type RoutineDefinition } from "../../src/modules/routines/public.js";
+import {
+  compileRoutineDefinition,
+  createRoutineSkillResolverChain,
+  createRoutineTurnProvider,
+  type RoutineDefinition,
+} from "../../src/modules/routines/public.js";
 import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../src/modules/routines/skillDispatcher.js";
 import { SkillExecutorRegistry, type SkillInvocation } from "../../src/modules/skills/public.js";
 import { conversationSkillsOf } from "../../src/shared/domain/conversationSkills.js";
+import type { PublicHttpRequest } from "../../src/shared/infra/http/publicHttpRequest.js";
 import { connectMockMcpServer } from "../support/mockMcpServer.js";
 
 // A skill edit lands in the agent's draft and in the live agent_skills row at once. Every path that
@@ -215,6 +222,95 @@ describe("a routine a released conversation runs", () => {
     } as never);
 
     expect(conversationSkillsOf(seen[0]?.context)).toEqual([released]);
+  });
+});
+
+describe("an API request skill a released conversation runs", () => {
+  const released = skill({
+    skillName: "order_status",
+    kind: "api_request",
+    invocationMode: "routine_named",
+    targetType: "api_connection",
+    targetId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    config: {
+      method: "GET",
+      path: "/orders/{order_number}",
+      exposedParams: { order_number: { type: "text", slotBinding: "order" } },
+      boundParams: {},
+      outputs: { order_status: { path: "status", type: "text" } },
+    },
+  });
+  // A draft edit since the release: the live row now writes to another path.
+  const editedLive = { ...released, config: { ...released.config, method: "POST", path: "/orders/{order_number}/cancel" } };
+
+  const harness = () => {
+    const sent: PublicHttpRequest[] = [];
+    const findByName = vi.fn(async () => editedLive);
+    const lookups = buildConversationScopedSkillLookups(conversationSkills([editedLive], [released]), {
+      externalSkills: { findEnabledByName: async () => null },
+      webhookSkills: { findEnabledByName: async () => null },
+      emailSkills: { findEnabledByName: async () => null },
+      slackSkills: { findEnabledByName: async () => null },
+      agentSkills: { findByName },
+    });
+    const executor = new ApiRequestSkillExecutor({
+      skills: lookups.apiRequest,
+      // The connection stays live: a workspace target, like a webhook destination.
+      connections: {
+        resolveTarget: async (_workspaceId, id) => ({
+          kind: "found",
+          target: { id, baseUrl: "https://api.acme.example/v1", authScheme: "none", authHeaderName: null, credential: null, defaultHeaders: {} },
+        }),
+      },
+      send: async (request) => {
+        sent.push(request);
+        return { kind: "response", status: 200, body: Buffer.from(JSON.stringify({ status: "shipped" })), contentType: "application/json", durationMs: 5 };
+      },
+    });
+    return { executor, sent, findByName };
+  };
+
+  it("sends the release's method and path after a draft edit changed them", async () => {
+    const { executor, sent, findByName } = harness();
+
+    const result = await executor.dispatch({
+      skill: { name: "order_status" },
+      collected: { order: "A-100" },
+      collectedOrigins: { order: "slot" },
+      context: { workspaceId, agentId, conversationSkills: [released] },
+      emit: noopEmit,
+    });
+
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "completed", outputs: { order_status: "shipped" } } });
+    expect(sent).toMatchObject([{ method: "GET", url: "https://api.acme.example/v1/orders/A-100" }]);
+    expect(findByName).not.toHaveBeenCalled();
+  });
+
+  it("runs the release's read-only GET in a safe test, judged and sent from the same row", async () => {
+    const { executor, sent } = harness();
+    const registry = new SkillExecutorRegistry();
+    registry.register({ kind: "internal", adapter: API_REQUEST_SKILLS_ADAPTER, executor });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      createRoutineSkillResolverChain({
+        webhookSkillNames: [],
+        emailSkillNames: [],
+        slackSkillNames: [],
+        retrieveSkills: [],
+        notifySkills: [],
+        apiRequestSkills: [released],
+      }),
+      registry,
+      { workspaceId, skillEffects: "suppressed", conversationSkills: [released] },
+    );
+
+    const result = await dispatcher.dispatch({
+      skillName: "order_status",
+      state: { routineId: "r-1", path: ["s-1"], variables: { order: "A-100" } },
+      turn: { sessionId: conversationId, agent: { id: agentId }, inputEvent: { id: "m-1", kind: "message", content: "" }, history: [], stagedContext: [], steering: [] },
+    } as never);
+
+    expect(result).toMatchObject({ status: "completed", outputs: { order_status: "shipped" } });
+    expect(sent).toMatchObject([{ method: "GET", url: "https://api.acme.example/v1/orders/A-100" }]);
   });
 });
 

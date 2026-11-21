@@ -11479,7 +11479,7 @@ export interface components {
             /** @enum {string} */
             outcome: "completed" | "not_found" | "rejected" | "missing_input" | "invalid_input" | "unverified" | "failed";
             /** @enum {string} */
-            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "method_not_read_only" | "skill_not_found" | "invalid_config" | "context_missing";
+            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "skill_not_found" | "invalid_config" | "context_missing";
             /** @description The declared outputs projected to their types: what a routine step would get. */
             outputs: {
                 [key: string]: unknown;

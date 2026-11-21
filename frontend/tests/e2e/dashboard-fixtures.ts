@@ -34,6 +34,10 @@ type AuthoredDirectiveDraftFixture =
   Partial<AuthoredDirectiveFixture> & Pick<AuthoredDirectiveFixture, "id" | "name" | "action">;
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
 type ContextVariableFixture = ApiSchemas["ContextVariable"];
+const contextVariableOptionsFixture = (
+  options: ApiSchemas["ContextVariableOptionInput"][] | null | undefined,
+): ContextVariableFixture["options"] =>
+  options?.map((option) => ({ ...option, description: option.description ?? null, archived: option.archived ?? false })) ?? null;
 type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
 export type ContextVariableRequestFixture = {
   method: "POST" | "PATCH" | "DELETE" | "PUT";
@@ -2520,6 +2524,7 @@ export const installDashboardApiMocks = async (
           name: body.name,
           description: body.description ?? null,
           valueType: body.valueType,
+          options: contextVariableOptionsFixture(body.options),
           trustTier: body.trustTier,
           sensitivity: body.sensitivity,
           defaultSurfacing: body.defaultSurfacing,
@@ -2550,6 +2555,7 @@ export const installDashboardApiMocks = async (
                 ...item,
                 ...body,
                 description: body.description === undefined ? item.description : body.description,
+                options: body.options === undefined ? item.options : contextVariableOptionsFixture(body.options),
                 updatedAt: nowIso,
               }
             : item

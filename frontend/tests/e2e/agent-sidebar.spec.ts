@@ -78,7 +78,7 @@ test('the agent menu highlights Build on every Build page, including a routine',
 
   // The Build tab bar carries the five drafted sections and no Test chat.
   await page.goto(agentUrl)
-  await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab')).toHaveText(['Profile', 'Directives', 'Routines', 'Skills', 'Context'])
+  await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab')).toHaveText(['Profile', 'Directives', 'Routines', 'Skills', 'Attributes'])
 })
 
 test('an agent opens on Build, Profile', async ({ page }) => {

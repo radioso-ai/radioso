@@ -19,7 +19,7 @@ type PublicAddressResolver = (hostname: string) => Promise<PublicLookupAddress[]
 const defaultResolver: PublicAddressResolver = (hostname) =>
   dnsLookup(hostname, { all: true, verbatim: true });
 
-export const resolvePublicAddresses = async (
+const resolvePublicAddresses = async (
   hostname: string,
   resolver: PublicAddressResolver = defaultResolver,
 ): Promise<PublicLookupAddress[]> => {

@@ -513,18 +513,18 @@ interface FieldNameUse {
 
 const fieldNameUses = (doc: RoutineBlockDoc, key: string): FieldNameUse[] => {
   const uses: FieldNameUse[] = []
-  const use = (reference: string, readsAnyVariable: boolean) => uses.push({ reference, readsAnyVariable })
+  const record = (reference: string, readsAnyVariable: boolean) => uses.push({ reference, readsAnyVariable })
   for (const step of doc.steps) {
-    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) use(`instruction in ${step.stableStepId}`, true)
-    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) use(`binding in ${step.stableStepId}`, true)
-    if (Object.values(step.outputAssignments ?? {}).includes(key)) use(`output in ${step.stableStepId}`, true)
+    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) record(`instruction in ${step.stableStepId}`, true)
+    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) record(`binding in ${step.stableStepId}`, true)
+    if (Object.values(step.outputAssignments ?? {}).includes(key)) record(`output in ${step.stableStepId}`, true)
     // A field guard reads any variable; a slot-filled gate waits on a field the visitor gives.
     const gatesOnField = step.branches.some((branch) => branch.guard.kind === 'slot_filled' && branch.guard.slotKeys.includes(key))
-    if (gatesOnField || step.branches.some((branch) => branch.guard.kind === 'field' && branch.guard.fieldRef === key)) use(`guard in ${step.stableStepId}`, !gatesOnField)
-    if (step.present?.slot === key) use(`cards in ${step.stableStepId}`, false)
+    if (gatesOnField || step.branches.some((branch) => branch.guard.kind === 'field' && branch.guard.fieldRef === key)) record(`guard in ${step.stableStepId}`, !gatesOnField)
+    if (step.present?.slot === key) record(`cards in ${step.stableStepId}`, false)
   }
   const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
-  for (const endingId of noticeEndings) use(`notice in ${endingId}`, false)
+  for (const endingId of noticeEndings) record(`notice in ${endingId}`, false)
   return uses
 }
 

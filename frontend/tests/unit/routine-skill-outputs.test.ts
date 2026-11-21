@@ -24,9 +24,9 @@ describe('routine skill outputs', () => {
       { kind: 'tool', toolRef: 'order_status', outputAssignments: { total: 'order_total', items: 'found_orders', status: '' } },
       { kind: 'tool', toolRef: 'unknown_skill', outputAssignments: { reference: 'reference' } },
     ], outputsOf)).toEqual([
-      { id: 'order_total', type: 'number', holdsList: false },
-      { id: 'found_orders', type: 'text', holdsList: true },
-      { id: 'reference', type: 'text', holdsList: false },
+      { id: 'order_total', type: 'number', holdsList: false, setBy: 'order_status' },
+      { id: 'found_orders', type: 'text', holdsList: true, setBy: 'order_status' },
+      { id: 'reference', type: 'text', holdsList: false, setBy: 'unknown_skill' },
     ])
   })
 

@@ -268,6 +268,18 @@ test("a variable set from a list output is only checked for presence", async ({ 
   await documentEditor.getByLabel("Output 1 variable").fill("found_orders");
   await step.getByRole("button", { name: "Done", exact: true }).click();
 
+  // A list renders as nothing a visitor can read, so `@` in step text neither offers it nor
+  // offers to create it again.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const reply = documentEditor.getByLabel("Step 2 instruction");
+  await reply.click();
+  await reply.pressSequentially("Tell them @found_orders");
+  await expect(page.getByRole("option", { name: /found_orders/ })).toHaveCount(0);
+  await reply.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
   // A check on that variable offers only is present and is absent.
   await step.getByRole("button", { name: "Find orders", exact: true }).click();
   await step.getByRole("button", { name: "Condition", exact: true }).click();

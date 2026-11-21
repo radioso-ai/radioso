@@ -26,9 +26,9 @@ type AssigningStep = {
  * A variable a skill step sets from one of its outputs. The assignment is its whole declaration:
  * it is never a field the routine collects, so it is not a slot, and a slot of the same name is a
  * collision. Its type is the catalog's type for that output; an output the catalog does not
- * declare is text.
+ * declare is text. `setBy` is the skill of the first step that sets it.
  */
-type AssignedVariable = { id: string; type: RoutineSlotType; holdsList: boolean }
+type AssignedVariable = { id: string; type: RoutineSlotType; holdsList: boolean; setBy: string }
 
 const stepSkillRef = (step: AssigningStep): string =>
   (step.kind === 'tool' ? step.toolRef : step.kind === 'action' ? step.actionType : '') ?? ''
@@ -49,7 +49,7 @@ export const assignedVariables = (
       const holdsList = output?.type === 'list'
       const known = byId.get(variableId)
       if (known) known.holdsList ||= holdsList
-      else byId.set(variableId, { id: variableId, type: output ? outputVariableType(output) : 'text', holdsList })
+      else byId.set(variableId, { id: variableId, type: output ? outputVariableType(output) : 'text', holdsList, setBy: ref })
     }
   }
   return [...byId.values()]

@@ -265,7 +265,7 @@ There is no handoff rule object: handoff is requested by authored triggers and t
 
 **Answer prompt.** The default surfacing for a `classified` enablement is `on_reference` (D13). The value steers conditions and branches, a routine step that names it can read it, and it is not written into the answer prompt. The answer model already read the conversation, and showing it the classifier's opinion lets a classifier error compound. An operator can change the surfacing per agent.
 
-**Inbox filter.** It reads conversation-scope values of non-sensitive enum variables, plus **Not set**. It needs an index on `(variable_id, scope_type, data)`; the existing index covers lookups by scope id only (`schema.sql:8797`). The index ships in the 1a migration so slice 1 has one migration.
+**Inbox filter.** It reads conversation-scope values of non-sensitive enum variables, plus **Not set**. It needs an index on `(variable_id, scope_type, data)`; the existing index covers lookups by scope id only (`schema.sql:8797`). The index ships in 1a, in a second migration (271) that builds it after the catalog changes commit, so no read waits for the build.
 
 **Rule branches.** `evaluateFieldGuard(guard, variables, skillResult, now)` (`packages/conversation-engine/src/routineRunner.ts:309-310`) gains a third source through an optional `contextValueReader` port beside `contextRenderer` (`routineRunner.ts:108-109`). The `context.` prefix is explicit, so resolution never guesses between a slot and a variable of the same name. The validator extends its op and type check (`backend/src/modules/routines/validator.ts:578-598`) to the variable's type and, for `equals` and `in`, to the option keys. A guard on a `sensitive` or `operator_only` variable is allowed: it runs in code. Its trace records the reference and the outcome, never the value.
 
@@ -476,7 +476,7 @@ File counts are files created or meaningfully edited, tests included, generated 
 ### Slice 1: "The AI labels a conversation and the operator sees and filters by it"
 
 **PR 1a: typed attributes, no LLM (about 24 files).**
-One migration (enum type, `options`, `conversation` scope, provenance columns, the filter index) with both DB snapshots; domain types, `validateValue`, `mayOverwrite`; both resolve paths read the `conversation` scope; eraser and exporter for the new scope; REST bodies; catalog renamed **Attributes** with the options editor; Ray adapter fields; docs. Useful alone: a host can put a typed value on any conversation by id, on any channel. Contract change: yes.
+Two migrations (270: enum type, `options`, `conversation` scope, provenance columns; 271: CHECK validation and the filter index) with both DB snapshots; domain types, `validateValue`, `mayOverwrite`; both resolve paths read the `conversation` scope; eraser and exporter for the new scope; REST bodies; catalog renamed **Attributes** with the options editor; Ray adapter fields; docs. Useful alone: a host can put a typed value on any conversation by id, on any channel. Contract change: yes.
 
 **PR 1b: classifier and toggle (about 26 files).**
 The `contextClassification` module, prompt and job; enqueue in chat; the excerpt reader; composition; the `classified` source in the snapshot schema, routes and Ray adapter; the agent toggle; unit, deterministic-suite and live eval cases; module README and docs. Contract change: yes.

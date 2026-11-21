@@ -1146,7 +1146,7 @@ Public surfaces and key files:
 - `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
 - `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
-- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns, filter index)
+- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
 - `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
 - `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)

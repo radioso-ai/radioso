@@ -39,7 +39,7 @@ export const contextVariableValueColumns = [
 
 /**
  * The predicate of the Inbox filter's partial index, `idx_context_variable_values_variable_scope_data`
- * (migration 270), word for word. Postgres serves a query from a partial index only when the query's
+ * (migration 271), word for word. Postgres serves a query from a partial index only when the query's
  * WHERE implies the index's, and it cannot derive this from `data = $1`, so a read that filters
  * values by an enum key carries it to be served by the index. Every enum key satisfies it: a string
  * of at most `maxKeyChars` (120) ASCII characters.

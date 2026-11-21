@@ -68,7 +68,7 @@ export const CONTEXT_VARIABLES_BEHAVIOR = {
     sectionTokenBudget: 600,
   },
   // Bounds on an enum variable's options. Keys follow the slot-key pattern and are what a value
-  // stores; the filter index on stored values holds keys up to `maxKeyChars` (migration 270).
+  // stores; the filter index on stored values holds keys up to `maxKeyChars` (migration 271).
   enumOptions: {
     maxOptions: 50,
     maxKeyChars: 120,

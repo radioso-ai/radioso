@@ -21835,6 +21835,54 @@
           "nextCursor"
         ]
       },
+      "ContextVariableOption": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "What a value stores. It never changes."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "An archived option is no longer offered or accepted as a new value; values that hold it keep it."
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "description",
+          "archived"
+        ]
+      },
+      "ContextVariableOptionInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ContextVariableOption"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "archived": {
+                "type": "boolean"
+              }
+            }
+          }
+        ]
+      },
       "ContextVariable": {
         "type": "object",
         "properties": {
@@ -21859,8 +21907,19 @@
             "type": "string",
             "enum": [
               "string",
-              "json"
+              "json",
+              "enum"
             ]
+          },
+          "options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContextVariableOption"
+            },
+            "description": "The options of an `enum` variable; null for every other type."
           },
           "trustTier": {
             "type": "string",
@@ -21899,6 +21958,7 @@
           "name",
           "description",
           "valueType",
+          "options",
           "trustTier",
           "sensitivity",
           "defaultSurfacing",
@@ -21925,8 +21985,21 @@
             "type": "string",
             "enum": [
               "string",
-              "json"
-            ]
+              "json",
+              "enum"
+            ],
+            "description": "The type of every value. It cannot change while the variable has values."
+          },
+          "options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContextVariableOptionInput"
+            },
+            "maxItems": 50,
+            "description": "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it."
           },
           "trustTier": {
             "type": "string",
@@ -21978,8 +22051,21 @@
             "type": "string",
             "enum": [
               "string",
-              "json"
-            ]
+              "json",
+              "enum"
+            ],
+            "description": "The type of every value. It cannot change while the variable has values."
+          },
+          "options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContextVariableOptionInput"
+            },
+            "maxItems": 50,
+            "description": "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it."
           },
           "trustTier": {
             "type": "string",
@@ -22190,11 +22276,13 @@
           "type": {
             "type": "string",
             "enum": [
+              "conversation",
               "session",
               "customer",
               "agent",
               "workspace"
-            ]
+            ],
+            "description": "Where a value is kept. A `conversation` scope id is the conversation's id."
           },
           "id": {
             "type": "string"
@@ -22224,11 +22312,37 @@
             "$ref": "#/components/schemas/ContextVariableScope"
           },
           "data": {
-            "description": "Arbitrary JSON value. The HTTP API rejects values above the serialized size limit."
+            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
           },
           "lastModified": {
             "type": "string",
             "format": "date-time"
+          },
+          "writtenBy": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "api",
+                  "operator",
+                  "routine",
+                  "classifier"
+                ]
+              },
+              "ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session."
+              }
+            },
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "description": "The last writer of the value."
           }
         },
         "required": [
@@ -22236,7 +22350,8 @@
           "workspaceId",
           "variableId",
           "scope",
-          "lastModified"
+          "lastModified",
+          "writtenBy"
         ]
       },
       "ContextVariableValueUpsertRequest": {
@@ -22246,7 +22361,7 @@
             "$ref": "#/components/schemas/ContextVariableScope"
           },
           "data": {
-            "description": "Arbitrary JSON value. The HTTP API rejects values above the serialized size limit."
+            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
           }
         },
         "required": [
@@ -43103,6 +43218,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The value type cannot change while the variable has values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -43487,7 +43612,7 @@
             }
           },
           "404": {
-            "description": "Context variable not found",
+            "description": "Context variable, or the conversation a conversation scope names, not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -43523,13 +43648,16 @@
             "schema": {
               "type": "string",
               "enum": [
+                "conversation",
                 "session",
                 "customer",
                 "agent",
                 "workspace"
-              ]
+              ],
+              "description": "Where a value is kept. A `conversation` scope id is the conversation's id."
             },
             "required": true,
+            "description": "Where a value is kept. A `conversation` scope id is the conversation's id.",
             "name": "scopeType",
             "in": "query"
           },

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 
-const ContextVariableValueTypeSchema = z.enum(["string", "json"]);
+const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
+const ContextVariableValueTypeSchema = z.enum(["string", "json", "enum"]);
 const ContextVariableTrustTierSchema = z.enum(["unverified", "signed"]);
 const ContextVariableSensitivitySchema = z.enum(["normal", "sensitive"]);
 const ContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
@@ -12,12 +14,37 @@ const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "re
 // agent_context_variables row, so advertising it as an accepted request value here would
 // describe an operation the route always rejects (contextVariableRoutes.ts superRefine).
 const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver"]);
-const ContextVariableScopeTypeSchema = z.enum(["session", "customer", "agent", "workspace"]);
+const ContextVariableScopeTypeSchema = z.enum(["conversation", "session", "customer", "agent", "workspace"]).openapi({
+  description: "Where a value is kept. A `conversation` scope id is the conversation's id.",
+});
+const ContextValueWriterKindSchema = z.enum(["api", "operator", "routine", "classifier"]);
 
 export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const JsonValueSchema = z.unknown().openapi({
-    description: "Arbitrary JSON value. The HTTP API rejects values above the serialized size limit.",
+    description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit.",
   });
+
+  const ContextVariableOptionSchema = registry.register(
+    "ContextVariableOption",
+    z.object({
+      key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u).max(optionLimits.maxKeyChars).openapi({
+        description: "What a value stores. It never changes.",
+      }),
+      label: z.string().min(1).max(optionLimits.maxLabelChars),
+      description: z.string().max(optionLimits.maxDescriptionChars).nullable(),
+      archived: z.boolean().openapi({
+        description: "An archived option is no longer offered or accepted as a new value; values that hold it keep it.",
+      }),
+    }),
+  );
+
+  const ContextVariableOptionInputSchema = registry.register(
+    "ContextVariableOptionInput",
+    ContextVariableOptionSchema.extend({
+      description: z.string().max(optionLimits.maxDescriptionChars).nullable().optional(),
+      archived: z.boolean().optional(),
+    }),
+  );
 
   const ContextVariableSchema = registry.register(
     "ContextVariable",
@@ -27,6 +54,9 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
       name: z.string(),
       description: z.string().nullable(),
       valueType: ContextVariableValueTypeSchema,
+      options: z.array(ContextVariableOptionSchema).nullable().openapi({
+        description: "The options of an `enum` variable; null for every other type.",
+      }),
       trustTier: ContextVariableTrustTierSchema,
       sensitivity: ContextVariableSensitivitySchema,
       defaultSurfacing: ContextVariableSurfacingSchema,
@@ -40,7 +70,12 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
     z.object({
       name: z.string().min(1).max(120),
       description: z.string().max(2000).nullable().optional(),
-      valueType: ContextVariableValueTypeSchema,
+      valueType: ContextVariableValueTypeSchema.openapi({
+        description: "The type of every value. It cannot change while the variable has values.",
+      }),
+      options: z.array(ContextVariableOptionInputSchema).max(optionLimits.maxOptions).nullable().optional().openapi({
+        description: "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it.",
+      }),
       trustTier: ContextVariableTrustTierSchema,
       sensitivity: ContextVariableSensitivitySchema,
       defaultSurfacing: ContextVariableSurfacingSchema,
@@ -136,6 +171,12 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
       scope: ContextVariableScopeSchema,
       data: JsonValueSchema,
       lastModified: z.string().datetime(),
+      writtenBy: z.object({
+        kind: ContextValueWriterKindSchema,
+        ref: z.string().nullable().openapi({
+          description: "What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session.",
+        }),
+      }).openapi({ description: "The last writer of the value." }),
     }),
   );
 

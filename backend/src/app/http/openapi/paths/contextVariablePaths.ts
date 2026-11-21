@@ -74,6 +74,7 @@ export const registerContextVariablePaths = (
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Context variable not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "The value type cannot change while the variable has values", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 
@@ -178,7 +179,7 @@ export const registerContextVariablePaths = (
       200: { description: "Context variable value saved", content: { "application/json": { schema: schemas.ContextVariableValueResponseSchema } } },
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Context variable not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Context variable, or the conversation a conversation scope names, not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

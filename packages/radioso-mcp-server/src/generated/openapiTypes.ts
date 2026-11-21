@@ -10776,6 +10776,17 @@ export interface components {
             items: components["schemas"]["InternalUsageEvent"][];
             nextCursor: string | null;
         };
+        ContextVariableOption: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description: string | null;
+            /** @description An archived option is no longer offered or accepted as a new value; values that hold it keep it. */
+            archived: boolean;
+        };
+        ContextVariableOptionInput: components["schemas"]["ContextVariableOption"] & {
+            archived?: boolean;
+        };
         ContextVariable: {
             /** Format: uuid */
             id: string;
@@ -10784,7 +10795,9 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            valueType: "string" | "json";
+            valueType: "string" | "json" | "enum";
+            /** @description The options of an `enum` variable; null for every other type. */
+            options: components["schemas"]["ContextVariableOption"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10799,8 +10812,13 @@ export interface components {
         ContextVariableCreateRequest: {
             name: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10811,8 +10829,13 @@ export interface components {
         ContextVariableUpdateRequest: {
             name?: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType?: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType?: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier?: "unverified" | "signed";
             /** @enum {string} */
@@ -10866,8 +10889,11 @@ export interface components {
             enablements: components["schemas"]["AgentContextVariableEnablement"][];
         };
         ContextVariableScope: {
-            /** @enum {string} */
-            type: "session" | "customer" | "agent" | "workspace";
+            /**
+             * @description Where a value is kept. A `conversation` scope id is the conversation's id.
+             * @enum {string}
+             */
+            type: "conversation" | "session" | "customer" | "agent" | "workspace";
             id: string;
         };
         ContextVariableValue: {
@@ -10878,14 +10904,21 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
             /** Format: date-time */
             lastModified: string;
+            /** @description The last writer of the value. */
+            writtenBy: {
+                /** @enum {string} */
+                kind: "api" | "operator" | "routine" | "classifier";
+                /** @description What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session. */
+                ref: string | null;
+            };
         };
         ContextVariableValueUpsertRequest: {
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
         };
         ContextVariableValueDeleteRequest: {
@@ -20987,6 +21020,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description The value type cannot change while the variable has values */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     listAgentContextVariables: {
@@ -21174,7 +21216,8 @@ export interface operations {
     getContextVariableValue: {
         parameters: {
             query: {
-                scopeType: "session" | "customer" | "agent" | "workspace";
+                /** @description Where a value is kept. A `conversation` scope id is the conversation's id. */
+                scopeType: "conversation" | "session" | "customer" | "agent" | "workspace";
                 scopeId: string;
             };
             header?: never;
@@ -21265,7 +21308,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Context variable not found */
+            /** @description Context variable, or the conversation a conversation scope names, not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -344,4 +344,88 @@ describe("context variable HTTP API", () => {
       .set("Authorization", firstAuthorization)
       .expect(404);
   });
+
+  it("keeps an enum's options, archives rather than removes them, and takes only active keys as values", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "context-vars-enum@example.com");
+    const authorization = `Bearer ${token}`;
+    const topic = {
+      name: "topic",
+      description: "What the conversation is about.",
+      valueType: "enum",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "on_reference",
+    };
+
+    await request(app).post("/api/v1/context-variables").set("Authorization", authorization).send(topic).expect(400);
+    await request(app).post("/api/v1/context-variables").set("Authorization", authorization)
+      .send({ ...topic, options: [{ key: "needs help", label: "Needs help" }] })
+      .expect(400);
+
+    const created = await request(app).post("/api/v1/context-variables").set("Authorization", authorization)
+      .send({ ...topic, options: [{ key: "billing", label: "Billing", description: "Invoices and payments." }, { key: "shipping", label: "Shipping" }] })
+      .expect(201);
+    const id = created.body.contextVariable.id;
+    expect(created.body.contextVariable.options).toEqual([
+      { key: "billing", label: "Billing", description: "Invoices and payments.", archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ]);
+
+    await request(app).patch(`/api/v1/context-variables/${id}`).set("Authorization", authorization)
+      .send({ options: [{ key: "billing", label: "Billing" }] })
+      .expect(400);
+    const archived = await request(app).patch(`/api/v1/context-variables/${id}`).set("Authorization", authorization)
+      .send({ options: [{ key: "billing", label: "Billing" }, { key: "shipping", label: "Shipping", archived: true }] })
+      .expect(200);
+    expect(archived.body.contextVariable.options[1]).toMatchObject({ key: "shipping", archived: true });
+
+    const scope = { type: "session", id: "session-enum" };
+    await request(app).put(`/api/v1/context-variables/${id}/values`).set("Authorization", authorization)
+      .send({ scope, data: "shipping" })
+      .expect(400);
+    await request(app).put(`/api/v1/context-variables/${id}/values`).set("Authorization", authorization)
+      .send({ scope, data: "billing" })
+      .expect(200);
+    await request(app).patch(`/api/v1/context-variables/${id}`).set("Authorization", authorization)
+      .send({ valueType: "string" })
+      .expect(409);
+  });
+
+  it("writes a conversation's value and records which credential or teammate wrote it", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "context-vars-writer@example.com");
+    const variable = await request(app).post("/api/v1/context-variables")
+      .set("Cookie", session.cookie).set("X-Workspace-Id", session.workspaceId)
+      .send({ name: "plan", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always" })
+      .expect(201);
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+
+    await request(app).put(`/api/v1/context-variables/${variable.body.contextVariable.id}/values`)
+      .set("Cookie", session.cookie).set("X-Workspace-Id", session.workspaceId)
+      .send({ scope: { type: "conversation", id: "not-a-conversation-id" }, data: "gold" })
+      .expect(400);
+    const put = await request(app).put(`/api/v1/context-variables/${variable.body.contextVariable.id}/values`)
+      .set("Cookie", session.cookie).set("X-Workspace-Id", session.workspaceId)
+      .send({ scope: { type: "conversation", id: conversationId }, data: "gold" })
+      .expect(200);
+    expect(put.body.value).toMatchObject({
+      scope: { type: "conversation", id: conversationId },
+      writtenBy: { kind: "api", ref: expect.any(String) },
+    });
+
+    // The same teammate through their API token: the credential, not the person, wrote it.
+    const bearerPut = await request(app).put(`/api/v1/context-variables/${variable.body.contextVariable.id}/values`)
+      .set("Authorization", `Bearer ${session.token}`)
+      .send({ scope: { type: "conversation", id: conversationId }, data: "silver" })
+      .expect(200);
+    expect(bearerPut.body.value.writtenBy).toEqual({ kind: "api", ref: expect.any(String) });
+    expect(bearerPut.body.value.writtenBy.ref).not.toBe(put.body.value.writtenBy.ref);
+
+    const get = await request(app).get(`/api/v1/context-variables/${variable.body.contextVariable.id}/values`)
+      .query({ scopeType: "conversation", scopeId: conversationId })
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(200);
+    expect(get.body.value).toMatchObject({ data: "silver", writtenBy: bearerPut.body.value.writtenBy });
+  });
 });

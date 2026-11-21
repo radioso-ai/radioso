@@ -24,7 +24,17 @@ export const inferValueType = (value: unknown): ApiValueType | null => {
 export const formatJsonPath = (segments: readonly JsonPathSegment[]): string => segments.join('.')
 
 /** Whether the backend can address this key: dots split a path, so a key holding one cannot be named. */
-const isAddressableKey = (key: string): boolean => key.length > 0 && !key.includes('.') && !/\s/u.test(key)
+const PROTOTYPE_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
+const MAX_PATH_SEGMENTS = 10
+const MAX_PATH_LENGTH = 300
+
+const isAddressableKey = (key: string): boolean => /^[^.\s]+$/u.test(key) && !PROTOTYPE_KEYS.has(key)
+
+/** Whether the backend accepts this path: bounded, every segment nameable, none reaching a prototype. */
+export const isAddressablePath = (segments: readonly JsonPathSegment[]): boolean =>
+  segments.length <= MAX_PATH_SEGMENTS
+  && formatJsonPath(segments).length <= MAX_PATH_LENGTH
+  && segments.every((segment) => isAddressableKey(String(segment)))
 
 const snakeCase = (value: string): string =>
   value
@@ -46,7 +56,7 @@ export const suggestOutputName = (segments: readonly JsonPathSegment[], taken: R
 
 export const scalarOutputFor = (segments: readonly JsonPathSegment[], value: unknown): ApiScalarOutput | null => {
   const type = inferValueType(value)
-  return type ? { path: formatJsonPath(segments), type, required: false } : null
+  return type && isAddressablePath(segments) ? { path: formatJsonPath(segments), type, required: false } : null
 }
 
 /**
@@ -55,7 +65,7 @@ export const scalarOutputFor = (segments: readonly JsonPathSegment[], value: unk
  */
 export const listOutputFor = (segments: readonly JsonPathSegment[], items: readonly unknown[]): ApiListOutput | null => {
   const sample = items.find(isJsonRecord)
-  if (!sample) return null
+  if (!sample || !isAddressablePath(segments)) return null
   const fields: Record<string, ApiListField> = {}
   for (const [key, value] of Object.entries(sample)) {
     const type = inferValueType(value)

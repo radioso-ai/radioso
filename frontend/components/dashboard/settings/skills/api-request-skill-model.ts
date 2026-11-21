@@ -6,6 +6,7 @@ import type {
   ApiRequestTestInput,
   ApiValueType,
 } from '@/lib/api-connections'
+import { coerceApiTestSample } from './api-test-sample-values'
 import {
   isJsonRecord,
   listOutputFor,
@@ -81,23 +82,34 @@ const asString = (value: unknown): string => (typeof value === 'string' ? value 
 const asType = (value: unknown): ApiValueType =>
   API_VALUE_TYPES.includes(value as ApiValueType) ? (value as ApiValueType) : 'text'
 
-// A string that would read back as another JSON type is shown quoted, so editing keeps it a string.
-const fixedValueToText = (value: unknown): string => {
-  if (typeof value !== 'string') return JSON.stringify(value)
+const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
   try {
-    JSON.parse(value)
-    return JSON.stringify(value)
+    return { ok: true, value: JSON.parse(text) }
   } catch {
-    return value
+    return { ok: false }
   }
 }
 
-const fixedValueFromText = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
+/**
+ * The typed value a fixed parameter's text stands for. A number counts only when it reads back
+ * exactly, so an identifier too long for a double stays the text it was typed as.
+ */
+export const fixedValueFromText = (text: string): unknown => {
+  const trimmed = text.trim()
+  if (trimmed === 'true' || trimmed === 'false' || trimmed === 'null') return JSON.parse(trimmed)
+  if (/^[{["]/u.test(trimmed)) {
+    const parsed = parseJson(trimmed)
+    return parsed.ok ? parsed.value : text
   }
+  const number = Number(trimmed)
+  const isExact = trimmed !== '' && Number.isFinite(number) && String(number) === trimmed
+  return isExact && (!Number.isInteger(number) || Number.isSafeInteger(number)) ? number : text
+}
+
+// A string that would read back as another type is shown quoted, so editing keeps it a string.
+const fixedValueToText = (value: unknown): string => {
+  if (typeof value !== 'string') return JSON.stringify(value)
+  return fixedValueFromText(value) === value ? value : JSON.stringify(value)
 }
 
 const fieldFromConfig = (name: string, value: unknown): ApiOutputFieldDraft => {
@@ -233,8 +245,9 @@ export const buildApiTestInput = (
   const config = buildApiRequestConfig(draft)
   const exposedSampleValues = Object.fromEntries(
     draft.inputs
-      .map((input) => [input.key.trim(), samples[input.id] ?? ''] as const)
-      .filter(([, value]) => value !== ''),
+      .map((input) => [input.key.trim(), samples[input.id] ?? '', input.type] as const)
+      .filter(([, value]) => value !== '')
+      .map(([key, value, type]) => [key, coerceApiTestSample(type, value)] as const),
   )
   return {
     method: draft.method,

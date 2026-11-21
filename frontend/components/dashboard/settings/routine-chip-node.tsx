@@ -52,7 +52,7 @@ import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from
 import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
 import { EndDialog } from '@/components/dashboard/settings/routine-end-dialog'
-import { guardOpFitsVariable } from '@/lib/routine-skill-outputs'
+import { guardOpIsInvalidForList } from '@/lib/routine-skill-outputs'
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
 // A chip is an atomic inline reference the author picks instead of typing raw syntax.
@@ -875,7 +875,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         const op = node.getChipOp()
         isAi = op === null
         // A check stored before its variable became a list no longer fits it.
-        isInvalid = op !== null && !guardOpFitsVariable(op, getType(refId), listVariableIds?.has(refId) ?? false)
+        isInvalid = op !== null && guardOpIsInvalidForList(op, getType(refId), listVariableIds?.has(refId) ?? false)
       }
     })
     return (

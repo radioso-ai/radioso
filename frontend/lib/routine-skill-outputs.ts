@@ -61,3 +61,7 @@ export const guardOpsForVariable = (type: RoutineSlotType, holdsList: boolean): 
 /** Whether a stored check still fits its variable; one that does not shows as invalid. */
 export const guardOpFitsVariable = (op: RoutineFieldGuardOp, type: RoutineSlotType, holdsList: boolean): boolean =>
   guardOpsForVariable(type, holdsList).includes(op)
+
+/** A stored check that no longer fits a list variable; an ordinary variable is never flagged here. */
+export const guardOpIsInvalidForList = (op: RoutineFieldGuardOp, type: RoutineSlotType, holdsList: boolean): boolean =>
+  holdsList && !guardOpFitsVariable(op, type, true)

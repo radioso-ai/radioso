@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import {
   describeNode,
   formatJsonPath,
+  isAddressablePath,
   isJsonRecord,
   type JsonPathSegment,
 } from './api-response-tree'
@@ -32,7 +33,9 @@ function TreeNode({ label, value, segments, depth, pickedPaths, onPick }: {
   const [open, setOpen] = useState(depth < 2)
   const path = formatJsonPath(segments)
   const isContainer = Array.isArray(value) || isJsonRecord(value)
-  const canPick = valueCanBeOutput(value) && segments.length > 0
+  const isPickable = valueCanBeOutput(value) && segments.length > 0
+  const isAddressable = isAddressablePath(segments)
+  const canPick = isPickable && isAddressable
   const isPicked = pickedPaths.has(path)
 
   return (
@@ -64,6 +67,8 @@ function TreeNode({ label, value, segments, depth, pickedPaths, onPick }: {
             <Plus className="h-3 w-3" />
             {isPicked ? 'Added' : Array.isArray(value) ? 'List' : 'Output'}
           </Button>
+        ) : isPickable ? (
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground">Key can&apos;t be addressed</span>
         ) : null}
       </div>
       {isContainer && open && children.length > 0 ? (

@@ -68,10 +68,11 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   conversations its window passed, `FOR UPDATE SKIP LOCKED`, so step 1 never waits on another
  *   unit and two sweeps claim disjoint sets; then their ownership rows in id order, and the rest as
  *   an erasure.
- * - A conversation-scope attribute value write (`ContextVariableRepository.upsertValue`): the
- *   attribute's variable row `FOR KEY SHARE`, then the conversation `FOR SHARE`, then the value row.
- *   An erasure holding the conversation runs its erasers first, and the write then finds the
- *   conversation gone. The variable row comes before step 1, which is safe because no unit that
+ * - A conversation-scope attribute value write (`ContextVariableRepository.upsertValue`, its locks in
+ *   `contextVariableRowLocks.ts`): the attribute's variable row `FOR KEY SHARE`, then the
+ *   conversation `FOR SHARE`, then the value row. An erasure holding the conversation runs its
+ *   erasers first, and the write then finds the conversation gone. The variable row comes before
+ *   step 1, which is safe because no unit that
  *   holds a conversation locks a variable row in a mode that conflicts with a key share: an edit of
  *   a variable's type or options (`update`, `applyProposal`) and its deletion lock it `FOR UPDATE`
  *   holding no conversation, and an erasure deletes value rows, which locks no variable row.

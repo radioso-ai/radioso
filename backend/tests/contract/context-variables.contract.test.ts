@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { deriveVisitorIdentitySigningKey } from "../../src/modules/context-variables/public.js";
 import { conflict } from "../../src/shared/domain/errors.js";
@@ -27,6 +28,12 @@ const createContextVariable = async (app: ReturnType<typeof createTestApp>["app"
     .expect(201);
 
 describe("context variable HTTP API", () => {
+  it("documents the conflict a value write returns when the stored value is kept", () => {
+    const valueWrite = createOpenApiDocument().paths?.["/api/v1/context-variables/{id}/values"]?.put;
+
+    expect(Object.keys(valueWrite?.responses ?? {})).toEqual(expect.arrayContaining(["200", "400", "401", "404", "409"]));
+  });
+
   it("returns the existing typed conflict response when a pinned variable cannot be deleted", async () => {
     const { app, dependencies } = createTestApp();
     const { token } = await issueTestToken(app, "context-vars-delete-conflict@example.com");

@@ -43620,6 +43620,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The stored value was kept: it was set by a writer this one does not replace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },

@@ -564,6 +564,18 @@ roles (`key`, `title`, `subtitle`, `image`, `link`) shows as cards in a later
 chat step. A step branches on the outcome: `completed`, `not_found`,
 `rejected`, `missing_input`, `invalid_input`, `unverified` or `failed`.
 
+Every step the routine reaches on the turn the request runs, a chat step or an
+ending, reads what it returned as typed lines, so a finish that says "Tell the
+visitor the customer's first name and city that the lookup returned" gives
+them. That reply says nothing was found only when the outcome says so, such as
+`not_found` or `failed`, or when none of the declared outputs came back. A
+routine keeps no skill result from one turn to the next: a step on a later
+turn reads only the `@` values the skill step set. Set each output a later step
+needs and write the value into that step, for example "Tell them order
+@order_number is @status." A skill without typed outputs, such as an MCP tool,
+reaches later steps through the `@` values it sets, and an ending hears only
+its outcome.
+
 A skill name with no matching capability on the agent appears as **unknown
 skill**. Choose the intended skill, then validate the routine.
 

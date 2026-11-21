@@ -263,6 +263,7 @@ const routineStack = () => {
         new RoutineStepRenderer(modelGateway, {
           promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
           stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
+          stepToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-tool-results.md"),
           responseLanguage,
         }),
         dispatcher,

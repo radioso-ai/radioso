@@ -84,7 +84,13 @@ type CockpitMockOptions = {
   retainedSideIds?: string[]
   greetingBySide?: string[]
   assistantDefaultLocale?: string
-  contextVariables?: Array<{ id: string; name: string; description: string | null; valueType: 'string' | 'json' }>
+  contextVariables?: Array<{
+    id: string
+    name: string
+    description: string | null
+    valueType: 'string' | 'json' | 'enum'
+    options?: Array<{ key: string; label: string; description: string | null; archived: boolean }>
+  }>
   enabledContextVariableIds?: string[]
   failFirstPublish?: boolean
   failEvalCase?: boolean
@@ -426,10 +432,21 @@ test('uses named typed values from the immutable selected revision', async ({ pa
   const requestBodies: unknown[] = []
   await installCockpitMocks(page, {
     requestBodies,
-    enabledContextVariableIds: ['tier', 'cart'],
+    enabledContextVariableIds: ['tier', 'cart', 'topic'],
     contextVariables: [
       { id: 'tier', name: 'Customer tier', description: 'Current account tier', valueType: 'string' },
       { id: 'cart', name: 'Cart', description: 'Active basket', valueType: 'json' },
+      {
+        id: 'topic',
+        name: 'Topic',
+        description: 'What the conversation is about',
+        valueType: 'enum',
+        options: [
+          { key: 'billing', label: 'Billing', description: null, archived: false },
+          { key: 'shipping', label: 'Shipping', description: null, archived: false },
+          { key: 'legacy_returns', label: 'Old returns', description: null, archived: true },
+        ],
+      },
     ],
   })
   await page.goto(testUrl)
@@ -439,12 +456,18 @@ test('uses named typed values from the immutable selected revision', async ({ pa
   await expect(contextDialog.getByLabel('Cart')).toBeVisible()
   await contextDialog.getByLabel('Customer tier').fill('enterprise')
   await contextDialog.getByLabel('Cart').fill('{"items":2}')
+  // A Choice sample is picked from the active options by label and sent as its key.
+  await contextDialog.getByLabel('Topic').click()
+  await expect(page.getByRole('option', { name: 'Old returns' })).toHaveCount(0)
+  await page.getByRole('option', { name: 'Billing' }).click()
+  await expect(contextDialog.getByLabel('Topic')).toHaveText('Billing')
   await page.keyboard.press('Escape')
   await testChatComposer(page).fill('Typed values')
   await page.getByRole('button', { name: 'Send' }).click()
   expect(requestBodies).toContainEqual(expect.objectContaining({ testValues: [
     { contextVariableId: 'tier', value: 'enterprise' },
     { contextVariableId: 'cart', value: { items: 2 } },
+    { contextVariableId: 'topic', value: 'billing' },
   ] }))
 })
 

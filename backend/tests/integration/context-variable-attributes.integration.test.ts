@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { Kysely, PostgresDialect, sql, type CompiledQuery } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
@@ -12,6 +12,7 @@ import { filterIndexPredicate } from "../../src/db/repositories/contextVariableV
 import { contextScopeLadder, type ContextVariableOption } from "../../src/modules/context-variables/domain.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import type { Db } from "../../src/shared/infra/kysely/types.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -339,6 +340,30 @@ describeIntegration("typed attributes (Postgres)", () => {
 
     expect(await plan(true)).toContain("idx_context_variable_values_variable_scope_data");
     expect(await plan(false)).not.toContain("idx_context_variable_values_variable_scope_data");
+  });
+
+  it("erases a conversation's values through the workspace scope index, not a walk of every value the workspace holds", async () => {
+    // Enough values over enough variables that walking the workspace's entries costs more than a lookup.
+    const topics = await Promise.all(Array.from({ length: 20 }, () => createTopic()));
+    await database.query(
+      `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data)
+       SELECT $1, variable_id, 'conversation', gen_random_uuid()::text, '"billing"'::jsonb
+         FROM unnest($2::uuid[]) AS variable_id, generate_series(1, 500)`,
+      [workspaceId, topics.map((topic) => topic.id)],
+    );
+    await database.query("ANALYZE context_variable_values");
+    const statements: CompiledQuery[] = [];
+    // Shares the pool, so it is never destroyed: that would end the pool `database` owns.
+    const logged = new Kysely<DB>({
+      dialect: new PostgresDialect({ pool: database.pool }),
+      log: (event) => { statements.push(event.query); },
+    });
+
+    await new ContextVariableValueEraser(logged).erase({ kind: "conversations", workspaceId, conversationIds: [randomUUID()] });
+
+    const [conversationValues] = statements;
+    const plan = await database.query(`EXPLAIN (FORMAT JSON) ${conversationValues.sql}`, [...conversationValues.parameters]);
+    expect(JSON.stringify(plan)).toContain("idx_context_variable_values_workspace_scope");
   });
 
   it("erases a conversation's values with it and exports them with their writer", async () => {

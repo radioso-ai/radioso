@@ -8890,6 +8890,13 @@ CREATE INDEX idx_context_variable_values_variable_scope_data ON public.context_v
 
 
 --
+-- Name: idx_context_variable_values_workspace_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_workspace_scope ON public.context_variable_values USING btree (workspace_id, scope_type, scope_id);
+
+
+--
 -- Name: idx_context_variable_values_workspace_variable_scope; Type: INDEX; Schema: public; Owner: -
 --
 

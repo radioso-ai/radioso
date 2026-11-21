@@ -49,8 +49,13 @@ describe("typed context variable migrations", () => {
     expect(firstIndex).toBeGreaterThan(lastValidate);
   });
 
-  it("build the Inbox filter index in 271", async () => {
-    expect(namesMatching(await statementsOf(scanFile), /CREATE INDEX (\w+)/gu))
-      .toEqual(["idx_context_variable_values_variable_scope_data"]);
+  it("build in 271 the Inbox filter index and the index erasure and export read by scope", async () => {
+    const statements = await statementsOf(scanFile);
+
+    expect(namesMatching(statements, /CREATE INDEX (\w+)/gu))
+      .toEqual(["idx_context_variable_values_variable_scope_data", "idx_context_variable_values_workspace_scope"]);
+    expect(statements).toContain(
+      "CREATE INDEX idx_context_variable_values_workspace_scope ON context_variable_values (workspace_id, scope_type, scope_id)",
+    );
   });
 });

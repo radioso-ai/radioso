@@ -18,13 +18,13 @@ import {
   fieldGuardOpLabel,
   fieldGuardOpNeedsUnit,
   fieldGuardOpNeedsValue,
-  fieldGuardOpsForType,
   formatConditionLabel,
   ROUTINE_FIELD_GUARD_UNITS,
   ROUTINE_SLOT_TYPES,
   type ChipDocVariable,
   type RoutineFieldGuardValue,
 } from '@/lib/routine-prose'
+import { guardOpsForVariable } from '@/lib/routine-skill-outputs'
 
 // A structured, decided-in-code comparison the author builds in a dialog. Shared by the
 // prose toolbar (insert a new check) and a decided-by-AI condition chip (promote it to a
@@ -44,6 +44,7 @@ export function ConditionBuilderDialog({
   variables,
   onConfirm,
   onSetVariableType,
+  listVariableIds,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -52,13 +53,16 @@ export function ConditionBuilderDialog({
   // Absent where the variable's own row owns its type: the picker then shows the type read-only,
   // and the checks offered are the ones that fit it.
   onSetVariableType?: (refId: string, type: RoutineSlotType) => void
+  // Variables that hold a list: only is-set and is-not-set fit them.
+  listVariableIds?: ReadonlySet<string>
 }) {
   const [refId, setRefId] = useState('')
   const [op, setOp] = useState<RoutineFieldGuardOp>('equals')
   const [valueText, setValueText] = useState('')
   const [unit, setUnit] = useState<RoutineFieldGuardUnit>('months')
   const selected = variables.find((variable) => variable.id === refId)
-  const ops = selected ? fieldGuardOpsForType(selected.type) : []
+  const opsFor = (variable: ChipDocVariable) => guardOpsForVariable(variable.type, listVariableIds?.has(variable.id) ?? false)
+  const ops = selected ? opsFor(selected) : []
   const needsValue = fieldGuardOpNeedsValue(op)
   const needsUnit = fieldGuardOpNeedsUnit(op)
 
@@ -101,7 +105,7 @@ export function ConditionBuilderDialog({
                 const next = event.target.value
                 setRefId(next)
                 const variable = variables.find((candidate) => candidate.id === next)
-                if (variable) setOp(fieldGuardOpsForType(variable.type)[0])
+                if (variable) setOp(opsFor(variable)[0])
               }}
               className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
             >
@@ -121,7 +125,7 @@ export function ConditionBuilderDialog({
                 onChange={(event) => {
                   const nextType = event.target.value as RoutineSlotType
                   onSetVariableType?.(selected.id, nextType)
-                  setOp(fieldGuardOpsForType(nextType)[0])
+                  setOp(guardOpsForVariable(nextType, listVariableIds?.has(selected.id) ?? false)[0])
                 }}
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
               >

@@ -1278,6 +1278,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/api-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace API connections */
+        get: operations["listApiConnections"];
+        put?: never;
+        /** Create a workspace API connection */
+        post: operations["createApiConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/api-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace API connection */
+        get: operations["getApiConnection"];
+        put?: never;
+        post?: never;
+        /** Delete a workspace API connection */
+        delete: operations["deleteApiConnection"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a workspace API connection
+         * @description Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for.
+         */
+        patch: operations["updateApiConnection"];
+        trace?: never;
+    };
+    "/api/v1/settings/api-connections/{connectionId}/test-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test request through an API connection
+         * @description Sends one real request the way an API request skill would and returns its outcome, the declared outputs and the parsed body. A method other than GET acts on the target.
+         */
+        post: operations["testApiConnectionRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/revision-state": {
         parameters: {
             query?: never;
@@ -7576,15 +7636,31 @@ export interface components {
             /** @enum {string} */
             status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
         };
+        SkillAuthoringOutput: {
+            name: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "date" | "email" | "list";
+            required: boolean;
+            description?: string;
+            fields?: {
+                name: string;
+                /** @enum {string} */
+                type: "text" | "number" | "boolean" | "date" | "email";
+                description?: string;
+                /** @enum {string} */
+                role?: "key" | "title" | "subtitle" | "image" | "link";
+            }[];
+        };
         SkillAuthoringDescriptor: {
             skillName: string;
             displayName: string;
             /** @enum {string} */
-            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify";
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify" | "api_request";
             description?: string;
             inputs: components["schemas"]["SkillAuthoringInput"][];
             outcomes: components["schemas"]["SkillAuthoringOutcome"][];
             hasDataOutputs: boolean;
+            outputs: components["schemas"]["SkillAuthoringOutput"][];
         };
         RoutineSkillCatalogResponse: {
             skills: components["schemas"]["SkillAuthoringDescriptor"][];
@@ -11343,6 +11419,114 @@ export interface components {
          *     data: {"protocolVersion":1}
          */
         WorkspaceEventStream: string;
+        ApiConnection: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            baseUrl: string;
+            /** @enum {string} */
+            authScheme: "none" | "bearer" | "header" | "basic";
+            authHeaderName: string | null;
+            /** @description The credential's last four characters behind asterisks; null when the connection has none. The credential itself is never returned. */
+            credentialMask: string | null;
+            defaultHeaders: {
+                [key: string]: string;
+            };
+            createdAt: string;
+            updatedAt: string;
+        };
+        ApiConnectionCreateRequest: {
+            name: string;
+            /** @description https base URL every request's path is appended to; no query or fragment. */
+            baseUrl: string;
+            /**
+             * @default none
+             * @enum {string}
+             */
+            authScheme: "none" | "bearer" | "header" | "basic";
+            /** @description The header the credential is sent in; required for the header scheme. */
+            authHeaderName?: string;
+            /** @description Write-only. A bearer token, a header value, or username:password for basic; required unless the scheme is none. */
+            credential?: string;
+            /** @default {} */
+            defaultHeaders: {
+                [key: string]: string;
+            };
+        };
+        ApiConnectionUpdateRequest: {
+            name?: string;
+            baseUrl?: string;
+            /** @enum {string} */
+            authScheme?: "none" | "bearer" | "header" | "basic";
+            authHeaderName?: string | null;
+            /** @description Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name. */
+            credential?: string;
+            defaultHeaders?: {
+                [key: string]: string;
+            };
+        };
+        ApiRequestOutput: {
+            path: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "date" | "email";
+            description?: string;
+            /** @default false */
+            required: boolean;
+        } | {
+            path: string;
+            /** @enum {string} */
+            type: "list";
+            description?: string;
+            /** @default false */
+            required: boolean;
+            /** @default 10 */
+            maxItems: number;
+            fields: {
+                [key: string]: {
+                    path: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "date" | "email";
+                    description?: string;
+                    /** @enum {string} */
+                    role?: "key" | "title" | "subtitle" | "image" | "link";
+                };
+            };
+        };
+        ApiRequestTestRequest: {
+            /** @enum {string} */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            /** @description Path appended to the base URL; a {param} placeholder takes the param's value. */
+            path: string;
+            /** @default {} */
+            boundParams: {
+                [key: string]: unknown;
+            };
+            /** @default {} */
+            exposedSampleValues: {
+                [key: string]: unknown;
+            };
+            /** @default {} */
+            outputs: {
+                [key: string]: components["schemas"]["ApiRequestOutput"];
+            };
+        };
+        ApiRequestTestResult: {
+            httpStatus: number | null;
+            durationMs: number;
+            /** @enum {string} */
+            outcome: "completed" | "not_found" | "rejected" | "missing_input" | "invalid_input" | "unverified" | "failed";
+            /** @enum {string} */
+            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "skill_not_found" | "invalid_config" | "context_missing";
+            /** @description The declared outputs projected to their types: what a routine step would get. */
+            outputs: {
+                [key: string]: unknown;
+            };
+            /** @description Required outputs the response left absent. */
+            mismatches: string[];
+            /** @description The parsed JSON body cut down to 16 KB; null when empty or not JSON. */
+            body?: unknown;
+            bodyTruncated: boolean;
+        };
         /** @description Where the agent's voice runtime stands. */
         AgentVoiceConnection: {
             /**
@@ -18365,6 +18549,296 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listApiConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connections returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: components["schemas"]["ApiConnection"][];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description API connection created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connection returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connection deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An agent skill uses the connection */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiConnectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description API connection updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    testApiConnectionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiRequestTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Test request settled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiRequestTestResult"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -26229,7 +26703,7 @@ export interface operations {
                     "application/json": {
                         capabilities: {
                             /** @enum {string} */
-                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             targetKind: string;
                             requiresTarget: boolean;
@@ -26406,7 +26880,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -26475,7 +26949,7 @@ export interface operations {
                 "application/json": {
                     name: string;
                     /** @enum {string} */
-                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                     target: {
                         kind: string;
                         /** Format: uuid */
@@ -26512,7 +26986,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -26830,7 +27304,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;

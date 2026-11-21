@@ -6,7 +6,7 @@
  * kind-specific validation.
  */
 
-export const agentSkillKinds = ["external_mcp", "customer_email", "webhook", "slack", "retrieve", "notify"] as const;
+export const agentSkillKinds = ["external_mcp", "customer_email", "webhook", "slack", "retrieve", "notify", "api_request"] as const;
 export type AgentSkillKind = (typeof agentSkillKinds)[number];
 
 export const agentSkillInvocationModes = ["default_answer", "routine_named", "agent_selectable"] as const;

@@ -1,10 +1,9 @@
 import { z } from "zod";
 
+import { isSkillPayloadKey, skillSlotBindingPattern } from "../../shared/domain/skillPayloadKey.js";
+
 const trimmedText = (maxLength: number) => z.string().trim().min(1).max(maxLength);
 const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
-const payloadKeyPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
-const slotBindingPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-const blockedPayloadKeys = new Set(["__proto__", "constructor", "prototype"]);
 
 export const webhookSkillOutcomes = [
   "delivered",
@@ -14,15 +13,12 @@ export const webhookSkillOutcomes = [
 ] as const;
 export type WebhookSkillOutcome = (typeof webhookSkillOutcomes)[number];
 
-const payloadKeySchema = z.string().refine(
-  (key) => payloadKeyPattern.test(key) && !blockedPayloadKeys.has(key),
-  "payload key is not supported",
-);
+const payloadKeySchema = z.string().refine(isSkillPayloadKey, "payload key is not supported");
 
 export const webhookSkillExposedPayloadSchema = z
   .object({
     description: trimmedText(1000).optional(),
-    slotBinding: trimmedText(120).regex(slotBindingPattern).optional(),
+    slotBinding: trimmedText(120).regex(skillSlotBindingPattern).optional(),
     required: z.boolean().default(true),
   })
   .strict();

@@ -171,7 +171,7 @@ export type AgentSkillFixture = {
   workspaceId: string;
   agentId: string;
   name: string;
-  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
   storedKind: string;
   target: { kind: string; id: string | null };
   config: Record<string, unknown>;

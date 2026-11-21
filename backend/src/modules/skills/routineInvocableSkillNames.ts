@@ -13,13 +13,13 @@ import type { ConversationSkill } from "../../shared/domain/conversationSkills.j
  * routable at runtime and absent from the catalog. That difference is the entire reason
  * this supplement exists.
  *
- * Three kinds are deliberately absent, and each exclusion is the direction that keeps
+ * Four kinds are deliberately absent, and each exclusion is the direction that keeps
  * validation from accepting a name runtime will not route:
  *
- * - **`retrieve` and `notify`.** `RetrieveRoutineSkillResolver` and
- *   `NotifyRoutineSkillResolver` each apply their own
+ * - **`retrieve`, `notify` and `api_request`.** `RetrieveRoutineSkillResolver`,
+ *   `NotifyRoutineSkillResolver` and `ApiRequestRoutineSkillResolver` each apply their own
  *   `enabled && invocationMode === "routine_named"` filter — exactly the filter the
- *   authoring catalog already applies for that kind. Listing either kind here would
+ *   authoring catalog already applies for that kind. Listing any of them here would
  *   widen validation past runtime, admitting an `agent_selectable` retrieve or notify
  *   skill that no routine step can actually dispatch.
  * - **`external_mcp`.** It has no name-keyed routine resolver. External MCP skills

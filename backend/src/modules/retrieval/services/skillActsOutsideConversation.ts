@@ -4,9 +4,11 @@ import { RETRIEVAL_ANSWER_ADAPTER } from "./retrievalAnswerSkillExecutor.js";
 
 /**
  * Whether running a skill may act outside the conversation: send an email, call a webhook,
- * post to Slack, notify operators, or call an external tool. The one skill known to stay
- * inside it is a retrieval skill reading workspace evidence through the internal retrieval
- * adapter; every other skill, and any execution not recognised here, may act outside it.
+ * post to Slack, notify operators, or call an external tool. Two skills are known to stay
+ * inside it: a retrieval skill reading workspace evidence through the internal retrieval
+ * adapter, and a skill whose definition declares it only reads (`readOnly`, such as an API
+ * request skill sending a GET). Every other skill, and any execution not recognised here, may
+ * act outside it.
  *
  * `retrieval` says the skill belongs to retrieval — an agent's `retrieve` skill, or a
  * platform retrieval skill such as `retrieval.context` — so a skill of another kind that is
@@ -17,8 +19,10 @@ import { RETRIEVAL_ANSWER_ADAPTER } from "./retrievalAnswerSkillExecutor.js";
 export const skillActsOutsideConversation = (skill: {
   retrieval: boolean;
   execution: SkillExecution | undefined;
+  readOnly?: boolean;
 }): boolean =>
-  !(
+  skill.readOnly !== true
+  && !(
     skill.retrieval
     && skill.execution?.kind === "internal"
     && skill.execution.adapter === RETRIEVAL_ANSWER_ADAPTER

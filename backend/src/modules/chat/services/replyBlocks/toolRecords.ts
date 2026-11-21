@@ -74,10 +74,28 @@ const itemKey = (pointer: string): string => {
     : `sha256:${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
 };
 
+/** The record's own key field, when it holds a short text or number. */
+const declaredKey = (value: unknown, keyField: string | undefined): string | null => {
+  if (!keyField || !isObject(value) || !Object.hasOwn(value, keyField)) return null;
+  const key = value[keyField];
+  const text = typeof key === "string" ? key.trim() : typeof key === "number" && Number.isFinite(key) ? String(key) : "";
+  return text.length > 0 && text.length <= TOOL_RECORD_LIMITS.keyLength ? text : null;
+};
+
 interface FoundRecord {
   pointer: string;
   value: unknown;
 }
+
+/**
+ * Each record's item key: the declared key field's value when every record has one and no two
+ * share it, so a pick names exactly the record shown; otherwise every record's pointer.
+ */
+const keyedRecords = (found: readonly FoundRecord[], keyField: string | undefined): Array<{ key: string; value: unknown }> => {
+  const declared = found.map(({ value }) => declaredKey(value, keyField));
+  const usable = declared.every((key): key is string => key !== null) && new Set(declared).size === declared.length;
+  return found.map(({ pointer, value }, index) => ({ key: usable ? declared[index] : itemKey(pointer), value }));
+};
 
 /**
  * Every array whose items are all objects, at most `arrayDepth` deep, in document order. Its items
@@ -201,7 +219,11 @@ export class ToolRecordLedger {
     this.byHandle = new Map(records.map((record) => [record.handle, record]));
   }
 
-  static fromOutputs(outputs: JsonObject | undefined): ToolRecordLedger {
+  /**
+   * `keyField` names the record field a skill's contract declares as the record's key: a record
+   * with a short text or number there is keyed by it rather than by its pointer.
+   */
+  static fromOutputs(outputs: JsonObject | undefined, options: { keyField?: string } = {}): ToolRecordLedger {
     const found: FoundRecord[] = [];
     if (outputs) {
       collectRecordArrays(outputs, "", 0, found);
@@ -209,7 +231,7 @@ export class ToolRecordLedger {
         found.push({ pointer: "", value: outputs });
       }
     }
-    const candidates = found.map(({ pointer, value }) => ({ key: itemKey(pointer), value }));
+    const candidates = keyedRecords(found, options.keyField);
     const offered: ToolRecord[] = candidates
       .slice(0, TOOL_RECORD_LIMITS.records)
       .map((candidate, index) => ({ handle: `r${index + 1}`, ...candidate }));

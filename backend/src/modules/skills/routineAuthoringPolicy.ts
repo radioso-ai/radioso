@@ -10,30 +10,20 @@ export const routineSkillCategories = [
   "webhook",
   "slack",
   "notify",
+  "api_request",
 ] as const;
 
 export type RoutineSkillCategory = (typeof routineSkillCategories)[number];
 
-export const routineDispatchableBuiltInSkillNames = [
-  retrievalAnswerSkillDefinition.name,
-  retrievalContextSkillDefinition.name,
-] as const;
-
-const routineDispatchableBuiltInSkillNameSet = new Set<string>(routineDispatchableBuiltInSkillNames);
-
 export const routineDispatchableBuiltInSkills = [retrievalAnswerSkillDefinition, retrievalContextSkillDefinition] as const;
 
-export const routineAuthoringBuiltInSkillNames = [
+const routineAuthoringBuiltInSkillNames = [
   retrievalContextSkillDefinition.name,
 ] as const;
 
 const routineAuthoringBuiltInSkillNameSet = new Set<string>(routineAuthoringBuiltInSkillNames);
 
 export const routineAuthoringBuiltInSkills = [retrievalContextSkillDefinition] as const;
-
-export const isRoutineDispatchableBuiltInSkill = (
-  skill: Pick<SkillCatalogEntryDefinition, "name">,
-): boolean => routineDispatchableBuiltInSkillNameSet.has(skill.name);
 
 export const isRoutineAuthoringBuiltInSkill = (
   skill: Pick<SkillCatalogEntryDefinition, "name">,

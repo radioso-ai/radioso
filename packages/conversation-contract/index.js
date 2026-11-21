@@ -22,3 +22,40 @@ export const readableSlotValue = (value) =>
   typeof value.key === "string" && typeof value.title === "string"
     ? value.title
     : value;
+
+const renderedValue = (value) => JSON.stringify(value) ?? "null";
+
+const labelled = (name, entry, typeLabel) =>
+  `${name}${entry.description ? ` — ${entry.description}` : ""} (${typeLabel})`;
+
+const renderListLines = (name, entry, value) => {
+  const fields = Object.entries(entry.fields);
+  const fieldLabels = fields.map(([fieldName, field]) => labelled(fieldName, field, field.type)).join(", ");
+  if (!Array.isArray(value) || value.length === 0) {
+    return [`${labelled(name, entry, "list")}: not returned`];
+  }
+  const items = value.map((item, index) => {
+    const record = item !== null && typeof item === "object" ? item : {};
+    const parts = fields
+      .filter(([fieldName]) => Object.hasOwn(record, fieldName))
+      .map(([fieldName]) => `${fieldName}: ${renderedValue(record[fieldName])}`);
+    return `  ${index + 1}. ${parts.join("; ")}`;
+  });
+  return [`${labelled(name, entry, `list of ${value.length}; fields: ${fieldLabels}`)}:`, ...items];
+};
+
+export const renderSkillOutputLines = (outputs, contract) => {
+  const lines = [];
+  for (const [name, entry] of Object.entries(contract)) {
+    const present = Object.hasOwn(outputs, name);
+    if (entry.type === "list") {
+      lines.push(...renderListLines(name, entry, present ? outputs[name] : undefined));
+    } else {
+      lines.push(`${labelled(name, entry, entry.type)}: ${present ? renderedValue(outputs[name]) : "not returned"}`);
+    }
+  }
+  for (const [name, value] of Object.entries(outputs)) {
+    if (!Object.hasOwn(contract, name)) lines.push(`${name}: ${renderedValue(value)}`);
+  }
+  return lines;
+};

@@ -17,12 +17,14 @@ export interface ResolvedSkillArguments {
  *
  * A `variableRef`/`contextVariableRef` that resolves to `undefined` is omitted rather
  * than passed as an explicit `undefined`, so an unfilled slot leaves the skill's own
- * default in place. A literal is always included.
+ * default in place. A literal is always included. A context variable named in
+ * `verifiedContextVariables` (the host verified its value) comes from `verified_context`.
  */
 export const resolveSkillArguments = (
   inputBindings: Record<string, RoutineInputBinding> | undefined,
   variables: Record<string, unknown>,
   contextValues: Record<string, unknown> = {},
+  verifiedContextVariables: ReadonlySet<string> = new Set(),
 ): ResolvedSkillArguments => {
   const values: Record<string, unknown> = {};
   const origins: Record<string, SkillArgumentOrigin> = {};
@@ -37,7 +39,9 @@ export const resolveSkillArguments = (
       : contextValues[binding.contextVariable];
     if (value !== undefined) {
       values[inputKey] = value;
-      origins[inputKey] = binding.kind === "variableRef" ? "slot" : "context";
+      origins[inputKey] = binding.kind === "variableRef"
+        ? "slot"
+        : verifiedContextVariables.has(binding.contextVariable) ? "verified_context" : "context";
     }
   }
   return { values, origins };

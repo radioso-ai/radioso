@@ -9,10 +9,12 @@ import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { EmailSkillDefinitionRepository } from "../../src/db/repositories/emailSkillDefinitionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../src/db/repositories/externalSkillDefinitionRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../src/db/repositories/webhookSkillDefinitionRepository.js";
+import { ApiRequestSkillExecutor } from "../../src/modules/apiRequestSkills/public.js";
 import { NotifyExecutor } from "../../src/modules/notify/notifyExecutor.js";
 import { SlackSkillDefinitionRepository } from "../../src/modules/slackSkills/repository.js";
 import { WebhookSkillExecutor } from "../../src/modules/webhookSkills/public.js";
 import { withConversationSkills } from "../../src/shared/domain/conversationSkills.js";
+import type { PublicHttpRequest } from "../../src/shared/infra/http/publicHttpRequest.js";
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
 import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { AgentSkillRepository, writeAgentSkillIntoDraft } from "../../src/modules/agentSkills/repository.js";
@@ -173,6 +175,58 @@ describeDb("a skills-only edit across an agent's draft and releases", () => {
     expect(result).toMatchObject({ disposition: "settled" });
     expect(JSON.stringify(posted)).toContain("support");
     expect(JSON.stringify(posted)).not.toContain("sales");
+  });
+
+  it("drafts an API request skill edit, and sends the release's request until publish", async () => {
+    const agent = await agents.create(workspaceId, { name: "API requests", customInstruction: "Be brief." });
+    await publishDraft(agent.id);
+    const connectionId = randomUUID();
+    await database.query(
+      "INSERT INTO api_connections (id, workspace_id, name, base_url) VALUES ($1,$2,$3,$4)",
+      [connectionId, workspaceId, "Shop", "https://api.acme.example/v1"],
+    );
+    const lookup = { method: "GET", path: "/orders/{order_number}", exposedParams: { order_number: { type: "text" } } };
+    const orderStatus = await skills.create({
+      workspaceId,
+      agentId: agent.id,
+      skillName: "order_status",
+      kind: "api_request",
+      targetType: "api_connection",
+      targetId: connectionId,
+      config: lookup,
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    await expect(revisions.readState(workspaceId, agent.id)).resolves.toMatchObject({ status: "draft_dirty" });
+    await publishDraft(agent.id);
+    await skills.update(workspaceId, agent.id, orderStatus.id, { replaceConfig: { ...lookup, method: "POST", path: "/orders/{order_number}/cancel" } });
+    await expect(revisions.readState(workspaceId, agent.id)).resolves.toMatchObject({ status: "draft_dirty" });
+
+    const sent: PublicHttpRequest[] = [];
+    const executor = new ApiRequestSkillExecutor({
+      skills: lookups().apiRequest,
+      connections: {
+        resolveTarget: async (_workspaceId, id) => ({
+          kind: "found",
+          target: { id, baseUrl: "https://api.acme.example/v1", authScheme: "none", authHeaderName: null, credential: null, defaultHeaders: {} },
+        }),
+      },
+      send: async (request) => {
+        sent.push(request);
+        return { kind: "response", status: 200, body: Buffer.from("{}"), contentType: "application/json", durationMs: 1 };
+      },
+    });
+    const result = await executor.dispatch({
+      skill: { name: "order_status" },
+      collected: { order_number: "A-100" },
+      collectedOrigins: { order_number: "slot" },
+      context: { workspaceId, agentId: agent.id, ...withConversationSkills(await visitorConversationSkills(agent.id)) },
+      emit: noopEmit,
+    });
+
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "completed" } });
+    expect(sent).toMatchObject([{ method: "GET", url: "https://api.acme.example/v1/orders/A-100" }]);
   });
 
   it("delivers a queued contact request to its conversation's release recipients, not ones edited live", async () => {

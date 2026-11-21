@@ -386,6 +386,19 @@ export interface AnswerCoverageReactionTraces {
   workspace_id: string;
 }
 
+export interface ApiConnections {
+  auth_header_name: string | null;
+  auth_scheme: Generated<string>;
+  base_url: string;
+  created_at: Generated<Timestamp>;
+  credential_ciphertext: string | null;
+  default_headers: Generated<Json>;
+  id: Generated<string>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface ApiCredentialExpiryWarnings {
   claimed_at: Generated<Timestamp>;
   credential_id: string;
@@ -2399,6 +2412,7 @@ export interface DB {
   agents: Agents;
   answer_coverage_assessments: AnswerCoverageAssessments;
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
+  api_connections: ApiConnections;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
   approval_resume_effect_decisions: ApprovalResumeEffectDecisions;

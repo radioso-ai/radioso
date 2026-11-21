@@ -158,9 +158,10 @@ export class EmailSkillExecutor implements SkillExecutorPort {
 }
 
 // A routine slot holds what the visitor typed, and a context variable what the host page or
-// visitor sent; either one in `bodyHtml` would otherwise ship as live markup in the email.
+// visitor sent; either one in `bodyHtml` would otherwise ship as live markup in the email. A
+// verified context variable vouches for who the visitor is, not for its markup.
 const isVisitorSupplied = (origin: SkillArgumentOrigin | undefined): boolean =>
-  origin === "slot" || origin === "context";
+  origin === "slot" || origin === "context" || origin === "verified_context";
 
 /**
  * The message inputs: what the skill definition binds, as the author wrote it, then what the

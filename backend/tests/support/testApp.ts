@@ -396,6 +396,8 @@ import {
   InMemoryWebhookDestinationRepository,
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
+import { InMemoryApiConnectionRepository } from "./inMemoryApiConnections.js";
+import { ApiConnectionService, type ApiRequestSender } from "../../src/modules/apiRequestSkills/public.js";
 import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
 import { InMemoryMachineAccessRepository } from "./inMemoryMachineAccess.js";
 import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
@@ -1030,6 +1032,8 @@ export const createTestDependencies = (overrides: {
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   /** The workspace event log; omitted means an empty in-memory log. */
   workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  /** Sends an API request skill's or test request's HTTP request; omitted means every request fails unreachable. */
+  apiRequestSender?: ApiRequestSender;
   /** Event subscriptions; omitted means an in-memory store behind the real service, every URL public. */
   workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
@@ -1974,6 +1978,13 @@ export const createTestDependencies = (overrides: {
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
   });
+  const apiConnections = new ApiConnectionService({
+    repository: new InMemoryApiConnectionRepository(agentSkillRepository),
+    auditService,
+    encryption: { key: connectorEncryptionKeys(env) },
+    assertPublicUrl: async () => undefined,
+    send: overrides.apiRequestSender ?? (async () => ({ kind: "failed", reason: "unreachable", durationMs: 0 })),
+  });
   const slackSkillDefinitionService = new SlackSkillDefinitionService({
     repository: slackSkillDefinitionRepository,
     installations: slackInstallationRepository,
@@ -2003,6 +2014,8 @@ export const createTestDependencies = (overrides: {
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    api_request: async ({ workspaceId }) =>
+      (await apiConnections.list(workspaceId)).map((connection) => ({ id: connection.id, label: connection.name })),
     retrieve: async ({ workspaceId }) => {
       const [sources, manualDocumentCount] = await Promise.all([
         documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
@@ -3153,6 +3166,7 @@ export const createTestDependencies = (overrides: {
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,
+    apiConnections,
     workspaceLlmCapabilitySettingsService,
     llmCapabilityResolver: {
       async resolve() {
@@ -3489,6 +3503,7 @@ export const createTestApp = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  apiRequestSender?: ApiRequestSender;
   workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   conversationErasure?: AppDependencies["conversationErasure"];
   conversationConsents?: AppDependencies["conversationConsents"];

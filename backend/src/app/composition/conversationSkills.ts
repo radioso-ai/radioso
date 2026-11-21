@@ -84,6 +84,11 @@ export const buildConversationScopedSkillLookups = (skills: ConversationSkills, 
     fromSkill: (skill) => skill,
     live: ({ workspaceId, agentId, skillName }) => live.agentSkills.findByName(workspaceId, agentId, skillName),
   });
+  const apiRequest = skills.scopedLookup<ConversationSkill>({
+    kind: "api_request",
+    fromSkill: (skill) => skill,
+    live: ({ workspaceId, agentId, skillName }) => live.agentSkills.findByName(workspaceId, agentId, skillName),
+  });
   return {
     externalMcp: {
       findEnabledByName: (agentId: string, skillName: string, context?: InvocationContext) =>
@@ -104,6 +109,10 @@ export const buildConversationScopedSkillLookups = (skills: ConversationSkills, 
     notify: {
       findByName: (workspaceId: string, agentId: string, skillName: string, context?: InvocationContext) =>
         notify({ workspaceId, agentId, skillName, context }),
+    },
+    apiRequest: {
+      findByName: (workspaceId: string, agentId: string, skillName: string, context?: InvocationContext) =>
+        apiRequest({ workspaceId, agentId, skillName, context }),
     },
   };
 };

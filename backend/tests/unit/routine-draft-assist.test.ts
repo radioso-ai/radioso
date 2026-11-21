@@ -328,6 +328,7 @@ describe("RoutineDraftAssistService", () => {
         inputs: [],
         outcomes: [{ name: "completed", displayName: "Completed", status: "completed" }],
         hasDataOutputs: false,
+        outputs: [],
       }]),
     };
     const { service } = createService(textGenerationClient, [{ type: "contact.send", kind: "action" }], skillAuthoringCatalog);

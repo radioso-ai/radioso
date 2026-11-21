@@ -244,3 +244,64 @@ describe("present reply envelope", () => {
     expect(readPresentReplyEnvelope("plain text")).toEqual({ answer: "", extras: undefined });
   });
 });
+
+describe("skill result reply with a typed output contract", () => {
+  const contract = {
+    total: { type: "number" as const, description: "Matching flats" },
+    flats: {
+      type: "list" as const,
+      description: "Flats that match",
+      fields: {
+        id: { type: "text" as const, role: "key" as const },
+        name: { type: "text" as const, role: "title" as const, description: "Listing name" },
+        rent: { type: "number" as const, role: "subtitle" as const },
+        url: { type: "text" as const, role: "link" as const },
+        photo: { type: "text" as const, role: "image" as const },
+      },
+    },
+  };
+  const typed = (): TurnOutcome => outcome({
+    outputs: { total: 2, flats: LISTINGS.map((listing, index) => ({ id: `flat-${index + 1}`, ...listing })) },
+    outputContract: contract,
+  });
+
+  it("gives the reply model typed, described lines for the outputs", async () => {
+    const { calls, renderer } = harness(envelope(PRESENT));
+
+    await renderer.render(typed(), { session: session(), query: QUERY });
+
+    expect(calls[0]?.prompt).toContain("total — Matching flats (number): 2");
+    expect(calls[0]?.prompt).toContain('1. id: "flat-1"; name: "Loft Mitte"; rent: 1850');
+  });
+
+  it("keys cards by their pointers when the declared key repeats, so a pick finds the record shown", async () => {
+    const { renderer } = harness(envelope({ records: ["r2", "r1"], fields: { title: "/name", subtitle: null, image: null, link: null }, caption: "Flats" }));
+    const duplicated = outcome({
+      outputs: { total: 2, flats: LISTINGS.map((listing) => ({ id: "same-id", ...listing })) },
+      outputContract: contract,
+    });
+
+    const presentation = await renderer.render(duplicated, { session: session(), query: QUERY });
+
+    expect(presentation.replyBlocks?.stored[0]?.items.map((item) => [item.key, item.title])).toEqual([
+      ["/flats/1", "Altbau Mitte"],
+      ["/flats/0", "Loft Mitte"],
+    ]);
+  });
+
+  it("builds cards from the list's roles whatever fields the model named, keyed by the key field", async () => {
+    const modelFields = { records: ["r2", "r1"], fields: { title: "/url", subtitle: null, image: null, link: null }, caption: "Flats" };
+    const { renderer } = harness(envelope(modelFields));
+
+    const presentation = await renderer.render(typed(), { session: session(), query: QUERY });
+
+    expect(presentation.replyBlocks?.stored[0]?.items).toEqual([
+      expect.objectContaining({ key: "flat-2", title: "Altbau Mitte", description: "1990", actions: [{ type: "open", url: "https://homes.example/listings/altbau-mitte" }] }),
+      expect.objectContaining({ key: "flat-1", title: "Loft Mitte", description: "1850", actions: [{ type: "open", url: "https://homes.example/listings/loft-mitte" }] }),
+    ]);
+    expect(presentation.replyBlocks?.toolImages).toEqual([
+      { imageId: "image-1", url: "https://img.homes.example/altbau.jpg" },
+      { imageId: "image-2", url: "https://img.homes.example/loft.jpg" },
+    ]);
+  });
+});

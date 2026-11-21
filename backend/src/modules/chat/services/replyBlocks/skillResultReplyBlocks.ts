@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { SkillOutputContract } from "@radioso/conversation-contract";
+
 import type { AnswerSchemaExtension } from "../../../../shared/domain/answerSideChannel.js";
 import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
@@ -9,7 +11,8 @@ import type { ReplyImageUrls, StoredReplyBlock } from "../../contracts/replyBloc
 import type { PreparedSession } from "../chatSessionPreparer.js";
 import { buttonLabelsPromptSection, withButtonLabels } from "./presentButtonLabels.js";
 import { buildRecordBlock, type RecordBlockBinding, type RecordBlockDropReason } from "./recordBlockBuilder.js";
-import { readRecordPresentHead, recordPresentHeadSchemaExtension } from "./recordPresentHead.js";
+import { readRecordPresentHead, recordPresentHeadSchemaExtension, type RecordPresentHead } from "./recordPresentHead.js";
+import { cardRolesFor, withRoleFields } from "./cardRoles.js";
 import { channelLabel, type PresentedReplyBlocks } from "./replyBlockTurn.js";
 import { presentReplyBlocks } from "./replyBlockBuilder.js";
 import { skillResultCardsFor } from "./skillResultCardsGate.js";
@@ -66,18 +69,26 @@ export class SkillResultReplyBlocks {
     skillName: string,
     outputs: Record<string, unknown> | undefined,
     binding?: RecordBlockBinding,
+    outputContract?: SkillOutputContract,
   ): SkillResultCardsOffer | null {
     const itemList = skillResultCardsFor(session);
     if (!itemList && !binding) {
       return null;
     }
-    const ledger = ToolRecordLedger.fromOutputs(outputs);
+    // A list output whose contract sets card roles is the cards' only source, and its roles fill
+    // the cards: the model still chooses which records to show, never which fields.
+    const roles = cardRolesFor(outputContract, outputs);
+    const ledger = roles
+      ? ToolRecordLedger.fromOutputs({ [roles.list]: outputs?.[roles.list] }, { keyField: roles.fields.key })
+      : ToolRecordLedger.fromOutputs(outputs);
+    const headWithRoles = (head: RecordPresentHead): RecordPresentHead =>
+      roles ? { ...head, fields: withRoleFields(head.fields, roles) } : head;
     setTraceAttributes({ "chat.reply_blocks.record_count": ledger.size });
     if (ledger.size === 0) {
       return null;
     }
     if (!itemList) {
-      return binding ? this.listingOffer(skillName, ledger, binding) : null;
+      return binding ? this.listingOffer(skillName, ledger, binding, headWithRoles) : null;
     }
     const channel = channelLabel(session.conversation.sourceChannel);
     const buttonLabels = itemList.buttonLabels === true;
@@ -89,10 +100,11 @@ export class SkillResultReplyBlocks {
       records: { withHandles: ledger.promptSection({ handles: true }), plain: ledger.promptSection({ handles: false }) },
       cardsLost: () => lost,
       build: (extras) => {
-        const head = readRecordPresentHead(extras);
-        if (!head) {
+        const read = readRecordPresentHead(extras);
+        if (!read) {
           return undefined;
         }
+        const head = headWithRoles(read);
         const { block, dropped, toolImages } = buildRecordBlock({
           head,
           ledger,
@@ -138,7 +150,12 @@ export class SkillResultReplyBlocks {
    * in its text, and the head names them, so the message keeps what it listed, unpresented, for a
    * typed answer to resolve against. Nothing is picked from it and no picture is kept.
    */
-  private listingOffer(skillName: string, ledger: ToolRecordLedger, binding: RecordBlockBinding): SkillResultCardsOffer {
+  private listingOffer(
+    skillName: string,
+    ledger: ToolRecordLedger,
+    binding: RecordBlockBinding,
+    headWithRoles: (head: RecordPresentHead) => RecordPresentHead,
+  ): SkillResultCardsOffer {
     return {
       schemaExtension: recordPresentHeadSchemaExtension(),
       promptSection: renderPromptTemplate("chat/skill-result-list-records.md", {}),
@@ -146,10 +163,11 @@ export class SkillResultReplyBlocks {
       cardsLost: () => false,
       build: () => undefined,
       listed: (extras) => {
-        const head = readRecordPresentHead(extras);
-        if (!head) {
+        const read = readRecordPresentHead(extras);
+        if (!read) {
           return undefined;
         }
+        const head = headWithRoles(read);
         const { block, dropped } = buildRecordBlock({
           head: { ...head, fields: { ...head.fields, image: null } },
           ledger,

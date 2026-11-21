@@ -430,7 +430,7 @@ export const createRoutineTurnProvider = (
     const emailSkillNames = [...byKind.customer_email];
     const webhookSkillNames = [...byKind.webhook];
     const slackSkillNames = [...byKind.slack];
-    // One set serves both retrieve and notify: each applies its own
+    // One set serves retrieve, notify and API request: each applies its own
     // enabled && routine_named filter (matching the authoring catalog).
     const retrieveSkills = (turnSkills ?? [])
       .filter((skill) => skill.kind === "retrieve")
@@ -446,6 +446,14 @@ export const createRoutineTurnProvider = (
         skillName: skill.skillName,
         enabled: skill.enabled,
         invocationMode: skill.invocationMode,
+      }));
+    const apiRequestSkills = (turnSkills ?? [])
+      .filter((skill) => skill.kind === "api_request")
+      .map((skill) => ({
+        skillName: skill.skillName,
+        enabled: skill.enabled,
+        invocationMode: skill.invocationMode,
+        config: skill.config,
       }));
 
     const reentryGate = dependencies.turnPlanAdapters.reentryGate({
@@ -535,6 +543,7 @@ export const createRoutineTurnProvider = (
             slackSkillNames,
             retrieveSkills,
             notifySkills,
+            apiRequestSkills,
           }),
           dependencies.skillExecutorRegistry,
           {

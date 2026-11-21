@@ -701,16 +701,35 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const SkillAuthoringOutputFieldSchema = z.object({
+    name: z.string(),
+    type: z.enum(["text", "number", "boolean", "date", "email"]),
+    description: z.string().optional(),
+    role: z.enum(["key", "title", "subtitle", "image", "link"]).optional(),
+  });
+
+  const SkillAuthoringOutputSchema = registry.register(
+    "SkillAuthoringOutput",
+    z.object({
+      name: z.string(),
+      type: z.enum(["text", "number", "boolean", "date", "email", "list"]),
+      required: z.boolean(),
+      description: z.string().optional(),
+      fields: z.array(SkillAuthoringOutputFieldSchema).optional(),
+    }),
+  );
+
   const SkillAuthoringDescriptorSchema = registry.register(
     "SkillAuthoringDescriptor",
     z.object({
       skillName: z.string(),
       displayName: z.string(),
-      category: z.enum(["retrieval", "built_in", "external_mcp", "customer_email", "webhook", "slack", "notify"]),
+      category: z.enum(["retrieval", "built_in", "external_mcp", "customer_email", "webhook", "slack", "notify", "api_request"]),
       description: z.string().optional(),
       inputs: z.array(SkillAuthoringInputSchema),
       outcomes: z.array(SkillAuthoringOutcomeSchema),
       hasDataOutputs: z.boolean(),
+      outputs: z.array(SkillAuthoringOutputSchema),
     }),
   );
 

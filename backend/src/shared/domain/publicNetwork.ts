@@ -22,6 +22,31 @@ export const stripIpv6Brackets = (value: string): string =>
   value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
 
 /**
+ * Plain http to this machine: `localhost`, a `*.localhost` name, `host.docker.internal`, or a
+ * loopback literal. An outbound client that sets `allowHttpLoopback` (local development and e2e,
+ * never production) sends to such a URL without the public-address policy.
+ */
+export const isLocalDevelopmentHttpUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:") {
+      return false;
+    }
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "host.docker.internal" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
  * The loopback and IP-literal judgment {@link assertPublicHttpUrl} and
  * {@link isPubliclyReachableHostname} share: true for `localhost`/`*.localhost`, and for an IP
  * literal outside the publicly routable ranges. False for an ordinary (non-IP) domain name —

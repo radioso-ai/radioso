@@ -33,6 +33,9 @@ const chainFor = (kindToName: Partial<Record<AgentSkillKind, string>>) =>
     notifySkills: kindToName.notify
       ? [{ skillName: kindToName.notify, enabled: true, invocationMode: "routine_named" }]
       : [],
+    apiRequestSkills: kindToName.api_request
+      ? [{ skillName: kindToName.api_request, enabled: true, invocationMode: "routine_named", config: { method: "GET" } }]
+      : [],
   });
 
 describe("routine authoring/runtime resolver parity", () => {
@@ -49,7 +52,7 @@ describe("routine authoring/runtime resolver parity", () => {
   it("offers every non-external_mcp agent-skill kind whose capability supports routine_named", () => {
     // Pinned so a newly added kind shows up in the diff instead of silently
     // joining the parametrized cases below with no reviewer noticing.
-    expect([...catalogOfferedKinds].sort()).toEqual(["customer_email", "notify", "retrieve", "slack", "webhook"]);
+    expect([...catalogOfferedKinds].sort()).toEqual(["api_request", "customer_email", "notify", "retrieve", "slack", "webhook"]);
   });
 
   it.each(catalogOfferedKinds.map((kind) => [kind] as const))(

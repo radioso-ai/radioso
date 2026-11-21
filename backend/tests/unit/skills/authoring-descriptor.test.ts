@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { AgentSkillSpine } from "../../../src/modules/agentSkills/public.js";
+import { apiRequestCapability } from "../../../src/modules/skills/capabilities/apiRequest.js";
 import {
+  agentSkillToAuthoringDescriptor,
   externalSkillToAuthoringDescriptor,
   skillCatalogEntryToAuthoringDescriptor,
   type SkillCatalogDescriptorSource,
@@ -137,6 +140,7 @@ describe("externalSkillToAuthoringDescriptor", () => {
         { name: "failed", displayName: "failed", status: "failed" },
       ],
       hasDataOutputs: false,
+      outputs: [],
     });
   });
 
@@ -170,5 +174,88 @@ describe("externalSkillToAuthoringDescriptor", () => {
       { name: "completed", displayName: "completed", status: "completed" },
       { name: "failed", displayName: "failed", status: "failed" },
     ]);
+  });
+});
+
+describe("agentSkillToAuthoringDescriptor for an API request skill", () => {
+  const apiRequestSkill = (config: Record<string, unknown>): AgentSkillSpine => ({
+    id: "skill-1",
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    skillName: "order_status",
+    kind: "api_request",
+    invocationMode: "routine_named",
+    enabled: true,
+    targetType: "api_connection",
+    targetId: "33333333-3333-4333-8333-333333333333",
+    config,
+    createdAt: new Date("2026-11-21T00:00:00.000Z"),
+    updatedAt: new Date("2026-11-21T00:00:00.000Z"),
+  });
+
+  it("offers the typed exposed params as inputs and the typed outputs, list fields included", () => {
+    const descriptor = agentSkillToAuthoringDescriptor(
+      apiRequestSkill({
+        method: "GET",
+        path: "/orders/{order_number}",
+        boundParams: { expand: "items" },
+        exposedParams: {
+          order_number: { type: "text", slotBinding: "order", description: "The order number" },
+          email: { type: "email", required: false, verifiedOnly: true },
+          placed_after: { type: "date", required: false },
+        },
+        outputs: {
+          order_status: { path: "order.status", type: "text", description: "Where the order is", required: true },
+          items: {
+            path: "items",
+            type: "list",
+            maxItems: 5,
+            fields: {
+              title: { path: "title", type: "text", role: "title" },
+              price: { path: "price", type: "number" },
+            },
+          },
+        },
+      }),
+      apiRequestCapability,
+    );
+
+    expect(descriptor).toEqual({
+      skillName: "order_status",
+      displayName: "Order Status",
+      category: "api_request",
+      inputs: [
+        { key: "order", type: "text", required: true, description: "The order number" },
+        { key: "email", type: "email", required: false },
+        { key: "placed_after", type: "date", required: false },
+      ],
+      outcomes: ["completed", "not_found", "rejected", "missing_input", "invalid_input", "unverified", "failed"].map((name) => ({
+        name,
+        displayName: name,
+        status: name === "failed" ? "failed" : "completed",
+      })),
+      hasDataOutputs: true,
+      outputs: [
+        { name: "order_status", type: "text", required: true, description: "Where the order is" },
+        {
+          name: "items",
+          type: "list",
+          required: false,
+          fields: [
+            { name: "title", type: "text", role: "title" },
+            { name: "price", type: "number" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("reports no data outputs when none are declared", () => {
+    const descriptor = agentSkillToAuthoringDescriptor(
+      apiRequestSkill({ method: "POST", path: "/tickets", exposedParams: { subject: { type: "text" } } }),
+      apiRequestCapability,
+    );
+
+    expect(descriptor).toMatchObject({ hasDataOutputs: false, outputs: [] });
   });
 });

@@ -9,7 +9,10 @@ import {
 } from './operator-notice-destinations'
 
 export type SkillAuthoringInputType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'phone' | 'enum'
-export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email' | 'webhook' | 'slack' | 'notify'
+export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email' | 'webhook' | 'slack' | 'notify' | 'api_request'
+
+export type SkillOutputValueType = 'text' | 'number' | 'boolean' | 'date' | 'email'
+type SkillOutputFieldRole = 'key' | 'title' | 'subtitle' | 'image' | 'link'
 
 export interface SkillAuthoringInput {
   key: string
@@ -26,6 +29,22 @@ export interface SkillAuthoringOutcome {
   status: string
 }
 
+export interface SkillAuthoringOutputField {
+  name: string
+  type: SkillOutputValueType
+  description?: string
+  role?: SkillOutputFieldRole
+}
+
+/** A data field a skill returns: a typed scalar, or a list of records with typed fields. */
+export interface SkillAuthoringOutput {
+  name: string
+  type: SkillOutputValueType | 'list'
+  required: boolean
+  description?: string
+  fields?: SkillAuthoringOutputField[]
+}
+
 export interface SkillAuthoringDescriptor {
   skillName: string
   displayName: string
@@ -34,6 +53,8 @@ export interface SkillAuthoringDescriptor {
   inputs: SkillAuthoringInput[]
   outcomes: SkillAuthoringOutcome[]
   hasDataOutputs: boolean
+  /** The declared data outputs; absent from a descriptor built before the backend sent them. */
+  outputs?: SkillAuthoringOutput[]
 }
 
 interface SkillAuthoringCatalogResponse {
@@ -41,7 +62,9 @@ interface SkillAuthoringCatalogResponse {
 }
 
 const inputTypes: readonly SkillAuthoringInputType[] = ['text', 'number', 'boolean', 'email', 'date', 'phone', 'enum']
-const skillCategories: readonly RoutineSkillCategory[] = ['retrieval', 'built_in', 'external_mcp', 'customer_email', 'webhook', 'slack', 'notify']
+const skillCategories: readonly RoutineSkillCategory[] = ['retrieval', 'built_in', 'external_mcp', 'customer_email', 'webhook', 'slack', 'notify', 'api_request']
+const outputValueTypes: readonly string[] = ['text', 'number', 'boolean', 'date', 'email']
+const outputFieldRoles: readonly string[] = ['key', 'title', 'subtitle', 'image', 'link']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -114,6 +137,38 @@ const parseOutcome = (value: unknown): SkillAuthoringOutcome => {
   return outcome
 }
 
+const parseOutputField = (value: unknown): SkillAuthoringOutputField | null => {
+  if (!isRecord(value) || typeof value.name !== 'string' || !outputValueTypes.includes(value.type as string)) return null
+  const description = optionalString(value.description)
+  return {
+    name: value.name,
+    type: value.type as SkillOutputValueType,
+    ...(description ? { description } : {}),
+    ...(outputFieldRoles.includes(value.role as string) ? { role: value.role as SkillOutputFieldRole } : {}),
+  }
+}
+
+// An output the client cannot read is left out rather than failing the whole catalog, so a newer
+// backend's extra output types never blank the routine editor.
+const parseOutputs = (value: unknown): SkillAuthoringOutput[] => {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): SkillAuthoringOutput[] => {
+    if (!isRecord(entry) || typeof entry.name !== 'string' || typeof entry.required !== 'boolean') return []
+    if (entry.type !== 'list' && !outputValueTypes.includes(entry.type as string)) return []
+    const description = optionalString(entry.description)
+    const fields = Array.isArray(entry.fields)
+      ? entry.fields.map(parseOutputField).filter((field): field is SkillAuthoringOutputField => field !== null)
+      : undefined
+    return [{
+      name: entry.name,
+      type: entry.type as SkillAuthoringOutput['type'],
+      required: entry.required,
+      ...(description ? { description } : {}),
+      ...(fields ? { fields } : {}),
+    }]
+  })
+}
+
 export const parseSkillAuthoringCatalogResponse = (payload: unknown): SkillAuthoringDescriptor[] => {
   if (!isRecord(payload) || !Array.isArray(payload.skills)) {
     throw new Error('Skill catalog response must include skills.')
@@ -147,6 +202,7 @@ export const parseSkillAuthoringCatalogResponse = (payload: unknown): SkillAutho
       inputs: value.inputs.map(parseInput),
       outcomes: value.outcomes.map(parseOutcome),
       hasDataOutputs: value.hasDataOutputs,
+      outputs: parseOutputs(value.outputs),
     }
   })
 }

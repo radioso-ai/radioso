@@ -52,6 +52,35 @@ $$;
 
 
 --
+-- Name: block_agent_skill_api_connection_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_api_connection_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM agent_skills
+    WHERE kind = 'api_request'
+      AND workspace_id = OLD.workspace_id
+      AND target_type = 'api_connection'
+      AND target_id = OLD.id::text
+  ) THEN
+    RAISE EXCEPTION 'API connection % is referenced by agent skills', OLD.id
+      USING ERRCODE = '23503',
+            CONSTRAINT = 'agent_skills_api_request_target_fk';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+
+--
 -- Name: block_agent_skill_customer_email_connection_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -307,6 +336,26 @@ BEGIN
       RAISE EXCEPTION 'slack skill % references unknown Slack installation %', NEW.id, NEW.target_id
         USING ERRCODE = '23503',
               CONSTRAINT = 'agent_skills_slack_target_fk';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.kind = 'api_request' THEN
+    IF NEW.target_type IS DISTINCT FROM 'api_connection' OR NEW.target_id IS NULL THEN
+      RAISE EXCEPTION 'api_request skill % must target an API connection', NEW.id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_api_request_target_fk';
+    END IF;
+    target_uuid := agent_skill_target_uuid(NEW.target_id, 'api_connection');
+    SELECT TRUE INTO target_exists
+    FROM api_connections
+    WHERE id = target_uuid
+      AND workspace_id = NEW.workspace_id
+    FOR KEY SHARE;
+    IF target_exists IS NOT TRUE THEN
+      RAISE EXCEPTION 'api_request skill % references unknown API connection %', NEW.id, NEW.target_id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_api_request_target_fk';
     END IF;
     RETURN NEW;
   END IF;
@@ -804,7 +853,7 @@ CREATE TABLE public.agent_skills (
     invocation_mode text DEFAULT 'routine_named'::text NOT NULL,
     CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_skills_invocation_mode_check CHECK ((invocation_mode = ANY (ARRAY['default_answer'::text, 'routine_named'::text, 'agent_selectable'::text]))),
-    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text])))
+    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text, 'api_request'::text])))
 );
 
 
@@ -1004,6 +1053,29 @@ CREATE TABLE public.answer_coverage_reaction_traces (
     CONSTRAINT answer_coverage_reaction_traces_decision_check CHECK ((decision = ANY (ARRAY['matched'::text, 'applied'::text, 'offered'::text, 'activated'::text, 'skipped'::text, 'suppressed'::text]))),
     CONSTRAINT answer_coverage_reaction_traces_evaluation_index_check CHECK ((evaluation_index >= 0)),
     CONSTRAINT answer_coverage_reaction_traces_evaluation_state_check CHECK ((evaluation_state = ANY (ARRAY['evaluated'::text, 'not_applicable'::text, 'suppressed'::text])))
+);
+
+
+--
+-- Name: api_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.api_connections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    name text NOT NULL,
+    base_url text NOT NULL,
+    auth_scheme text DEFAULT 'none'::text NOT NULL,
+    auth_header_name text,
+    credential_ciphertext text,
+    default_headers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT api_connections_auth_check CHECK ((((auth_scheme = 'none'::text) AND (credential_ciphertext IS NULL) AND (auth_header_name IS NULL)) OR ((auth_scheme = ANY (ARRAY['bearer'::text, 'basic'::text])) AND (credential_ciphertext IS NOT NULL) AND (auth_header_name IS NULL)) OR ((auth_scheme = 'header'::text) AND (credential_ciphertext IS NOT NULL) AND (auth_header_name IS NOT NULL)))),
+    CONSTRAINT api_connections_auth_scheme_check CHECK ((auth_scheme = ANY (ARRAY['none'::text, 'bearer'::text, 'header'::text, 'basic'::text]))),
+    CONSTRAINT api_connections_base_url_check CHECK (((base_url ~* '^https://'::text) OR (base_url ~* '^http://(([a-z0-9-]+\.)*localhost|127\.0\.0\.1|\[::1\]|host\.docker\.internal)(:[0-9]+)?(/|$)'::text))),
+    CONSTRAINT api_connections_default_headers_check CHECK ((jsonb_typeof(default_headers) = 'object'::text)),
+    CONSTRAINT api_connections_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL))
 );
 
 
@@ -5286,6 +5358,14 @@ ALTER TABLE ONLY public.answer_coverage_reaction_traces
 
 
 --
+-- Name: api_connections api_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_connections
+    ADD CONSTRAINT api_connections_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: api_credential_expiry_warnings api_credential_expiry_warnings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8684,6 +8764,13 @@ CREATE INDEX idx_agents_workspace_id ON public.agents USING btree (workspace_id)
 
 
 --
+-- Name: idx_api_connections_workspace_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_api_connections_workspace_lower_name ON public.api_connections USING btree (workspace_id, lower(name));
+
+
+--
 -- Name: idx_api_credentials_expiry_warning_scan; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11022,6 +11109,13 @@ CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind
 
 
 --
+-- Name: api_connections trg_api_connections_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_api_connections_block_agent_skill_reference BEFORE DELETE ON public.api_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_api_connection_delete();
+
+
+--
 -- Name: chunks trg_chunks_temporal_dates; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11548,6 +11642,14 @@ ALTER TABLE ONLY public.answer_coverage_reaction_traces
 
 ALTER TABLE ONLY public.answer_coverage_reaction_traces
     ADD CONSTRAINT answer_coverage_reaction_traces_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_connections api_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_connections
+    ADD CONSTRAINT api_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

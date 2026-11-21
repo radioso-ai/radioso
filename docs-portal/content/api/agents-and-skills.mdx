@@ -47,9 +47,9 @@ changes the draft: while the draft's skills differ from the published release,
 `revision-state` reports `draft_dirty`, Test Chat runs the draft, and visitors
 get the change once you publish. Until then a conversation runs the skills of
 the release it started on, so switching a skill off or changing its settings
-reaches no running conversation before you publish. The MCP connections, webhook
-destinations, and mailboxes a skill uses are workspace settings and apply at
-once.
+reaches no running conversation before you publish. The MCP connections, API
+connections, webhook destinations, and mailboxes a skill uses are workspace
+settings and apply at once.
 
 `GET .../revisions/{revisionId}` lists each skill the revision adds, removes, or
 changes against its base release under `scopedChanges.agentSkills`, by
@@ -336,7 +336,9 @@ Every agent has three built-in answer skills: **Clarification answer**, **Retrie
 - `invocationMode`
 - `enabled`
 
-Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, `notify`, and `api_request`.
+
+An `api_request` skill calls a REST API through a workspace API connection: its target is `{ "kind": "api_connection", "id": "<connectionId>" }`, and its only invocation mode is `routine_named`, so routines run it and directives or the agent's own tool choice cannot. Create the connection under `/api/v1/settings/api-connections` (see [Settings](/api/settings#api-connections)); [Call a REST API from a routine](/automation/api-request-skills) covers the skill config, typed outputs and outcomes.
 
 A `mcp_tool` skill (and the `external_mcp` directive binding below) is Radioso calling out to *someone else's* MCP server as a tool. That's the opposite direction from [Radioso's own MCP server](/guides/mcp-server), which a client like Cursor or Claude Desktop connects into.
 

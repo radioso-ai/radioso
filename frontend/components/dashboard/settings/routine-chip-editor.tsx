@@ -153,6 +153,7 @@ function AutoFocusEndPlugin({ enabled, onDone }: { enabled?: boolean; onDone?: (
 export function RoutineInstructionEditor({
   initialContent,
   variables,
+  listVariableIds,
   onCreateVariable,
   onChange,
   onBlur,
@@ -166,6 +167,8 @@ export function RoutineInstructionEditor({
 }: {
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
+  // Variables a step assigns from a list output; their checks are limited to is-set and is-not-set.
+  listVariableIds?: ReadonlySet<string>
   // Declares the variable an author names with `@`. A text that may only read the variables
   // the routine already declares leaves it out, and `@` then offers no "Create variable".
   onCreateVariable?: (variable: RoutineEditorVariable) => void
@@ -206,8 +209,9 @@ export function RoutineInstructionEditor({
       // A skill named here runs as a step of this routine, so its chip offers input and
       // output binding — unlike a skill merely mentioned in a directive action.
       supportsStepBindings: true,
+      listVariableIds,
     }),
-    [variables],
+    [variables, listVariableIds],
   )
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)

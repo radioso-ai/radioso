@@ -24,7 +24,7 @@ export const realCatalogDependencies = () => {
     voiceRecordings: { availability: stub() },
     documentSearchService: { search: stub() },
     documentChunks: { listPageForDocument: stub() },
-    documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub() },
+    documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub(), setRecrawlCadence: stub() },
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
     replyDraft: { draft: stub() },

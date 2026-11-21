@@ -19,6 +19,8 @@ const websiteSource = (config: Record<string, unknown> = {}) => ({
   metadata: {},
   lastSyncStatus: "completed",
   lastSyncedAt: new Date("2026-08-29T10:00:00.000Z"),
+  recrawlCadence: "off" as const,
+  nextRecrawlAt: null,
   createdAt: new Date("2026-08-01T10:00:00.000Z"),
   updatedAt: new Date("2026-08-29T10:00:00.000Z"),
 });

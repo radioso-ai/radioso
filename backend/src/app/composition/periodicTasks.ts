@@ -14,6 +14,7 @@ export const buildPeriodicTaskEntries = (input: {
   identityNonces: Parameters<typeof identityNoncePrunePeriodicTask>[0];
   voiceRecordingErasureRecovery: PeriodicTaskEntry;
   workspaceEventDelivery: PeriodicTaskEntry;
+  websiteRecrawl: PeriodicTaskEntry;
   contributed: {
     registrations: Parameters<typeof contributedPeriodicTasks>[0];
     context: Parameters<typeof contributedPeriodicTasks>[1];
@@ -27,5 +28,7 @@ export const buildPeriodicTaskEntries = (input: {
   identityNoncePrunePeriodicTask(input.identityNonces),
   // Every event subscription with an event waiting is drained within a minute.
   input.workspaceEventDelivery,
+  // Website sources with a recrawl cadence are queued for a crawl when their next recrawl is due.
+  input.websiteRecrawl,
   ...contributedPeriodicTasks(input.contributed.registrations, input.contributed.context),
 ];

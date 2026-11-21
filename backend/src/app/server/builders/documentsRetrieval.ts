@@ -74,6 +74,7 @@ import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/con
 import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
 import { createWebsiteCrawlerIngestionPort } from "../../composition/websiteCrawlerIngestionPort.js";
+import { createWebsiteRecrawlComposition } from "../../composition/websiteRecrawl.js";
 import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
@@ -263,6 +264,16 @@ export const buildDocumentServices = (input: {
     crawlJobs: websiteCrawlJobService,
     crawlerConfig: resolveWebsiteCrawlerConfig(),
   });
+  const websiteRecrawl = createWebsiteRecrawlComposition({
+    schedule: repositories.websiteRecrawlRepository,
+    missingPages: repositories.websiteMissingPageRepository,
+    sources: documentSourceRepository,
+    usageLimits: usageLimitPolicy,
+    recrawls: { recrawlSource: (recrawl) => documentSourceRecrawlService.recrawlSource(recrawl) },
+    pages: { removeSourcePages: (removal) => documentIngestionService.removeSourcePages(removal) },
+    audit: auditService,
+    logger,
+  });
   const documentImportService = new DocumentImportService(
     repositories.documentRepository,
     auditService,
@@ -304,6 +315,7 @@ export const buildDocumentServices = (input: {
     dispatcher: websiteCrawlJobDispatcher,
     documentIngestionService: websiteCrawlerIngestionPort,
     auditService,
+    missingPages: repositories.websiteMissingPageRepository,
     errorReporter: input.errorReporter,
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
@@ -353,6 +365,7 @@ export const buildDocumentServices = (input: {
     websiteCrawlJobService,
     websiteCrawlerProvider,
     websiteCrawlWorker,
+    websiteRecrawl,
     workspaceIngestionReprocessService,
   };
 };

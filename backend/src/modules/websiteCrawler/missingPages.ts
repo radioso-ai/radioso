@@ -60,12 +60,11 @@ export const reconcileMissingPages = async (
     crawlStartedAt: Date;
   },
 ): Promise<void> => {
-  const reap = dependencies.ingestion.reapMissingPages;
-  if (!reap) {
+  if (!dependencies.ingestion.reapMissingPages) {
     return;
   }
   const remove = async (keepExternalDocumentIds: string[]) => {
-    await reap({ workspaceId: input.workspaceId, sourceId: input.sourceId, keepExternalDocumentIds });
+    await dependencies.ingestion.reapMissingPages?.({ workspaceId: input.workspaceId, sourceId: input.sourceId, keepExternalDocumentIds });
   };
   if (!dependencies.store) {
     // Without a store a scheduled crawl cannot tell how much it would remove, so it removes nothing.

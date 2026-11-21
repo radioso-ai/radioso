@@ -78,6 +78,9 @@ import type {
   DocumentSourceRecord,
   DocumentSourceRepositoryPort,
 } from "../../src/db/repositories/documentSourceRepository.js";
+import type { DueWebsiteRecrawl, WebsiteRecrawlRepositoryPort } from "../../src/db/repositories/websiteRecrawlRepository.js";
+import type { WebsiteHeldPageStore, WebsiteMissingPageStore } from "../../src/modules/websiteCrawler/missingPages.js";
+import type { RecrawlCadence } from "../../src/modules/websiteCrawler/public.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -2834,6 +2837,8 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       metadata: input.metadata ?? {},
       lastSyncStatus: null,
       lastSyncedAt: null,
+      recrawlCadence: "off",
+      nextRecrawlAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -3742,6 +3747,75 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       }
     }
     return { deletedCount, deletedContentBytes };
+  }
+}
+
+/** `setRecrawlSchedule` over the in-memory sources; the sweep's claim is exercised against Postgres. */
+export class InMemoryWebsiteRecrawlRepository implements WebsiteRecrawlRepositoryPort {
+  constructor(private readonly sources: InMemoryDocumentSourceRepository) {}
+
+  async setRecrawlSchedule(input: {
+    workspaceId: string;
+    sourceId: string;
+    recrawlCadence: RecrawlCadence;
+    nextRecrawlAt: Date | null;
+  }): Promise<DocumentSourceRecord | null> {
+    const source = await this.sources.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source || source.kind !== "website") return null;
+    const updated = { ...source, recrawlCadence: input.recrawlCadence, nextRecrawlAt: input.nextRecrawlAt, updatedAt: new Date() };
+    this.sources.items.set(updated.id, updated);
+    return updated;
+  }
+
+  async claimDueRecrawls(): Promise<DueWebsiteRecrawl[]> {
+    return [];
+  }
+}
+
+/** Held and kept missing pages, keyed by document id. `hold` seeds pages a scheduled crawl held. */
+export class InMemoryWebsiteMissingPageStore implements WebsiteMissingPageStore, WebsiteHeldPageStore {
+  readonly pages = new Map<string, { workspaceId: string; sourceId: string; decision: "pending" | "kept" }>();
+
+  hold(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): void {
+    for (const documentId of input.documentIds) {
+      if (!this.pages.has(documentId)) this.pages.set(documentId, { workspaceId: input.workspaceId, sourceId: input.sourceId, decision: "pending" });
+    }
+  }
+
+  async reviewMissingPages(): Promise<{ livePageCountBeforeCrawl: number; missingPages: [] }> {
+    return { livePageCountBeforeCrawl: 0, missingPages: [] };
+  }
+
+  async holdMissingPages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<number> {
+    const before = this.pages.size;
+    this.hold(input);
+    return this.pages.size - before;
+  }
+
+  async listHeldPageIds(input: { workspaceId: string; sourceId: string }): Promise<string[]> {
+    return [...this.pages.entries()]
+      .filter(([, page]) => page.workspaceId === input.workspaceId && page.sourceId === input.sourceId && page.decision === "pending")
+      .map(([documentId]) => documentId);
+  }
+
+  async keepHeldPages(input: { workspaceId: string; sourceId: string }): Promise<number> {
+    const held = await this.listHeldPageIds(input);
+    for (const documentId of held) this.pages.set(documentId, { ...this.pages.get(documentId)!, decision: "kept" });
+    return held.length;
+  }
+
+  async countHeldPages(input: { workspaceId: string; sourceIds: readonly string[] }): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    for (const page of this.pages.values()) {
+      if (page.workspaceId === input.workspaceId && page.decision === "pending" && input.sourceIds.includes(page.sourceId)) {
+        counts.set(page.sourceId, (counts.get(page.sourceId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  forgetDocument(documentId: string): void {
+    this.pages.delete(documentId);
   }
 }
 

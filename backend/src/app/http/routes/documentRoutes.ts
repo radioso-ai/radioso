@@ -30,6 +30,7 @@ import {
   reprocessSingleDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
+  recrawlCadenceUpdateSchema,
   sourceParamsSchema,
   sourceUpdateSchema,
 } from "./documentRouteSchemas.js";
@@ -51,6 +52,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentStorage"
   | "websiteCrawlJobService"
   | "websiteCrawlerProvider"
+  | "websiteRecrawl"
   | "usageLimitPolicy"
 >;
 
@@ -134,11 +136,18 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
+  const describeRecrawl = (workspaceId: string, sources: ReadonlyArray<{ id: string; kind: string }>) =>
+    dependencies.websiteRecrawl.scheduleService.describeRecrawl({
+      workspaceId,
+      sourceIds: sources.filter((source) => source.kind === "website").map((source) => source.id),
+    });
+
   router.get("/sources", workspaceSession, documentsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const summary = await dependencies.documentIngestionService.summarizeSourcesForWorkspace(workspaceId);
-      res.status(200).json(presentDocumentSourceList(workspaceId, summary.sources, summary.documentsWithoutSourceCount));
+      const recrawl = await describeRecrawl(workspaceId, summary.sources);
+      res.status(200).json(presentDocumentSourceList(workspaceId, summary.sources, summary.documentsWithoutSourceCount, recrawl));
     } catch (error) {
       next(error);
     }
@@ -255,11 +264,38 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         config: nextConfig,
       });
 
-      res.status(200).json(presentDocumentSource(updated));
+      res.status(200).json(presentDocumentSource(updated, 0, await describeRecrawl(workspaceId, [updated])));
     } catch (error) {
       next(error);
     }
   });
+
+  router.put("/sources/:sourceId/recrawl-cadence", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(recrawlCadenceUpdateSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      const { recrawlCadence } = req.body as { recrawlCadence: "off" | "daily" | "weekly" };
+      const updated = await dependencies.websiteRecrawl.scheduleService.setRecrawlCadence({ workspaceId, sourceId, recrawlCadence });
+      res.status(200).json(presentDocumentSource(updated, 0, await describeRecrawl(workspaceId, [updated])));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The pages a scheduled crawl held: the operator removes them, or keeps them for good.
+  for (const decision of ["remove", "keep"] as const) {
+    router.post(`/sources/:sourceId/held-pages/${decision}`, workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
+        const { sourceId } = sourceParamsSchema.parse(req.params);
+        const heldPages = dependencies.websiteRecrawl.heldPagesService;
+        const input = { accountId, workspaceId, sourceId };
+        res.status(200).json(decision === "remove" ? await heldPages.removeHeldPages(input) : await heldPages.keepHeldPages(input));
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
 
   router.post("/sources/:sourceId/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
     try {

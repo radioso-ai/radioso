@@ -12,7 +12,7 @@ type ProductionDescriptorName =
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
-  | "recrawl_source" | "reprocess_document" | "retrieval_probe"
+  | "recrawl_source" | "reprocess_document" | "retrieval_probe" | "set_recrawl_cadence"
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_setup_state" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
@@ -96,6 +96,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   quality_signals: { backingOperationIds: ["listLowQualityTurns", "getQualityStats"] },
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
   recrawl_source: { backingOperationIds: ["recrawlDocumentSource"], applicationPrimitiveIds: ["documents.source-recrawl.act"] },
+  set_recrawl_cadence: { backingOperationIds: ["setDocumentSourceRecrawlCadence"], applicationPrimitiveIds: ["websiteCrawler.recrawl-cadence.act"] },
   reprocess_document: { backingOperationIds: ["reprocessDocument", "reprocessDocumentSource"], applicationPrimitiveIds: ["documents.reprocess.act", "documents.source-reprocess.act"] },
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   retrieval_settings: { backingOperationIds: ["getSettingsRetrievalDefaults", "listAgentSkills"], applicationPrimitiveIds: ["agents.configuration.read"] },

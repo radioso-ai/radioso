@@ -69,6 +69,14 @@ export interface UsageLimitPolicy {
     accountId?: string | null;
     workspaceId: string;
   }): Promise<number | null>;
+  /**
+   * The fastest cadence the workspace's plan lets a website source recrawl itself at. Null, or a
+   * policy without this method, sets no ceiling: `daily` is allowed.
+   */
+  getFastestRecrawlCadence?(input: {
+    accountId?: string | null;
+    workspaceId: string;
+  }): Promise<"daily" | "weekly" | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;
@@ -126,6 +134,11 @@ const noopReservation: UsageLimitReservation = {
 export class NoopUsageLimitPolicy implements UsageLimitPolicy {
   async getNotificationEmailDailyLimit(): Promise<number> {
     return DEFAULT_NOTIFICATION_EMAIL_DAILY_LIMIT;
+  }
+
+  /** No plans, so no ceiling on how often a website source recrawls. */
+  async getFastestRecrawlCadence(): Promise<null> {
+    return null;
   }
 
   async reserveAnswer(): Promise<UsageLimitReservation> {

@@ -453,6 +453,7 @@ callerKind: "human" as const,
       }),
       reprocessSource: unusedPort("documentMaintenance.reprocessSource"),
       recrawlSource: unusedPort("documentMaintenance.recrawlSource"),
+      setRecrawlCadence: unusedPort("documentMaintenance.setRecrawlCadence"),
     },
     documentStatusService: {
       summarizeWorkspace: async () => ({ documentCount: 12, readyDocumentCount: 10, pendingDocumentCount: 1, failedDocumentCount: 1 }),

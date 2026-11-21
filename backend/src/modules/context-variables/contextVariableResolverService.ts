@@ -99,16 +99,23 @@ export class ContextVariableResolverService {
   }
 
   async resolveForEnablements(workspaceId: string, agentId: string, enablements: readonly AgentContextVariableEnablement[], scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]> {
-    const resolved: ResolvedVariableInput[] = [];
+    const selected: { enablement: AgentContextVariableEnablement; variable: ContextVariable }[] = [];
     for (const enablement of enablements) {
       if (!enablement.enabled) continue;
       const variable = await this.repository.get(workspaceId, enablement.variableId);
       if (!variable) throw notFound("A context variable selected by this revision no longer exists");
+      selected.push({ enablement, variable });
+    }
+    // One read covers the ladder of every pushed variable the revision selects.
+    const stored = await this.repository.readMostSpecificValues(
+      selected.filter(({ enablement }) => enablement.source === "pushed").map(({ variable }) => variable.id),
+      scopes,
+    );
+    const resolved: ResolvedVariableInput[] = [];
+    for (const { enablement, variable } of selected) {
       if (enablement.source === "pushed") {
-        for (const scope of scopes) {
-          const value = await this.repository.readValue(variable.id, scope);
-          if (value) { resolved.push(resolvedVariableInput(enablement, variable, value.data)); break; }
-        }
+        const value = stored.get(variable.id);
+        if (value) resolved.push(resolvedVariableInput(enablement, variable, value.data));
         continue;
       }
       const scope = resolverScope(scopes);

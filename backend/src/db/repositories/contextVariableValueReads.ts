@@ -8,6 +8,9 @@ import type {
   ContextVariableScope,
   ContextVariableValue,
 } from "../../modules/context-variables/public.js";
+import { sql } from "kysely";
+
+import { anyOf } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface ContextVariableValueRow {
@@ -69,16 +72,29 @@ export const readContextVariableValue = async (
   return row ? mapContextVariableValueRow(row) : null;
 };
 
-export const readFirstScopedValue = async (
+/**
+ * Each variable's most specific stored value on the ladder, in one read. `scopes` is the ladder,
+ * most specific first; a variable no rung holds a value for is absent from the result.
+ */
+export const readMostSpecificValues = async (
   db: Db,
-  variableId: string,
+  variableIds: readonly string[],
   scopes: readonly ContextVariableScope[],
-): Promise<ContextVariableValue | null> => {
-  for (const scope of scopes) {
-    const value = await readContextVariableValue(db, variableId, scope);
-    if (value) {
-      return value;
-    }
-  }
-  return null;
+): Promise<Map<string, ContextVariableValue>> => {
+  if (variableIds.length === 0 || scopes.length === 0) return new Map();
+  const rung = sql<number>`case ${sql.join(scopes.map((scope, index) =>
+    sql`when scope_type = ${scope.type} and scope_id = ${storedScopeId(scope)} then ${index}`), sql` `)} end`;
+  const rows = await db
+    .selectFrom("context_variable_values")
+    .distinctOn("variable_id")
+    .select(contextVariableValueColumns)
+    .where((eb) => anyOf(eb.ref("variable_id"), variableIds, "uuid[]"))
+    .where((eb) => eb.or(scopes.map((scope) => eb.and([
+      eb("scope_type", "=", scope.type),
+      eb("scope_id", "=", storedScopeId(scope)),
+    ]))))
+    .orderBy("variable_id")
+    .orderBy(rung)
+    .execute();
+  return new Map(rows.map((row) => [row.variable_id, mapContextVariableValueRow(row)]));
 };

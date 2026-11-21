@@ -123,6 +123,11 @@ export interface ContextVariableResolverRepositoryPort {
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
   listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
+  /**
+   * Each variable's most specific stored value on the ladder (`scopes`, most specific first), keyed
+   * by variable id, in one read for the whole turn. A variable with no value is absent.
+   */
+  readMostSpecificValues(variableIds: readonly string[], scopes: readonly ContextVariableScope[]): Promise<ReadonlyMap<string, ContextVariableValue>>;
   upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null>;
 }
 

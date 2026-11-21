@@ -17,6 +17,7 @@ import {
   type ContextVariableRepositoryPort,
   type ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
+import type { ContextVariableResolverRepositoryPort } from "../../src/modules/context-variables/repository.js";
 
 const workspaceId = "workspace-1";
 const agentId = "agent-1";
@@ -79,6 +80,8 @@ class FakeContextVariableRepository implements ContextVariableRepositoryPort {
   readonly listByAgent = vi.fn<ContextVariableRepositoryPort["listByAgent"]>();
   readonly readValue = vi.fn<ContextVariableRepositoryPort["readValue"]>();
   readonly upsertValue = vi.fn<ContextVariableRepositoryPort["upsertValue"]>();
+  readonly readMostSpecificValues = vi.fn<ContextVariableResolverRepositoryPort["readMostSpecificValues"]>()
+    .mockResolvedValue(new Map());
 
   create(_input: ContextVariableCreateRecord): Promise<ContextVariable> {
     throw new Error("not implemented");
@@ -253,18 +256,29 @@ describe("ContextVariableResolverService", () => {
     expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "updated" }, resolverCacheWriter);
   });
 
-  it("reads a pinned revision's stored values from the conversation scope first", async () => {
+  it("reads every pushed variable of a pinned revision in one read over the whole ladder", async () => {
     const repository = new FakeContextVariableRepository();
     const topic = variable({ name: "topic", valueType: "enum", options: [{ key: "billing", label: "Billing", description: null, archived: false }] });
-    repository.get = vi.fn(async () => topic);
-    repository.readValue.mockImplementation(async (_variableId, scope) =>
-      scope.type === "conversation" ? { ...value("billing", new Date(nowMs)), scope } : value("shipping", new Date(nowMs)));
+    const plan = variable({ id: "var-2", name: "plan", valueType: "string" });
+    repository.get = vi.fn(async (_workspaceId, id) => (id === plan.id ? plan : topic));
+    repository.readMostSpecificValues.mockResolvedValue(new Map([
+      [topic.id, { ...value("billing", new Date(nowMs)), scope: conversationScope }],
+      [plan.id, { ...value("pro", new Date(nowMs)), variableId: plan.id }],
+    ]));
     const { service } = createService({ repository });
+    const pushed = { source: "pushed" as const, resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null };
+    const ladder = [conversationScope, ...scopes];
 
     await expect(service.resolveForEnablements(workspaceId, agentId, [
-      enablement({ source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null }),
-    ], [conversationScope, ...scopes])).resolves.toEqual([expect.objectContaining({ name: "topic", value: "billing", label: "Billing" })]);
-    expect(repository.readValue).toHaveBeenCalledTimes(1);
+      enablement(pushed),
+      enablement({ ...pushed, id: "enablement-2", variableId: plan.id }),
+    ], ladder)).resolves.toEqual([
+      expect.objectContaining({ name: "topic", value: "billing", label: "Billing" }),
+      expect.objectContaining({ name: "plan", value: "pro" }),
+    ]);
+    expect(repository.readMostSpecificValues).toHaveBeenCalledTimes(1);
+    expect(repository.readMostSpecificValues).toHaveBeenCalledWith([topic.id, plan.id], ladder);
+    expect(repository.readValue).not.toHaveBeenCalled();
   });
 
   it("still reads a cached enum key whose option was archived after it was stored", async () => {

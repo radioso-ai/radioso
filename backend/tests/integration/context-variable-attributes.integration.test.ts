@@ -150,6 +150,27 @@ describeIntegration("typed attributes (Postgres)", () => {
     expect(resolved.find((variable) => variable.name === topic.name)).toMatchObject({ value: "billing", label: "Billing" });
   });
 
+  it("reads each variable's most specific value on the ladder in one read", async () => {
+    const topic = await createTopic();
+    const unset = await createTopic();
+    const plan = await repository.create({
+      workspaceId, name: uniqueName("plan"), valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always",
+    });
+    const chatSessionId = `session-${randomUUID()}`;
+    const conversationId = await createConversation(chatSessionId);
+    const scopes = contextScopeLadder({ conversationId, chatSessionId, verifiedCustomerId: null, agentId, workspaceId });
+    await repository.upsertValue(topic.id, { type: "session", id: chatSessionId }, "shipping", api);
+    await repository.upsertValue(topic.id, { type: "conversation", id: conversationId }, "billing", api);
+    await repository.upsertValue(plan.id, { type: "workspace", id: workspaceId }, "basic", api);
+    await repository.upsertValue(plan.id, { type: "agent", id: agentId }, "pro", api);
+
+    const values = await repository.readMostSpecificValues([topic.id, plan.id, unset.id], scopes);
+
+    expect(values.get(topic.id)).toMatchObject({ data: "billing", scope: { type: "conversation", id: conversationId } });
+    expect(values.get(plan.id)).toMatchObject({ data: "pro", scope: { type: "agent", id: agentId } });
+    expect(values.has(unset.id)).toBe(false);
+  });
+
   it("erases a conversation's values with it and exports them with their writer", async () => {
     const topic = await createTopic();
     const erased = await createConversation();

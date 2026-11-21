@@ -48,7 +48,7 @@ import {
   contextVariableValueColumns,
   mapContextVariableValueRow,
   readContextVariableValue,
-  readFirstScopedValue,
+  readMostSpecificValues,
   storedScopeId,
 } from "./contextVariableValueReads.js";
 
@@ -629,22 +629,19 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]> {
     const enablements = (await this.listByAgent(workspaceId, agentId))
-      .filter((enablement) => enablement.enabled && enablement.source === "pushed" && enablement.variable);
-    const resolved: ResolvedVariableInput[] = [];
+      .filter((enablement) => enablement.enabled && enablement.source === "pushed");
+    const values = await this.readMostSpecificValues(enablements.map((enablement) => enablement.variableId), scopes);
+    return enablements.flatMap((enablement) => {
+      const value = values.get(enablement.variableId);
+      return enablement.variable && value ? [resolvedVariableInput(enablement, enablement.variable, value.data)] : [];
+    });
+  }
 
-    for (const enablement of enablements) {
-      const variable = enablement.variable;
-      if (!variable) {
-        continue;
-      }
-      const value = await readFirstScopedValue(this.db, variable.id, scopes);
-      if (!value) {
-        continue;
-      }
-      resolved.push(resolvedVariableInput(enablement, variable, value.data));
-    }
-
-    return resolved;
+  readMostSpecificValues(
+    variableIds: readonly string[],
+    scopes: readonly ContextVariableScope[],
+  ): Promise<ReadonlyMap<string, ContextVariableValue>> {
+    return readMostSpecificValues(this.db, variableIds, scopes);
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {

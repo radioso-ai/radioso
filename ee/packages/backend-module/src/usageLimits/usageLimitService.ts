@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { findPlan, PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
+import { findPlan, PLAN_CATALOG, type Plan, type PlanRecrawlCadence, type UsageCountKind } from "@radioso/plan-catalog";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
@@ -33,6 +33,7 @@ import { addKindTenths, bumpConversationReplies, meteredInAnswers, recordUncappe
 export { TENTHS_PER_CONVERSATION };
 
 const CREDIT_GRANT_LIFETIME_MONTHS = 12;
+type PlanLimitLookup = { accountId?: string | null; workspaceId: string };
 
 export interface UsageLimitProfile {
   key: string;
@@ -258,20 +259,15 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     return balanceTenths;
   }
 
-  async getNotificationEmailDailyLimit(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<number | null> {
-    const accountId = await this.resolveAccountId(input);
-    if (!accountId) return null;
-    const profile = await this.findProfileForAccount(accountId);
-    return profile ? findPlan(profile.key)?.dailyNotificationEmails ?? null : null;
+  async getNotificationEmailDailyLimit(input: PlanLimitLookup): Promise<number | null> {
+    return (await this.findCatalogPlan(input))?.dailyNotificationEmails ?? null;
   }
 
-  async getPublicChatMessagesPerMinute(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<number | null> {
+  async getFastestRecrawlCadence(input: PlanLimitLookup): Promise<PlanRecrawlCadence | null> {
+    return (await this.findCatalogPlan(input))?.fastestRecrawlCadence ?? null;
+  }
+
+  async getPublicChatMessagesPerMinute(input: PlanLimitLookup): Promise<number | null> {
     const accountId = await this.resolveAccountId(input);
     if (!accountId) return null;
     const profile = await this.findProfileForAccount(accountId);
@@ -1070,10 +1066,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountId}, 0))`.execute(db);
   }
 
-  private async resolveAccountId(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<string | null> {
+  private async resolveAccountId(input: PlanLimitLookup): Promise<string | null> {
     if (input.accountId) {
       return input.accountId;
     }
@@ -1084,6 +1077,13 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
       .where("id", "=", input.workspaceId)
       .executeTakeFirst();
     return workspace?.account_id ?? null;
+  }
+
+  /** The catalog plan of the workspace's account; null without one, or for a profile the catalog does not list. */
+  private async findCatalogPlan(input: PlanLimitLookup): Promise<Plan | null> {
+    const accountId = await this.resolveAccountId(input);
+    const profile = accountId ? await this.findProfileForAccount(accountId) : null;
+    return profile ? findPlan(profile.key) ?? null : null;
   }
 
   private async findProfileForAccount(accountId: string): Promise<UsageLimitProfile | null> {

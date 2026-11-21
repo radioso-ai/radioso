@@ -45,7 +45,7 @@ describe("website recrawl contract", () => {
       .set(adminSessionHeaders(session))
       .send({ recrawlCadence: "daily" })
       .expect(200);
-    expect(set.body).toMatchObject({ id: source.id, recrawlCadence: "daily", nextRecrawlAt: expect.any(String), fastestRecrawlCadence: "daily" });
+    expect(set.body).toMatchObject({ id: source.id, documentCount: 2, recrawlCadence: "daily", nextRecrawlAt: expect.any(String), fastestRecrawlCadence: "daily" });
 
     const cleared = await request(app)
       .put(`/api/v1/document/sources/${source.id}/recrawl-cadence`)

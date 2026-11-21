@@ -142,6 +142,12 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       sourceIds: sources.filter((source) => source.kind === "website").map((source) => source.id),
     });
 
+  /** A source's document count, from the same summary the source list reads. */
+  const documentCountOf = async (workspaceId: string, sourceId: string): Promise<number> => {
+    const summary = await dependencies.documentIngestionService.summarizeSourcesForWorkspace(workspaceId);
+    return summary.sources.find((source) => source.id === sourceId)?.documentCount ?? 0;
+  };
+
   router.get("/sources", workspaceSession, documentsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -276,7 +282,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       const { sourceId } = sourceParamsSchema.parse(req.params);
       const { recrawlCadence } = req.body as { recrawlCadence: "off" | "daily" | "weekly" };
       const updated = await dependencies.websiteRecrawl.scheduleService.setRecrawlCadence({ workspaceId, sourceId, recrawlCadence });
-      res.status(200).json(presentDocumentSource(updated, 0, await describeRecrawl(workspaceId, [updated])));
+      res.status(200).json(presentDocumentSource(updated, await documentCountOf(workspaceId, sourceId), await describeRecrawl(workspaceId, [updated])));
     } catch (error) {
       next(error);
     }

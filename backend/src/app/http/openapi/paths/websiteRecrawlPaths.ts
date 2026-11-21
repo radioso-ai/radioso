@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
+import { recrawlCadences } from "../../../../modules/websiteCrawler/public.js";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
 const TAGS = ["Documents"];
@@ -24,7 +25,7 @@ export const registerWebsiteRecrawlPaths = (
   const RecrawlCadenceRequestSchema = registry.register(
     "DocumentSourceRecrawlCadenceRequest",
     z.object({
-      recrawlCadence: z.enum(["off", "daily", "weekly"]).openapi({
+      recrawlCadence: z.enum(recrawlCadences).openapi({
         description: "How often the source recrawls itself. `off` stops scheduled recrawls.",
       }),
     }).strict(),

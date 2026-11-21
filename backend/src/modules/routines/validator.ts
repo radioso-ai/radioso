@@ -82,7 +82,7 @@ export interface RoutineValidationResult {
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
-  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" }>;
+  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" | "enum" }>;
   /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
@@ -139,11 +139,15 @@ const isSlotTypeCompatibleWithInput = (
 };
 
 const isContextVariableTypeCompatibleWithInput = (
-  valueType: "string" | "json",
+  valueType: "string" | "json" | "enum",
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
   if (valueType === "json") {
     return true;
+  }
+  // An enum value is an option key: text, or a choice from an enum input.
+  if (valueType === "enum") {
+    return inputType === "text" || inputType === "enum";
   }
   return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
 };

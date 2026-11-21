@@ -289,6 +289,7 @@ import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoute
 import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
   AgentContextVariableEnablement,
+  ContextValueWriter,
   ContextVariable,
   ContextVariableScope,
   ContextVariableValue,
@@ -300,7 +301,7 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableService } from "../../src/modules/context-variables/public.js";
+import { ContextVariableService, mayOverwrite } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -682,6 +683,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       name: input.name,
       description: input.description ?? null,
       valueType: input.valueType,
+      options: input.options ?? null,
       trustTier: input.trustTier,
       sensitivity: input.sensitivity,
       defaultSurfacing: input.defaultSurfacing,
@@ -786,13 +788,16 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       .sort((left, right) => (left.variable?.name ?? "").localeCompare(right.variable?.name ?? ""));
   }
 
-  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue> {
+  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null> {
     const variable = this.variables.get(variableId);
     if (!variable) {
       throw new Error(`Context variable ${variableId} not found`);
     }
     const key = this.valueKey(variableId, scope);
     const existing = this.values.get(key);
+    if (!mayOverwrite(existing?.writtenBy ?? null, writtenBy.kind)) {
+      return null;
+    }
     const value: ContextVariableValue = {
       id: existing?.id ?? randomUUID(),
       workspaceId: variable.workspaceId,
@@ -800,6 +805,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       scope,
       data,
       lastModified: new Date(),
+      writtenBy,
     };
     this.values.set(key, value);
     return value;
@@ -811,6 +817,10 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
   async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
     return this.values.delete(this.valueKey(variableId, scope));
+  }
+
+  async hasValues(variableId: string): Promise<boolean> {
+    return [...this.values.values()].some((value) => value.variableId === variableId);
   }
 
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
@@ -858,6 +868,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
           name: input.definition.name,
           description: input.definition.description,
           valueType: input.definition.valueType,
+          options: input.definition.options,
           trustTier: input.definition.trustTier,
           sensitivity: input.definition.sensitivity,
           defaultSurfacing: input.definition.defaultSurfacing,

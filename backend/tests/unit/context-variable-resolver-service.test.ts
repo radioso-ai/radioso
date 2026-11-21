@@ -23,7 +23,10 @@ const agentId = "agent-1";
 const sessionScope: ContextVariableScope = { type: "session", id: "session-1" };
 const agentScope: ContextVariableScope = { type: "agent", id: agentId };
 const scopes = [sessionScope, agentScope];
+const conversationScope: ContextVariableScope = { type: "conversation", id: "conversation-1" };
 const nowMs = Date.parse("2026-06-24T10:00:00.000Z");
+// A resolver's cache holds what the host's API returned through the resolver skill.
+const resolverCacheWriter = { kind: "api", ref: null };
 
 const variable = (overrides: Partial<ContextVariable> = {}): ContextVariable => ({
   id: "var-1",
@@ -31,6 +34,7 @@ const variable = (overrides: Partial<ContextVariable> = {}): ContextVariable => 
   name: "order_status",
   description: "Current order state",
   valueType: "json",
+  options: null,
   trustTier: "signed",
   sensitivity: "sensitive",
   defaultSurfacing: "always",
@@ -67,6 +71,7 @@ const value = (
   scope: sessionScope,
   data,
   lastModified,
+  writtenBy: { kind: "api", ref: null },
 });
 
 class FakeContextVariableRepository implements ContextVariableRepositoryPort {
@@ -99,6 +104,9 @@ class FakeContextVariableRepository implements ContextVariableRepositoryPort {
   deleteValue(_variableId: string, _scope: ContextVariableScope): Promise<boolean> {
     throw new Error("not implemented");
   }
+  hasValues(_variableId: string): Promise<boolean> {
+    throw new Error("not implemented");
+  }
   applyProposal(_input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
     throw new Error("not implemented");
   }
@@ -118,13 +126,14 @@ const createService = (input: {
     repository.resolveForAgent.mockResolvedValue([]);
     repository.listByAgent.mockResolvedValue([]);
     repository.readValue.mockResolvedValue(null);
-    repository.upsertValue.mockImplementation(async (variableId, scope, data) => ({
+    repository.upsertValue.mockImplementation(async (variableId, scope, data, writtenBy) => ({
       id: "upserted-value",
       workspaceId,
       variableId,
       scope,
       data,
       lastModified: new Date(nowMs),
+      writtenBy,
     }));
   }
   const resolver = input.resolver ?? { resolve: vi.fn(async () => null) };
@@ -226,7 +235,51 @@ describe("ContextVariableResolverService", () => {
       scope: sessionScope,
       signal: expect.any(AbortSignal),
     }));
-    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "updated" });
+    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "updated" }, resolverCacheWriter);
+  });
+
+  it("keeps a resolver on the session scope when the ladder starts at the conversation", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({ maxAgeSeconds: 60 })]);
+    repository.readValue.mockResolvedValue(null);
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: { state: "updated" } })) };
+    const { service } = createService({ repository, resolver });
+
+    await service.resolveForAgent(workspaceId, agentId, [conversationScope, ...scopes]);
+
+    expect(repository.readValue).toHaveBeenCalledWith("var-1", sessionScope);
+    expect(resolver.resolve).toHaveBeenCalledWith(expect.objectContaining({ scope: sessionScope }));
+    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "updated" }, resolverCacheWriter);
+  });
+
+  it("reads a pinned revision's stored values from the conversation scope first", async () => {
+    const repository = new FakeContextVariableRepository();
+    const topic = variable({ name: "topic", valueType: "enum", options: [{ key: "billing", label: "Billing", description: null, archived: false }] });
+    repository.get = vi.fn(async () => topic);
+    repository.readValue.mockImplementation(async (_variableId, scope) =>
+      scope.type === "conversation" ? { ...value("billing", new Date(nowMs)), scope } : value("shipping", new Date(nowMs)));
+    const { service } = createService({ repository });
+
+    await expect(service.resolveForEnablements(workspaceId, agentId, [
+      enablement({ source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null }),
+    ], [conversationScope, ...scopes])).resolves.toMatchObject([{ name: "topic", value: "billing" }]);
+    expect(repository.readValue).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reads a cached enum key whose option was archived after it was stored", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({
+      maxAgeSeconds: 60,
+      variable: variable({ valueType: "enum", options: [{ key: "gold", label: "Gold", description: null, archived: true }] }),
+    })]);
+    repository.readValue.mockResolvedValue(value("gold", new Date(nowMs - 30_000)));
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: "silver" })) };
+    const { service } = createService({ repository, resolver });
+
+    await expect(service.resolveForAgent(workspaceId, agentId, scopes)).resolves.toMatchObject([{ value: "gold" }]);
+    expect(resolver.resolve).not.toHaveBeenCalled();
   });
 
   it("treats a null max age as never fresh and refetches every turn", async () => {
@@ -240,7 +293,7 @@ describe("ContextVariableResolverService", () => {
     await service.resolveForAgent(workspaceId, agentId, scopes);
 
     expect(resolver.resolve).toHaveBeenCalledTimes(1);
-    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "new" });
+    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "new" }, resolverCacheWriter);
   });
 
   it("skips incompatible fetched resolver values without caching them", async () => {

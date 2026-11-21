@@ -2,12 +2,36 @@ import type { ValueSensitivity } from "@radioso/conversation-contract";
 
 import type { ContextVariableSurfacing } from "./contextResolutionService.js";
 
-export type ContextVariableValueType = "string" | "json";
+export type ContextVariableValueType = "string" | "json" | "enum";
 export type ContextVariableTrustTier = "unverified" | "signed";
 /** The same authored sensitivity a routine slot carries, with the same masking rule. */
 export type ContextVariableSensitivity = ValueSensitivity;
 export type ContextVariableSource = "pushed" | "browser" | "resolver" | "request";
-export type ContextVariableScopeType = "session" | "customer" | "agent" | "workspace";
+export type ContextVariableScopeType = "conversation" | "session" | "customer" | "agent" | "workspace";
+
+/**
+ * One described choice of an `enum` variable. A stored value holds the key, which never changes;
+ * an option is archived rather than removed, so a stored key always names one.
+ */
+export interface ContextVariableOption {
+  key: string;
+  label: string;
+  description: string | null;
+  archived: boolean;
+}
+
+export const CONTEXT_VALUE_WRITER_KINDS = ["api", "operator", "routine", "classifier"] as const;
+export type ContextValueWriterKind = typeof CONTEXT_VALUE_WRITER_KINDS[number];
+
+/**
+ * Who last wrote a value. `ref` names what wrote it: an API credential or user id, a
+ * `routineId:executionId`, or a classifier prompt version. A value written before writers were
+ * recorded reads as `api` with no reference.
+ */
+export interface ContextValueWriter {
+  kind: ContextValueWriterKind;
+  ref: string | null;
+}
 
 export interface ContextVariable {
   id: string;
@@ -15,6 +39,8 @@ export interface ContextVariable {
   name: string;
   description: string | null;
   valueType: ContextVariableValueType;
+  /** The choices of an `enum` variable; null for every other type. */
+  options: readonly ContextVariableOption[] | null;
   trustTier: ContextVariableTrustTier;
   sensitivity: ContextVariableSensitivity;
   defaultSurfacing: ContextVariableSurfacing;
@@ -49,7 +75,34 @@ export interface ContextVariableValue {
   scope: ContextVariableScope;
   data: unknown;
   lastModified: Date;
+  writtenBy: ContextValueWriter;
 }
+
+/**
+ * The overwrite rule. The classifier fills a value only when none is stored or it wrote the stored
+ * one, so a value an operator, a routine or the host set stays until one of them changes it. Every
+ * other writer replaces whatever is stored.
+ */
+export const mayOverwrite = (existing: ContextValueWriter | null, incomingKind: ContextValueWriterKind): boolean =>
+  existing === null || incomingKind !== "classifier" || existing.kind === "classifier";
+
+/** The keys a turn reads stored values under. */
+export interface ContextScopeKeys {
+  conversationId: string | null;
+  chatSessionId: string | null;
+  verifiedCustomerId: string | null;
+  agentId: string;
+  workspaceId: string;
+}
+
+/** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
+export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [
+  ...(keys.conversationId ? [{ type: "conversation" as const, id: keys.conversationId }] : []),
+  ...(keys.chatSessionId ? [{ type: "session" as const, id: keys.chatSessionId }] : []),
+  ...(keys.verifiedCustomerId ? [{ type: "customer" as const, id: keys.verifiedCustomerId }] : []),
+  { type: "agent", id: keys.agentId },
+  { type: "workspace", id: keys.workspaceId },
+];
 
 /**
  * Names in this namespace belong to Radioso, not to a workspace. Facts Radioso establishes about a

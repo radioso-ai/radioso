@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
-import type {
-  AgentContextVariableEnablement,
-  ContextVariable,
-  ContextVariableScope,
-  ContextVariableSensitivity,
-  ContextVariableSource,
-  ContextVariableTrustTier,
-  ContextVariableValue,
-  ContextVariableValueType,
+import {
+  CONTEXT_VALUE_WRITER_KINDS,
+  mayOverwrite,
+  type AgentContextVariableEnablement,
+  type ContextValueWriter,
+  type ContextValueWriterKind,
+  type ContextVariable,
+  type ContextVariableOption,
+  type ContextVariableScope,
+  type ContextVariableSensitivity,
+  type ContextVariableSource,
+  type ContextVariableTrustTier,
+  type ContextVariableValue,
+  type ContextVariableValueType,
 } from "../../modules/context-variables/public.js";
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "../../modules/context-variables/public.js";
 import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
@@ -45,6 +50,7 @@ interface ContextVariableRow {
   name: string;
   description: string | null;
   value_type: string;
+  options: unknown;
   trust_tier: string;
   sensitivity: string;
   default_surfacing: string;
@@ -71,6 +77,7 @@ interface AgentContextVariableWithVariableRow extends AgentContextVariableRow {
   variable_name: string;
   variable_description: string | null;
   variable_value_type: string;
+  variable_options: unknown;
   variable_trust_tier: string;
   variable_sensitivity: string;
   variable_default_surfacing: string;
@@ -86,6 +93,8 @@ interface ContextVariableValueRow {
   scope_id: string;
   data: unknown;
   last_modified: Date | string;
+  written_by_kind: string;
+  written_by_ref: string | null;
 }
 
 const contextVariableColumns = [
@@ -94,6 +103,7 @@ const contextVariableColumns = [
   "name",
   "description",
   "value_type",
+  "options",
   "trust_tier",
   "sensitivity",
   "default_surfacing",
@@ -123,7 +133,20 @@ const contextVariableValueColumns = [
   "scope_id",
   "data",
   "last_modified",
+  "written_by_kind",
+  "written_by_ref",
 ] as const;
+
+/** Options as stored: the jsonb array of an enum variable, null otherwise. */
+const optionsFromRow = (value: unknown): readonly ContextVariableOption[] | null =>
+  Array.isArray(value) ? (value as ContextVariableOption[]) : null;
+
+const optionsToRow = (options: readonly ContextVariableOption[] | null | undefined) =>
+  options ? toJsonb(options) : null;
+
+/** The stored writers an incoming writer may replace, under the module's overwrite rule. */
+const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
+  CONTEXT_VALUE_WRITER_KINDS.filter((existing) => mayOverwrite({ kind: existing, ref: null }, incoming));
 
 const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
   id: row.id,
@@ -131,6 +154,7 @@ const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
   name: row.name,
   description: row.description,
   valueType: row.value_type as ContextVariableValueType,
+  options: optionsFromRow(row.options),
   trustTier: row.trust_tier as ContextVariableTrustTier,
   sensitivity: row.sensitivity as ContextVariableSensitivity,
   defaultSurfacing: row.default_surfacing as ContextVariableSurfacing,
@@ -164,6 +188,7 @@ const mapAgentContextVariableWithVariableRow = (
   name: row.variable_name,
   description: row.variable_description,
   valueType: row.variable_value_type as ContextVariableValueType,
+  options: optionsFromRow(row.variable_options),
   trustTier: row.variable_trust_tier as ContextVariableTrustTier,
   sensitivity: row.variable_sensitivity as ContextVariableSensitivity,
   defaultSurfacing: row.variable_default_surfacing as ContextVariableSurfacing,
@@ -200,6 +225,7 @@ const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariab
   },
   data: row.data,
   lastModified: new Date(row.last_modified),
+  writtenBy: { kind: row.written_by_kind as ContextValueWriterKind, ref: row.written_by_ref },
 });
 
 // Mirrors RoutineDefinitionService's isRoutineDefinitionNameVersionConstraintError: applyProposal
@@ -264,6 +290,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         name: input.name,
         description: input.description ?? null,
         value_type: input.valueType,
+        options: optionsToRow(input.options),
         trust_tier: input.trustTier,
         sensitivity: input.sensitivity,
         default_surfacing: input.defaultSurfacing,
@@ -281,6 +308,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...("description" in input ? { description: input.description ?? null } : {}),
         ...(input.valueType !== undefined ? { value_type: input.valueType } : {}),
+        ...(input.options !== undefined ? { options: optionsToRow(input.options) } : {}),
         ...(input.trustTier !== undefined ? { trust_tier: input.trustTier } : {}),
         ...(input.sensitivity !== undefined ? { sensitivity: input.sensitivity } : {}),
         ...(input.defaultSurfacing !== undefined ? { default_surfacing: input.defaultSurfacing } : {}),
@@ -525,6 +553,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         "context_variables.name as variable_name",
         "context_variables.description as variable_description",
         "context_variables.value_type as variable_value_type",
+        "context_variables.options as variable_options",
         "context_variables.trust_tier as variable_trust_tier",
         "context_variables.sensitivity as variable_sensitivity",
         "context_variables.default_surfacing as variable_default_surfacing",
@@ -538,12 +567,20 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return rows.map((row) => mapAgentContextVariableWithVariableRow(row as AgentContextVariableWithVariableRow));
   }
 
-  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue> {
+  async upsertValue(
+    variableId: string,
+    scope: ContextVariableScope,
+    data: unknown,
+    writtenBy: ContextValueWriter,
+  ): Promise<ContextVariableValue | null> {
     const variable = await this.db
       .selectFrom("context_variables")
       .select(["workspace_id"])
       .where("id", "=", variableId)
       .executeTakeFirstOrThrow();
+    if (scope.type === "conversation") {
+      await this.requireConversation(variable.workspace_id, scope.id);
+    }
 
     const row = await this.db
       .insertInto("context_variable_values")
@@ -555,17 +592,44 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         scope_id: scope.id,
         data: toJsonb(data),
         last_modified: currentTimestamp(),
+        written_by_kind: writtenBy.kind,
+        written_by_ref: writtenBy.ref,
       })
       .onConflict((oc) =>
         oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
           workspace_id: eb.ref("excluded.workspace_id"),
           data: eb.ref("excluded.data"),
           last_modified: currentTimestamp(),
-        })),
+          written_by_kind: eb.ref("excluded.written_by_kind"),
+          written_by_ref: eb.ref("excluded.written_by_ref"),
+        // Decided against the stored row in the same statement, so a write racing this one cannot
+        // slip between a read of the stored writer and the update.
+        })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
       )
       .returning(contextVariableValueColumns)
-      .executeTakeFirstOrThrow();
-    return mapContextVariableValueRow(row);
+      .executeTakeFirst();
+    return row ? mapContextVariableValueRow(row) : null;
+  }
+
+  /** A conversation-scope value names a conversation of its own workspace, so its erasure reaches it. */
+  private async requireConversation(workspaceId: string, conversationId: string): Promise<void> {
+    const conversation = await this.db
+      .selectFrom("conversations")
+      .select("id")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", conversationId)
+      .executeTakeFirst();
+    if (!conversation) throw notFound("Conversation not found");
+  }
+
+  async hasValues(variableId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("context_variable_values")
+      .select("id")
+      .where("variable_id", "=", variableId)
+      .limit(1)
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
@@ -656,6 +720,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
                 name: input.definition.name,
                 description: input.definition.description,
                 value_type: input.definition.valueType,
+                options: optionsToRow(input.definition.options),
                 trust_tier: input.definition.trustTier,
                 sensitivity: input.definition.sensitivity,
                 default_surfacing: input.definition.defaultSurfacing,
@@ -684,6 +749,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
                 name: input.definition.name,
                 description: input.definition.description,
                 value_type: input.definition.valueType,
+                options: optionsToRow(input.definition.options),
                 trust_tier: input.definition.trustTier,
                 sensitivity: input.definition.sensitivity,
                 default_surfacing: input.definition.defaultSurfacing,

@@ -1,5 +1,6 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import type { ContextVariable } from "./domain.js";
+import { validateValue } from "./valueValidation.js";
 
 /** A caller-provided private value; it never invokes a live resolver. */
 export interface TestValue {
@@ -55,9 +56,13 @@ const deepFreeze = <Value>(value: Value): Value => {
 
 const freezeJsonValue = (value: unknown): unknown => deepFreeze(JSON.parse(JSON.stringify(value)));
 
-const validateValue = (definition: ContextVariable, value: unknown): unknown => {
-  if (definition.valueType === "string") {
-    if (typeof value !== "string") throw badRequest(`Test value for ${definition.name} must be a string.`);
+const acceptTestValue = (definition: ContextVariable, value: unknown): unknown => {
+  if (definition.valueType !== "json") {
+    if (!validateValue(definition, value).ok) {
+      throw badRequest(definition.valueType === "enum"
+        ? `Test value for ${definition.name} must be the key of an active option.`
+        : `Test value for ${definition.name} must be a string.`);
+    }
     return value;
   }
   if (!isJsonValue(value)) throw badRequest(`Test value for ${definition.name} must be JSON-compatible.`);
@@ -101,7 +106,7 @@ export const freezeTestValues = async (input: {
     if (!definition) throw badRequest("A supplied test context-variable definition is unavailable.");
     return Object.freeze({
       contextVariableId: value.contextVariableId,
-      value: validateValue(definition, value.value),
+      value: acceptTestValue(definition, value.value),
       name: definition.name,
       description: definition.description,
       sensitive: definition.sensitivity === "sensitive",

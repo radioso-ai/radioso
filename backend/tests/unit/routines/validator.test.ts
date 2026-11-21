@@ -397,6 +397,9 @@ describe("validateRoutineDefinition authoring catalog context", () => {
             jsonToString: { kind: "contextVariableRef", contextVariable: "cart" },
             stringToEnum: { kind: "contextVariableRef", contextVariable: "customer_note" },
             stringToNumber: { kind: "contextVariableRef", contextVariable: "customer_note" },
+            enumToText: { kind: "contextVariableRef", contextVariable: "topic" },
+            enumToEnum: { kind: "contextVariableRef", contextVariable: "topic" },
+            enumToDate: { kind: "contextVariableRef", contextVariable: "topic" },
           },
         },
       }],
@@ -405,10 +408,14 @@ describe("validateRoutineDefinition authoring catalog context", () => {
         { key: "jsonToString", type: "text", required: false },
         { key: "stringToEnum", type: "enum", required: false, enumValues: ["vip", "standard"] },
         { key: "stringToNumber", type: "number", required: false },
+        { key: "enumToText", type: "text", required: false },
+        { key: "enumToEnum", type: "enum", required: false, enumValues: ["billing", "shipping"] },
+        { key: "enumToDate", type: "date", required: false },
       ])),
       availableContextVariables: new Map([
         ["cart", { valueType: "json" }],
         ["customer_note", { valueType: "string" }],
+        ["topic", { valueType: "enum" }],
       ]),
     });
 
@@ -416,6 +423,10 @@ describe("validateRoutineDefinition authoring catalog context", () => {
       expect.objectContaining({
         code: "input_type_mismatch",
         location: "step:lookup.inputBindings.stringToNumber",
+      }),
+      expect.objectContaining({
+        code: "input_type_mismatch",
+        location: "step:lookup.inputBindings.enumToDate",
       }),
     ]);
   });

@@ -18,6 +18,7 @@ const variable = (name: string, valueType: ContextVariableValueType): ContextVar
   name,
   description: null,
   valueType,
+  options: null,
   trustTier: "unverified",
   sensitivity: "normal",
   defaultSurfacing: "always",

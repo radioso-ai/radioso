@@ -4,12 +4,13 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
   AgentContextVariableEnablement,
+  ContextValueWriter,
   ContextVariable,
   ContextVariableScope,
   ContextVariableValue,
 } from "./domain.js";
 import type { ResolvedVariableInput } from "./contextResolutionService.js";
-import { isValueCompatibleWithType } from "./valueCompatibility.js";
+import { validateValue } from "./valueValidation.js";
 
 export interface ContextResolverPort {
   resolve(input: {
@@ -33,6 +34,16 @@ interface ContextVariableResolverServiceOptions {
 type ResolverOutcome = "cache_hit" | "cache_miss" | "fetch" | "timeout" | "error" | "null" | "incompatible_value";
 
 const DEFAULT_RESOLVER_TIMEOUT_MS = 2_500;
+/** A resolver's cache holds what the host's API returned through the resolver skill. */
+const RESOLVER_CACHE_WRITER: ContextValueWriter = { kind: "api", ref: null };
+
+/**
+ * The scope a resolver reads and caches under, and hands its skill as the visitor's session: the
+ * most specific one past the conversation. A resolver fetches about the visitor, not about one of
+ * their conversations, so the ladder's conversation step leaves it where it was.
+ */
+const resolverScope = (scopes: readonly ContextVariableScope[]): ContextVariableScope | undefined =>
+  scopes.find((scope) => scope.type !== "conversation");
 const RESOLVE_METRIC_HELP = "Context variable resolver outcomes.";
 const RESOLVE_LATENCY_HELP = "Context variable resolver latency in milliseconds.";
 
@@ -57,7 +68,7 @@ export class ContextVariableResolverService {
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]> {
     const pushed = await this.repository.resolveForAgent(workspaceId, agentId, scopes);
-    const scope = scopes[0];
+    const scope = resolverScope(scopes);
     if (!scope) {
       return pushed;
     }
@@ -99,7 +110,7 @@ export class ContextVariableResolverService {
         }
         continue;
       }
-      const scope = scopes[0];
+      const scope = resolverScope(scopes);
       if (!scope) continue;
       const value = await this.resolveEnablement(workspaceId, agentId, scope, { ...enablement, variable });
       if (value) resolved.push(value);
@@ -126,7 +137,9 @@ export class ContextVariableResolverService {
     try {
       const cached = await this.repository.readValue(variable.id, scope);
       if (isFresh(cached, enablement.maxAgeSeconds, this.now())) {
-        if (!isValueCompatibleWithType(variable.valueType, cached.data)) {
+        const verdict = validateValue(variable, cached.data);
+        // A key archived after it was cached still names its option.
+        if (!verdict.ok && verdict.code !== "archived_option") {
           this.recordResolution({
             outcome: "incompatible_value",
             latencyMs: this.now() - startedAt,
@@ -169,7 +182,7 @@ export class ContextVariableResolverService {
       if (!fetched) {
         return null;
       }
-      if (!isValueCompatibleWithType(variable.valueType, fetched.value)) {
+      if (!validateValue(variable, fetched.value).ok) {
         this.recordResolution({
           outcome: "incompatible_value",
           latencyMs: this.now() - startedAt,
@@ -180,7 +193,7 @@ export class ContextVariableResolverService {
         });
         return null;
       }
-      await this.repository.upsertValue(variable.id, scope, fetched.value);
+      await this.repository.upsertValue(variable.id, scope, fetched.value, RESOLVER_CACHE_WRITER);
       return mapResolvedVariable(enablement, variable, fetched.value);
     } catch (error) {
       this.recordResolution({

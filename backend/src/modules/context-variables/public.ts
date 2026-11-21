@@ -27,9 +27,14 @@ export type {
 } from "./contextResolutionService.js";
 export type { ContextResolverPort } from "./contextVariableResolverService.js";
 export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
+export { CONTEXT_VALUE_WRITER_KINDS, contextScopeLadder, mayOverwrite } from "./domain.js";
 export type {
   AgentContextVariableEnablement,
+  ContextScopeKeys,
+  ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
+  ContextVariableOption,
   ContextVariableScope,
   ContextVariableSensitivity,
   ContextVariableSource,

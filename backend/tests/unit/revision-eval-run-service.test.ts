@@ -27,7 +27,7 @@ describe("RevisionEvalRunService", () => {
       repository,
       revisions: { async findRevisionByWorkspace() { return { agentId, revision: sourceRevision }; }, async findRevision() { return sourceRevision; } },
       cases: { async findCase() { return sourceCase; }, async findSnapshot() { return sourceSnapshot; } },
-      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
+      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
       runner: { async executeFrozenRevisionCase() { throw new Error("not dispatched"); } },
     });
     const run = await service.start({ workspaceId, accountId: null, revisionIds: [revisionId], caseIds: [caseId], testValues: [{ contextVariableId: variableId, value: "private sample" }], mode: "full_assistant", executionPolicy: "safe_test", idempotencyKey });
@@ -68,7 +68,7 @@ describe("RevisionEvalRunService", () => {
       repository,
       revisions: { async findRevisionByWorkspace() { return { agentId, revision: revision() }; }, async findRevision() { return revision(); } },
       cases: { async findCase() { return evalCase(); }, async findSnapshot() { return snapshot(); } },
-      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
+      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
       runner: { async executeFrozenRevisionCase() { throw new AppError(400, "bad_request", "Live agent configuration is unavailable for revision evaluation"); } },
     });
 
@@ -89,7 +89,7 @@ describe("RevisionEvalRunService", () => {
       repository,
       revisions: { async findRevisionByWorkspace() { return { agentId, revision: revision() }; }, async findRevision() { return revision(); } },
       cases: { async findCase() { return evalCase(); }, async findSnapshot() { return snapshot(); } },
-      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
+      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
       runner: { async executeFrozenRevisionCase() { throw new Error("not dispatched"); } },
       audit: { async record(input) { audit.push(input); } },
     });
@@ -133,7 +133,7 @@ describe("RevisionEvalRunService", () => {
       repository,
       revisions: { async findRevisionByWorkspace() { return { agentId, revision: revision() }; }, async findRevision() { return revision(); } },
       cases: { async findCase() { return evalCase(); }, async findSnapshot() { return snapshot(); } },
-      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
+      contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
       runner: { async executeFrozenRevisionCase() { return { status: "pass", outcomeReason: null, assertionVerdicts: [], observedOutput: { retrievedChunks: [] }, resolvedConfig: {} }; } },
       audit: { async record(input) { audit.push(input); } },
     });

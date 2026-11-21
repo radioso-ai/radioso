@@ -324,6 +324,7 @@ const contextVariable = (name: string, valueType: ContextVariable["valueType"]):
   name,
   description: null,
   valueType,
+  options: null,
   trustTier: "unverified",
   sensitivity: "normal",
   defaultSurfacing: "on_reference",

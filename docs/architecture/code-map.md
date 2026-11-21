@@ -1127,7 +1127,9 @@ the repository applies `mayOverwrite` inside the upsert, so the classifier
 fills only an empty or classifier-written value. `contextScopeLadder` is the
 resolution order, `conversation → session → customer → agent → workspace`;
 chat builds each turn's scopes with it. The resolver service owns turn-time
-reads, caching, timeouts, and compatibility checks, and caches at the first
+reads, caching, timeouts, and compatibility checks. It caches under the chat
+session or verified customer, or under the conversation when the turn has
+neither, never under the agent or workspace, and hands its skill the first
 scope past the conversation.
 
 Public surfaces and key files:

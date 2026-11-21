@@ -9,6 +9,7 @@ import type {
 } from "../../src/modules/context-variables/public.js";
 import {
   ContextVariableResolverService,
+  contextScopeLadder,
   type ContextResolverPort,
   type AgentContextVariableEnablementRecord,
   type ApplyContextVariableProposalInput,
@@ -254,6 +255,73 @@ describe("ContextVariableResolverService", () => {
     expect(repository.readValue).toHaveBeenCalledWith("var-1", sessionScope);
     expect(resolver.resolve).toHaveBeenCalledWith(expect.objectContaining({ scope: sessionScope }));
     expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "updated" }, resolverCacheWriter);
+  });
+
+  it("never serves one session-less conversation the value a resolver fetched for another", async () => {
+    const repository = new FakeContextVariableRepository();
+    const stored = new Map<string, ContextVariableValue>();
+    const keyOf = (variableId: string, scope: ContextVariableScope) => `${variableId}/${scope.type}/${scope.id}`;
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({ maxAgeSeconds: 600 })]);
+    repository.readValue.mockImplementation(async (variableId, scope) => stored.get(keyOf(variableId, scope)) ?? null);
+    repository.upsertValue.mockImplementation(async (variableId, scope, data, writtenBy) => {
+      const row = { id: keyOf(variableId, scope), workspaceId, variableId, scope, data, lastModified: new Date(nowMs), writtenBy };
+      stored.set(row.id, row);
+      return row;
+    });
+    const fetched = [{ value: { state: "first visitor's order" } }, { value: { state: "second visitor's order" } }];
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => fetched.shift() ?? null) };
+    const { service } = createService({ repository, resolver });
+    const sessionless = (conversationId: string) =>
+      contextScopeLadder({ conversationId, chatSessionId: null, verifiedCustomerId: null, agentId, workspaceId });
+
+    await expect(service.resolveForAgent(workspaceId, agentId, sessionless("conversation-1")))
+      .resolves.toMatchObject([{ value: { state: "first visitor's order" } }]);
+    await expect(service.resolveForAgent(workspaceId, agentId, sessionless("conversation-2")))
+      .resolves.toMatchObject([{ value: { state: "second visitor's order" } }]);
+    expect([...stored.values()].map(({ scope }) => scope.type)).toEqual(["conversation", "conversation"]);
+  });
+
+  it("caches a session-less conversation's value under the conversation and hands the skill the scope it always had", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({ maxAgeSeconds: 60 })]);
+    repository.readValue.mockResolvedValue(null);
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: { state: "updated" } })) };
+    const { service } = createService({ repository, resolver });
+
+    await service.resolveForAgent(workspaceId, agentId, [conversationScope, agentScope, { type: "workspace", id: workspaceId }]);
+
+    expect(repository.readValue).toHaveBeenCalledWith("var-1", conversationScope);
+    expect(resolver.resolve).toHaveBeenCalledWith(expect.objectContaining({ scope: agentScope }));
+    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", conversationScope, { state: "updated" }, resolverCacheWriter);
+  });
+
+  it("caches under the verified customer when the turn has no chat session", async () => {
+    const customerScope: ContextVariableScope = { type: "customer", id: "customer-1" };
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({ maxAgeSeconds: 60 })]);
+    repository.readValue.mockResolvedValue(null);
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: { state: "updated" } })) };
+    const { service } = createService({ repository, resolver });
+
+    await service.resolveForAgent(workspaceId, agentId, [conversationScope, customerScope, agentScope]);
+
+    expect(resolver.resolve).toHaveBeenCalledWith(expect.objectContaining({ scope: customerScope }));
+    expect(repository.upsertValue).toHaveBeenCalledWith("var-1", customerScope, { state: "updated" }, resolverCacheWriter);
+  });
+
+  it("runs no resolver when the turn has neither a visitor nor a conversation to cache under", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([enablement({ maxAgeSeconds: 60 })]);
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: { state: "updated" } })) };
+    const { service } = createService({ repository, resolver });
+
+    await expect(service.resolveForAgent(workspaceId, agentId, [agentScope, { type: "workspace", id: workspaceId }])).resolves.toEqual([]);
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(repository.upsertValue).not.toHaveBeenCalled();
   });
 
   it("reads every pushed variable of a pinned revision in one read over the whole ladder", async () => {

@@ -11,7 +11,10 @@ export interface MissingPage {
 }
 
 export interface MissingPageReview {
-  /** The source's pages that existed before the crawl started: the share a removal is measured against. */
+  /**
+   * The source's pages that existed before the crawl started, less the ones the operator kept: the
+   * share a removal is measured against.
+   */
   livePageCountBeforeCrawl: number;
   missingPages: MissingPage[];
 }

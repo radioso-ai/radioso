@@ -152,7 +152,8 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
       crawlStartedAt: now,
     });
 
-    expect(review.livePageCountBeforeCrawl).toBe(4);
+    // The pages the crawl measures a removal against: not the new page, and not the one the operator kept.
+    expect(review.livePageCountBeforeCrawl).toBe(3);
     expect(review.missingPages).toEqual(expect.arrayContaining([
       { documentId: gone, externalDocumentId: "page-gone", kept: false },
       { documentId: kept, externalDocumentId: "page-kept", kept: true },

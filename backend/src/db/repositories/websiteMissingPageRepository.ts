@@ -42,13 +42,18 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
         .where("d.external_document_id", "is not", null)
         .where(sql<boolean>`d.external_document_id <> ALL(${sql.val(seen)}::text[])`)
         .execute();
+      // Kept pages stay out of the count: they never leave, so they would make every removal look smaller.
       const live = await trx
-        .selectFrom("documents")
+        .selectFrom("documents as d")
         .select((eb) => eb.fn.countAll<string>().as("count"))
-        .where("workspace_id", "=", input.workspaceId)
-        .where("source_id", "=", input.sourceId)
-        .where("external_document_id", "is not", null)
-        .where("created_at", "<", input.crawlStartedAt)
+        .where("d.workspace_id", "=", input.workspaceId)
+        .where("d.source_id", "=", input.sourceId)
+        .where("d.external_document_id", "is not", null)
+        .where("d.created_at", "<", input.crawlStartedAt)
+        .where((eb) => eb.not(eb.exists(
+          eb.selectFrom("website_source_missing_pages as k").select("k.document_id")
+            .whereRef("k.document_id", "=", "d.id").where("k.decision", "=", "kept"),
+        )))
         .executeTakeFirstOrThrow();
       return {
         livePageCountBeforeCrawl: Number(live.count),

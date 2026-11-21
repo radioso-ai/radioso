@@ -465,7 +465,7 @@ Playwright covers the journeys.
 **Observability added:**
 
 - `radioso_context_classification_runs_total{trigger, outcome}`: trigger `after_turn | handoff_notice`; outcome `written | unchanged | no_option | skipped_sensitive | skipped_override | skipped_timeout | invalid | failed`
-- `radioso_context_value_writes_total{writer, outcome}`, including `refused_type`, `refused_trust`, `no_person_key`
+- `radioso_context_value_writes_total{writer, outcome}`, including `refused_type`, `refused_trust`, `no_person_key`. It ships in PR 1b, when the classifier becomes a second writer and a refused or kept write stops being an HTTP response a caller sees. In 1a the API is the only writer, and its outcomes (written, `409` kept or changed mid-write, `404` no conversation) are already counted by `http_requests_total{method, route, status_code}`.
 - one span per classification run with counts and the prompt version
 - the notice handler's span records the classification outcome beside the summary outcome
 

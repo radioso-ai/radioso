@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink, Globe } from 'lucide-react'
 
+import { ProposalValue } from '@/components/dashboard/copilot-proposal-value'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -114,17 +115,6 @@ export const buildCopilotProposalDiff = (preview: CopilotProposalPreview): Copil
   const rows: CopilotProposalDiffRow[] = []
   appendDiff(rows, '$', preview.current, preview.proposed)
   return rows
-}
-
-const formatValue = (value: unknown) => {
-  if (value === undefined) return '—'
-  if (value === null) return 'null'
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return '[unserializable value]'
-  }
 }
 
 export const targetReference = (
@@ -405,8 +395,8 @@ export function CopilotProposalCard({
                 {diff.map((row) => (
                   <div className="grid grid-cols-[minmax(5rem,.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-border/50 px-3 py-2 last:border-b-0" key={row.path}>
                     <span className="font-medium text-muted-foreground">{displayPath(row.path)}</span>
-                    <span className="break-words text-muted-foreground">{formatValue(row.current)}</span>
-                    <span className="break-words">{formatValue(row.proposed)}</span>
+                    <span className="break-words text-muted-foreground"><ProposalValue value={row.current} /></span>
+                    <span className="break-words"><ProposalValue value={row.proposed} /></span>
                   </div>
                 ))}
               </div>

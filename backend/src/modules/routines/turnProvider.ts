@@ -22,15 +22,15 @@ import {
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
 
-import type { AgentSkillRepositoryPort } from "../agentSkills/public.js";
-import type { ApiRequestRoutineSkillRecord } from "../apiRequestSkills/public.js";
+import { ConversationSkills, countLiveSkillFallbacks, type AgentSkillRepositoryPort } from "../agentSkills/public.js";
+import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import { routineContextRenderer } from "../context-variables/public.js";
 import type { ClusteringEmbeddingPort } from "../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { RoutineInvocableSkillNames, SkillExecutorRegistry } from "../skills/public.js";
+import { routineInvocableSkillNamesByKind, type SkillExecutorRegistry } from "../skills/public.js";
 import { RoutineSkillExecutorDispatcher } from "./skillDispatcher.js";
 import { ApprovalResumeEffectJournalDispatcher, type ApprovalResumeEffectJournal } from "./approvalResumeEffectJournal.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
@@ -82,7 +82,6 @@ interface RoutineTurnProviderDependencies {
   metricsRegistry?: MetricsRegistry | null;
   publishedRoutineSource: RoutineRegistrationSource;
   routineDefinitionRepository: Parameters<typeof createRoutineActivationPrefilter>[0]["routineDefinitionRepository"];
-  routineInvocableSkillNames: RoutineInvocableSkillNames;
   routineRegistrations: readonly RoutineRegistration[];
   routineTriggerEmbeddingService: Pick<RoutineTriggerEmbeddingService, "persistPublished">;
   skillExecutorRegistry: SkillExecutorRegistry;
@@ -138,6 +137,11 @@ interface RoutineTurnProvider {
      * Chat, eval) sets this.
      */
     includeSlotValues?: boolean;
+    /**
+     * The skills the conversation runs: the release's (`authoredAgentSkills` of the turn's agent).
+     * Absent when the release recorded none, which reads the agent's live skills.
+     */
+    conversationSkills?: ConversationSkillSet;
     /** The conversation as consents read it (#1544); absent, no consent can be asked this turn. */
     consent?: RoutineConsentTurnFacts;
     /**
@@ -308,7 +312,12 @@ const loadEffectiveRegistrations = async (
 
 export const createRoutineTurnProvider = (
   dependencies: RoutineTurnProviderDependencies,
-): RoutineTurnProvider => ({
+): RoutineTurnProvider => {
+  const skillsForTurn = new ConversationSkills({
+    live: dependencies.agentSkillRepository,
+    onLiveFallback: countLiveSkillFallbacks(dependencies.metricsRegistry),
+  });
+  return {
   async reporterFor({ routineInvocation, ...scope }) {
     const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, scope);
     if (effectiveRegistrations.length === 0) {
@@ -337,6 +346,7 @@ export const createRoutineTurnProvider = (
     conversationDurability,
     approvalResume,
     includeSlotValues,
+    conversationSkills,
     consent,
     consentStore = consent?.durable ? dependencies.consentStore : undefined,
   }) {
@@ -402,66 +412,49 @@ export const createRoutineTurnProvider = (
       return null;
     }
 
-    let emailSkillNames: string[] = [];
-    let webhookSkillNames: string[] = [];
-    let slackSkillNames: string[] = [];
-    let retrieveSkills: Array<{
-      skillName: string;
-      enabled: boolean;
-      invocationMode: string;
-      config?: Record<string, unknown>;
-    }> = [];
-    let notifySkills: Array<{ skillName: string; enabled: boolean; invocationMode: string }> = [];
-    let apiRequestSkills: ApiRequestRoutineSkillRecord[] = [];
+    // The skills this conversation runs: the release's, so a skill edit since that release changes
+    // neither which names a routine resolves nor the row its executor reads. One set serves every
+    // resolver in the chain and the executors the dispatcher reaches.
+    let turnSkills: ConversationSkillSet | undefined = conversationSkills;
     try {
-      if (workspaceId) {
-        const byKind = await dependencies.routineInvocableSkillNames.listByKindForAgent({ workspaceId, agentId });
-        emailSkillNames = [...byKind.customer_email];
-        webhookSkillNames = [...byKind.webhook];
-        slackSkillNames = [...byKind.slack];
+      if (!turnSkills && workspaceId) {
+        turnSkills = await skillsForTurn.forTurn({ workspaceId, id: agentId });
       }
     } catch (error) {
       dependencies.logger.warn(
         { agentId, err: error },
-        "Routine-invocable skill names failed to load for routine routing; continuing without webhook, customer email, and Slack skills",
+        "Agent skills failed to load for routine routing; continuing without skill-backed steps",
       );
     }
-    try {
-      if (workspaceId) {
-        // One read serves both retrieve and notify: each applies its own
-        // enabled && routine_named filter (matching the authoring catalog),
-        // so both can be derived from the same agent-skill spine.
-        const agentSkills = await dependencies.agentSkillRepository.listByAgent(workspaceId, agentId);
-        retrieveSkills = agentSkills
-          .filter((skill) => skill.kind === "retrieve")
-          .map((skill) => ({
-            skillName: skill.skillName,
-            enabled: skill.enabled,
-            invocationMode: skill.invocationMode,
-            config: skill.config,
-          }));
-        notifySkills = agentSkills
-          .filter((skill) => skill.kind === "notify")
-          .map((skill) => ({
-            skillName: skill.skillName,
-            enabled: skill.enabled,
-            invocationMode: skill.invocationMode,
-          }));
-        apiRequestSkills = agentSkills
-          .filter((skill) => skill.kind === "api_request")
-          .map((skill) => ({
-            skillName: skill.skillName,
-            enabled: skill.enabled,
-            invocationMode: skill.invocationMode,
-            config: skill.config,
-          }));
-      }
-    } catch (error) {
-      dependencies.logger.warn(
-        { agentId, err: error },
-        "Retrieve, notify and API request skill definitions failed to load for routine routing; continuing without them",
-      );
-    }
+    const byKind = routineInvocableSkillNamesByKind(turnSkills ?? []);
+    const emailSkillNames = [...byKind.customer_email];
+    const webhookSkillNames = [...byKind.webhook];
+    const slackSkillNames = [...byKind.slack];
+    // One set serves retrieve, notify and API request: each applies its own
+    // enabled && routine_named filter (matching the authoring catalog).
+    const retrieveSkills = (turnSkills ?? [])
+      .filter((skill) => skill.kind === "retrieve")
+      .map((skill) => ({
+        skillName: skill.skillName,
+        enabled: skill.enabled,
+        invocationMode: skill.invocationMode,
+        config: skill.config,
+      }));
+    const notifySkills = (turnSkills ?? [])
+      .filter((skill) => skill.kind === "notify")
+      .map((skill) => ({
+        skillName: skill.skillName,
+        enabled: skill.enabled,
+        invocationMode: skill.invocationMode,
+      }));
+    const apiRequestSkills = (turnSkills ?? [])
+      .filter((skill) => skill.kind === "api_request")
+      .map((skill) => ({
+        skillName: skill.skillName,
+        enabled: skill.enabled,
+        invocationMode: skill.invocationMode,
+        config: skill.config,
+      }));
 
     const reentryGate = dependencies.turnPlanAdapters.reentryGate({
       handle: turnPlan,
@@ -561,6 +554,7 @@ export const createRoutineTurnProvider = (
             throwIfCancelled,
             skillEffects,
             conversationDurability,
+            ...(turnSkills ? { conversationSkills: turnSkills } : {}),
           },
         );
         return approvalResume
@@ -667,4 +661,5 @@ export const createRoutineTurnProvider = (
       runner,
     };
   },
-});
+  };
+};

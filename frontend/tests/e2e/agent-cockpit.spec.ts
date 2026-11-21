@@ -324,7 +324,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: options.enabledContextVariableIds ?? [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [{ code: 'routine_reference', message: 'One routine is pinned.' }],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }], agentSkills: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${publishedId}$`), async (route) => {
@@ -334,7 +334,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [], agentSkills: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${candidateId}/publish$`), async (route) => {

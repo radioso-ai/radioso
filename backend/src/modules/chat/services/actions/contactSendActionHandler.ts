@@ -2,6 +2,7 @@ import { hasConfiguredContactDestination, readNotifyContactDelivery } from "../.
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
 import type { ContactDeliveryRoute } from "../../../../shared/domain/contactDeliveryRoute.js";
+import type { ConversationSkill, ConversationSkillSet } from "../../../../shared/domain/conversationSkills.js";
 import { ActionDispatchSkippedError, type ActionDispatchOutcome } from "../../../../shared/domain/actionDispatchOutcome.js";
 import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import {
@@ -84,14 +85,18 @@ interface ContactAgentLookup {
   } | null>;
 }
 
+type ContactNotifySkill = Pick<ConversationSkill, "kind" | "enabled" | "invocationMode" | "config">;
+
 interface ContactNotifySkillLookup {
-  findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
-    kind: string;
-    enabled: boolean;
-    invocationMode: string;
-    config?: Record<string, unknown>;
-  } | null>;
+  findByName(workspaceId: string, agentId: string, skillName: string): Promise<ContactNotifySkill | null>;
 }
+
+/** The skills of the release a stored conversation is pinned to (`ConversationSkills.forConversation`). */
+interface ContactConversationSkills {
+  forConversation(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<ConversationSkillSet>;
+}
+
+type ContactSkillNamed = (skillName: string) => Promise<ContactNotifySkill | null>;
 
 export type ContactWebhookHttpClient = WebhookHttpClient;
 
@@ -136,9 +141,14 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
     private readonly agents: ContactAgentLookup,
     private readonly fallback: ContactOwnerFallback,
     private readonly notifySkills?: ContactNotifySkillLookup,
+    /** A queued request routes through the skills of its conversation's release, not the live rows. */
+    private readonly conversationSkills?: ContactConversationSkills,
   ) {}
 
-  /** Where a queued request goes: its conversation's agent decides, through {@link resolveForAgent}. */
+  /**
+   * Where a queued request goes: its conversation's agent decides, through the skills of the release
+   * the conversation is pinned to, so a skill edit since that release is not what delivers it.
+   */
   async resolve(context: ActionHandlerContext): Promise<RoutedContactDeliveryTarget> {
     if (!context.workspaceId || !context.conversationId) {
       return this.workspaceOwnerTarget(context.workspaceId);
@@ -147,31 +157,40 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
     if (!conversation?.agentId) {
       return this.workspaceOwnerTarget(context.workspaceId);
     }
-    return this.resolveForAgent({
+    const agentId = conversation.agentId;
+    const releaseSkills = await this.conversationSkills?.forConversation({
       workspaceId: context.workspaceId,
-      agentId: conversation.agentId,
-      skillName: context.skillName,
+      agentId,
+      conversationId: context.conversationId,
     });
+    const skillNamed: ContactSkillNamed = releaseSkills
+      ? async (skillName) => releaseSkills.find((skill) => skill.skillName === skillName) ?? null
+      : this.liveSkillNamed(context.workspaceId, agentId);
+    return { ...await this.routeForAgent({ workspaceId: context.workspaceId, agentId, skillName: context.skillName }, skillNamed), agentId };
   }
 
   /**
-   * Where a request from this agent goes, optionally routed through a named notify skill. The one
-   * statement of contact precedence: delivery calls it for a queued request, and the dashboard calls
-   * it to show an operator where a notice will be sent before anything is.
+   * Where a request from this agent goes, optionally routed through a named notify skill, read from
+   * the agent's current skills: the dashboard calls it to show an operator where a notice will be
+   * sent before anything is. A queued request takes the same precedence over its release's skills.
    */
   async resolveForAgent(input: {
     workspaceId: string;
     agentId: string;
     skillName: string | null;
   }): Promise<RoutedContactDeliveryTarget> {
-    return { ...await this.routeForAgent(input), agentId: input.agentId };
+    return { ...await this.routeForAgent(input, this.liveSkillNamed(input.workspaceId, input.agentId)), agentId: input.agentId };
+  }
+
+  private liveSkillNamed(workspaceId: string, agentId: string): ContactSkillNamed {
+    return async (skillName) => await this.notifySkills?.findByName(workspaceId, agentId, skillName) ?? null;
   }
 
   private async routeForAgent(input: {
     workspaceId: string;
     agentId: string;
     skillName: string | null;
-  }): Promise<RoutedContactDeliveryTarget> {
+  }, skillNamed: ContactSkillNamed): Promise<RoutedContactDeliveryTarget> {
     // The skill a request names (an outbox row's skill_name, or the notify skill an ending's notice
     // names) wins over the `contact_human` lookup below: two notify skills on one agent must be
     // able to deliver to different recipients, not collide on one shared config.
@@ -184,14 +203,14 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
     // short-circuits only a request that names no skill; a named skill going away is more likely a
     // rename or an authoring change, and a request routed through it must still reach somebody.
     if (input.skillName) {
-      const namedSkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, input.skillName);
+      const namedSkill = await skillNamed(input.skillName);
       const delivery = namedSkill?.kind === "notify" && namedSkill.enabled ? readNotifyContactDelivery(namedSkill.config) : null;
       if (delivery) {
         return this.resolveConfiguredDelivery(delivery, "named_skill", input.workspaceId);
       }
     }
 
-    const notifySkill = await this.notifySkills?.findByName(input.workspaceId, input.agentId, "contact_human");
+    const notifySkill = await skillNamed("contact_human");
     if (notifySkill?.kind === "notify" && !notifySkill.enabled && !input.skillName) {
       return { emails: [], webhook: null, via: "contact_human_off", recipientsFromWorkspaceOwner: false };
     }

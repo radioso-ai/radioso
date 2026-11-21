@@ -2430,7 +2430,6 @@ describe("chat service built-in routine resume on a revision-bound conversation"
         findById: vi.fn(async () => null),
       }, { revisionReader }),
       routineDefinitionRepository: {} as never,
-      routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
       routineRegistrations: builtInRegistrations(),
       routineTriggerEmbeddingService: { persistPublished: vi.fn() },
       skillExecutorRegistry: {} as never,

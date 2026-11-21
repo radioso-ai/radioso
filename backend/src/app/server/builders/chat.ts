@@ -107,7 +107,7 @@ import { registerApiRequestSkillExecutor } from "./apiRequestSkills.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import { IngestionSettingsService } from "../../../modules/settings/composition.js";
-import { retrievalAnswerSkillDefinition, type RoutineInvocableSkillNames } from "../../../modules/skills/public.js";
+import { retrievalAnswerSkillDefinition } from "../../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../../modules/retrieval/public.js";
 import {
   EXTERNAL_SKILLS_ADAPTER,
@@ -150,6 +150,8 @@ import { RepositoryAgentSkillTurnSkillProvider } from "../../composition/builtIn
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { composeRoutineTurnProvider } from "../../composition/routineTurnProvider.js";
+import { buildConversationScopedSkillLookups, buildConversationSkills } from "../../composition/conversationSkills.js";
+import { ExternalSkillDefinitionRepository } from "../../../db/repositories/externalSkillDefinitionRepository.js";
 import { ChatAnswerSupport, recordClarificationDecision } from "../../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
@@ -204,7 +206,6 @@ export const buildChatServices = (input: {
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
   slackSkillDefinitionRepository: SlackSkillDefinitionRepository;
-  routineInvocableSkillNames: RoutineInvocableSkillNames;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
@@ -304,6 +305,16 @@ export const buildChatServices = (input: {
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
     agentService: input.agentService,
   };
+  // A conversation's skills are its release's: every executor reads the skill row from the set the
+  // invocation carries, falling back to the live row only for a dispatch that carries none.
+  const conversationSkills = buildConversationSkills(input.database.kysely, input.metricsRegistry);
+  const conversationScopedSkills = buildConversationScopedSkillLookups(conversationSkills, {
+    externalSkills: new ExternalSkillDefinitionRepository(input.database.kysely),
+    webhookSkills: input.webhookSkillDefinitionRepository,
+    emailSkills: input.emailSkillDefinitionRepository,
+    slackSkills: input.slackSkillDefinitionRepository,
+    agentSkills: new AgentSkillRepository(input.database.kysely),
+  });
   // Register the retrieval adapter once; it serves both answer and context
   // retrieval skills. Guarded so repeated dependency builds (tests) do not double-register.
   if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER })) {
@@ -334,14 +345,15 @@ export const buildChatServices = (input: {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",
       adapter: EXTERNAL_SKILLS_ADAPTER,
-      executor: new McpSkillExecutor(
-        buildExternalSkillsDeps(input.database, encryptionKeys, input.assertPublicWebsiteUrl, {
+      executor: new McpSkillExecutor({
+        ...buildExternalSkillsDeps(input.database, encryptionKeys, input.assertPublicWebsiteUrl, {
           fetchImpl: fetchPublicUrl,
           logger: input.logger,
           transportFetchImpl: fetchPublicUrl,
           callTimeoutMs: input.env.EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS,
         }),
-      ),
+        skills: conversationScopedSkills.externalMcp,
+      }),
     });
   }
   if (
@@ -364,7 +376,7 @@ export const buildChatServices = (input: {
       kind: "internal",
       adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER,
       executor: new EmailSkillExecutor({
-        skills: input.emailSkillDefinitionRepository,
+        skills: conversationScopedSkills.customerEmail,
         delivery: new CustomerEmailDeliveryService({
           connections: input.customerEmailConnectionRepository,
           oauthCredentials: {
@@ -386,7 +398,7 @@ export const buildChatServices = (input: {
       kind: "internal",
       adapter: WEBHOOK_SKILLS_ADAPTER,
       executor: new WebhookSkillExecutor({
-        skills: input.webhookSkillDefinitionRepository,
+        skills: conversationScopedSkills.webhook,
         destinations: input.webhookDestinations,
         httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl, {
           allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
@@ -409,7 +421,7 @@ export const buildChatServices = (input: {
       kind: "internal",
       adapter: SLACK_SKILLS_ADAPTER,
       executor: new SlackEscalationExecutor({
-        skills: input.slackSkillDefinitionRepository,
+        skills: conversationScopedSkills.slack,
         outbox: new DrainTriggeringActionOutbox(
           new ActionRequestRepository(input.database.kysely),
           actionDrainDispatcher,
@@ -423,7 +435,7 @@ export const buildChatServices = (input: {
       kind: "internal",
       adapter: NOTIFY_SKILLS_ADAPTER,
       executor: new NotifyExecutor({
-        skills: new AgentSkillRepository(input.database.kysely),
+        skills: conversationScopedSkills.notify,
         outbox: new DrainTriggeringActionOutbox(
           new ContactRequestRecordingOutbox(input.database.kysely, workspaceEventRecorder),
           actionDrainDispatcher,
@@ -616,7 +628,6 @@ export const buildChatServices = (input: {
     logger: input.logger,
     metricsRegistry: input.metricsRegistry,
     routineDefinitionRepository: input.routineDefinitionRepository,
-    routineInvocableSkillNames: input.routineInvocableSkillNames,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     approvalResumeEffectJournal,
   });

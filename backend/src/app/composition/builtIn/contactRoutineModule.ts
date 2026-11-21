@@ -171,7 +171,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         const recipientPolicy = buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics });
         return new ContactSendActionHandler(
           mailService,
-          buildContactDeliveryResolver(database),
+          buildContactDeliveryResolver(database, metrics),
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.

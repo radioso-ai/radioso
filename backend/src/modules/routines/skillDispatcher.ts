@@ -14,6 +14,7 @@ import { traceOperation } from "../../shared/observability/tracing/operations.js
 import { resolveSkillArguments, resolveUntypedSkillArguments } from "./skillArgumentResolver.js";
 import { skillActsOutsideConversation } from "../retrieval/public.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import { withConversationSkills, type ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 
 type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
 
@@ -25,6 +26,8 @@ interface RoutineSkillExecutorDispatcherOptions {
   throwIfCancelled?: () => void;
   skillEffects?: SkillEffectPolicy;
   conversationDurability?: ConversationDurability;
+  /** The skills the conversation runs (its release's), handed to every executor this dispatches. */
+  conversationSkills?: ConversationSkillSet;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -149,6 +152,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly throwIfCancelled?: () => void;
   private readonly skillEffects: SkillEffectPolicy;
   private readonly conversationDurability: ConversationDurability;
+  private readonly conversationSkills?: ConversationSkillSet;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -162,6 +166,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.throwIfCancelled = options.throwIfCancelled;
     this.skillEffects = options.skillEffects ?? "allowed";
     this.conversationDurability = options.conversationDurability ?? "durable";
+    this.conversationSkills = options.conversationSkills;
   }
 
   async dispatch(
@@ -279,6 +284,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
             ...(sensitiveInputKeys.length > 0 ? { sensitiveInputKeys } : {}),
             ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
             ...(this.accountId ? { accountId: this.accountId } : {}),
+            ...withConversationSkills(this.conversationSkills),
           },
           emit: noopSkillEmitPort,
         });

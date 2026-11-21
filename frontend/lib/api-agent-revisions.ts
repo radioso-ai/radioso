@@ -62,6 +62,8 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     directives: Array<{ id: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     routines: Array<{ definitionId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     contextVariableEnablements: Array<{ contextVariableId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
+    /** Skills by name; a skill's settings are not shown, only whether they changed. */
+    agentSkills: components['schemas']['AgentRevisionDetailResponse']['revision']['scopedChanges']['agentSkills']
     greeting: { before: AgentGreetingDraft; after: AgentGreetingDraft; changed: boolean }
     /** Whether the base release and this revision take photos; a release that holds no switch takes none. */
     visitorImagesEnabled?: { before: boolean; after: boolean; changed: boolean }

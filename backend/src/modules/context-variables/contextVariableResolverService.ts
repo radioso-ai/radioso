@@ -1,3 +1,4 @@
+import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import type { ContextVariableResolverRepositoryPort } from "./repository.js";
 import { notFound } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -19,6 +20,8 @@ export interface ContextResolverPort {
     variableName: string;
     scope: ContextVariableScope;
     signal?: AbortSignal;
+    /** The skills the conversation runs (its release's); the resolver skill is read from them when given. */
+    conversationSkills?: ConversationSkillSet;
   }): Promise<{ value: unknown } | null>;
 }
 
@@ -86,7 +89,7 @@ export class ContextVariableResolverService {
     return [...pushed, ...resolverValues];
   }
 
-  async resolveForEnablements(workspaceId: string, agentId: string, enablements: readonly AgentContextVariableEnablement[], scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]> {
+  async resolveForEnablements(workspaceId: string, agentId: string, enablements: readonly AgentContextVariableEnablement[], scopes: ContextVariableScope[], conversationSkills?: ConversationSkillSet): Promise<ResolvedVariableInput[]> {
     const resolved: ResolvedVariableInput[] = [];
     for (const enablement of enablements) {
       if (!enablement.enabled) continue;
@@ -101,7 +104,7 @@ export class ContextVariableResolverService {
       }
       const scope = scopes[0];
       if (!scope) continue;
-      const value = await this.resolveEnablement(workspaceId, agentId, scope, { ...enablement, variable });
+      const value = await this.resolveEnablement(workspaceId, agentId, scope, { ...enablement, variable }, conversationSkills);
       if (value) resolved.push(value);
     }
     return resolved;
@@ -112,6 +115,7 @@ export class ContextVariableResolverService {
     agentId: string,
     scope: ContextVariableScope,
     enablement: AgentContextVariableEnablement,
+    conversationSkills?: ConversationSkillSet,
   ): Promise<ResolvedVariableInput | null> {
     const variable = enablement.variable;
     if (!isResolvableEnablement(enablement, variable)) {
@@ -165,6 +169,7 @@ export class ContextVariableResolverService {
         variableId: variable.id,
         scope,
         timeoutMs: enablement.resolverTimeoutMs ?? DEFAULT_RESOLVER_TIMEOUT_MS,
+        ...(conversationSkills ? { conversationSkills } : {}),
       });
       if (!fetched) {
         return null;
@@ -204,6 +209,7 @@ export class ContextVariableResolverService {
     variableId: string;
     scope: ContextVariableScope;
     timeoutMs: number;
+    conversationSkills?: ConversationSkillSet;
   }): Promise<{ value: unknown } | null> {
     const startedAt = this.now();
     const controller = new AbortController();
@@ -224,6 +230,7 @@ export class ContextVariableResolverService {
           variableName: input.variableName,
           scope: input.scope,
           signal: controller.signal,
+          ...(input.conversationSkills ? { conversationSkills: input.conversationSkills } : {}),
         }),
         timeoutPromise,
       ]);

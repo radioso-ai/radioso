@@ -62,6 +62,7 @@ import { buildWorkspaceEventLog, documentEventEraser, workspaceEventRecorder } f
 import { IntegrationConnectionRepository } from "../../../modules/integrationConnections/public.js";
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
+import { writeAgentSkillIntoDraft } from "../../../modules/agentSkills/public.js";
 import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
 import type { CopilotProposalTargetTypeSet } from "../../../modules/operatorCopilot/public.js";
 import { TestExecutionRepository } from "../../../db/repositories/testExecutionRepository.js";
@@ -282,7 +283,7 @@ export const buildRepositories = (
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
-  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely, writeAgentSkillIntoDraft),
   copilotRepository: new CopilotRepository(database.kysely, options.copilotProposalTargetTypes, options.logger),
   testExecutionRepository: new TestExecutionRepository(database.kysely),
 });

@@ -567,7 +567,7 @@ export class ChatService {
       coverageShadowAssessor,
     });
     this.approvalResumeTurn = new ApprovalResumeTurn({
-      conversationRepository, messageRepository, agentService,
+      conversationRepository, messageRepository, agentService, agentRevisionRuntimeResolver,
       presentingSteps: turnRuntime.presentingSteps,
       chatGateway,
       chatAnswerPresenter: this.chatAnswerPresenter,

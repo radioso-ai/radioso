@@ -343,7 +343,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
     const session = await preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" });
 
     expect(contextResolver.resolveForEnablements).toHaveBeenCalledWith(
-      "ws-1", agent.id, [enablement], expect.any(Array),
+      "ws-1", agent.id, [enablement], expect.any(Array), undefined,
     );
     expect(contextResolver.resolveForAgent).not.toHaveBeenCalled();
     expect(session.resolvedContext.snapshot).toMatchObject({ frozen_context: "revision value" });
@@ -383,10 +383,10 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
 
     expect(contextResolver.resolveForEnablements).toHaveBeenCalledTimes(3);
     expect(contextResolver.resolveForEnablements).toHaveBeenNthCalledWith(
-      2, "ws-1", agent.id, [], expect.any(Array),
+      2, "ws-1", agent.id, [], expect.any(Array), undefined,
     );
     expect(contextResolver.resolveForEnablements).toHaveBeenNthCalledWith(
-      3, "ws-1", agent.id, [], expect.any(Array),
+      3, "ws-1", agent.id, [], expect.any(Array), undefined,
     );
     expect(contextResolver.resolveForAgent).not.toHaveBeenCalled();
   });

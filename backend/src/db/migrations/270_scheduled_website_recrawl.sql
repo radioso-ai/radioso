@@ -16,9 +16,12 @@
 -- held or deleted by a later scheduled crawl; a page seen again on the site leaves the list. The
 -- row goes with its document.
 --
--- Locks. The file is one transaction. Adding a column with a constant default and a CHECK takes a
--- brief ACCESS EXCLUSIVE lock on document_sources and website_crawl_jobs; both are small. The wait
--- for each lock is bounded to three seconds; a deploy that hits it rolls back and a retry is safe.
+-- Locks. The file is one transaction, so each lock is held until it commits. Adding a column with a
+-- constant default and a CHECK takes an ACCESS EXCLUSIVE lock on document_sources and
+-- website_crawl_jobs; both are small. The new table's foreign keys take SHARE ROW EXCLUSIVE locks on
+-- documents, workspaces and document_sources, which block writes to them, not reads, until the
+-- commit. The wait for each lock is bounded to three seconds; a deploy that hits it rolls back and a
+-- retry is safe.
 SET LOCAL lock_timeout = '3s';
 
 ALTER TABLE document_sources

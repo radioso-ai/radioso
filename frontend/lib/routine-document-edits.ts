@@ -165,26 +165,37 @@ export const insertStep = (doc: RoutineBlockDoc, afterStepId: string, kind: Rout
   return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches, ending), ending)
 }
 
+const referencedEndingIds = (steps: readonly RoutineBlockStep[]): Set<string> =>
+  new Set(steps.flatMap((step) => step.branches.flatMap((branch) => branch.target.kind === 'ending' ? [branch.target.terminalId] : [])))
+
 export const removeStep = (doc: RoutineBlockDoc, stableStepId: string): RoutineBlockDoc => {
   const next = copy(doc)
+  const removed = next.steps.find((step) => step.stableStepId === stableStepId)
   next.steps = next.steps.filter((step) => step.stableStepId !== stableStepId)
-  // A removed target would make the block document non-projectable. Retain the branch but
-  // send it to a new complete ending, so the author can immediately choose another target.
-  const terminalIds = new Set([
-    ...next.unreferencedEndings.map((ending) => ending.stableStepId),
-    ...next.steps.flatMap((step) => step.branches.flatMap((branch) => branch.target.kind === 'ending' ? [branch.target.terminalId] : [])),
-  ])
+  // Where the removed step continued: a branch that led to it now leads there, so the step before
+  // it continues to the step after, or to the same authored finish.
+  const onward = removed?.branches.find((branch) => branch.guard.kind === 'default'
+    && !(branch.target.kind === 'step' && branch.target.stableStepId === stableStepId))?.target
+  // A removed target would make the block document non-projectable. Without an onward target,
+  // retain the branch but send it to a new complete ending, so the author can choose another.
+  const terminalIds = new Set([...next.unreferencedEndings.map((ending) => ending.stableStepId), ...referencedEndingIds(next.steps)])
   let endingOrdinal = terminalIds.size
+  const blankEnding = (): RoutineBlockBranch['target'] => {
+    const terminalId = nextId('complete', terminalIds)
+    terminalIds.add(terminalId)
+    return { kind: 'ending', terminalId, ending: { stableStepId: terminalId, kind: 'complete', instruction: '', ordinal: endingOrdinal++ } }
+  }
   next.steps = next.steps.map((step) => ({
     ...step,
     branches: step.branches.map((branch) => branch.target.kind === 'step' && branch.target.stableStepId === stableStepId
-      ? (() => {
-          const terminalId = nextId('complete', terminalIds)
-          terminalIds.add(terminalId)
-          return { ...branch, target: { kind: 'ending' as const, terminalId, ending: { stableStepId: terminalId, kind: 'complete' as const, instruction: '', ordinal: endingOrdinal++ } } }
-        })()
+      ? { ...branch, target: onward ? copy(onward) : blankEnding() }
       : branch),
   }))
+  // A finish only the removed step reached stays in the document, authored as it was.
+  if (onward?.kind === 'ending' && onward.ending && !referencedEndingIds(next.steps).has(onward.terminalId)
+    && !next.unreferencedEndings.some((ending) => ending.stableStepId === onward.terminalId)) {
+    next.unreferencedEndings = [...next.unreferencedEndings, copy(onward.ending)]
+  }
   return next
 }
 

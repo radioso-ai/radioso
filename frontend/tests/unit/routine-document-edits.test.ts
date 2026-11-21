@@ -173,6 +173,67 @@ describe('routine document edits', () => {
       ])
       expect(draftFromBlockDoc(appended).terminals.map((terminal) => terminal.stableStepId)).toEqual(['no_products', 'confirm'])
     })
+
+    // A search whose "nothing found" rule finishes early, then two steps, then an authored finish.
+    const finder = () => {
+      const result = routineToBlockDoc({
+        name: 'Product finder',
+        activation: { triggerDescription: 'The visitor looks for a product', priority: 0 },
+        slots: [{ stableSlotId: 'query', key: 'query', type: 'text', required: true, description: null, ordinal: 0 }],
+        steps: [
+          { stableStepId: 'step_1', kind: 'chat', instruction: 'Ask what they want {{slot.query}}.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+          { stableStepId: 'step_2', kind: 'tool', instruction: 'Search.', toolRef: 'search_products', actionType: null, ordinal: 1, metadata: { outputAssignments: { products: 'found_products' } } },
+          { stableStepId: 'step_3', kind: 'chat', instruction: 'Show the products.', toolRef: null, actionType: null, ordinal: 2, metadata: {} },
+          { stableStepId: 'step_4', kind: 'chat', instruction: 'Ask which one they like.', toolRef: null, actionType: null, ordinal: 3, metadata: {} },
+        ],
+        transitions: [
+          { fromStep: 'step_1', toRef: 'step_2', guardKind: 'default', guardText: null, ordinal: 0 },
+          { fromStep: 'step_2', toRef: 'no_products', guardKind: 'field', guardText: null, fieldRef: 'found_products', fieldOp: 'is_absent', ordinal: 1 },
+          { fromStep: 'step_2', toRef: 'step_3', guardKind: 'default', guardText: null, ordinal: 2 },
+          { fromStep: 'step_3', toRef: 'step_4', guardKind: 'default', guardText: null, ordinal: 3 },
+          { fromStep: 'step_4', toRef: 'confirm', guardKind: 'default', guardText: null, ordinal: 4 },
+        ],
+        terminals: [
+          { stableStepId: 'no_products', kind: 'complete', instruction: 'Suggest a different search.', ordinal: 0 },
+          { stableStepId: 'confirm', kind: 'handoff', instruction: 'Tell them a specialist will follow up on the product.', ordinal: 1 },
+        ],
+      })
+      if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+      return result.doc
+    }
+
+    it('removes the last step before a finish, the step before it continuing to that same finish', () => {
+      const removed = removeStep(finder(), 'step_4')
+
+      expect(transitionTargets(removed)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_3:default',
+        'step_3->confirm:default',
+      ])
+      expect(draftFromBlockDoc(removed).terminals).toEqual(draftFromBlockDoc(finder()).terminals)
+    })
+
+    it('removes a middle step, the step before it continuing to the step after', () => {
+      const removed = removeStep(finder(), 'step_3')
+
+      expect(transitionTargets(removed)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_4:default',
+        'step_4->confirm:default',
+      ])
+      expect(draftFromBlockDoc(removed).terminals).toEqual(draftFromBlockDoc(finder()).terminals)
+    })
+
+    it('keeps the finish of a removed step nothing else reaches', () => {
+      const single = removeStep(removeStep(removeStep(finder(), 'step_4'), 'step_3'), 'step_2')
+      const removed = removeStep(single, 'step_1')
+
+      expect(draftFromBlockDoc(removed).terminals.map((terminal) => [terminal.stableStepId, terminal.kind, terminal.instruction])).toEqual(
+        expect.arrayContaining([['confirm', 'handoff', 'Tell them a specialist will follow up on the product.']]),
+      )
+    })
   })
 
   describe('renaming the names the compiler uses', () => {

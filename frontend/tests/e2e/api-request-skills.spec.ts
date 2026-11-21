@@ -45,6 +45,8 @@ const apiRequestCapability = () => ({
 
 test("an operator connects an API, sends a test request and declares an output from the response", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
+  // A response value far wider than the dialog, such as a user agent string.
+  const longValue = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:97.0) Gecko/20100101 Firefox/97.0 ${"x".repeat(160)}`;
 
   const connections: StoredConnection[] = [];
   const connectionBodies: unknown[] = [];
@@ -91,10 +93,10 @@ test("an operator connects an API, sends a test request and declares an output f
         httpStatus: 200,
         durationMs: 42,
         outcome: "completed",
-        outputs: {},
+        outputs: { client: longValue },
         mismatches: [],
         bodyTruncated: false,
-        body: { order: { status: "shipped", total: 42.5, items: [{ name: "Mug", price: 4.5 }] } },
+        body: { order: { status: "shipped", total: 42.5, items: [{ name: "Mug", price: 4.5 }] }, client: longValue },
       });
     }
     return route.fallback();
@@ -149,6 +151,21 @@ test("an operator connects an API, sends a test request and declares an output f
   await expect(page.getByLabel("Output 2 field 1 path")).toHaveValue("name");
   await page.getByLabel("Test request result").scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("api-request-skill-form.png") });
+
+  // The long value stays inside the response tree: the dialog keeps its width, every output
+  // row keeps its controls, and Create skill stays in view while the body scrolls.
+  const dialogBox = await page.getByRole("dialog", { name: "Configure API request" }).boundingBox();
+  const createSkill = page.getByRole("button", { name: "Create skill" });
+  for (const control of [
+    createSkill,
+    page.getByRole("switch", { name: "Output 2 required" }),
+    page.getByRole("button", { name: "Add client as output" }),
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    await expect(createSkill).toBeInViewport({ ratio: 1 });
+    const box = await control.boundingBox();
+    expect((box?.x ?? Infinity) + (box?.width ?? 0)).toBeLessThanOrEqual((dialogBox?.x ?? 0) + (dialogBox?.width ?? 0));
+  }
 
   await page.getByRole("button", { name: "Create skill" }).click();
   await expect(page.getByText("@order_status", { exact: true })).toBeVisible();

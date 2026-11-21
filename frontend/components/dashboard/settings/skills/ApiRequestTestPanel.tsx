@@ -120,7 +120,7 @@ export function ApiRequestTestPanel({ connectionId, draft, onAddOutput }: {
           {Object.keys(result.outputs).length > 0 ? (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Outputs</p>
-              <pre aria-label="Projected outputs" className="max-h-40 overflow-auto rounded-md border border-border bg-background p-2 font-mono text-xs">
+              <pre aria-label="Projected outputs" className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-background p-2 font-mono text-xs">
                 {JSON.stringify(result.outputs, null, 2)}
               </pre>
             </div>

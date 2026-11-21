@@ -409,7 +409,9 @@ export function SkillForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      {/* The body scrolls between a fixed header and footer, so Save stays in view, and its width
+          is the dialog's: a long response value truncates instead of widening the dialog. */}
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{editingSkill ? 'Edit skill' : `Configure ${capability ? formatCapabilityLabel(capability.id) : 'skill'}`}</DialogTitle>
           <DialogDescription>
@@ -417,7 +419,7 @@ export function SkillForm({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="-mx-6 min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-6">
           {displayedError ? (
             <p className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

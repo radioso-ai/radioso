@@ -17025,7 +17025,7 @@ components:
             - "null"
         credential:
           type: string
-          description: Write-only. Omit to keep the stored credential.
+          description: Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name.
         defaultHeaders:
           type: object
           additionalProperties:
@@ -17087,9 +17087,6 @@ components:
                       - email
                   description:
                     type: string
-                  required:
-                    type: boolean
-                    default: false
                   role:
                     type: string
                     enum:
@@ -17170,6 +17167,7 @@ components:
             - blocked
             - response_too_large
             - credential_unavailable
+            - method_not_read_only
             - skill_not_found
             - invalid_config
             - context_missing
@@ -27755,6 +27753,7 @@ paths:
       tags: *a4
       security: *a3
       summary: Update a workspace API connection
+      description: "Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for."
       operationId: updateApiConnection
       parameters:
         - schema:
@@ -27782,7 +27781,7 @@ paths:
                 required:
                   - connection
         "400":
-          description: Request validation failed
+          description: "Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one"
           content:
             application/json:
               schema:

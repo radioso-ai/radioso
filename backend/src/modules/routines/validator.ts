@@ -129,12 +129,22 @@ const expectedRuntimeType = (inputType: SkillAuthoringInput["type"]): "string" |
   return "string";
 };
 
+/**
+ * The skill kinds whose executor coerces each input to its declared type and fails closed: a value
+ * that does not fit settles `invalid_input`, a missing one `missing_input` or `unverified`, and
+ * nothing is sent. Their text inputs take any scalar slot, and a required input bound to a context
+ * variable is checked when the skill runs rather than refused when the routine is saved.
+ */
+const coercingSkillCategories: ReadonlySet<SkillAuthoringDescriptor["category"]> = new Set(["api_request"]);
+
 const isSlotTypeCompatibleWithInput = (
   slotType: RoutineDefinition["slots"][number]["type"],
   inputType: SkillAuthoringInput["type"],
+  category: SkillAuthoringDescriptor["category"],
 ): boolean => {
-  // Any slot reads as text; a typed input takes only the slot types that can hold its values.
-  if (inputType === "text") return true;
+  // A picked card is never a typed input's value.
+  if (slotType === "item") return false;
+  if (inputType === "text" && coercingSkillCategories.has(category)) return true;
   if (inputType === "number") return slotType === "number";
   if (inputType === "boolean") return slotType === "boolean";
   return slotType === "text" || slotType === "email" || slotType === "date";
@@ -441,7 +451,7 @@ export const validateRoutineDefinition = (
           });
         } else {
           const slot = slotByKey.get(binding.ref);
-          if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type)) {
+          if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type, descriptor.category)) {
             diagnostics.push({
               code: "input_type_mismatch",
               location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
@@ -462,7 +472,7 @@ export const validateRoutineDefinition = (
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,
             message: `unsatisfiable required input: skill "${step.toolRef}" requires input "${input.key}", but the routine does not bind it.`,
           });
-        } else if (binding.kind === "contextVariableRef") {
+        } else if (binding.kind === "contextVariableRef" && !coercingSkillCategories.has(descriptor.category)) {
           diagnostics.push({
             code: "unsatisfiable_required_input",
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,

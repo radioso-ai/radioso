@@ -16,8 +16,9 @@ const isGiven = (value: unknown): boolean =>
 /**
  * The request's params: the bound ones as the author wrote them, then each exposed one from what
  * the routine collected under its slot binding (or its own name). A `verifiedOnly` param takes a
- * value only from a context variable the host verified; any other origin, or no value at all when
- * the param is required, settles `unverified`. A required param with no value settles
+ * value only from a context variable the host verified; any other origin, or no value at all,
+ * settles `unverified` whatever `required` says, since a request sent without it (an order lookup
+ * with no email filter) is the one it exists to stop. A required param with no value settles
  * `missing_input`, and a value that does not fit the param's type `invalid_input`. Any of them
  * sends nothing; `unverified` wins over `missing_input`, which wins over `invalid_input`.
  */
@@ -34,7 +35,8 @@ export const resolveApiRequestParams = (
     const collectedKey = exposed.slotBinding ?? key;
     const value = Object.hasOwn(collected, collectedKey) ? collected[collectedKey] : undefined;
     if (!isGiven(value)) {
-      if (exposed.required) (exposed.verifiedOnly ? unverifiedInputs : missingInputs).push(collectedKey);
+      if (exposed.verifiedOnly) unverifiedInputs.push(collectedKey);
+      else if (exposed.required) missingInputs.push(collectedKey);
       continue;
     }
     if (exposed.verifiedOnly && origins[collectedKey] !== "verified_context") {

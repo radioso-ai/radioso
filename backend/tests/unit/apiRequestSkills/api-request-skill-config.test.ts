@@ -34,7 +34,7 @@ describe("apiRequestSkillConfigSchema", () => {
           type: "list",
           required: false,
           maxItems: 10,
-          fields: { title: { path: "title", type: "text", required: false, role: "title" } },
+          fields: { title: { path: "title", type: "text", role: "title" } },
         },
       },
     });

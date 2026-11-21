@@ -22,7 +22,7 @@ Open the agent's **Skills** list and choose **Manage API connections**, then **A
 - **Authentication:** `none`, `bearer` (a token), `header` (a custom header name and value) or `basic` (`username:password`).
 - **Default headers:** optional, non-secret headers sent on every request.
 
-The credential is stored encrypted and never shown again. The connection lists only a mask: the last four characters behind asterisks. Leave the credential blank when you edit a connection to keep the stored one. Enter it again when you change the base URL's host, the authentication or the header name.
+The credential is stored encrypted and never shown again. The connection lists only a mask: the last four characters behind asterisks, or for basic authentication the username followed by `:****`. Leave the credential blank when you edit a connection to keep the stored one. Enter it again when you change the base URL's scheme, host or port, the authentication or the header name: the stored credential is only sent where it was entered for.
 
 ### Check the request
 
@@ -56,7 +56,7 @@ Add a skill step that names the skill. The step reads `order_number` from the ro
 
 You never write a template. Radioso places each parameter by its key:
 
-- A `{key}` in the path takes that parameter, URL-encoded.
+- A `{key}` in the path takes that parameter, URL-encoded. A value that is empty, `.` or `..`, or holds a `/` or `\`, ends the step as `invalid_input`.
 - On `GET` and `DELETE` the rest go in the query string. An array repeats the key, and an object becomes JSON text.
 - On `POST`, `PUT` and `PATCH` the rest go in a JSON body. A dotted key nests, so `customer.email` becomes `{ "customer": { "email": "…" } }`.
 
@@ -72,11 +72,11 @@ Each exposed value is checked against its type before anything is sent.
 | `date` | `YYYY-MM-DD`. A date-time is cut to its date. |
 | `email` | A valid address, trimmed. |
 
-A value that does not fit ends the step as `invalid_input` and nothing is sent. A `text` parameter takes a slot of any type; the other types need a matching slot type.
+A value that does not fit ends the step as `invalid_input` and nothing is sent. A `text` parameter takes a slot of any type but a picked card; the other types need a matching slot type.
 
 ### Protect a lookup with a verified value
 
-Mark a parameter `verifiedOnly` when it identifies the person asking, such as the email on an order lookup. The value must come from a context variable your site signed. A value the visitor typed, an unverified context variable or a literal ends the step as `unverified`, and nothing is sent. Without this, a visitor could type someone else's email address and read their orders.
+Mark a parameter `verifiedOnly` when it identifies the person asking, such as the email on an order lookup. The value must come from a context variable your site signed. A value the visitor typed, an unverified context variable, a literal or no value at all ends the step as `unverified`, even when the parameter is optional, and nothing is sent. Without this, a visitor could type someone else's email address and read their orders.
 
 ## What comes back
 
@@ -98,7 +98,7 @@ Only the outputs you declare leave the skill. The raw response never reaches the
 - A path uses dots, and a number indexes an array: `items.0.title`. Paths have at most 10 segments.
 - Each value is converted to its type or left out. A list keeps its first `maxItems` items (1 to 20, default 10) with exactly the declared fields. Lists cannot nest.
 - An empty list counts as absent. A guard "is set" on a list means the API found something.
-- Set `required: true` on an output the routine cannot do without. If the response leaves it out, the skill fails with `response_mismatch`.
+- Set `required: true` on an output the routine cannot do without. If the response leaves it out, the skill fails with `response_mismatch`. A list's fields take no `required`: an item that lacks a field shows without it.
 - Outputs over 16 KB fail with `outputs_too_large`.
 - A list field's `role` (`key`, `title`, `subtitle`, `image` or `link`) builds cards. Each role is used once per list, and `image` and `link` fields are `text`.
 
@@ -116,7 +116,7 @@ The agent reads outputs as typed, described lines, such as `status — Order sta
 | `unverified` | A `verifiedOnly` value was not verified. |
 | `failed` | Anything else, with a reason. |
 
-A `failed` outcome carries one reason: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout` (the whole request has 10 seconds), `network`, `upstream_error` (a 5xx or another unexpected status), `auth_rejected` (401 or 403), `rate_limited` (429), `redirect_refused`, `connection_not_found`, `blocked` (the host resolved to a private address), `response_too_large` (a body over 1 MB) or `credential_unavailable`.
+A `failed` outcome carries one reason: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout` (the whole request has 10 seconds), `network`, `upstream_error` (a 5xx or another unexpected status), `auth_rejected` (401 or 403), `rate_limited` (429), `redirect_refused`, `connection_not_found`, `blocked` (the host resolved to a private address), `response_too_large` (a body over 1 MB), `credential_unavailable` or `method_not_read_only` (the routine ran the skill as a read-only `GET` but its method has since changed).
 
 A skill makes one attempt, with no retries. Redirects are followed only for `GET`, within the same origin, up to three.
 

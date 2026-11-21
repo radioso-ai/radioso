@@ -22,6 +22,7 @@ const FailureReasonSchema = z.enum([
   "blocked",
   "response_too_large",
   "credential_unavailable",
+  "method_not_read_only",
   "skill_not_found",
   "invalid_config",
   "context_missing",
@@ -35,7 +36,10 @@ const ScalarOutputSchema = z.object({
   required: z.boolean().default(false),
 });
 
-const ListFieldSchema = ScalarOutputSchema.extend({
+const ListFieldSchema = z.object({
+  path: z.string(),
+  type: ValueTypeSchema,
+  description: z.string().optional(),
   role: z.enum(["key", "title", "subtitle", "image", "link"]).optional(),
 });
 
@@ -77,7 +81,7 @@ export const registerApiConnectionsPaths = (
     baseUrl: z.string().optional(),
     authScheme: AuthSchemeSchema.optional(),
     authHeaderName: z.string().nullable().optional(),
-    credential: z.string().optional().describe("Write-only. Omit to keep the stored credential."),
+    credential: z.string().optional().describe("Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name."),
     defaultHeaders: DefaultHeadersSchema.optional(),
   }));
   const ApiRequestOutputSchema = registry.register("ApiRequestOutput", z.union([ScalarOutputSchema, ListOutputSchema]));
@@ -150,11 +154,12 @@ export const registerApiConnectionsPaths = (
     method: "patch",
     path: "/api/v1/settings/api-connections/{connectionId}",
     summary: "Update a workspace API connection",
+    description: "Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for.",
     operationId: "updateApiConnection",
     request: { params: ConnectionParams, body: { required: true, content: json(ApiConnectionUpdateSchema) } },
     responses: {
       200: connectionResponse("API connection updated"),
-      400: errorResponse("Request validation failed"),
+      400: errorResponse("Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one"),
       401: errorResponse("Authentication required"),
       404: errorResponse("API connection not found"),
       409: errorResponse("Connection name already exists"),

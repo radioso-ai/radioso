@@ -80,9 +80,13 @@ const harness = (input: {
     metricsRegistry: metrics,
     logger: { warn },
   });
-  const dispatch = (collected: Record<string, unknown>, collectedOrigins?: Record<string, SkillArgumentOrigin>) =>
+  const dispatch = (
+    collected: Record<string, unknown>,
+    collectedOrigins?: Record<string, SkillArgumentOrigin>,
+    skillDefinition: { name: string; readOnly?: boolean } = { name: "order_status" },
+  ) =>
     executor.dispatch({
-      skill: { name: "order_status" },
+      skill: skillDefinition,
       collected,
       ...(collectedOrigins ? { collectedOrigins } : {}),
       context: { agentId: "agent-1", workspaceId: "workspace-1", sessionId: "session-1" },
@@ -183,6 +187,39 @@ describe("ApiRequestSkillExecutor", () => {
     const result = await verified.dispatch({ customer_email: "signed@example.com" }, { customer_email: "verified_context" });
     expect(result).toMatchObject({ outcome: { status: "completed" } });
     expect(verified.sent[0].url).toBe("https://api.example.com/v1/customers/signed%40example.com/orders");
+  });
+
+  it("settles unverified for an optional verifiedOnly param with no verified value, never sending without it", async () => {
+    const optionalVerified = {
+      method: "GET",
+      path: "/orders/{order_number}",
+      exposedParams: {
+        order_number: { type: "text" },
+        email: { type: "email", slotBinding: "customer_email", verifiedOnly: true, required: false },
+      },
+    };
+
+    const absent = harness({ config: optionalVerified });
+    expect(await absent.dispatch({ order_number: "A-1" }, { order_number: "slot" }))
+      .toEqual(settledWith("unverified", { unverifiedInputs: ["customer_email"] }));
+    expect(absent.send).not.toHaveBeenCalled();
+
+    const typed = harness({ config: optionalVerified });
+    expect(await typed.dispatch({ order_number: "A-1", customer_email: "someone@example.com" }, { order_number: "slot", customer_email: "slot" }))
+      .toEqual(settledWith("unverified", { unverifiedInputs: ["customer_email"] }));
+    expect(typed.send).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send anything but a GET when the routine resolved the skill as read-only", async () => {
+    const post = harness({ config: { method: "POST", path: "/tickets" } });
+    expect(await post.dispatch({}, {}, { name: "order_status", readOnly: true }))
+      .toEqual(settledWith("failed", { reason: "method_not_read_only" }));
+    expect(post.send).not.toHaveBeenCalled();
+
+    const get = harness({ answer: respond(200, {}) });
+    expect(await get.dispatch({ order: "A-1" }, { order: "slot" }, { name: "order_status", readOnly: true }))
+      .toMatchObject({ outcome: { status: "completed" } });
+    expect(get.send).toHaveBeenCalledOnce();
   });
 
   it("settles invalid_input and sends nothing when a collected value does not fit its type", async () => {

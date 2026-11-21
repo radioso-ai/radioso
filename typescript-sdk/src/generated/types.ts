@@ -1316,7 +1316,10 @@ export interface paths {
         delete: operations["deleteApiConnection"];
         options?: never;
         head?: never;
-        /** Update a workspace API connection */
+        /**
+         * Update a workspace API connection
+         * @description Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for.
+         */
         patch: operations["updateApiConnection"];
         trace?: never;
     };
@@ -11402,7 +11405,7 @@ export interface components {
             /** @enum {string} */
             authScheme?: "none" | "bearer" | "header" | "basic";
             authHeaderName?: string | null;
-            /** @description Write-only. Omit to keep the stored credential. */
+            /** @description Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name. */
             credential?: string;
             defaultHeaders?: {
                 [key: string]: string;
@@ -11430,8 +11433,6 @@ export interface components {
                     /** @enum {string} */
                     type: "text" | "number" | "boolean" | "date" | "email";
                     description?: string;
-                    /** @default false */
-                    required: boolean;
                     /** @enum {string} */
                     role?: "key" | "title" | "subtitle" | "image" | "link";
                 };
@@ -11461,7 +11462,7 @@ export interface components {
             /** @enum {string} */
             outcome: "completed" | "not_found" | "rejected" | "missing_input" | "invalid_input" | "unverified" | "failed";
             /** @enum {string} */
-            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "skill_not_found" | "invalid_config" | "context_missing";
+            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "method_not_read_only" | "skill_not_found" | "invalid_config" | "context_missing";
             /** @description The declared outputs projected to their types: what a routine step would get. */
             outputs: {
                 [key: string]: unknown;
@@ -18702,7 +18703,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one */
             400: {
                 headers: {
                     [name: string]: unknown;

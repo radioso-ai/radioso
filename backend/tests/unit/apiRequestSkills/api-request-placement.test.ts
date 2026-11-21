@@ -10,12 +10,12 @@ describe("placeApiRequest", () => {
       baseUrl,
       method: "GET",
       path: "/orders/{order_number}",
-      params: { order_number: "A 1/2", expand: "items", limit: 5, active: true, tags: ["a", "b"], skipped: null },
+      params: { order_number: "A 1?2", expand: "items", limit: 5, active: true, tags: ["a", "b"], skipped: null },
     });
 
     expect(placed).toEqual({
       kind: "placed",
-      url: "https://api.example.com/v1/orders/A%201%2F2?expand=items&limit=5&active=true&tags=a&tags=b",
+      url: "https://api.example.com/v1/orders/A%201%3F2?expand=items&limit=5&active=true&tags=a&tags=b",
     });
   });
 
@@ -50,8 +50,8 @@ describe("placeApiRequest", () => {
       .toEqual({ kind: "placed", url: "https://api.example.com/v1/ping", body: "{}" });
   });
 
-  it("refuses a path value that is not a scalar, is empty, or is a dot segment", () => {
-    for (const value of [{ a: 1 }, ["a"], "", ".", ".."]) {
+  it("refuses a path value that is not a scalar, is empty, is a dot segment, or carries a slash or backslash", () => {
+    for (const value of [{ a: 1 }, ["a"], "", ".", "..", "../../admin/users/7", "a/b", "..\\admin", "a\\b", "x/..", "%2e%2e"]) {
       expect(placeApiRequest({ baseUrl, method: "GET", path: "/orders/{id}", params: { id: value } }))
         .toEqual({ kind: "invalid_input", param: "id" });
     }

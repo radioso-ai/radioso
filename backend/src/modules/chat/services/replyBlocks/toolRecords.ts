@@ -88,6 +88,16 @@ interface FoundRecord {
 }
 
 /**
+ * Each record's item key: the declared key field's value when every record has one and no two
+ * share it, so a pick names exactly the record shown; otherwise every record's pointer.
+ */
+const keyedRecords = (found: readonly FoundRecord[], keyField: string | undefined): Array<{ key: string; value: unknown }> => {
+  const declared = found.map(({ value }) => declaredKey(value, keyField));
+  const usable = declared.every((key): key is string => key !== null) && new Set(declared).size === declared.length;
+  return found.map(({ pointer, value }, index) => ({ key: usable ? declared[index] : itemKey(pointer), value }));
+};
+
+/**
  * Every array whose items are all objects, at most `arrayDepth` deep, in document order. Its items
  * are records, and the walk does not go inside them, so a listing's own `photos` never become
  * records beside it.
@@ -221,7 +231,7 @@ export class ToolRecordLedger {
         found.push({ pointer: "", value: outputs });
       }
     }
-    const candidates = found.map(({ pointer, value }) => ({ key: declaredKey(value, options.keyField) ?? itemKey(pointer), value }));
+    const candidates = keyedRecords(found, options.keyField);
     const offered: ToolRecord[] = candidates
       .slice(0, TOOL_RECORD_LIMITS.records)
       .map((candidate, index) => ({ handle: `r${index + 1}`, ...candidate }));

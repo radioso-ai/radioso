@@ -2,16 +2,33 @@ import { isBodyMethod, pathPlaceholders, type ApiRequestMethod } from "./domain.
 
 type PlacedApiRequest =
   | { kind: "placed"; url: string; body?: string }
-  /** A path value that cannot be a URL segment: not a scalar, empty, or a `.`/`..` segment. */
+  /** A path value that cannot be one URL segment: not a scalar, empty, or able to leave its segment. */
   | { kind: "invalid_input"; param: string };
 
 const isScalar = (value: unknown): value is string | number | boolean =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
+const decodedOnce = (text: string): string => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
+
+/**
+ * A value that could step out of its segment on a target that decodes the path: one holding a
+ * `/` or `\`, a `.` or `..` segment, or any of these once percent-decoded (a target that decodes
+ * twice reads `%2e%2e` as `..`).
+ */
+const leavesItsSegment = (text: string): boolean =>
+  [text, decodedOnce(text)].some((form) =>
+    /[/\\]/u.test(form) || form.split(/[/\\]/u).some((part) => part === "." || part === ".."));
+
 const pathSegmentValue = (value: unknown): string | null => {
   if (!isScalar(value)) return null;
   const text = String(value);
-  return text.length === 0 || text === "." || text === ".." ? null : encodeURIComponent(text);
+  return text.length === 0 || leavesItsSegment(text) ? null : encodeURIComponent(text);
 };
 
 const queryValues = (value: unknown): string[] => {

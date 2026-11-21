@@ -257,7 +257,7 @@ If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `5
 
 ## API connections
 
-API connections hold the base URL and credential an `api_request` skill calls. They are workspace-scoped and need a dashboard sign-in: reads require `workspace.settings.read`, writes require `workspace.settings.manage`, and machine credentials are refused. A read returns `credentialMask`, the last four characters behind asterisks, and never the credential. A connection a skill uses cannot be deleted; the route answers `409 api_connection_in_use` and names the skills.
+API connections hold the base URL and credential an `api_request` skill calls. They are workspace-scoped and need a dashboard sign-in: reads require `workspace.settings.read`, writes require `workspace.settings.manage`, and machine credentials are refused. A read returns `credentialMask`, the last four characters behind asterisks (for `basic`, the username followed by `:****`), and never the credential. A `PATCH` that changes the base URL's origin, the auth scheme or the auth header name must send a new `credential` in the same request; otherwise it answers `400 credential_required`. A connection a skill uses cannot be deleted; the route answers `409 api_connection_in_use` and names the skills.
 
 ```text
 GET /api/v1/settings/api-connections

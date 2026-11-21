@@ -93,6 +93,38 @@ class ApiConnectionEncryptionNotConfiguredError extends AppError {
   }
 }
 
+class ApiConnectionCredentialRequiredError extends AppError {
+  constructor() {
+    super(
+      400,
+      "credential_required",
+      "Changing the base URL's origin, the auth scheme or the auth header name needs the credential again in the same update",
+    );
+  }
+}
+
+const originOf = (url: string): string => new URL(url).origin;
+
+/**
+ * What a read shows of a credential: the tail of a token or header value, as other connection
+ * secrets show. A basic credential shows its username alone: the password's last characters, and
+ * its length, are part of the secret.
+ */
+const credentialMaskFor = (authScheme: ApiConnectionAuthScheme, credential: string): string => {
+  if (authScheme !== "basic") return maskSecret(credential);
+  const separator = credential.indexOf(":");
+  return separator > 0 ? `${credential.slice(0, separator)}:****` : "****";
+};
+
+/** Whether a patched connection would send its stored credential to another origin, scheme or header. */
+const retargetsCredential = (
+  existing: Pick<ApiConnectionRecord, "baseUrl" | "authScheme" | "authHeaderName">,
+  next: { baseUrl: string; authScheme: ApiConnectionAuthScheme; authHeaderName: string | null },
+): boolean =>
+  originOf(next.baseUrl) !== originOf(existing.baseUrl)
+  || next.authScheme !== existing.authScheme
+  || (next.authHeaderName ?? "").toLowerCase() !== (existing.authHeaderName ?? "").toLowerCase();
+
 class ApiConnectionInUseError extends AppError {
   constructor(connectionId: string, skillNames: string[]) {
     const summary = skillNames.length > 0 ? `: ${skillNames.map((name) => `skill:${name}`).join(", ")}` : "";
@@ -167,9 +199,15 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
       ...(patch.credential === undefined ? {} : { credential: patch.credential }),
     });
     if (!merged.success) throw badRequest("Invalid API connection", merged.error.flatten());
+    const baseUrl = patch.baseUrl === undefined ? existing.baseUrl : await this.normalizeBaseUrl(patch.baseUrl);
+    // A stored credential goes only where it was entered for: moving it to another origin, or
+    // sending it under another scheme or header, needs the credential typed again.
+    if (keepsCredential && retargetsCredential(existing, { baseUrl, authScheme, authHeaderName })) {
+      throw new ApiConnectionCredentialRequiredError();
+    }
     const write: ApiConnectionWrite = {
       name: patch.name ?? existing.name,
-      baseUrl: patch.baseUrl === undefined ? existing.baseUrl : await this.normalizeBaseUrl(patch.baseUrl),
+      baseUrl,
       authScheme,
       authHeaderName,
       credentialCiphertext: authScheme === "none"
@@ -328,7 +366,7 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
       authScheme: record.authScheme,
       authHeaderName: record.authHeaderName,
       // A stored credential this key cannot read still exists: show that one is set, not its tail.
-      credentialMask: record.credentialCiphertext === null ? null : credential === null ? "****" : maskSecret(credential),
+      credentialMask: record.credentialCiphertext === null ? null : credential === null ? "****" : credentialMaskFor(record.authScheme, credential),
       defaultHeaders: record.defaultHeaders,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,

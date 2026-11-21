@@ -24,7 +24,7 @@ describe("skill data value types", () => {
     expect(coerceSkillValue("number", 3, "input")).toEqual({ ok: true, value: 3 });
     expect(coerceSkillValue("number", "-12", "input")).toEqual({ ok: true, value: -12 });
     expect(coerceSkillValue("number", "12.50", "input")).toEqual({ ok: true, value: 12.5 });
-    for (const value of ["1,200", "1e3", "12,5", "0x10", "", "twelve", Number.POSITIVE_INFINITY, true]) {
+    for (const value of ["1,200", "1e3", "12,5", "0x10", "", "twelve", Number.POSITIVE_INFINITY, true, "9".repeat(400), `-${"9".repeat(400)}`]) {
       expect(coerceSkillValue("number", value, "input"), String(value)).toEqual({ ok: false });
     }
   });

@@ -37,7 +37,11 @@ const scalarOutputSchema = z.object({
   required: z.boolean().default(false),
 }).strict();
 
-const listFieldSchema = scalarOutputSchema.extend({
+// A list field has no `required`: an item missing a field leaves that field off the item.
+const listFieldSchema = z.object({
+  path: outputPathSchema,
+  type: z.enum(skillDataValueTypes),
+  description: descriptionSchema.optional(),
   role: z.enum(skillOutputFieldRoles).optional(),
 }).strict().refine(
   (field) => (field.role !== "image" && field.role !== "link") || field.type === "text",
@@ -92,7 +96,7 @@ export const readJsonPath = (body: unknown, path: string): { found: true; value:
   return { found: true, value: current };
 };
 
-const projectScalar = (source: unknown, output: SkillScalarOutput): { present: boolean; value?: unknown } => {
+const projectScalar = (source: unknown, output: Pick<SkillScalarOutput, "path" | "type">): { present: boolean; value?: unknown } => {
   const read = readJsonPath(source, output.path);
   if (!read.found) return { present: false };
   const coerced = coerceSkillValue(output.type, read.value, "output");

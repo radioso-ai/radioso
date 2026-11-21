@@ -51,11 +51,17 @@ refused.
 A read returns the connection as `{ id, name, baseUrl, authScheme,
 authHeaderName, credentialMask, defaultHeaders, createdAt, updatedAt }`.
 `credentialMask` is the last four characters of the credential behind
-asterisks; the credential itself is never returned.
+asterisks. For `basic` it is the username followed by `:****`, so nothing of
+the password shows, not even its length. The credential itself is never
+returned.
 
 `PATCH` takes any subset of the create fields. Leave `credential` out to keep
 the stored one. `authHeaderName: null` clears the header name, and switching
-`authScheme` to `none` drops the credential.
+`authScheme` to `none` drops the credential. A stored credential is only sent
+where it was entered for: a `PATCH` that changes the base URL's origin (its
+scheme, host or port), the auth scheme or the auth header name must send a new
+`credential` in the same request, or it is refused with `400
+credential_required`.
 
 A connection that a skill uses cannot be deleted. The route answers `409
 api_connection_in_use` and names the skills.
@@ -116,7 +122,9 @@ or an agent's own tool choice cannot call one.
 There are no templates. Radioso places every parameter by its key:
 
 - A `{key}` placeholder in the path takes that parameter, URL-encoded. The
-  value is a scalar and is not empty, `.` or `..`.
+  value is a scalar that stays within its segment: it is not empty, `.` or
+  `..`, and holds no `/` or `\`, also once percent-decoded. Any other value
+  settles `invalid_input` and nothing is sent.
 - The remaining parameters go in the query string for `GET` and `DELETE`.
   An array repeats the key and an object is sent as JSON text.
 - For `POST`, `PUT` and `PATCH` they go in a JSON body. A dotted key nests:
@@ -147,8 +155,11 @@ Set `verifiedOnly: true` on a parameter that must belong to the person asking,
 such as the email on an order lookup. The value has to come from a context
 variable the host application verified, meaning a signed context variable. A
 value from a slot, an unverified context variable or a literal settles
-`unverified`, and so does a missing one. Nothing is sent. This stops a visitor
-from typing someone else's email address to read their orders.
+`unverified`, and so does a missing one, whether or not the parameter is
+`required`. Nothing is sent. This stops a visitor from typing someone else's
+email address to read their orders, and an optional email filter from being
+dropped from the request. A routine may bind a required parameter to a context
+variable: the skill checks the value when it runs.
 
 ### Outputs
 
@@ -158,8 +169,9 @@ response never reaches the model, the routine, traces or logs.
 A scalar output is `{ path, type, description?, required? }` with `type` one of
 `text`, `number`, `boolean`, `date` or `email`. A list output is `{ path, type:
 "list", description?, required?, maxItems, fields }`, where `maxItems` is 1 to
-20 (default 10) and each field is a scalar output whose path is relative to the
-item and that may carry a `role`.
+20 (default 10) and each field is `{ path, type, description?, role? }` with
+its path relative to the item. A field has no `required`: an item that lacks
+it leaves the field off that item.
 
 - A path is dot segments. A numeric segment indexes an array
   (`items.0.title`). A path has at most 10 segments, and a key that contains
@@ -217,6 +229,7 @@ Reasons on `failed`:
 | `blocked` | The host resolved to a private address. |
 | `response_too_large` | A body over 1 MB. |
 | `credential_unavailable` | The stored credential could not be read. |
+| `method_not_read_only` | The routine ran the skill as a read-only `GET`, but its method has since changed. |
 
 A skill makes one attempt and does not retry. Redirects are followed only for
 `GET`, only within the same origin, up to three times.

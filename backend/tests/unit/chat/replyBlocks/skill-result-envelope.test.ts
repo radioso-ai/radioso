@@ -274,6 +274,21 @@ describe("skill result reply with a typed output contract", () => {
     expect(calls[0]?.prompt).toContain('1. id: "flat-1"; name: "Loft Mitte"; rent: 1850');
   });
 
+  it("keys cards by their pointers when the declared key repeats, so a pick finds the record shown", async () => {
+    const { renderer } = harness(envelope({ records: ["r2", "r1"], fields: { title: "/name", subtitle: null, image: null, link: null }, caption: "Flats" }));
+    const duplicated = outcome({
+      outputs: { total: 2, flats: LISTINGS.map((listing) => ({ id: "same-id", ...listing })) },
+      outputContract: contract,
+    });
+
+    const presentation = await renderer.render(duplicated, { session: session(), query: QUERY });
+
+    expect(presentation.replyBlocks?.stored[0]?.items.map((item) => [item.key, item.title])).toEqual([
+      ["/flats/1", "Altbau Mitte"],
+      ["/flats/0", "Loft Mitte"],
+    ]);
+  });
+
   it("builds cards from the list's roles whatever fields the model named, keyed by the key field", async () => {
     const modelFields = { records: ["r2", "r1"], fields: { title: "/url", subtitle: null, image: null, link: null }, caption: "Flats" };
     const { renderer } = harness(envelope(modelFields));

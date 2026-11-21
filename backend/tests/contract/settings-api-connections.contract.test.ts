@@ -75,6 +75,45 @@ describe("settings API connections contract", () => {
     expect((await request(app).get(`/api/v1/settings/api-connections/${connectionId}`).set(headers)).status).toBe(404);
   });
 
+  it("masks a basic credential as its username alone, showing nothing of the password", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "api-connections-basic@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const created = await createConnection(app, headers, { authScheme: "basic", credential: "ada:s3cretpass-7781" });
+
+    expect(created.status).toBe(201);
+    expect(created.body.connection.credentialMask).toBe("ada:****");
+    expect(JSON.stringify(created.body)).not.toContain("7781");
+  });
+
+  it("asks for the credential again when a patch would send the stored one somewhere else", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "api-connections-retarget@example.com");
+    const headers = adminSessionHeaders(session);
+    const connectionId = (await createConnection(app, headers)).body.connection.id as string;
+    const patch = (body: Record<string, unknown>) =>
+      request(app).patch(`/api/v1/settings/api-connections/${connectionId}`).set(headers).send(body);
+
+    for (const body of [
+      { baseUrl: "https://attacker.example/v1" },
+      { authScheme: "basic" },
+      { authScheme: "header", authHeaderName: "X-Api-Key" },
+    ]) {
+      const refused = await patch(body);
+      expect(refused.status, JSON.stringify(body)).toBe(400);
+      expect(refused.body.error).toMatchObject({ code: "credential_required" });
+    }
+
+    expect((await patch({ baseUrl: "https://api.example.com/v2" })).status).toBe(200);
+    expect((await patch({ authScheme: "header", authHeaderName: "X-Api-Key", credential: "key-1234" })).status).toBe(200);
+    const renamedHeader = await patch({ authHeaderName: "X-Other-Key" });
+    expect(renamedHeader.status).toBe(400);
+    expect(renamedHeader.body.error).toMatchObject({ code: "credential_required" });
+    expect((await patch({ baseUrl: "https://elsewhere.example", credential: "key-5678" })).status).toBe(200);
+    expect((await patch({ authScheme: "none" })).status).toBe(200);
+  });
+
   it("refuses a duplicate name, a plain-http or query-carrying base URL, a missing credential, and a malformed id", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "api-connections-invalid@example.com");

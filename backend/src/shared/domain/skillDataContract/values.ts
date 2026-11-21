@@ -45,8 +45,11 @@ const coerceText = (type: SkillDataValueType, value: string, direction: SkillVal
       return accepted(value);
     case "email":
       return EMAIL_PATTERN.test(value) ? accepted(value) : refused;
-    case "number":
-      return DECIMAL_PATTERN.test(value) ? accepted(Number(value)) : refused;
+    case "number": {
+      // A decimal too long for a double reads as Infinity, which is no number.
+      const number = DECIMAL_PATTERN.test(value) ? Number(value) : Number.NaN;
+      return Number.isFinite(number) ? accepted(number) : refused;
+    }
     case "boolean": {
       const lowered = value.toLowerCase();
       return lowered === "true" || lowered === "false" ? accepted(lowered === "true") : refused;

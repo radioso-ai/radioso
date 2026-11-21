@@ -32,7 +32,7 @@ describe("skillOutputsSchema", () => {
         type: "list",
         required: false,
         maxItems: 10,
-        fields: { name: { path: "name", type: "text", required: false, role: "title" } },
+        fields: { name: { path: "name", type: "text", role: "title" } },
       },
     });
   });
@@ -48,6 +48,12 @@ describe("skillOutputsSchema", () => {
     for (const value of refused) {
       expect(skillOutputsSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
     }
+  });
+
+  it("refuses required on a list field, which the response check does not apply per item", () => {
+    expect(skillOutputsSchema.safeParse({
+      items: { path: "items", type: "list", fields: { name: { path: "name", type: "text", required: true } } },
+    }).success).toBe(false);
   });
 
   it("refuses paths past ten segments, with empty or prototype segments, and maxItems outside 1..20", () => {

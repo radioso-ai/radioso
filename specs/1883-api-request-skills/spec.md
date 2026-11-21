@@ -18,7 +18,7 @@ The operator declares a typed contract once; code enforces it on both edges; the
 
 An operator adds an API connection in Settings: a name, an https base URL, an auth scheme (`none`, `bearer`, `header`, `basic`), the credential, and non-secret default headers. The credential is write-only; reads show only its masked tail.
 
-**Acceptance**: creating, reading, updating and deleting a connection never returns the credential; a duplicate name (case-insensitive) is a 409; a plain-http, query-carrying or private base URL is a 400; a header-scheme connection without a header name, or a scheme without its credential, is a 400; default headers that set `authorization`, `cookie`, `host` or a transport header are a 400; deleting a connection a skill targets is a 409 that names the skills.
+**Acceptance**: creating, reading, updating and deleting a connection never returns the credential, and a basic credential reads as its username followed by `:****`; an update that changes the base URL's origin, the auth scheme or the auth header name without a new credential is a 400 `credential_required`, so a stored credential is never sent anywhere it was not entered for; a duplicate name (case-insensitive) is a 409; a plain-http, query-carrying or private base URL is a 400; a header-scheme connection without a header name, or a scheme without its credential, is a 400; default headers that set `authorization`, `cookie`, `host` or a transport header are a 400; deleting a connection a skill targets is a 409 that names the skills.
 
 ### User Story 2 — Declare a request (P1)
 
@@ -36,7 +36,7 @@ A routine step calls the skill by name. Its inputs come from slots and context v
 
 An exposed param marked `verifiedOnly` takes a value only from a context variable the host verified (a signed one). A visitor who types someone else's email into a slot cannot read that person's orders.
 
-**Acceptance**: a value from a slot, an unverified context variable or a literal, or no value, settles `unverified` and sends nothing; the same value from a verified context variable is sent.
+**Acceptance**: a value from a slot, an unverified context variable or a literal, or no value, settles `unverified` and sends nothing, whether or not the param is `required`; the same value from a verified context variable is sent. The routine validator accepts a required `api_request` input bound to a context variable, since the executor checks it when the step runs; the documented `order_status` example validates.
 
 ### User Story 5 — Test Chat and replays (P2)
 
@@ -48,7 +48,8 @@ The routine's next-step selector and the skill-result reply context read the out
 
 ### Edge Cases
 
-- A path value that is empty, `.` or `..` is `invalid_input`: it cannot walk the base path.
+- A path value that is empty, `.` or `..`, or holds a `/` or `\` (also once percent-decoded), is `invalid_input`: it cannot walk the base path.
+- A skill the routine resolved as a read-only GET whose method has since changed fails with `method_not_read_only` instead of sending.
 - A redirect is followed only for a GET, only within the origin, at most three hops; any other is `redirect_refused`.
 - An empty body is no data: every output is absent, so only a required one fails the skill.
 - An empty list output counts as absent, so a field guard's "is set" means "found any".
@@ -69,7 +70,7 @@ The routine's next-step selector and the skill-result reply context read the out
 | `GET /api/v1/settings/api-connections` | | `{ connections: ApiConnection[] }` |
 | `POST /api/v1/settings/api-connections` | `{ name, baseUrl, authScheme?, authHeaderName?, credential?, defaultHeaders? }` | 201 `{ connection }` |
 | `GET /api/v1/settings/api-connections/:connectionId` | | `{ connection }` |
-| `PATCH /api/v1/settings/api-connections/:connectionId` | any subset; an omitted credential is kept; `authHeaderName: null` clears | `{ connection }` |
+| `PATCH /api/v1/settings/api-connections/:connectionId` | any subset; an omitted credential is kept; `authHeaderName: null` clears; a change of origin, scheme or header name needs a new `credential` | `{ connection }`; 400 `credential_required` |
 | `DELETE /api/v1/settings/api-connections/:connectionId` | | 204; 409 `api_connection_in_use` |
 | `POST /api/v1/settings/api-connections/:connectionId/test-request` | `{ method, path, boundParams?, exposedSampleValues?, outputs? }` | `{ httpStatus, durationMs, outcome, reason?, outputs, mismatches, body, bodyTruncated }` |
 
@@ -85,12 +86,12 @@ The routine's next-step selector and the skill-result reply context read the out
   outputs:       { [name]: ScalarOutput | ListOutput } }
 ScalarOutput = { path, type: text|number|boolean|date|email, description?, required = false }
 ListOutput   = { path, type: "list", description?, required = false, maxItems = 10 (1..20),
-                 fields: { [name]: ScalarOutput & { role?: key|title|subtitle|image|link } } }
+                 fields: { [name]: { path, type, description?, role?: key|title|subtitle|image|link } } }
 ```
 
 - Placement: a `{key}` placeholder takes that param URL-encoded; the rest go in the query string for GET and DELETE, or a JSON body for POST, PUT and PATCH, where a dotted key nests. Keys follow the webhook payload-key rule (`shared/domain/skillPayloadKey.ts`).
 - Value types are the routine slot types without `item` (pinned by a test). Coercion: text as written; number from a number or a plain decimal; boolean from `true`/`false`; date as an ISO date for inputs, an ISO date or date-time for outputs; email trimmed and checked by the email slot's rule.
-- Outcomes: `completed`, `not_found`, `rejected`, `missing_input`, `invalid_input`, `unverified`, `failed`. Failure reasons: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout`, `network`, `upstream_error`, `auth_rejected`, `rate_limited`, `redirect_refused`, `connection_not_found`, and the cases the design leaves unnamed: `blocked`, `response_too_large`, `credential_unavailable`, `skill_not_found`, `invalid_config`, `context_missing`. No retries.
+- Outcomes: `completed`, `not_found`, `rejected`, `missing_input`, `invalid_input`, `unverified`, `failed`. Failure reasons: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout`, `network`, `upstream_error`, `auth_rejected`, `rate_limited`, `redirect_refused`, `connection_not_found`, and the cases the design leaves unnamed: `blocked`, `response_too_large`, `credential_unavailable`, `method_not_read_only`, `skill_not_found`, `invalid_config`, `context_missing`. No retries.
 - Limits: 10 s for the whole request, 1 MB response read on the stream, 16 KB of serialized outputs, 16 KB of test-request body.
 
 ### What the model reads
@@ -99,7 +100,7 @@ ListOutput   = { path, type: "list", description?, required = false, maxItems = 
 
 ### Authoring
 
-The authoring descriptor lists the typed exposed params as inputs and the declared outputs with their types and list fields (`hasDataOutputs` is true when any are declared). The routine validator refuses a slot whose type cannot feed a typed input; a text input takes any slot type.
+The authoring descriptor lists the typed exposed params as inputs and the declared outputs with their types and list fields (`hasDataOutputs` is true when any are declared). The routine validator refuses a slot whose type cannot feed a typed input. An `api_request` text input takes any scalar slot, since its executor coerces; other kinds keep text inputs to text, email and date slots; an `item` slot never feeds a typed input.
 
 ### Operator copilot
 
@@ -127,7 +128,7 @@ The authoring descriptor lists the typed exposed params as inputs and the declar
 
 - The model-facing renderer lives in `@radioso/conversation-contract`, beside `readableSlotValue`, not in `shared/domain/skillDataContract`: the next-step selector is in `conversation-defaults`, which cannot import backend code.
 - Context variables resolved by an `api_request` skill are out of scope, so the context-variable resolver refuses the kind rather than mapping it to the executor.
-- The failure reasons add six codes for cases the design does not name (listed above).
+- The failure reasons add seven codes for cases the design does not name (listed above).
 - The test-request response adds `bodyTruncated`, so the form can say the body was cut.
 - The skill resolver for `api_request` filters on `enabled && routine_named`, as the retrieve and notify resolvers do, so `routineInvocableSkillNames` lists it among the kinds it leaves out.
 

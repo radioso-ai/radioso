@@ -236,6 +236,8 @@ export type ApiRequestFailureReason =
   | "response_too_large"
   // The stored credential cannot be decrypted with the configured key.
   | "credential_unavailable"
+  // The skill was resolved as a read-only GET but now sends another method.
+  | "method_not_read_only"
   // The skill, its config, or the dispatch context could not be read.
   | "skill_not_found"
   | "invalid_config"

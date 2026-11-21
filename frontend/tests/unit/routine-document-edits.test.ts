@@ -136,6 +136,43 @@ describe('routine document edits', () => {
         'llm:step_1',
       ])
     })
+
+    it('appends a step after the last one, taking over its ending rather than an earlier branch’s', () => {
+      // A product finder: a search whose "nothing found" rule finishes early, then a step that
+      // shows the results and finishes with a confirmation.
+      const result = routineToBlockDoc({
+        name: 'Product finder',
+        activation: { triggerDescription: 'The visitor looks for a product', priority: 0 },
+        slots: [{ stableSlotId: 'query', key: 'query', type: 'text', required: true, description: null, ordinal: 0 }],
+        steps: [
+          { stableStepId: 'step_1', kind: 'chat', instruction: 'Ask what they want {{slot.query}}.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+          { stableStepId: 'step_2', kind: 'tool', instruction: 'Search.', toolRef: 'search_products', actionType: null, ordinal: 1, metadata: { outputAssignments: { products: 'found_products' } } },
+          { stableStepId: 'step_3', kind: 'chat', instruction: 'Show the products.', toolRef: null, actionType: null, ordinal: 2, metadata: {} },
+        ],
+        transitions: [
+          { fromStep: 'step_1', toRef: 'step_2', guardKind: 'default', guardText: null, ordinal: 0 },
+          { fromStep: 'step_2', toRef: 'no_products', guardKind: 'field', guardText: null, fieldRef: 'found_products', fieldOp: 'is_absent', ordinal: 1 },
+          { fromStep: 'step_2', toRef: 'step_3', guardKind: 'default', guardText: null, ordinal: 2 },
+          { fromStep: 'step_3', toRef: 'confirm', guardKind: 'default', guardText: null, ordinal: 3 },
+        ],
+        terminals: [
+          { stableStepId: 'no_products', kind: 'complete', instruction: 'Suggest a different search.', ordinal: 0 },
+          { stableStepId: 'confirm', kind: 'complete', instruction: 'Confirm completion.', ordinal: 1 },
+        ],
+      })
+      if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+
+      const appended = addStep(result.doc, 'chat')
+
+      expect(transitionTargets(appended)).toEqual([
+        'step_1->step_2:default',
+        'step_2->no_products:field',
+        'step_2->step_3:default',
+        'step_3->step_4:default',
+        'step_4->confirm:default',
+      ])
+      expect(draftFromBlockDoc(appended).terminals.map((terminal) => terminal.stableStepId)).toEqual(['no_products', 'confirm'])
+    })
   })
 
   describe('renaming the names the compiler uses', () => {

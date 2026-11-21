@@ -8,7 +8,7 @@ import type {
   ContextVariableUpdateRecord,
 } from "../repository.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
-import { RESERVED_CONTEXT_VARIABLE_PREFIX, isReservedContextVariableName } from "../domain.js";
+import { RESERVED_CONTEXT_VARIABLE_PREFIX, isReservedContextVariableName, typeChangeWithValuesRefused } from "../domain.js";
 import {
   validateOptions,
   validateValue,
@@ -104,7 +104,7 @@ export class ContextVariableService {
     const nextOptions = options !== undefined ? options : typeChanges ? null : current.options;
     assertOptionsFit(nextType, nextOptions, typeChanges ? null : current.options);
     if (typeChanges && await this.repository.hasValues(current.id)) {
-      throw conflict("The value type of a context variable that has values cannot change");
+      throw typeChangeWithValuesRefused();
     }
     return { valueType: nextType, options: nextOptions };
   }
@@ -190,7 +190,14 @@ export class ContextVariableService {
     this.assertNameIsNotReserved(input.definition?.name);
     await this.requireAgent(input.workspaceId, input.agentId);
     const current = input.variableId ? await this.requireVariable(input.workspaceId, input.variableId) : null;
-    if (input.definition) await this.assertDefinitionTypeFits(current, input.definition);
+    if (input.definition) {
+      // A proposal restates the whole definition as it was drafted, so once the variable has moved
+      // its options and type no longer say what the operator meant: it is stale, whatever they hold.
+      if (current && !draftedAgainst(current, input.expectedVariableUpdatedAt)) {
+        throw conflict("Context variable was updated by another writer; reload before saving again");
+      }
+      await this.assertDefinitionTypeFits(current, input.definition);
+    }
     if (input.enablement) {
       assertEnablementIsWellFormed(input.enablement);
       await this.assertResolverSkillReference(
@@ -257,6 +264,10 @@ export class ContextVariableService {
     }
   }
 }
+
+/** Whether `current` is still the version a proposal was drafted against; no version names any. */
+const draftedAgainst = (current: ContextVariable, expectedUpdatedAt: Date | null): boolean =>
+  expectedUpdatedAt === null || current.updatedAt.getTime() === expectedUpdatedAt.getTime();
 
 const valueFaultMessages: Record<ValueValidationCode, (variable: ContextVariable) => string> = {
   type_mismatch: (variable) => `Context variable value must match declared valueType '${variable.valueType}'`,

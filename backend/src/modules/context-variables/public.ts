@@ -33,6 +33,7 @@ export {
   frozenTestValueInput,
   mayOverwrite,
   resolvedVariableInput,
+  typeChangeWithValuesRefused,
 } from "./domain.js";
 export {
   CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
@@ -40,7 +41,7 @@ export {
   contextVariableOptionSchema,
   normalizeContextVariableOption,
 } from "./optionSchema.js";
-export { validateValue } from "./valueValidation.js";
+export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
 export type {
   AgentContextVariableEnablement,
   ContextScopeKeys,

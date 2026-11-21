@@ -540,6 +540,48 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     });
     expect(archived.payload).toMatchObject({ definition: { options: [options[0], { ...options[1], archived: true }] } });
   });
+
+  it("reports an edit drafted before a teammate added an option as stale, not as a removed option", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const options = [
+      { key: "billing", label: "Billing", description: null, archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ];
+    const topic = makeVariable({ workspaceId, name: "topic", valueType: "enum", options });
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }),
+      contextVariableRepository: makeContextVariableRepository([topic]),
+      agentSkillsService: makeAgentSkillsPort(),
+    });
+    const drafted = await adapter.validatePayload(workspaceId, { agentId, variableId: topic.id }, { description: "What the conversation is about." });
+
+    Object.assign(topic, {
+      options: [...options, { key: "returns", label: "Returns", description: null, archived: false }],
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+    });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, drafted.targetRef, drafted.payload, drafted.versionToken))
+      .toEqual({ outcome: "stale" });
+  });
+
+  it("reports a type change refused because the variable now has values as failed, with that reason", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const plan = makeVariable({ workspaceId, name: "plan" });
+    const contextVariableRepository = makeContextVariableRepository([plan]);
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }), contextVariableRepository, agentSkillsService: makeAgentSkillsPort(),
+    });
+    const drafted = await adapter.validatePayload(workspaceId, { agentId, variableId: plan.id }, { valueType: "json" });
+
+    contextVariableRepository.hasValues.mockResolvedValue(true);
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, drafted.targetRef, drafted.payload, drafted.versionToken)).toEqual({
+      outcome: "failed",
+      reason: "The value type of a context variable that has values cannot change",
+    });
+  });
 });
 
 const makeSkillsHarness = (agentsByWorkspace: Record<string, string[]> = {}) => {

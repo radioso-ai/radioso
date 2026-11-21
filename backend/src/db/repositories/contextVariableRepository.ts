@@ -3,8 +3,10 @@ import { sql } from "kysely";
 
 import {
   CONTEXT_VALUE_WRITER_KINDS,
+  keepsEveryOptionKey,
   mayOverwrite,
   resolvedVariableInput,
+  typeChangeWithValuesRefused,
   validateValue,
   type AgentContextVariableEnablement,
   type ContextValueWriter,
@@ -269,31 +271,52 @@ const requireConversation = async (db: Db, workspaceId: string, conversationId: 
   return conversation.id;
 };
 
+/** A variable's type and options as an edit of its definition reads them under the row lock. */
+interface LockedDefinition {
+  readonly id: string;
+  readonly valueType: ContextVariableValueType;
+  readonly options: readonly ContextVariableOption[] | null;
+}
+
 /**
- * Refuses to change the type of a variable that has values. The row is locked for update before the
- * values are looked for, so a value write in flight, which key-shares it, commits first and is seen.
+ * Locks a variable's row for an edit of its definition and reads what the edit is checked against,
+ * or null when no row matches. With `expectedUpdatedAt`, only the version a proposal was drafted
+ * against matches. Locked for update, so a value write in flight, which key-shares the row, commits
+ * first and is seen, and a second edit waits for this one and reads what it committed.
  */
-const refuseTypeChangeWithValues = async (
+const lockDefinition = async (
   trx: Db,
   workspaceId: string,
   variableId: string,
-  valueType: ContextVariableValueType,
-): Promise<void> => {
-  const current = await trx
+  expectedUpdatedAt: Date | null = null,
+): Promise<LockedDefinition | null> => {
+  const row = await trx
     .selectFrom("context_variables")
-    .select("value_type")
+    .select(["id", "value_type", "options"])
     .where("workspace_id", "=", workspaceId)
     .where("id", "=", variableId)
+    .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), expectedUpdatedAt))
     .forUpdate()
     .executeTakeFirst();
-  if (!current || current.value_type === valueType) return;
+  return row
+    ? { id: row.id, valueType: row.value_type as ContextVariableValueType, options: optionsFromRow(row.options) }
+    : null;
+};
+
+/** Refuses to change the type of a variable that has values; the caller holds its row locked. */
+const refuseTypeChangeWithValues = async (
+  trx: Db,
+  locked: LockedDefinition,
+  valueType: ContextVariableValueType,
+): Promise<void> => {
+  if (locked.valueType === valueType) return;
   const value = await trx
     .selectFrom("context_variable_values")
     .select("id")
-    .where("variable_id", "=", variableId)
+    .where("variable_id", "=", locked.id)
     .limit(1)
     .executeTakeFirst();
-  if (value) throw conflict("The value type of a context variable that has values cannot change");
+  if (value) throw typeChangeWithValuesRefused();
 };
 
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
@@ -320,7 +343,17 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
     return this.db.transaction().execute(async (trx) => {
-      if (input.valueType !== undefined) await refuseTypeChangeWithValues(trx, workspaceId, id, input.valueType);
+      if (input.valueType !== undefined || input.options !== undefined) {
+        const locked = await lockDefinition(trx, workspaceId, id);
+        if (!locked) return null;
+        if (input.valueType !== undefined) await refuseTypeChangeWithValues(trx, locked, input.valueType);
+        // The service checked the options against a read taken before this lock. An edit that
+        // committed since may have added a key this list, drafted without it, would drop.
+        const typeKept = (input.valueType ?? locked.valueType) === locked.valueType;
+        if (input.options !== undefined && typeKept && !keepsEveryOptionKey(locked.options, input.options)) {
+          throw conflict("The options changed while this edit was saved; reload them and try again");
+        }
+      }
       const row = await trx
         .updateTable("context_variables")
         .set({
@@ -695,6 +728,14 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 
       if (input.definition) {
         if (variableId) {
+          // The version first: a definition drafted before the variable moved is stale, whatever
+          // its type and options would make of the row now.
+          const locked = await lockDefinition(trx, input.workspaceId, variableId, input.expectedVariableUpdatedAt);
+          if (!locked) {
+            throw conflict("Context variable was updated by another writer; reload before saving again");
+          }
+          await refuseTypeChangeWithValues(trx, locked, input.definition.valueType);
+          let row: { id: string } | undefined;
           // Wrapped the same way the insert branch below is: a rename onto another variable's
           // name hits the identical context_variables_workspace_id_name_key constraint, just
           // through UPDATE instead of INSERT. The copilot adapter's own draft-time name check
@@ -702,8 +743,6 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           // proposal can still take the name between this proposal's draft and its Apply: without
           // this translation that raw pg driver error isn't an AppError, so isStale() never
           // recognizes it and the proposal reports "failed" instead of "stale".
-          await refuseTypeChangeWithValues(trx, input.workspaceId, variableId, input.definition.valueType);
-          let row: { id: string } | undefined;
           try {
             row = await trx
               .updateTable("context_variables")

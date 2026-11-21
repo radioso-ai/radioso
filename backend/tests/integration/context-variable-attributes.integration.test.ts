@@ -166,7 +166,52 @@ describeIntegration("typed attributes (Postgres)", () => {
     writer.release();
     await writer.done;
 
-    expect(await typeChange).toMatchObject({ statusCode: 409 });
+    expect(await typeChange).toMatchObject({ statusCode: 409, code: "context_variable_has_values" });
+    expect((await repository.get(workspaceId, plan.id))?.valueType).toBe("string");
+  });
+
+  it("refuses an option edit that would drop a key another edit added while it waited", async () => {
+    const topic = await createTopic();
+    // Another edit holds the variable's row and has added `returns`, but has not committed yet.
+    const other = holdOpen(async (trx) => {
+      await trx.selectFrom("context_variables").select("id").where("id", "=", topic.id).forUpdate().executeTakeFirstOrThrow();
+      await trx.updateTable("context_variables")
+        .set({ options: toJsonb([option("billing"), option("shipping"), option("returns")]) })
+        .where("id", "=", topic.id)
+        .execute();
+    });
+    await other.held;
+
+    // Drafted from the list before `returns`: it archives `shipping` and keeps every key it knew.
+    const stale = repository.update(workspaceId, topic.id, { valueType: "enum", options: [option("billing"), option("shipping", true)] })
+      .catch((error: unknown) => error);
+    await pause(200);
+    other.release();
+    await other.done;
+
+    expect(await stale).toMatchObject({ statusCode: 409, code: "conflict" });
+    expect((await repository.get(workspaceId, topic.id))?.options).toEqual([option("billing"), option("shipping"), option("returns")]);
+  });
+
+  it("reports a proposal drafted before the variable changed as stale ahead of a type change its values refuse", async () => {
+    const plan = await createPlan();
+    await repository.upsertValue(plan.id, { type: "session", id: `session-${randomUUID()}` }, "basic", api);
+    const proposal = {
+      workspaceId,
+      agentId,
+      variableId: plan.id,
+      definition: {
+        name: plan.name, description: null, valueType: "json" as const, options: null,
+        trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const,
+      },
+      enablement: null,
+      expectedEnablementUpdatedAt: null,
+    };
+
+    await expect(repository.applyProposal({ ...proposal, expectedVariableUpdatedAt: new Date(plan.updatedAt.getTime() - 1_000) }))
+      .rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+    await expect(repository.applyProposal({ ...proposal, expectedVariableUpdatedAt: plan.updatedAt }))
+      .rejects.toMatchObject({ statusCode: 409, code: "context_variable_has_values" });
     expect((await repository.get(workspaceId, plan.id))?.valueType).toBe("string");
   });
 

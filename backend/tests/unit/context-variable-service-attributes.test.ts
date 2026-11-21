@@ -90,7 +90,8 @@ describe("ContextVariableService typed definitions", () => {
   it("refuses to change the type of a variable that has values", async () => {
     const update = vi.fn(async () => variable({ valueType: "string", options: null }));
     const withValues = serviceWith({ get: async () => variable(), update, hasValues: async () => true });
-    await expect(withValues.update(workspaceId, variableId, { valueType: "string" })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(withValues.update(workspaceId, variableId, { valueType: "string" }))
+      .rejects.toMatchObject({ statusCode: 409, code: "context_variable_has_values" });
     expect(update).not.toHaveBeenCalled();
 
     const empty = serviceWith({ get: async () => variable(), update, hasValues: async () => false });
@@ -113,9 +114,34 @@ describe("ContextVariableService typed definitions", () => {
     await expect(service.applyProposal({ ...proposal, variableId, definition: { ...write, valueType: "enum", options: [option("billing")] } }))
       .rejects.toMatchObject({ statusCode: 400 });
     await expect(service.applyProposal({ ...proposal, variableId, definition: { ...write, valueType: "json", options: null } }))
-      .rejects.toMatchObject({ statusCode: 409 });
+      .rejects.toMatchObject({ statusCode: 409, code: "context_variable_has_values" });
     await expect(service.applyProposal({ ...proposal, variableId: null, definition: { ...write, valueType: "enum", options: null } }))
       .rejects.toMatchObject({ statusCode: 400 });
+    expect(applyProposal).not.toHaveBeenCalled();
+  });
+
+  it("reports a proposal drafted before the variable changed as stale, before it checks the options", async () => {
+    const applyProposal = vi.fn(async () => ({ variableId }));
+    const edited = variable({ options: [...variable().options!, option("returns")], updatedAt: new Date(1_000) });
+    const service = serviceWith({ get: async () => edited, applyProposal, hasValues: async () => true });
+    const drafted = {
+      name: "topic",
+      description: "What the conversation is about.",
+      valueType: "enum" as const,
+      options: variable().options,
+      trustTier: "unverified" as const,
+      sensitivity: "normal" as const,
+      defaultSurfacing: "on_reference" as const,
+    };
+
+    await expect(service.applyProposal({
+      workspaceId, agentId, variableId, definition: drafted,
+      expectedVariableUpdatedAt: new Date(0), enablement: null, expectedEnablementUpdatedAt: null,
+    })).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+    await expect(service.applyProposal({
+      workspaceId, agentId, variableId, definition: { ...drafted, valueType: "string", options: null },
+      expectedVariableUpdatedAt: new Date(0), enablement: null, expectedEnablementUpdatedAt: null,
+    })).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
     expect(applyProposal).not.toHaveBeenCalled();
   });
 });

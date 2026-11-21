@@ -383,13 +383,16 @@ The catalog endpoints create and update the definitions:
 - `name`
 - `description`
 - `valueType`: `string`, `enum`, or `json`. A variable that has a value keeps
-  its type; a `PATCH` that changes it returns `409`.
+  its type; a `PATCH` that changes it returns `409` with the code
+  `context_variable_has_values`.
 - `options`: required for `enum` and refused for other types. Each option is
   `{ "key", "label", "description", "archived" }`; `description` and
   `archived` are optional on input. Keys use letters, digits and underscores,
   start with a letter, and never change. A `PATCH` that sends `options` sends
   the full list with every existing key: set `archived: true` to retire an
-  option, keeping at least one active. Up to 50 options, with descriptions up to
+  option, keeping at least one active. When another edit adds an option while
+  yours is saved, yours returns `409`; read the variable again and resend the
+  list. Up to 50 options, with descriptions up to
   300 characters.
 - `trustTier`: `unverified` or `signed`
 - `sensitivity`: `normal` or `sensitive`

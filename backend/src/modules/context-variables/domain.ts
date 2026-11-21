@@ -1,5 +1,7 @@
 import type { ValueSensitivity } from "@radioso/conversation-contract";
 
+import { AppError } from "../../shared/domain/errors.js";
+
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 import type { FrozenTestValue } from "./testValues.js";
 
@@ -86,6 +88,14 @@ export interface ContextVariableValue {
  */
 export const mayOverwrite = (existing: ContextValueWriter | null, incomingKind: ContextValueWriterKind): boolean =>
   existing === null || incomingKind !== "classifier" || existing.kind === "classifier";
+
+/**
+ * The refusal to change the type of a variable that has values, whose values would no longer be of
+ * it. It carries its own code rather than `conflict`: nothing moved under the writer, so a caller
+ * that reports a moved target as stale reports this one with its reason.
+ */
+export const typeChangeWithValuesRefused = (): AppError =>
+  new AppError(409, "context_variable_has_values", "The value type of a context variable that has values cannot change");
 
 /**
  * A stored or resolved value as a turn reads it. An enum value keeps its key and carries the label

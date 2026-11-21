@@ -49,6 +49,18 @@ const optionFault = (option: ContextVariableOption): OptionsValidationCode | nul
 };
 
 /**
+ * Whether `next` still holds every key of `previous`, archived or not: stored values and filters
+ * name options by key, so an option is archived, never removed.
+ */
+export const keepsEveryOptionKey = (
+  previous: readonly ContextVariableOption[] | null,
+  next: readonly ContextVariableOption[] | null,
+): boolean => {
+  const keys = new Set((next ?? []).map((option) => option.key));
+  return (previous ?? []).every((option) => keys.has(option.key));
+};
+
+/**
  * Whether a definition's options fit its type. `previous` is the stored list when an existing
  * definition is edited: every key it holds must still be there, archived or not, because stored
  * values and filters name options by key. At least one option stays active, so a value can still
@@ -69,6 +81,6 @@ export const validateOptions = (
     if (keys.has(option.key)) return refused("duplicate_option_key");
     keys.add(option.key);
   }
-  if (!(previous ?? []).every((option) => keys.has(option.key))) return refused("option_removed");
+  if (!keepsEveryOptionKey(previous, options)) return refused("option_removed");
   return options.some((option) => !option.archived) ? accepted : refused("active_option_required");
 };

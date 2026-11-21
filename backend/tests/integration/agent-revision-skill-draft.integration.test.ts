@@ -18,7 +18,7 @@ import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentR
 import { AgentSkillRepository, writeAgentSkillIntoDraft } from "../../src/modules/agentSkills/repository.js";
 import { AgentRevisionRuntimeResolver, AgentRevisionService } from "../../src/modules/agents/public.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const url = process.env.INTEGRATION_DATABASE_URL;
 const describeDb = url ? describe : describe.skip;
@@ -211,5 +211,29 @@ describeDb("a skills-only edit across an agent's draft and releases", () => {
     const draft = await revisions.readDraft(workspaceId, agent.id);
     expect(draft?.snapshot.agentSkills?.find((entry) => entry.id === skill.id)?.updatedAt.getTime()).toBeGreaterThan(skill.updatedAt.getTime());
     await expect(revisions.readState(workspaceId, agent.id)).resolves.toMatchObject({ status: "draft_clean" });
+  });
+
+  // Before skill writes were drafted, the per-kind skill routes wrote agent_skills and left the draft
+  // alone, so releases recorded since lack those skills. Migration 268 drops every recorded skill set:
+  // conversations run the live skills, as they did, until the next publish records a complete set.
+  it("runs a skill a release left out once migration 268 drops recorded skill sets, and freezes it at the next publish", async () => {
+    const agent = await agents.create(workspaceId, { name: "Undrafted skill", customInstruction: "Be brief." });
+    await publishDraft(agent.id);
+    const skillId = randomUUID();
+    await database.query(
+      "INSERT INTO agent_skills (id, workspace_id, agent_id, skill_name, kind, config, invocation_mode, enabled) VALUES ($1,$2,$3,'lookup_orders','notify',$4::jsonb,'agent_selectable',true)",
+      [skillId, workspaceId, agent.id, JSON.stringify({ delivery: { recipientEmails: ["orders@acme.example"] } })],
+    );
+    expect(await notifyForVisitor(agent.id, "lookup_orders")).toBe("failed");
+
+    await applyTestMigration(database, "268_drop_incomplete_agent_skill_snapshots.sql");
+
+    expect(await notifyForVisitor(agent.id, "lookup_orders")).toBe("delivered");
+    await expect(revisions.readState(workspaceId, agent.id)).resolves.toMatchObject({ status: "draft_clean" });
+    await publishDraft(agent.id);
+    const published = (await revisions.readState(workspaceId, agent.id))?.publishedRevision;
+    expect(published?.snapshot.agentSkills?.map((skill) => skill.skillName)).toContain("lookup_orders");
+    await skills.update(workspaceId, agent.id, skillId, { enabled: false });
+    expect(await notifyForVisitor(agent.id, "lookup_orders")).toBe("delivered");
   });
 });

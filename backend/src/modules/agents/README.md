@@ -35,9 +35,10 @@ version history (`presentRevisionDetail`): it matches skills by id, compares wha
 rather than write timestamps or list order, and names each change by skill name. Every review
 shows a skill through `redactedRevisionSkill`, settings left out. It leaves out the
 default-answer skill, which carries the agent's retrieval settings and is read live from the
-skills table, and finds no skill change against a snapshot that records none: a release frozen
-before skills were tracked serves the live skills table, which every skill write keeps equal to
-the draft.
+skills table, and finds no skill change against a snapshot that records none. Such a snapshot
+(frozen before skills were tracked, or cleared by migration 268, since the per-kind skill routes
+had left the recorded sets incomplete) serves the live skills table, which every skill write keeps
+equal to the draft, until the agent's next publish records a complete set.
 
 An agent nobody has published answers nothing: `AgentRevisionRuntimeResolver.resolveNew`
 refuses its turn with `agentNotPublished()`, a `404` whose code is `agent_not_published`,

@@ -640,7 +640,7 @@ Public surfaces and key files:
 - `backend/src/app/http/routes/settingsApiConnectionRoutes.ts`
 - `backend/src/shared/domain/skillDataContract/` (typed contract, pure)
 - `backend/src/shared/infra/http/publicHttpRequest.ts` (egress transport)
-- `backend/src/db/migrations/267_api_connections.sql`
+- `backend/src/db/migrations/269_api_connections.sql`
 - Module brief: `backend/src/modules/apiRequestSkills/README.md`; docs: `docs/api-request-skills.md`
 
 Focused checks:

@@ -59,7 +59,7 @@ The routine's next-step selector and the skill-result reply context read the out
 
 ### API connection
 
-- Table `api_connections` (migration 267): `name` unique per workspace case-insensitively, `base_url` (https, or loopback http for local development, by CHECK), `auth_scheme`, `auth_header_name`, `credential_ciphertext` (CONNECTOR_ENCRYPTION_KEY, listed in `ENCRYPTED_FIELD_LOCATIONS`), `default_headers jsonb`, timestamps. A CHECK ties each scheme to its credential and header name.
+- Table `api_connections` (migration 269): `name` unique per workspace case-insensitively, `base_url` (https, or loopback http for local development, by CHECK), `auth_scheme`, `auth_header_name`, `credential_ciphertext` (CONNECTOR_ENCRYPTION_KEY, listed in `ENCRYPTED_FIELD_LOCATIONS`), `default_headers jsonb`, timestamps. A CHECK ties each scheme to its credential and header name.
 - `agent_skills.kind` gains `api_request`; `enforce_agent_skill_target_reference` requires it to target an `api_connection` in its own workspace; a BEFORE DELETE trigger blocks deleting a connection a skill targets. Both raise 23503 `agent_skills_api_request_target_fk`.
 - Base URLs are checked public on save; plain http to this machine is allowed only where `WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK` is set outside production, the webhook destinations' rule. No new environment variable.
 

@@ -45,7 +45,7 @@ Reference: `docs/api-request-skills.md`.
 
 `public.ts` is the module's entry point. Routes live in
 `app/http/routes/settingsApiConnectionRoutes.ts`; migration
-`267_api_connections.sql` creates the table.
+`269_api_connections.sql` creates the table.
 
 ## Observability
 

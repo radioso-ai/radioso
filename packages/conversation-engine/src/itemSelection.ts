@@ -156,9 +156,11 @@ export const resolveItemSlots = (
 
 /**
  * The selector's values on `step`, each item slot resolved ({@link resolveItemSlots}) and every
- * value then checked like any other (#1374). A value for the step's own bound slot that names
- * nothing its latest presentation showed is rejected as no item, so the step asks again rather
- * than leave by an exit whose slot stayed empty.
+ * value then checked like any other (#1374). When the step showed cards in this run, a value for
+ * its own bound slot that names none of them is rejected as no item, so the step asks again rather
+ * than leave by an exit whose slot stayed empty. When it showed none, such as after a search that
+ * failed or found nothing, there is nothing to pick from: the value is dropped and the selector's
+ * exit, such as searching again, still fires.
  */
 export const checkStepSlotValues = (
   routine: Routine,
@@ -171,7 +173,8 @@ export const checkStepSlotValues = (
   const resolved = resolveItemSlots(routine, values, state, turn, step);
   const checked = checkDeclaredSlotValues(routine, resolved, blocked);
   const bound = step?.present?.slot;
-  if (bound === undefined || !stated(values[bound]) || Object.hasOwn(resolved, bound)) {
+  const showedCards = (shownBy(routine, state, step, turn)?.items.length ?? 0) > 0;
+  if (bound === undefined || !showedCards || !stated(values[bound]) || Object.hasOwn(resolved, bound)) {
     return checked;
   }
   return { ...checked, rejected: [...checked.rejected, { key: bound, reason: blocked.has(bound) ? "consent" : "type_mismatch" }] };

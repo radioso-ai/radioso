@@ -690,8 +690,10 @@ export const validateRoutineDefinition = (
     }
   }
 
+  // A step or ending that writes `{{slot.<name>}}` reads a declared slot or a variable a tool
+  // step's outputs set, by the same name-level rule a field guard and an input binding follow.
   for (const key of referencedSlotKeys) {
-    if (!slotKeys.has(key)) {
+    if (!knownVariableNames.has(key)) {
       diagnostics.push({
         code: "referenced_undeclared_slot",
         location: `slot:${key}`,

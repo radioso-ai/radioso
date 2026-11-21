@@ -661,9 +661,19 @@ export interface SlotCollectionStep {
   kind: RoutineStepKind;
   instruction: string;
   ordinal: number;
-  /** Read for a presenting step's `present.slot` only. */
+  /** Read for a presenting step's `present.slot` and a tool step's `outputAssignments` only. */
   metadata?: unknown;
 }
+
+/** The variables a tool step's outputs set (`metadata.outputAssignments` targets); none for any other step. */
+const assignedVariablesOf = (step: SlotCollectionStep): string[] => {
+  const assignments = step.kind === "tool" && typeof step.metadata === "object" && step.metadata !== null
+    ? (step.metadata as { outputAssignments?: unknown }).outputAssignments
+    : undefined;
+  return typeof assignments === "object" && assignments !== null
+    ? Object.values(assignments).filter((target): target is string => typeof target === "string")
+    : [];
+};
 
 /**
  * Which chat step collects which slots, by the single rule shared across the
@@ -673,6 +683,8 @@ export interface SlotCollectionStep {
  * `{{slot.x}}`; a later reference is a *use* (interpolation), not a re-collection.
  * Only `chat` steps collect from the customer. A slot a presenting step binds
  * (`present.slot`) is that step's, whatever references it earlier: only a pick there fills it.
+ * A variable a tool step's outputs set (`outputAssignments`) is never collected: a chat step
+ * that references it reads the value the skill returned.
  *
  * The compiler uses this to auto-gate the collecting step and to stamp `collectsSlots`
  * metadata; the population analysis uses it to decide which step *produces* a variable;
@@ -687,6 +699,7 @@ export const collectedSlotsByStep = (
   steps: readonly SlotCollectionStep[],
 ): ReadonlyMap<string, string[]> => {
   const chatSteps = [...steps].sort((left, right) => left.ordinal - right.ordinal).filter((step) => step.kind === "chat");
+  const assigned = new Set(steps.flatMap(assignedVariablesOf));
   const boundSlotOf = (step: SlotCollectionStep): string[] => {
     const bound = presentBindingOf(step)?.slot;
     return bound ? [bound] : [];
@@ -695,7 +708,7 @@ export const collectedSlotsByStep = (
   const claims = [
     ...chatSteps.flatMap((step) => boundSlotOf(step).map((slot) => [slot, step.stableStepId] as const)),
     ...chatSteps.flatMap((step) => collectSlotKeys(step.instruction).map((slot) => [slot, step.stableStepId] as const)),
-  ];
+  ].filter(([slot]) => !assigned.has(slot));
   for (const [slot, stepId] of claims) {
     if (!firstReferencerByKey.has(slot)) {
       firstReferencerByKey.set(slot, stepId);

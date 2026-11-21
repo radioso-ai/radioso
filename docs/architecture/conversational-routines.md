@@ -168,7 +168,11 @@ First, which step *collects* a slot: a slot is collected by the **first chat ste
 your reply, {{slot.name}}". Only the collecting step is auto-gated or fast-forwarded;
 a step that merely uses a filled slot still renders its message rather than being
 skipped. Only `chat` steps count — a tool/action step that interpolates a slot does
-not own it. Caveat: "first" is ordinal order, not execution order. In a branching
+not own it. A variable a tool step's `outputAssignments` set is never collected:
+a chat step or an ending that writes `{{slot.first_name}}` for it reads the value
+the skill returned, and the validator counts the reference as declared by the
+assignment, the same name-level rule a field guard and an input binding follow.
+Caveat: "first" is ordinal order, not execution order. In a branching
 routine where two branches each ask the same slot, only the lower-ordinal branch is
 treated as collecting it; if the other branch runs, it won't auto-gate/fast-forward
 for that slot. This is fine for the linear common case; branch-specific collection of

@@ -107,6 +107,12 @@ skill types.
 The invocation mode is `routine_named`: routines run API requests. A directive
 or an agent's own tool choice cannot call one.
 
+Creating, editing, switching or deleting the skill is a draft change, like any
+other skill write: Test Chat runs the draft right away, and visitors get the
+change once you publish. A conversation runs the method, path, params and
+outputs of the release it started on. The connection is a workspace setting, so
+a new base URL or credential applies to every conversation at once.
+
 ### Config
 
 | Key | Meaning |
@@ -229,7 +235,6 @@ Reasons on `failed`:
 | `blocked` | The host resolved to a private address. |
 | `response_too_large` | A body over 1 MB. |
 | `credential_unavailable` | The stored credential could not be read. |
-| `method_not_read_only` | The routine ran the skill as a read-only `GET`, but its method has since changed. |
 
 A skill makes one attempt and does not retry. Redirects are followed only for
 `GET`, only within the same origin, up to three times.

@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-16
+last_updated: 2026-11-21
 ---
 
 # Agents and skills
@@ -47,9 +47,9 @@ changes the draft: while the draft's skills differ from the published release,
 `revision-state` reports `draft_dirty`, Test Chat runs the draft, and visitors
 get the change once you publish. Until then a conversation runs the skills of
 the release it started on, so switching a skill off or changing its settings
-reaches no running conversation before you publish. The MCP connections, webhook
-destinations, and mailboxes a skill uses are workspace settings and apply at
-once.
+reaches no running conversation before you publish. The MCP connections, API
+connections, webhook destinations, and mailboxes a skill uses are workspace
+settings and apply at once.
 
 `GET .../revisions/{revisionId}` lists each skill the revision adds, removes, or
 changes against its base release under `scopedChanges.agentSkills`, by

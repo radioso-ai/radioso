@@ -49,7 +49,7 @@ The routine's next-step selector and the skill-result reply context read the out
 ### Edge Cases
 
 - A path value that is empty, `.` or `..`, or holds a `/` or `\` (also once percent-decoded), is `invalid_input`: it cannot walk the base path.
-- A skill the routine resolved as a read-only GET whose method has since changed fails with `method_not_read_only` instead of sending.
+- The routine resolver and the executor read the same skill row, the one the conversation's release froze, so the read-only judgement a safe test makes is the request the executor sends.
 - A redirect is followed only for a GET, only within the origin, at most three hops; any other is `redirect_refused`.
 - An empty body is no data: every output is absent, so only a required one fails the skill.
 - An empty list output counts as absent, so a field guard's "is set" means "found any".
@@ -91,7 +91,7 @@ ListOutput   = { path, type: "list", description?, required = false, maxItems = 
 
 - Placement: a `{key}` placeholder takes that param URL-encoded; the rest go in the query string for GET and DELETE, or a JSON body for POST, PUT and PATCH, where a dotted key nests. Keys follow the webhook payload-key rule (`shared/domain/skillPayloadKey.ts`).
 - Value types are the routine slot types without `item` (pinned by a test). Coercion: text as written; number from a number or a plain decimal; boolean from `true`/`false`; date as an ISO date for inputs, an ISO date or date-time for outputs; email trimmed and checked by the email slot's rule.
-- Outcomes: `completed`, `not_found`, `rejected`, `missing_input`, `invalid_input`, `unverified`, `failed`. Failure reasons: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout`, `network`, `upstream_error`, `auth_rejected`, `rate_limited`, `redirect_refused`, `connection_not_found`, and the cases the design leaves unnamed: `blocked`, `response_too_large`, `credential_unavailable`, `method_not_read_only`, `skill_not_found`, `invalid_config`, `context_missing`. No retries.
+- Outcomes: `completed`, `not_found`, `rejected`, `missing_input`, `invalid_input`, `unverified`, `failed`. Failure reasons: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout`, `network`, `upstream_error`, `auth_rejected`, `rate_limited`, `redirect_refused`, `connection_not_found`, and the cases the design leaves unnamed: `blocked`, `response_too_large`, `credential_unavailable`, `skill_not_found`, `invalid_config`, `context_missing`. No retries.
 - Limits: 10 s for the whole request, 1 MB response read on the stream, 16 KB of serialized outputs, 16 KB of test-request body.
 
 ### What the model reads

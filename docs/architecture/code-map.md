@@ -628,7 +628,9 @@ Focused checks:
 Owns API connections (workspace-owned base URL and encrypted credential) and the
 `api_request` skill: parameter placement, typed input resolution with the
 verified-only gate, the executor, outcome mapping, and the connection test
-request. Routines run these skills; the typed output contract is shared.
+request. Routines run these skills; the typed output contract is shared. The
+routine resolver and the executor read the skill row from the conversation's
+release (`app/composition/conversationSkills.ts`); the connection is read live.
 
 Public surfaces and key files:
 
@@ -645,8 +647,8 @@ Public surfaces and key files:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/contract/settings-api-connections.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/unit/release-pinned-skill-runtime.test.ts tests/contract/settings-api-connections.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts tests/integration/agent-revision-skill-draft.integration.test.ts`
 
 ## Notify
 

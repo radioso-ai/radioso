@@ -47,6 +47,8 @@ Open the agent's **Skills** list, choose **Add new skill**, and pick **API reque
 
 The skill runs from routines only. It cannot be bound to a directive or picked by the agent mid-conversation.
 
+Saving the skill changes the agent's draft. Test Chat runs it right away, and visitors get it once you choose **Review & publish**; a conversation keeps the request its release started with. The connection is a workspace setting, so a new base URL or credential reaches every conversation at once.
+
 ### Use it in a routine
 
 Add a skill step that names the skill. The step reads `order_number` from the routine variable with that name, or from the one you set with `slotBinding`. Set `@status` from the `status` output, and add a **Rule** row for `not_found` that asks the visitor to check the number.
@@ -116,7 +118,7 @@ The agent reads outputs as typed, described lines, such as `status — Order sta
 | `unverified` | A `verifiedOnly` value was not verified. |
 | `failed` | Anything else, with a reason. |
 
-A `failed` outcome carries one reason: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout` (the whole request has 10 seconds), `network`, `upstream_error` (a 5xx or another unexpected status), `auth_rejected` (401 or 403), `rate_limited` (429), `redirect_refused`, `connection_not_found`, `blocked` (the host resolved to a private address), `response_too_large` (a body over 1 MB), `credential_unavailable` or `method_not_read_only` (the routine ran the skill as a read-only `GET` but its method has since changed).
+A `failed` outcome carries one reason: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout` (the whole request has 10 seconds), `network`, `upstream_error` (a 5xx or another unexpected status), `auth_rejected` (401 or 403), `rate_limited` (429), `redirect_refused`, `connection_not_found`, `blocked` (the host resolved to a private address), `response_too_large` (a body over 1 MB) or `credential_unavailable`.
 
 A skill makes one attempt, with no retries. Redirects are followed only for `GET`, within the same origin, up to three.
 

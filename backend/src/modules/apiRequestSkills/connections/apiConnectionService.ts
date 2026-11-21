@@ -1,5 +1,5 @@
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
-import { isLocalDevelopmentHttpUrl } from "../../../shared/domain/publicNetwork.js";
+import { isLocalDevelopmentHttpUrl, PublicHostUnresolvedError, PublicNetworkPolicyError } from "../../../shared/domain/publicNetwork.js";
 import {
   decryptField,
   encryptField,
@@ -142,12 +142,25 @@ const isConstraint = (error: unknown, constraint: string): boolean => pgErrorMet
  * and the runtime target a request is sent through. The credential is write-only: reads return
  * only its masked tail.
  */
+/**
+ * The public-network guard's own refusal, worded for a base URL: the guard words it for any URL.
+ * Anything else is no refusal, such as a fault in the guard, and goes on as it is.
+ */
+const baseUrlRefusal = (error: unknown): unknown => {
+  if (error instanceof PublicHostUnresolvedError) return badRequest("Base URL host could not be resolved");
+  if (error instanceof PublicNetworkPolicyError) return badRequest("Base URL must resolve to a publicly routable host");
+  return error;
+};
+
 export class ApiConnectionService implements ApiConnectionTargetResolver {
   constructor(private readonly options: {
     repository: ApiConnectionRepositoryPort;
     auditService: ApiConnectionAuditPort;
     encryption: { key: FieldEncryptionKeyRing | undefined };
-    /** Checks a base URL's host resolves to a public address when it is saved. */
+    /**
+     * Checks a base URL's host resolves to a public address when it is saved. Refuses with
+     * `PublicNetworkPolicyError`, or its `PublicHostUnresolvedError` when the host does not resolve.
+     */
     assertPublicUrl: (url: string) => Promise<void>;
     /** Plain http to this machine as a base URL: local development and e2e only. */
     allowHttpLoopback?: boolean;
@@ -338,9 +351,8 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
     if (url.protocol !== "https:") throw badRequest("API connection base URL must use https");
     try {
       await this.options.assertPublicUrl(normalized);
-    } catch {
-      // The composed guard words its refusal for its own subject (a website); this one is a base URL.
-      throw badRequest("Base URL must resolve to a publicly routable host");
+    } catch (error) {
+      throw baseUrlRefusal(error);
     }
     return normalized;
   }

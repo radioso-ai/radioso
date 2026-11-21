@@ -10,6 +10,7 @@ import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import type { SkillExecutorRegistry } from "../../../modules/skills/public.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { sendPublicHttpRequest } from "../../../shared/infra/http/publicHttpRequest.js";
+import { assertPublicHttpTarget } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
@@ -26,12 +27,14 @@ type ApiRequestEnv = Pick<
 const allowsHttpLoopback = (env: ApiRequestEnv): boolean =>
   env.NODE_ENV !== "production" && env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true;
 
-/** Workspace API connections, sending through the public egress policy. */
+/**
+ * Workspace API connections, sending through the public egress policy. A base URL is checked with
+ * the shared public-network guard, whose refusal tells a private host from one that does not resolve.
+ */
 export const buildApiConnectionService = (input: {
   db: Db;
   env: ApiRequestEnv;
   auditService: Pick<AuditPort, "record">;
-  assertPublicUrl: (url: string) => Promise<void>;
 }): ApiConnectionService => {
   const allowHttpLoopback = allowsHttpLoopback(input.env);
   const send: ApiRequestSender = (request, limits) => sendPublicHttpRequest(request, limits, { allowHttpLoopback });
@@ -39,7 +42,7 @@ export const buildApiConnectionService = (input: {
     repository: new ApiConnectionRepository(input.db),
     auditService: input.auditService,
     encryption: { key: connectorEncryptionKeys(input.env) },
-    assertPublicUrl: input.assertPublicUrl,
+    assertPublicUrl: (url) => assertPublicHttpTarget(url),
     allowHttpLoopback,
     send,
   });

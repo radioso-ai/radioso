@@ -101,6 +101,20 @@ describeIntegration("typed attributes (Postgres)", () => {
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("keeps a value sent under an uppercase conversation id under the conversation's own id, where its erasure finds it", async () => {
+    const topic = await createTopic();
+    const conversationId = await createConversation();
+    const sent = { type: "conversation" as const, id: conversationId.toUpperCase() };
+
+    expect(await repository.upsertValue(topic.id, sent, "billing", api))
+      .toMatchObject({ scope: { type: "conversation", id: conversationId } });
+    expect(await repository.readValue(topic.id, sent)).toMatchObject({ data: "billing" });
+
+    await new ContextVariableValueEraser(database.kysely).erase({ kind: "conversations", workspaceId, conversationIds: [conversationId] });
+    expect(await repository.readValue(topic.id, sent)).toBeNull();
+    expect(await repository.hasValues(topic.id)).toBe(false);
+  });
+
   it("reads a value written before writers were recorded as the API's", async () => {
     const topic = await createTopic();
     const scope = { type: "session" as const, id: `session-${randomUUID()}` };

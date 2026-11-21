@@ -144,6 +144,13 @@ const optionsFromRow = (value: unknown): readonly ContextVariableOption[] | null
 const optionsToRow = (options: readonly ContextVariableOption[] | null | undefined) =>
   options ? toJsonb(options) : null;
 
+/**
+ * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in
+ * lowercase, so an id sent in uppercase still names the stored value.
+ */
+const storedScopeId = (scope: ContextVariableScope): string =>
+  scope.type === "conversation" ? scope.id.toLowerCase() : scope.id;
+
 /** The stored writers an incoming writer may replace, under the module's overwrite rule. */
 const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
   CONTEXT_VALUE_WRITER_KINDS.filter((existing) => mayOverwrite({ kind: existing, ref: null }, incoming));
@@ -578,9 +585,10 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .select(["workspace_id"])
       .where("id", "=", variableId)
       .executeTakeFirstOrThrow();
-    if (scope.type === "conversation") {
-      await this.requireConversation(variable.workspace_id, scope.id);
-    }
+    // A conversation is keyed by its own id, in the form every reader compares against.
+    const scopeId = scope.type === "conversation"
+      ? await this.requireConversation(variable.workspace_id, scope.id)
+      : scope.id;
 
     const row = await this.db
       .insertInto("context_variable_values")
@@ -589,7 +597,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         workspace_id: variable.workspace_id,
         variable_id: variableId,
         scope_type: scope.type,
-        scope_id: scope.id,
+        scope_id: scopeId,
         data: toJsonb(data),
         last_modified: currentTimestamp(),
         written_by_kind: writtenBy.kind,
@@ -611,8 +619,11 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return row ? mapContextVariableValueRow(row) : null;
   }
 
-  /** A conversation-scope value names a conversation of its own workspace, so its erasure reaches it. */
-  private async requireConversation(workspaceId: string, conversationId: string): Promise<void> {
+  /**
+   * A conversation-scope value names a conversation of its own workspace, so its erasure reaches it.
+   * Returns the conversation's id as stored, whatever case the caller sent it in.
+   */
+  private async requireConversation(workspaceId: string, conversationId: string): Promise<string> {
     const conversation = await this.db
       .selectFrom("conversations")
       .select("id")
@@ -620,6 +631,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .where("id", "=", conversationId)
       .executeTakeFirst();
     if (!conversation) throw notFound("Conversation not found");
+    return conversation.id;
   }
 
   async hasValues(variableId: string): Promise<boolean> {
@@ -638,7 +650,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .select(contextVariableValueColumns)
       .where("variable_id", "=", variableId)
       .where("scope_type", "=", scope.type)
-      .where("scope_id", "=", scope.id)
+      .where("scope_id", "=", storedScopeId(scope))
       .executeTakeFirst();
     return row ? mapContextVariableValueRow(row) : null;
   }
@@ -648,7 +660,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .deleteFrom("context_variable_values")
       .where("variable_id", "=", variableId)
       .where("scope_type", "=", scope.type)
-      .where("scope_id", "=", scope.id)
+      .where("scope_id", "=", storedScopeId(scope))
       .executeTakeFirst();
     return (result?.numDeletedRows ?? 0n) > 0n;
   }

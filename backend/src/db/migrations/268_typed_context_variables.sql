@@ -17,27 +17,38 @@
 -- key is a short string, while other values may be up to 32 KB, past the size a btree entry can
 -- hold, so the index takes only short string values and never refuses a write.
 --
--- Locks. The constraint changes and the index take each table's lock until the migration commits:
--- writes to it wait, reads of `context_variables` do not. Both tables are small. The wait for each
--- lock is bounded to three seconds; a deploy that hits it rolls back and a retry is safe.
+-- Locks. The runner applies a migration file in one transaction, so every lock taken here is held
+-- until it commits, and an index cannot be built CONCURRENTLY. Each ALTER takes ACCESS EXCLUSIVE on
+-- its table: until the commit, every read and write of `context_variables` and
+-- `context_variable_values` waits, a chat turn's read of its attributes included. The new columns'
+-- defaults are catalog changes. The CHECKs are added NOT VALID, which binds new rows at once, and
+-- then validated, which scans each table under the lock already held; the index build is the other
+-- scan. Both tables are small. The wait for each lock is bounded to three seconds; a deploy that
+-- hits it rolls back and a retry is safe.
 SET LOCAL lock_timeout = '3s';
 
 ALTER TABLE context_variables
   DROP CONSTRAINT context_variables_value_type_check,
-  ADD CONSTRAINT context_variables_value_type_check CHECK (value_type IN ('string', 'json', 'enum')),
+  ADD CONSTRAINT context_variables_value_type_check CHECK (value_type IN ('string', 'json', 'enum')) NOT VALID,
   ADD COLUMN options JSONB NULL,
   ADD CONSTRAINT context_variables_options_check CHECK (
     (value_type = 'enum') = (options IS NOT NULL AND jsonb_typeof(options) = 'array')
-  );
+  ) NOT VALID;
+
+ALTER TABLE context_variables VALIDATE CONSTRAINT context_variables_value_type_check;
+ALTER TABLE context_variables VALIDATE CONSTRAINT context_variables_options_check;
 
 ALTER TABLE context_variable_values
   DROP CONSTRAINT context_variable_values_scope_type_check,
   ADD CONSTRAINT context_variable_values_scope_type_check
-    CHECK (scope_type IN ('conversation', 'session', 'customer', 'agent', 'workspace')),
-  ADD COLUMN written_by_kind TEXT NOT NULL DEFAULT 'api'
-    CONSTRAINT context_variable_values_written_by_kind_check
-    CHECK (written_by_kind IN ('api', 'operator', 'routine', 'classifier')),
+    CHECK (scope_type IN ('conversation', 'session', 'customer', 'agent', 'workspace')) NOT VALID,
+  ADD COLUMN written_by_kind TEXT NOT NULL DEFAULT 'api',
+  ADD CONSTRAINT context_variable_values_written_by_kind_check
+    CHECK (written_by_kind IN ('api', 'operator', 'routine', 'classifier')) NOT VALID,
   ADD COLUMN written_by_ref TEXT NULL;
+
+ALTER TABLE context_variable_values VALIDATE CONSTRAINT context_variable_values_scope_type_check;
+ALTER TABLE context_variable_values VALIDATE CONSTRAINT context_variable_values_written_by_kind_check;
 
 CREATE INDEX idx_context_variable_values_variable_scope_data
   ON context_variable_values (variable_id, scope_type, data)

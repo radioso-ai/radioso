@@ -80,6 +80,10 @@ locals {
   # late a subscribed URL hears of an event whose post-commit wake was lost. Cloud Scheduler's
   # finest cadence.
   workspace_event_delivery_schedule = "* * * * *"
+  # Every 15 minutes, matching WEBSITE_RECRAWL_INTERVAL_MS in websiteRecrawl.ts: a source whose
+  # recrawl is due is queued at most this late, and each source's own time carries up to an hour
+  # of jitter anyway.
+  website_recrawl_schedule = "*/15 * * * *"
   agent_bundle_import_cleanup_schedule = coalesce(
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",

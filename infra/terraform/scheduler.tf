@@ -31,6 +31,7 @@ locals {
   voice_recording_erasure_recovery_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/voice-recording-erasure-recovery/run" : null
   identity_nonce_prune_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/identity-nonce-prune/run" : null
   workspace_event_delivery_url         = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/workspace-event-delivery/run" : null
+  website_recrawl_url                  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/website-recrawl/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -344,6 +345,32 @@ resource "google_cloud_scheduler_job" "identity_nonce_prune" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.identity_nonce_prune_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Queues a crawl for every website source whose scheduled recrawl is due. Each run claims a bounded
+# batch of due sources and moves each to its next time first, so a backlog drains over the next runs.
+resource "google_cloud_scheduler_job" "website_recrawl" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-website-recrawl"
+  region           = var.region
+  schedule         = local.website_recrawl_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.website_recrawl_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.website_recrawl_url
     }
   }
 

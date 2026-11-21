@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-16
+last_updated: 2026-11-21
 ---
 
 # Agents and skills
@@ -354,18 +354,43 @@ The main tuning fields are:
 
 ## Context variables
 
-Context variables are workspace declarations that an agent may enable per agent.
-They are separate from skills. A skill is something the assistant can do; a
-context variable is data the turn may resolve and use.
+Context variables are the API's name for the attributes the dashboard shows:
+workspace definitions of typed facts about a conversation or a visitor, which
+an agent may enable per agent. They are separate from skills. A skill is
+something the assistant can do; a context variable is data the turn may
+resolve and use.
 
-The catalog endpoints create and update host-defined variable declarations:
+The catalog endpoints create and update the definitions:
 
 - `name`
 - `description`
-- `valueType`: `string` or `json`
+- `valueType`: `string`, `enum`, or `json`. A variable that has a value keeps
+  its type; a `PATCH` that changes it returns `409`.
+- `options`: required for `enum` and refused for other types. Each option is
+  `{ "key", "label", "description", "archived" }`; `description` and
+  `archived` are optional on input. Keys use letters, digits and underscores,
+  start with a letter or underscore, and never change. A `PATCH` that sends
+  `options` sends the full list with every existing key: set `archived: true`
+  to retire an option. Up to 50 options, with descriptions up to 300
+  characters.
 - `trustTier`: `unverified` or `signed`
 - `sensitivity`: `normal` or `sensitive`
 - `defaultSurfacing`: `always`, `on_reference`, or `operator_only`
+
+```json
+{
+  "name": "topic",
+  "description": "What the conversation is about.",
+  "valueType": "enum",
+  "options": [
+    { "key": "billing", "label": "Billing", "description": "Invoices, refunds and payment methods." },
+    { "key": "shipping", "label": "Shipping" }
+  ],
+  "trustTier": "unverified",
+  "sensitivity": "normal",
+  "defaultSurfacing": "on_reference"
+}
+```
 
 The per-agent enablement endpoints choose how a catalog variable is wired for
 one agent:
@@ -393,10 +418,20 @@ Host backends push runtime values through
 }
 ```
 
+The value matches the variable's type: a string for `string`, the key of an
+active option for `enum`, any JSON for `json`. A `conversation` scope takes the
+conversation's id and works on every channel; an id that names no conversation
+of the workspace returns `404`.
+
 Values resolve from most specific to least specific scope:
-`session`, `customer`, `agent`, then `workspace`. Use the narrowest scope that
-matches the data. For example, a cart usually belongs to a session or customer;
-a market-wide promotion may belong to an agent or workspace.
+`conversation`, `session`, `customer`, `agent`, then `workspace`. Use the
+narrowest scope that matches the data. For example, a conversation's topic
+belongs to the conversation, a cart to a session or customer, and a
+market-wide promotion to an agent or workspace.
+
+Each value carries `writtenBy`, its last writer. A value written through this
+endpoint reads `{ "kind": "api", "ref": "<id>" }`, where `ref` is the API
+credential's id, or the teammate's user id for a dashboard session.
 
 ## Contact requests
 

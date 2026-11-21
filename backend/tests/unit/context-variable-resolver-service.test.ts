@@ -263,7 +263,7 @@ describe("ContextVariableResolverService", () => {
 
     await expect(service.resolveForEnablements(workspaceId, agentId, [
       enablement({ source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null }),
-    ], [conversationScope, ...scopes])).resolves.toMatchObject([{ name: "topic", value: "billing" }]);
+    ], [conversationScope, ...scopes])).resolves.toEqual([expect.objectContaining({ name: "topic", value: "billing", label: "Billing" })]);
     expect(repository.readValue).toHaveBeenCalledTimes(1);
   });
 
@@ -278,7 +278,7 @@ describe("ContextVariableResolverService", () => {
     const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: "silver" })) };
     const { service } = createService({ repository, resolver });
 
-    await expect(service.resolveForAgent(workspaceId, agentId, scopes)).resolves.toMatchObject([{ value: "gold" }]);
+    await expect(service.resolveForAgent(workspaceId, agentId, scopes)).resolves.toMatchObject([{ value: "gold", label: "Gold" }]);
     expect(resolver.resolve).not.toHaveBeenCalled();
   });
 

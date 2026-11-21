@@ -147,7 +147,7 @@ describeIntegration("typed attributes (Postgres)", () => {
     await repository.upsertValue(topic.id, { type: "conversation", id: conversationId }, "billing", api);
 
     const resolved = await repository.resolveForAgent(workspaceId, agentId, scopes);
-    expect(resolved.find((variable) => variable.name === topic.name)?.value).toBe("billing");
+    expect(resolved.find((variable) => variable.name === topic.name)).toMatchObject({ value: "billing", label: "Billing" });
   });
 
   it("erases a conversation's values with it and exports them with their writer", async () => {

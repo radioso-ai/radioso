@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import {
   CONTEXT_VALUE_WRITER_KINDS,
   mayOverwrite,
+  resolvedVariableInput,
   type AgentContextVariableEnablement,
   type ContextValueWriter,
   type ContextValueWriterKind,
@@ -683,14 +684,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       if (!value) {
         continue;
       }
-      resolved.push({
-        name: variable.name,
-        description: variable.description,
-        value: value.data,
-        surfacing: enablement.surfacing,
-        sensitive: variable.sensitivity === "sensitive",
-        trust: variable.trustTier === "signed" ? "verified" : "unverified",
-      });
+      resolved.push(resolvedVariableInput(enablement, variable, value.data));
     }
 
     return resolved;

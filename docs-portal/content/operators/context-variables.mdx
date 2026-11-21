@@ -140,6 +140,12 @@ valid for as long as a value holds it. An archived option is no longer accepted
 as a new value; a value that already holds it keeps it. Restore the option to
 offer it again.
 
+A value is stored as its key, and a turn reads it by its option. A directive
+condition sees both, as `{ "key": "billing", "label": "Billing" }`, so a
+condition written in your team's language matches the label. The answer prompt
+and a routine step's `{{context.topic}}` show the label. A skill input bound to
+the attribute receives the key, the identifier your own systems act on.
+
 The dashboard supports one source:
 
 - **Pushed API** — the host backend writes values through the REST API.

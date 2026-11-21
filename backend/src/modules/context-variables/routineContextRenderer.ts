@@ -80,8 +80,11 @@ const pageExcerptEvidence = (data: unknown): string | null => {
     : `<${PAGE_EXCERPT_TAG}>${content.replace(PAGE_EXCERPT_TAG_START, "&lt;")}</${PAGE_EXCERPT_TAG}>`;
 };
 
-const stagedValue = (data: unknown): unknown =>
-  isRecord(data) && data.kind === "variable" && "value" in data ? data.value : data;
+// An enum value reads as its option's label; every other value as itself.
+const stagedValue = (data: unknown): unknown => {
+  if (!isRecord(data) || data.kind !== "variable" || !("value" in data)) return data;
+  return typeof data.label === "string" ? data.label : data.value;
+};
 
 // `name` is written into the tag attribute unescaped: it comes from the engine's
 // `{{context.<name>}}` capture, an identifier that cannot hold `&`, `<`, `>` or `"`.

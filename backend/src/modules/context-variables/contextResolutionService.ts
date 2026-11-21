@@ -25,6 +25,8 @@ export interface ResolvedVariableInput {
   name: string;
   description?: string | null;
   value: unknown;
+  /** The label of the option an enum value's key names; absent for every other type. */
+  label?: string;
   surfacing: ContextVariableSurfacing;
   sensitive?: boolean;
   trust?: "unverified" | "verified";
@@ -162,6 +164,7 @@ export const resolveContextForTurn = (
       name,
       description: variable.description ?? null,
       value: variable.value,
+      ...(variable.label !== undefined ? { label: variable.label } : {}),
       trust: variable.trust ?? "unverified",
     };
     fragments.push(fragment);
@@ -176,7 +179,10 @@ export const resolveContextForTurn = (
         sensitive: variable.sensitive ?? false,
       }),
     );
-    snapshotEntries.push({ name, value: variable.value, sensitive: variable.sensitive });
+    // An enum value reaches conditions as its key and label, so one written in the operator's
+    // language matches; a sensitive one is masked whole.
+    const snapshotValue = variable.label !== undefined ? { key: variable.value, label: variable.label } : variable.value;
+    snapshotEntries.push({ name, value: snapshotValue, sensitive: variable.sensitive });
   }
 
   if (fragments.length === 0) {

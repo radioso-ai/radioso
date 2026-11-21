@@ -1,6 +1,6 @@
 import type { ValueSensitivity } from "@radioso/conversation-contract";
 
-import type { ContextVariableSurfacing } from "./contextResolutionService.js";
+import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 
 export type ContextVariableValueType = "string" | "json" | "enum";
 export type ContextVariableTrustTier = "unverified" | "signed";
@@ -85,6 +85,30 @@ export interface ContextVariableValue {
  */
 export const mayOverwrite = (existing: ContextValueWriter | null, incomingKind: ContextValueWriterKind): boolean =>
   existing === null || incomingKind !== "classifier" || existing.kind === "classifier";
+
+/**
+ * A stored or resolved value as a turn reads it. An enum value keeps its key and carries the label
+ * of the option it names, archived or not: a condition matches the label, a prompt shows it, and a
+ * skill input bound to the variable receives the key.
+ */
+export const resolvedVariableInput = (
+  enablement: Pick<AgentContextVariableEnablement, "surfacing">,
+  variable: ContextVariable,
+  value: unknown,
+): ResolvedVariableInput => {
+  const option = variable.valueType === "enum"
+    ? variable.options?.find((candidate) => candidate.key === value)
+    : undefined;
+  return {
+    name: variable.name,
+    description: variable.description,
+    value,
+    ...(option ? { label: option.label } : {}),
+    surfacing: enablement.surfacing,
+    sensitive: variable.sensitivity === "sensitive",
+    trust: variable.trustTier === "signed" ? "verified" : "unverified",
+  };
+};
 
 /** The keys a turn reads stored values under. */
 export interface ContextScopeKeys {

@@ -2,12 +2,13 @@ import type { ContextVariableResolverRepositoryPort } from "./repository.js";
 import { notFound } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type {
-  AgentContextVariableEnablement,
-  ContextValueWriter,
-  ContextVariable,
-  ContextVariableScope,
-  ContextVariableValue,
+import {
+  resolvedVariableInput,
+  type AgentContextVariableEnablement,
+  type ContextValueWriter,
+  type ContextVariable,
+  type ContextVariableScope,
+  type ContextVariableValue,
 } from "./domain.js";
 import type { ResolvedVariableInput } from "./contextResolutionService.js";
 import { validateValue } from "./valueValidation.js";
@@ -106,7 +107,7 @@ export class ContextVariableResolverService {
       if (enablement.source === "pushed") {
         for (const scope of scopes) {
           const value = await this.repository.readValue(variable.id, scope);
-          if (value) { resolved.push(mapResolvedVariable(enablement, variable, value.data)); break; }
+          if (value) { resolved.push(resolvedVariableInput(enablement, variable, value.data)); break; }
         }
         continue;
       }
@@ -158,7 +159,7 @@ export class ContextVariableResolverService {
           variableId: variable.id,
           variableName: variable.name,
         });
-        return mapResolvedVariable(enablement, variable, cached.data);
+        return resolvedVariableInput(enablement, variable, cached.data);
       }
 
       this.recordResolution({
@@ -194,7 +195,7 @@ export class ContextVariableResolverService {
         return null;
       }
       await this.repository.upsertValue(variable.id, scope, fetched.value, RESOLVER_CACHE_WRITER);
-      return mapResolvedVariable(enablement, variable, fetched.value);
+      return resolvedVariableInput(enablement, variable, fetched.value);
     } catch (error) {
       this.recordResolution({
         outcome: "error",
@@ -337,15 +338,3 @@ const isFresh = (
   return (now - cached.lastModified.getTime()) / 1_000 < maxAgeSeconds;
 };
 
-const mapResolvedVariable = (
-  enablement: AgentContextVariableEnablement,
-  variable: ContextVariable,
-  value: unknown,
-): ResolvedVariableInput => ({
-  name: variable.name,
-  description: variable.description,
-  value,
-  surfacing: enablement.surfacing,
-  sensitive: variable.sensitivity === "sensitive",
-  trust: variable.trustTier === "signed" ? "verified" : "unverified",
-});

@@ -64,6 +64,7 @@ const sampleVariables = (values: readonly FrozenTestValue[], revision: AgentRevi
     name: value.name,
     description: value.description,
     value: value.value,
+    ...(value.label !== undefined ? { label: value.label } : {}),
     surfacing: enablement.surfacing,
     sensitive: value.sensitive,
     trust: value.trust,

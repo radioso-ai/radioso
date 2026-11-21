@@ -19,6 +19,10 @@ const revision: AgentRevision = {
       id: "22222222-2222-4222-8222-222222222222", agentId: "agent-1", variableId: "variable-1",
       source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null,
       surfacing: "always", enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
+    }, {
+      id: "33333333-3333-4333-8333-333333333333", agentId: "agent-1", variableId: "variable-2",
+      source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null,
+      surfacing: "on_reference", enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
     }],
   },
   sourceDraftGeneration: 1,
@@ -149,6 +153,14 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
         value: { tier: "gold" },
         sensitive: false,
         trust: "verified",
+      }, {
+        contextVariableId: "variable-2",
+        name: "topic",
+        description: null,
+        value: "billing",
+        label: "Billing",
+        sensitive: false,
+        trust: "unverified",
       }],
       executionMode: "safe_test",
       skillEffects: "allowed",
@@ -170,6 +182,9 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       consentStartState: null,
       preResolvedHostVariables: [{
         name: "plan", description: "Current plan", value: { tier: "gold" }, surfacing: "always", sensitive: false, trust: "verified",
+      }, {
+        // A Choice sample reaches conditions by its key and label, as a stored value does live.
+        name: "topic", description: null, value: "billing", label: "Billing", surfacing: "on_reference", sensitive: false, trust: "unverified",
       }],
       // Test Chat is the one caller that reads routine slot values back off the trace
       // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under

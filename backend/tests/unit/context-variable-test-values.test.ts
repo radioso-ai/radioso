@@ -70,7 +70,7 @@ describe("freezeTestValues", () => {
   it("takes an enum sample only as the key of an active option", async () => {
     const select = [[{ variableId: enumId, enabled: true }]];
     await expect(freezeTestValues({ workspaceId, catalog, selectedEnablements: select, supplied: [{ contextVariableId: enumId, value: "billing" }] }))
-      .resolves.toMatchObject([{ contextVariableId: enumId, value: "billing" }]);
+      .resolves.toMatchObject([{ contextVariableId: enumId, value: "billing", label: "Billing" }]);
     for (const value of ["legacy", "Billing", 1]) {
       await expect(freezeTestValues({ workspaceId, catalog, selectedEnablements: select, supplied: [{ contextVariableId: enumId, value }] }))
         .rejects.toMatchObject({ code: "bad_request" });

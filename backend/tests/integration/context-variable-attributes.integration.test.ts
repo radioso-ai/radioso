@@ -170,6 +170,29 @@ describeIntegration("typed attributes (Postgres)", () => {
     expect((await repository.get(workspaceId, plan.id))?.valueType).toBe("string");
   });
 
+  it("refuses a conversation value written while that conversation is being erased", async () => {
+    const topic = await createTopic();
+    const conversationId = await createConversation();
+    // The erasure locks the conversation, runs the erasers, then deletes it, in one transaction.
+    const erasure = holdOpen(
+      async (trx) => {
+        await trx.selectFrom("conversations").select("id").where("id", "=", conversationId).forNoKeyUpdate().executeTakeFirstOrThrow();
+        await new ContextVariableValueEraser(trx).erase({ kind: "conversations", workspaceId, conversationIds: [conversationId] });
+      },
+      async (trx) => { await trx.deleteFrom("conversations").where("id", "=", conversationId).execute(); },
+    );
+    await erasure.held;
+
+    const write = repository.upsertValue(topic.id, { type: "conversation", id: conversationId }, "billing", api)
+      .catch((error: unknown) => error);
+    await pause(200);
+    erasure.release();
+    await erasure.done;
+
+    expect(await write).toMatchObject({ statusCode: 404 });
+    expect(await repository.hasValues(topic.id)).toBe(false);
+  });
+
   it("reads a value written before writers were recorded as the API's", async () => {
     const topic = await createTopic();
     const scope = { type: "session" as const, id: `session-${randomUUID()}` };

@@ -68,6 +68,9 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   conversations its window passed, `FOR UPDATE SKIP LOCKED`, so step 1 never waits on another
  *   unit and two sweeps claim disjoint sets; then their ownership rows in id order, and the rest as
  *   an erasure.
+ * - A conversation-scope attribute value write (`ContextVariableRepository.upsertValue`): the
+ *   conversation `FOR SHARE`, then the value row. An erasure holding the conversation runs its
+ *   erasers first, and the write then finds the conversation gone.
  *
  * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
  * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it

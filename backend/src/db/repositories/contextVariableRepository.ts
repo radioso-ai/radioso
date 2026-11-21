@@ -253,7 +253,9 @@ const lockResolverSkillForEnablement = async (
 
 /**
  * A conversation-scope value names a conversation of its own workspace, so its erasure reaches it.
- * Returns the conversation's id as stored, whatever case the caller sent it in.
+ * Returns the conversation's id as stored, whatever case the caller sent it in. The row is share-locked
+ * until the write commits: an erasure locks it before its erasers run, so a write either commits
+ * first and is erased, or waits and finds the conversation gone.
  */
 const requireConversation = async (db: Db, workspaceId: string, conversationId: string): Promise<string> => {
   const conversation = await db
@@ -261,6 +263,7 @@ const requireConversation = async (db: Db, workspaceId: string, conversationId: 
     .select("id")
     .where("workspace_id", "=", workspaceId)
     .where("id", "=", conversationId)
+    .forShare()
     .executeTakeFirst();
   if (!conversation) throw notFound("Conversation not found");
   return conversation.id;

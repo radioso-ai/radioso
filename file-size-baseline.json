@@ -12,7 +12,7 @@
   "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1271,
   "backend/src/modules/documents/services/documentIngestionService.ts": 1089,
   "backend/src/modules/emailChannel/persistence/emailInboundRepository.ts": 1024,
-  "backend/src/modules/operatorCopilot/proposalAdapters.ts": 1646,
+  "backend/src/modules/operatorCopilot/proposalAdapters.ts": 1216,
   "backend/src/modules/operatorCopilot/service.ts": 1071,
   "backend/src/modules/voiceChannel/services/voiceTurnService.ts": 1090,
   "ee/packages/backend-module/src/radiosoModuleTypes.ts": 1030,

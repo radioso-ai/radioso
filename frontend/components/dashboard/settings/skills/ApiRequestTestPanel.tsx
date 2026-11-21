@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { apiConnectionsApi, type ApiRequestTestResult } from '@/lib/api-connections'
 import { ApiResponseTree } from './ApiResponseTree'
@@ -72,13 +73,16 @@ export function ApiRequestTestPanel({ connectionId, draft, onAddOutput }: {
       {namedInputs.length > 0 ? (
         <div className="grid gap-2 sm:grid-cols-2">
           {namedInputs.map((input) => (
-            <Input
-              key={input.id}
-              aria-label={`Sample ${input.key.trim()}`}
-              value={samples[input.id] ?? ''}
-              onChange={(event) => setSamples((current) => ({ ...current, [input.id]: event.target.value }))}
-              placeholder={input.key.trim()}
-            />
+            <div key={input.id} className="space-y-1">
+              <Label htmlFor={`api-sample-${input.id}`} className="font-mono text-xs">{input.key.trim()}</Label>
+              <Input
+                id={`api-sample-${input.id}`}
+                aria-label={`Sample ${input.key.trim()}`}
+                value={samples[input.id] ?? ''}
+                onChange={(event) => setSamples((current) => ({ ...current, [input.id]: event.target.value }))}
+                placeholder="Sample value"
+              />
+            </div>
           ))}
         </div>
       ) : null}

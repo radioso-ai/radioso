@@ -24,6 +24,8 @@ type RoutineVariablesContextValue = {
   // assign its outputs. A skill mentioned outside a routine (a directive action) has no step
   // to bind, so its chip shows the skill's identity only.
   supportsStepBindings: boolean
+  // Variables a step assigns from a list output: a check on one offers only is-set and is-not-set.
+  listVariableIds?: ReadonlySet<string>
 }
 
 const RoutineVariablesContext = createContext<RoutineVariablesContextValue | null>(null)

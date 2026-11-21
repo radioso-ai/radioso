@@ -208,3 +208,56 @@ test("a connection a skill uses cannot be deleted, and the skills are named", as
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete connection" }).click();
   await expect(panel.getByRole("alert")).toContainText("order_status, order_refund");
 });
+
+test("a variable set from a list output is only checked for presence", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineSkillCatalog: [{
+      skillName: "find_orders",
+      displayName: "Find orders",
+      category: "api_request",
+      inputs: [],
+      outcomes: [{ name: "completed", displayName: "Completed", status: "completed" }],
+      hasDataOutputs: true,
+      outputs: [
+        { name: "status", type: "text", required: false },
+        { name: "orders", type: "list", required: false, fields: [{ name: "title", type: "text", role: "title" }] },
+      ],
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Order lookup");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor asks about their orders.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Find orders" }).first().click();
+  const step = documentEditor.getByRole("button", { name: "Find orders", exact: true }).locator("xpath=ancestor::li[1]");
+  await step.getByRole("button", { name: "Find orders", exact: true }).click();
+  await step.getByLabel("Step 1 instruction").click();
+  await step.getByLabel("Step 1 instruction").pressSequentially("Look up the orders.");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The step sets the list into a variable.
+  await step.getByRole("button", { name: "Find orders", exact: true }).click();
+  await step.getByRole("button", { name: "Edit inputs", exact: true }).click();
+  await step.getByRole("button", { name: "Output", exact: true }).click();
+  await documentEditor.getByLabel("Output 1 name").selectOption("orders");
+  await documentEditor.getByLabel("Output 1 variable").fill("found_orders");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  // A check on that variable offers only is set and is not set.
+  await step.getByRole("button", { name: "Find orders", exact: true }).click();
+  await step.getByRole("button", { name: "Condition", exact: true }).click();
+  await documentEditor.getByLabel("Rule variable").selectOption("found_orders");
+  await expect(documentEditor.getByLabel("Rule operator").locator("option")).toHaveText(["is present", "is absent"]);
+  await expect(documentEditor.getByText("List: is set means found any.")).toBeVisible();
+  // Open the list so the screenshot shows every choice.
+  await documentEditor.getByLabel("Rule operator").evaluate((select: HTMLSelectElement) => { select.size = select.options.length; });
+  await documentEditor.getByLabel("Rule operator").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("api-request-list-guard.png") });
+});

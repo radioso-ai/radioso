@@ -32,7 +32,15 @@ export function BindingAssignments({ assignments, outputs = [], variables = [], 
   }
   const addOutput = () => {
     const output = nextUnassignedOutput(outputs, assignments)
-    onChange({ ...assignments, [output ? output.name : `output_${entries.length + 1}`]: '' })
+    if (!output) {
+      onChange({ ...assignments, [`output_${entries.length + 1}`]: '' })
+      return
+    }
+    // A declared output lands in a variable of its own name at once, so the routine never holds
+    // an assignment with no variable.
+    const variableId = slugifyVariableKey(output.name)
+    onChange({ ...assignments, [output.name]: variableId })
+    onCreateVariable({ id: variableId, name: output.name, type: outputVariableType(output) })
   }
   return (
     <div className="space-y-1">

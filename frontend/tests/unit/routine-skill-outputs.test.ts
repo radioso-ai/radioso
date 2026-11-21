@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SkillAuthoringOutput } from '@/lib/api-routine-skill-catalog'
-import { nextUnassignedOutput, outputVariableType, variablesFittingOutput } from '@/lib/routine-skill-outputs'
+import { guardOpFitsVariable, guardOpsForVariable, listBackedVariableIds, nextUnassignedOutput, outputVariableType, variablesFittingOutput } from '@/lib/routine-skill-outputs'
 import { fieldGuardOpsForType } from '@/lib/routine-prose'
 
 const status: SkillAuthoringOutput = { name: 'status', type: 'text', required: true }
@@ -29,5 +29,24 @@ describe('routine skill outputs', () => {
   it('picks the next output that is not assigned yet', () => {
     expect(nextUnassignedOutput([status, total], { status: 'order_status' })).toBe(total)
     expect(nextUnassignedOutput([status], { status: 'order_status' })).toBeUndefined()
+  })
+
+  it('knows a variable holds a list from the step that sets it', () => {
+    const outputsOf = (ref: string) => (ref === 'order_status' ? [status, items] : undefined)
+    const ids = listBackedVariableIds([
+      { kind: 'tool', toolRef: 'order_status', outputAssignments: { items: 'found_orders', status: 'order_state' } },
+      { kind: 'action', actionType: 'order_status', outputAssignments: { items: '' } },
+      { kind: 'tool', toolRef: 'other', outputAssignments: { items: 'ignored' } },
+      { kind: 'chat', toolRef: 'order_status', outputAssignments: { items: 'ignored_too' } },
+    ], outputsOf)
+    expect([...ids]).toEqual(['found_orders'])
+  })
+
+  it('limits a list-backed variable to is-set and is-not-set, and flags any other stored check', () => {
+    expect(guardOpsForVariable('text', true)).toEqual(['is_present', 'is_absent'])
+    expect(guardOpsForVariable('text', false)).toContain('equals')
+    expect(guardOpFitsVariable('is_present', 'text', true)).toBe(true)
+    expect(guardOpFitsVariable('equals', 'text', true)).toBe(false)
+    expect(guardOpFitsVariable('equals', 'text', false)).toBe(true)
   })
 })

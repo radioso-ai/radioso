@@ -34,7 +34,8 @@ export type OptionsValidationCode =
   | "duplicate_option_key"
   | "invalid_option_label"
   | "option_description_too_long"
-  | "option_removed";
+  | "option_removed"
+  | "active_option_required";
 
 const limits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
@@ -50,7 +51,8 @@ const optionFault = (option: ContextVariableOption): OptionsValidationCode | nul
 /**
  * Whether a definition's options fit its type. `previous` is the stored list when an existing
  * definition is edited: every key it holds must still be there, archived or not, because stored
- * values and filters name options by key.
+ * values and filters name options by key. At least one option stays active, so a value can still
+ * be written.
  */
 export const validateOptions = (
   valueType: ContextVariableValueType,
@@ -67,5 +69,6 @@ export const validateOptions = (
     if (keys.has(option.key)) return refused("duplicate_option_key");
     keys.add(option.key);
   }
-  return (previous ?? []).every((option) => keys.has(option.key)) ? accepted : refused("option_removed");
+  if (!(previous ?? []).every((option) => keys.has(option.key))) return refused("option_removed");
+  return options.some((option) => !option.archived) ? accepted : refused("active_option_required");
 };

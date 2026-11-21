@@ -6,7 +6,7 @@ import type { ContextVariableOption } from "./domain.js";
 const limits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
 /** An option key: the identifier a value stores, never matched against visitor text. */
-export const CONTEXT_VARIABLE_OPTION_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+export const CONTEXT_VARIABLE_OPTION_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/u;
 
 const optionFields = {
   key: z.string().max(limits.maxKeyChars).regex(CONTEXT_VARIABLE_OPTION_KEY_PATTERN),

@@ -129,7 +129,7 @@ conversation's topic with the options Billing, Shipping and Returns. Each
 option has:
 
 - **Key**, the identifier a value stores, such as `billing`. Letters, digits
-  and underscores, starting with a letter or underscore. A key never changes.
+  and underscores, starting with a letter. A key never changes.
 - **Label**, the name teammates see, such as "Billing".
 - **Description**, up to 300 characters on when the option applies, written
   in whatever language your team works in.
@@ -138,7 +138,8 @@ An attribute has up to 50 options. To retire one, archive it instead of
 deleting it: stored values and filters name options by key, so a key stays
 valid for as long as a value holds it. An archived option is no longer accepted
 as a new value; a value that already holds it keeps it. Restore the option to
-offer it again.
+offer it again. At least one option stays active, so the attribute always has a
+value it can take.
 
 A value is stored as its key, and a turn reads it by its option. A directive
 condition sees both, as `{ "key": "billing", "label": "Billing" }`, so a

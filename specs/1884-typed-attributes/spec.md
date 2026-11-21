@@ -95,8 +95,8 @@ Built-ins (`page_context`, `visitor_identity`, `visitor_request`) are untouched.
 
 An option-list edit therefore takes effect at once on every agent, including conversations pinned to an older revision: the snapshot holds enablements, not definitions (`agentRevision.ts:63-76`). Three rules keep that safe:
 
-- An option has an immutable `key` (the slot-key pattern), a `label`, a `description` and `archived`. Stored values hold the key.
-- Options are archived, never deleted. An archived key stays valid for stored values and filters; the classifier and the operator picker stop offering it.
+- An option has an immutable `key` (a letter, then letters, digits or underscores), a `label`, a `description` and `archived`. Stored values hold the key.
+- Options are archived, never deleted; at least one stays active. An archived key stays valid for stored values and filters; the classifier and the operator picker stop offering it.
 - Changing `value_type` on a variable that has values is refused.
 
 **Use is agent-level and revisioned.** A new enablement source, `classified`, sits beside `pushed` in the snapshot schema (`agentRevision.ts:72`). Test Chat on a draft classifies with the draft's enablements, the way sample values work (`docs-portal/content/operators/context-variables.mdx:101-107`).

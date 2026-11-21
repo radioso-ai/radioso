@@ -369,10 +369,10 @@ The catalog endpoints create and update the definitions:
 - `options`: required for `enum` and refused for other types. Each option is
   `{ "key", "label", "description", "archived" }`; `description` and
   `archived` are optional on input. Keys use letters, digits and underscores,
-  start with a letter or underscore, and never change. A `PATCH` that sends
-  `options` sends the full list with every existing key: set `archived: true`
-  to retire an option. Up to 50 options, with descriptions up to 300
-  characters.
+  start with a letter, and never change. A `PATCH` that sends `options` sends
+  the full list with every existing key: set `archived: true` to retire an
+  option, keeping at least one active. Up to 50 options, with descriptions up to
+  300 characters.
 - `trustTier`: `unverified` or `signed`
 - `sensitivity`: `normal` or `sensitive`
 - `defaultSurfacing`: `always`, `on_reference`, or `operator_only`

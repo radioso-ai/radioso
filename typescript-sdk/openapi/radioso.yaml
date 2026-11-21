@@ -15484,7 +15484,7 @@ components:
         key:
           type: string
           maxLength: 120
-          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+          pattern: ^[A-Za-z][A-Za-z0-9_]*$
           description: What a value stores. It never changes.
         label:
           type: string
@@ -15509,7 +15509,7 @@ components:
         key:
           type: string
           maxLength: 120
-          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+          pattern: ^[A-Za-z][A-Za-z0-9_]*$
           description: What a value stores. It never changes.
         label:
           type: string

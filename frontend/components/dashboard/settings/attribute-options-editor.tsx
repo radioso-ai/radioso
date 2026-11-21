@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import type { ContextVariableOption } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-const OPTION_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+const OPTION_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 const MAX_OPTIONS = 50
 
 /** The first problem with an enum attribute's options, or null when they can be saved. */
@@ -22,6 +22,7 @@ export const attributeOptionsError = (options: readonly ContextVariableOption[])
     if (keys.has(option.key)) return `Key "${option.key}" is used twice.`
     keys.add(option.key)
   }
+  if (options.every((option) => option.archived)) return 'Keep at least one option active.'
   return null
 }
 

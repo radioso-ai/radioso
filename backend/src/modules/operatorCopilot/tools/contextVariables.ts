@@ -42,7 +42,7 @@ const contextVariableSources = ["pushed", "browser", "resolver", "request"] as c
 
 const optionFields = contextVariableOptionInputSchema.shape;
 const optionInputSchema = contextVariableOptionInputSchema.extend({
-  key: optionFields.key.describe("Identifier the value stores; letters, digits, underscores. Never changes."),
+  key: optionFields.key.describe("Identifier the value stores: a letter, then letters, digits or underscores. Never changes."),
   label: optionFields.label.describe("Name operators see."),
   description: optionFields.description.describe("When this option applies, in the operator's language."),
   archived: optionFields.archived.describe("Archive an option instead of removing it."),

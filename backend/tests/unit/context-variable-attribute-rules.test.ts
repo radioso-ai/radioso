@@ -41,9 +41,11 @@ describe("validateOptions", () => {
     expect(validateOptions("json", null, null)).toEqual({ ok: true });
   });
 
-  it("holds keys to the slot-key pattern, once each, within the option limit", () => {
+  it("holds keys to a letter then letters, digits and underscores, once each, within the option limit", () => {
     expect(validateOptions("enum", [option("needs help")], null)).toEqual({ ok: false, code: "invalid_option_key" });
     expect(validateOptions("enum", [option("9lives")], null)).toEqual({ ok: false, code: "invalid_option_key" });
+    expect(validateOptions("enum", [option("_internal")], null)).toEqual({ ok: false, code: "invalid_option_key" });
+    expect(validateOptions("enum", [option("tier_2")], null)).toEqual({ ok: true });
     expect(validateOptions("enum", [option("billing"), option("billing")], null))
       .toEqual({ ok: false, code: "duplicate_option_key" });
     const many = Array.from({ length: 51 }, (_, index) => option(`option_${index}`));
@@ -59,6 +61,13 @@ describe("validateOptions", () => {
     expect(validateOptions("enum", [{ ...option("billing"), description: "x".repeat(301) }], null))
       .toEqual({ ok: false, code: "option_description_too_long" });
     expect(validateOptions("enum", [{ ...option("billing"), description: "x".repeat(300) }], null)).toEqual({ ok: true });
+  });
+
+  it("needs at least one option that is not archived, so a value can still be written", () => {
+    expect(validateOptions("enum", [option("billing", true)], null)).toEqual({ ok: false, code: "active_option_required" });
+    expect(validateOptions("enum", [option("billing", true), option("shipping", true)], [option("billing"), option("shipping")]))
+      .toEqual({ ok: false, code: "active_option_required" });
+    expect(validateOptions("enum", [option("billing", true), option("shipping")], null)).toEqual({ ok: true });
   });
 
   it("archives options instead of removing them, so every stored key keeps naming one", () => {

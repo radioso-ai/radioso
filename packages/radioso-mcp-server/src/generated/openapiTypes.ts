@@ -3447,6 +3447,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}/recrawl-cadence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set how often a website source recrawls itself
+         * @description Turning a cadence on or changing it schedules the next recrawl one interval after the last crawl, never before now, with up to an hour of jitter. Choosing the stored cadence again keeps the scheduled time; `off` clears it. A scheduled recrawl reuses the source's saved crawl settings, and holds its missing pages for review when they are more than a fifth of the source.
+         */
+        put: operations["setDocumentSourceRecrawlCadence"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/held-pages/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove the pages a scheduled recrawl held
+         * @description Deletes the source's held pages the way a recrawl removes missing pages. A source with no held pages answers with a count of 0.
+         */
+        post: operations["removeDocumentSourceHeldPages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/held-pages/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the pages a scheduled recrawl held
+         * @description Keeps the source's held pages. Later scheduled recrawls neither hold nor remove a kept page; a page that appears on the site again stops being kept. A manual recrawl still removes pages it does not find.
+         */
+        post: operations["keepDocumentSourceHeldPages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}/chunks": {
         parameters: {
             query?: never;
@@ -8394,6 +8454,23 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
             crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
+            /**
+             * @description Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.
+             * @enum {string}
+             */
+            recrawlCadence?: "off" | "daily" | "weekly";
+            /**
+             * Format: date-time
+             * @description Website sources only. When the next scheduled recrawl is queued; null while the cadence is `off`.
+             */
+            nextRecrawlAt?: string | null;
+            /**
+             * @description Website sources only. The fastest cadence the workspace's plan allows. A stored cadence faster than this runs at this cadence.
+             * @enum {string}
+             */
+            fastestRecrawlCadence?: "daily" | "weekly";
+            /** @description Website sources only. Pages a scheduled recrawl no longer found and held for review instead of removing, because they were more than a fifth of the source. */
+            heldPageCount?: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -12239,6 +12316,23 @@ export interface components {
         };
         EventSubscriptionResponse: {
             subscription: components["schemas"]["EventSubscription"];
+        };
+        DocumentSourceRecrawlCadenceRequest: {
+            /**
+             * @description How often the source recrawls itself. `off` stops scheduled recrawls.
+             * @enum {string}
+             */
+            recrawlCadence: "off" | "daily" | "weekly";
+        };
+        DocumentSourceHeldPagesRemoved: {
+            /** Format: uuid */
+            sourceId: string;
+            removedPageCount: number;
+        };
+        DocumentSourceHeldPagesKept: {
+            /** Format: uuid */
+            sourceId: string;
+            keptPageCount: number;
         };
         /** @description One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation. */
         ConversationConsent: {
@@ -28763,6 +28857,184 @@ export interface operations {
                 };
             };
             /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setDocumentSourceRecrawlCadence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceRecrawlCadenceRequest"];
+            };
+        };
+        responses: {
+            /** @description The source with its new cadence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required, or `recrawl_cadence_not_in_plan`: the plan allows a slower cadence at most; `details.fastestRecrawlCadence` names it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeDocumentSourceHeldPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held pages removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceHeldPagesRemoved"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    keepDocumentSourceHeldPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held pages kept */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceHeldPagesKept"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -148,8 +148,10 @@ const declarations: readonly PolicyDeclaration[] = [
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),
   allow("POST", "/api/v1/document/search", "workspace.documents.read"),
-  ...["", "/import", "/sources/:sourceId/recrawl", "/sources/:sourceId/pause-crawl", "/sources/:sourceId/resume-crawl", "/sources/:sourceId/reprocess", "/:documentId/reprocess"]
+  ...["", "/import", "/sources/:sourceId/recrawl", "/sources/:sourceId/pause-crawl", "/sources/:sourceId/resume-crawl", "/sources/:sourceId/reprocess", "/:documentId/reprocess",
+    "/sources/:sourceId/held-pages/remove", "/sources/:sourceId/held-pages/keep"]
     .map((path) => allow("POST", `/api/v1/document${path}`, "workspace.documents.manage")),
+  allow("PUT", "/api/v1/document/sources/:sourceId/recrawl-cadence", "workspace.documents.manage"),
   ...["/sources/:sourceId", "/:documentId"].map((path) =>
     allow("PATCH", `/api/v1/document${path}`, "workspace.documents.manage")),
   allow("PUT", "/api/v1/document/:documentId", "workspace.documents.manage"),

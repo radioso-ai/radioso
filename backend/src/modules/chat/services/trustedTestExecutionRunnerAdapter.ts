@@ -8,7 +8,7 @@ import {
   type TestExecutionHistoryEntry,
   type TrustedTestExecutionRunnerPort,
 } from "../../test-execution/public.js";
-import type { ResolvedVariableInput } from "../../context-variables/public.js";
+import { frozenTestValueInput, type ResolvedVariableInput } from "../../context-variables/public.js";
 import {
   importTestExecutionReplayContinuation,
 } from "./testExecutionContinuation.js";
@@ -60,15 +60,7 @@ const sampleVariables = (values: readonly FrozenTestValue[], revision: AgentRevi
     (candidate) => candidate.variableId === value.contextVariableId && candidate.enabled,
   );
   if (!enablement) throw new Error("test_execution_sample_not_enabled_in_candidate");
-  return {
-    name: value.name,
-    description: value.description,
-    value: value.value,
-    ...(value.label !== undefined ? { label: value.label } : {}),
-    surfacing: enablement.surfacing,
-    sensitive: value.sensitive,
-    trust: value.trust,
-  };
+  return frozenTestValueInput(value, enablement);
 });
 
 /**

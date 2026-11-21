@@ -100,6 +100,42 @@ describe("RevisionEvalRunService", () => {
     expect(audit[0]).toMatchObject({ eventType: "agent.revision_eval_run.started", eventStatus: "success" });
   });
 
+  it("runs a frozen Choice sample with its option's label against each revision", async () => {
+    const stored: RevisionEvalRun = {
+      id: "00000000-0000-4000-8000-000000000010", workspaceId, agentId, actorAccountId: null, mode: "full_assistant", executionPolicy: "safe_test",
+      testValues: [{ contextVariableId: variableId, name: "topic", description: null, value: "billing", label: "Billing", sensitive: false, trust: "unverified" }],
+      state: "pending", createdAt: new Date(), idempotencyKey,
+      sides: [{ id: "00000000-0000-4000-8000-000000000011", ordinal: 0, revisionId, revision: revision(), state: "pending", cases: [{ id: "00000000-0000-4000-8000-000000000012", caseId, frozenCase: evalCase(), frozenSnapshot: snapshot(), state: "pending", outcome: "unavailable", result: null, activeAttemptId: null, activeFence: null, leaseExpiresAt: null }] }],
+    };
+    let claimed = false;
+    const received: unknown[] = [];
+    const repository: RevisionEvalRepositoryPort = {
+      async create(input) { return input; }, async findByIdempotencyKey() { return null; }, async find() { return stored; },
+      async claimNext() {
+        if (claimed) return "none";
+        claimed = true;
+        return { run: stored, side: stored.sides[0], evalCase: stored.sides[0].cases[0], fence: 1 };
+      },
+      async complete() { return true; }, async fail() { return true; }, async retryFailed() { return false; },
+    };
+    const service = new RevisionEvalRunService({
+      repository,
+      revisions: { async findRevisionByWorkspace() { return { agentId, revision: revision() }; }, async findRevision() { return revision(); } },
+      cases: { async findCase() { return evalCase(); }, async findSnapshot() { return snapshot(); } },
+      contextCatalog: { async get() { return null; } },
+      runner: {
+        async executeFrozenRevisionCase(input) {
+          received.push(...input.testValues);
+          return { status: "recorded", outcomeReason: null, assertionVerdicts: [], observedOutput: { retrievedChunks: [] }, resolvedConfig: {} };
+        },
+      },
+    });
+
+    await service.resume({ workspaceId, runId: stored.id, accountId: null });
+
+    expect(received).toEqual([expect.objectContaining({ name: "topic", value: "billing", label: "Billing", surfacing: "always" })]);
+  });
+
   it("records a completed audit event once resume's claim loop settles the run, without carrying prompts, completions, or chunks", async () => {
     const runId = "00000000-0000-4000-8000-00000000000d";
     const sideId = "00000000-0000-4000-8000-00000000000e";

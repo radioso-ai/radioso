@@ -27,7 +27,13 @@ export type {
 } from "./contextResolutionService.js";
 export type { ContextResolverPort } from "./contextVariableResolverService.js";
 export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
-export { CONTEXT_VALUE_WRITER_KINDS, contextScopeLadder, mayOverwrite, resolvedVariableInput } from "./domain.js";
+export {
+  CONTEXT_VALUE_WRITER_KINDS,
+  contextScopeLadder,
+  frozenTestValueInput,
+  mayOverwrite,
+  resolvedVariableInput,
+} from "./domain.js";
 export {
   CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
   contextVariableOptionInputSchema,

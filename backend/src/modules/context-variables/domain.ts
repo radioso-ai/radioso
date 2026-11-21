@@ -1,6 +1,7 @@
 import type { ValueSensitivity } from "@radioso/conversation-contract";
 
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
+import type { FrozenTestValue } from "./testValues.js";
 
 export type ContextVariableValueType = "string" | "json" | "enum";
 export type ContextVariableTrustTier = "unverified" | "signed";
@@ -109,6 +110,23 @@ export const resolvedVariableInput = (
     trust: variable.trustTier === "signed" ? "verified" : "unverified",
   };
 };
+
+/**
+ * A frozen Test Chat or eval sample as a turn reads it, under the surfacing of the revision that
+ * runs it. A Choice sample keeps the label it was frozen with, so a replay reads it as the test did.
+ */
+export const frozenTestValueInput = (
+  value: FrozenTestValue,
+  enablement: Pick<AgentContextVariableEnablement, "surfacing">,
+): ResolvedVariableInput => ({
+  name: value.name,
+  description: value.description,
+  value: value.value,
+  ...(value.label !== undefined ? { label: value.label } : {}),
+  surfacing: enablement.surfacing,
+  sensitive: value.sensitive,
+  trust: value.trust,
+});
 
 /** The keys a turn reads stored values under. */
 export interface ContextScopeKeys {

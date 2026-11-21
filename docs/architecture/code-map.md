@@ -1108,6 +1108,7 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/public.ts`
 - `backend/src/modules/context-variables/domain.ts` (types, `mayOverwrite`, `contextScopeLadder`)
 - `backend/src/modules/context-variables/valueValidation.ts` (`validateValue`, `validateOptions`; limits in `CONTEXT_VARIABLES_BEHAVIOR.enumOptions`)
+- `backend/src/modules/context-variables/optionSchema.ts` (the one option schema and key pattern the routes, OpenAPI, Ray and `validateOptions` share)
 - `backend/src/modules/context-variables/repository.ts`
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`

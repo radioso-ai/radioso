@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { ReplyBlock } from "../contracts/replyBlocks.js";
 import type { ToolImageSource } from "../../toolImages/contracts/index.js";
+import type { SelectedItem } from "./replyBlocks/itemSelection.js";
+import { messageReplyBlocks, type MessageReplyBlocks } from "./replyBlocks/messageReplyBlocks.js";
 import type {
   ClarificationPolicy,
   ConversationClarifier,
@@ -174,6 +176,8 @@ export interface WorkbenchReplayResult {
   blocks?: ReplyBlock[];
   /** The pictures those blocks show from a skill's result; server-only, for a caller that copies them. */
   toolImages?: ToolImageSource[];
+  /** What the reply's message would keep of its blocks, origin included; server-only, for a caller that keeps a transcript. */
+  messageReplyBlocks?: MessageReplyBlocks;
   groundingSummary?: GroundingSummary;
   turnTrace?: TurnTraceEnvelope;
   actions?: RoutineActionRequest[];
@@ -258,6 +262,8 @@ export interface WorkbenchReplayInput {
   agentConfigOverride?: Partial<InternalAgentConfig>;
   /** The turn's text; for a `routineInvocation` this is its rendered form (`renderRoutineInvocation`). */
   query: string;
+  /** The card the turn picks, read by the caller from the reply in `history` that stored it, as live chat reads it. */
+  itemSelection?: SelectedItem;
   /** Drive the turn as a calling agent's tool call: the named routine is admitted directly with this input. */
   routineInvocation?: RoutineInvocation | null;
   history: MessageRecord[];
@@ -464,6 +470,7 @@ export class WorkbenchReplayRunner {
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageAttribution: input.usageAttribution,
       ...(input.routineInvocation ? { routineInvocation: input.routineInvocation } : {}),
+      ...(input.itemSelection ? { itemSelection: input.itemSelection } : {}),
     };
     const session = await preparer.prepare(prepareInput, {
       skipRetrieval: true,
@@ -749,6 +756,7 @@ export class WorkbenchReplayRunner {
         pendingClarification: input.pendingClarificationStartState != null,
         suspendedRoutine:
           input.routineStartState != null && input.routineStartState.status !== "active",
+        itemSelection: Boolean(session.itemSelection),
       },
       plan: () => ({
         query,
@@ -936,6 +944,7 @@ export class WorkbenchReplayRunner {
       suggestions: input.presentation.suggestions,
       ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.presented } : {}),
       ...(input.presentation.replyBlocks?.toolImages ? { toolImages: input.presentation.replyBlocks.toolImages } : {}),
+      messageReplyBlocks: messageReplyBlocks(input.presentation),
       groundingSummary: input.presentation.groundingSummary,
       turnTrace: handoffPreview && tracePresentation.turnTrace
         ? { ...tracePresentation.turnTrace, handoffPreview }

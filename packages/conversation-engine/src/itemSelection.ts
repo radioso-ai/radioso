@@ -4,10 +4,12 @@ import type {
   RoutineShownItems,
   RoutineState,
   RoutineStep,
+  RoutineTraceRejectedSlot,
   RoutineTraceStepEntry,
   TurnContext,
 } from "@radioso/conversation-contract";
 
+import { checkDeclaredSlotValues } from "./routineSlotValues.js";
 import { checkSlotValue } from "./slotValue.js";
 
 /** A pick the run took: the step that showed the card, the slot it filled, and the run's variables with it. */
@@ -105,6 +107,10 @@ export const pickedItemTraceEntry = (pick: RoutinePick | null): RoutineTraceStep
 
 const comparable = (text: string): string => text.replace(/\s+/gu, " ").trim().toLowerCase();
 
+/** Whether a value states anything: not absent, and not blank text. */
+const stated = (value: unknown): boolean =>
+  value !== null && value !== undefined && !(typeof value === "string" && value.trim().length === 0);
+
 /**
  * The shown item a typed answer names: by its position as shown (a number, or digits), its key, or
  * its exact title. Structural matching on what was shown, never on the visitor's words.
@@ -146,4 +152,27 @@ export const resolveItemSlots = (
     const named = key === bound && shown ? shownItemNamed(value, shown) : undefined;
     return named ? [[key, named]] : [];
   }));
+};
+
+/**
+ * The selector's values on `step`, each item slot resolved ({@link resolveItemSlots}) and every
+ * value then checked like any other (#1374). A value for the step's own bound slot that names
+ * nothing its latest presentation showed is rejected as no item, so the step asks again rather
+ * than leave by an exit whose slot stayed empty.
+ */
+export const checkStepSlotValues = (
+  routine: Routine,
+  values: Record<string, unknown>,
+  state: RoutineState,
+  turn: TurnContext,
+  step: RoutineStep | undefined,
+  blocked: ReadonlySet<string>,
+): { values: Record<string, unknown>; rejected: RoutineTraceRejectedSlot[] } => {
+  const resolved = resolveItemSlots(routine, values, state, turn, step);
+  const checked = checkDeclaredSlotValues(routine, resolved, blocked);
+  const bound = step?.present?.slot;
+  if (bound === undefined || !stated(values[bound]) || Object.hasOwn(resolved, bound)) {
+    return checked;
+  }
+  return { ...checked, rejected: [...checked.rejected, { key: bound, reason: blocked.has(bound) ? "consent" : "type_mismatch" }] };
 };

@@ -268,6 +268,36 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     expect(order).toEqual(["replayed", "pictures recorded"]);
   });
 
+  // #1763: a typed answer or a pick on a later turn reads the cards a reply showed from the transcript.
+  it("returns what the reply's message keeps of its cards, and hands it back as that message's metadata on later turns", async () => {
+    const stored = { blocks: [{ type: "item_list", id: "b1", layout: "list", selection: "single", caption: "Flats", items: [{ key: "7", title: "Loft", actions: [{ type: "select" }], fields: {} }], origin: { kind: "routine_step", skillName: "search", routineId: "r", stepId: "choose", slot: "flat" } }] };
+    const replay = {
+      stream: vi.fn(async function* (_input: { history: Array<{ id: string; metadata?: unknown }> }) {
+        return { answer: "One loft fits.", messageId: "ephemeral-message", continuation, messageReplyBlocks: stored };
+      }),
+    };
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => revision },
+    });
+    const turn = { workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision, conversationId: "private-side-1", continuation, testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const };
+
+    const { result } = await collect(adapter.stream({ ...turn, message: "Flats in Mitte?", history: [] }));
+    expect(result.messageMetadata).toEqual(stored);
+
+    await collect(adapter.stream({
+      ...turn,
+      message: "The first one",
+      history: [
+        { turnId: "turn-1", attemptId: "attempt-1", role: "user", content: "Flats in Mitte?", messageId: "user-1", createdAt: new Date(0), messageMetadata: stored },
+        { turnId: "turn-1", attemptId: "attempt-1", role: "assistant", content: "One loft fits.", messageId: "answer-1", createdAt: new Date(0), messageMetadata: result.messageMetadata },
+      ],
+    }));
+    const history = replay.stream.mock.calls.at(-1)?.[0].history ?? [];
+    expect(history.map((message) => message.metadata)).toEqual([undefined, stored]);
+  });
+
   it("rejects corrupt and version-mismatched continuations before replay", async () => {
     const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({

@@ -44,6 +44,15 @@ source message stored, without the text runs when the message is withheld
 the sources a reply cites as the Inbox shows them, whatever the agent's citation
 display setting.
 
+A result's `messageMetadata` is the runner's own record of the answer's message
+(the chat keeps the reply's stored cards there, with their origin). It is opaque
+here: the stored assistant entry keeps it, the runner gets it back with the history
+on the side's later turns, and no read presents it. A message may carry the card it
+picks (`selection`, sent with the card's title as `message` and no photos); every
+side's runner gets it as `itemSelection`, and a side whose answer showed the card
+takes it as a pick while another side, such as the other version in a comparison,
+runs the message as typed. A retry runs the stored text.
+
 A single execution can start from an existing conversation (`seedConversationId`
 on start). This module only knows the `TestExecutionSeedSource` port: it receives
 an ordered user/assistant thread plus an opaque runner continuation, groups the

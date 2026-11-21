@@ -13142,6 +13142,13 @@ export interface components {
             message?: string;
             /** @description Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo. */
             imageIds?: string[];
+            /** @description The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed. */
+            selection?: {
+                /** Format: uuid */
+                messageId: string;
+                blockId: string;
+                itemKey: string;
+            };
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;

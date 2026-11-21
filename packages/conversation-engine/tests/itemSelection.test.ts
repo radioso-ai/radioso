@@ -169,6 +169,23 @@ describe("an item slot read from a typed reply", () => {
     expect(result.nextState?.path.at(-1)).toBe("choose");
   });
 
+  it.each([
+    ["no presentation reached the turn", "the second one", undefined],
+    ["a position nothing showed", 3, shown()],
+    ["another run's presentation", 2, shown({ executionId: "run-0" })],
+  ])("holds the step when the selector takes its exit with an item that names nothing shown: %s", async (_label, value, shownItems) => {
+    const selector: ConversationRoutineNextStepSelector = {
+      select: vi.fn(async () => ({ nextStepId: "handoff", variables: { chosen_home: value } })),
+    };
+    const result = await new DefaultRoutineRunner([homes()], selector, renderer(), search())
+      .resume({ turn: turn("The second one please", shownItems ? { shownItems } : {}), state: atChoose });
+
+    expect(result.terminal).toBeUndefined();
+    expect(result.nextState?.path.at(-1)).toBe("choose");
+    expect(result.nextState?.variables.chosen_home).toBeUndefined();
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "choose", rejectedSlots: [{ key: "chosen_home", reason: "type_mismatch" }] });
+  });
+
   it("fills nothing when the step showed nothing this run", async () => {
     const result = await new DefaultRoutineRunner([homes()], reading({ chosen_home: 2 }), renderer(), search())
       .resume({ turn: turn("the second one", { shownItems: shown({ executionId: "run-0" }) }), state: atChoose });

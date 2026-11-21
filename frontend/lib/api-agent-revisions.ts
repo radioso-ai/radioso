@@ -3,6 +3,7 @@ import { withUserTimeZone } from './browser-time-zone'
 import { createClientId } from './client-id'
 import type { AgentGreetingDraft, AnswerSegment, Citation, ReplyBlock, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
+import type { ItemSelection } from './reply-blocks'
 import type { components } from '../../typescript-sdk/src/generated/types'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
@@ -278,7 +279,7 @@ export const agentRevisionsApi = {
     return response.json() as Promise<{ id: string }>
   },
 
-  async sendTestMessage(agentId: string, executionId: string, input: { message?: string; imageIds?: string[]; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
+  async sendTestMessage(agentId: string, executionId: string, input: { message?: string; imageIds?: string[]; selection?: ItemSelection; executionGeneration: number; turnId: string; attemptId: string }, signal?: AbortSignal): Promise<Response> {
     const headers = new Headers({ 'Content-Type': 'application/json', 'X-Forwarded-Prefix': '/backend' })
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)

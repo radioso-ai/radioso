@@ -22,6 +22,7 @@ import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/ass
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
+import { testChatMessageBody, testChatPickOf, type TestChatPick } from "@/lib/test-chat-item-pick";
 import { parseEvents } from "@/lib/test-execution-events";
 import { evalRevisionLabel, revisionDisplayLabel } from "@/lib/agent-revision-label";
 import { evidenceLabel, executionStateLabel, failureLabel, outcomeLabel } from "@/lib/agent-revision-test-chat-labels";
@@ -846,12 +847,13 @@ export function AgentRevisionTestChat({
     }
     return active ?? await start(nextMode, nextSelected, nextValues, expectedDraftGeneration);
   };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!photos.canSend(message) || isSending || isStarting) return;
+  /** Sends the composer's message, or, from a card's Select, the card picked; the composer keeps its draft through a pick. */
+  const submit = async (event: FormEvent | null, pick: TestChatPick | null = null) => {
+    event?.preventDefault();
+    if (!(event ? photos.canSend(message) : pick) || isSending || isStarting) return;
     setLinkOpenFailure(null);
     setUsageLimitNotice(null);
-    const text = message.trim();
+    const text = pick?.message ?? message.trim();
     const active = await prepareExecution();
     if (!active) return;
     // A failed side does not block the next message; only a turn still running does.
@@ -872,12 +874,12 @@ export function AgentRevisionTestChat({
         readAgentRevisionTestChatSession(sessionKey)?.executionEpoch === executionEpoch
       );
     };
-    const imageIds = photos.take();
+    const imageIds = pick ? [] : photos.take();
     const photoSend = { executionId: active.executionId, imageIds };
     // Once the test answers, the message and its photos are the test's, whatever the stream does next.
     let reached = false;
-    setMessage("");
-    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId, imageIds));
+    if (!pick) setMessage("");
+    setExecutionState(beginTestExecutionTurn(active, text, turnId, attemptId, imageIds, pick?.selection));
     setSendingState(true);
     const abortController = new AbortController();
     messageAbort.current = abortController;
@@ -893,13 +895,7 @@ export function AgentRevisionTestChat({
       const response = await agentRevisionsApi.sendTestMessage(
         agentId,
         active.executionId,
-        {
-          ...(text ? { message: text } : {}),
-          ...(imageIds.length > 0 ? { imageIds } : {}),
-          executionGeneration: active.generation,
-          turnId,
-          attemptId,
-        },
+        testChatMessageBody({ text, imageIds, pick, executionGeneration: active.generation, turnId, attemptId }),
         abortController.signal,
       );
       reached = true;
@@ -924,7 +920,7 @@ export function AgentRevisionTestChat({
       const withdrawn = !reached && photos.settle(photoSend, { taken: false, error: cause }) !== "taken";
       if (withdrawn && matchesAttempt()) {
         setExecutionState((current) => (current?.executionId === active.executionId ? active : current));
-        setMessage((current) => current || text);
+        if (!pick) setMessage((current) => current || text);
       }
       if (
         matchesAttempt() &&
@@ -1719,6 +1715,7 @@ export function AgentRevisionTestChat({
                             messages={messages}
                             visitorImages={execution ? testChatVisitorImages(workspaceId, agentId, execution.executionId, pendingReadingImageIds(side)) : undefined}
                             onOpenDocument={citedDocument.handleOpenCitation}
+                            onItemSelect={canSend && !isSending ? (content, inputMetadata) => void submit(null, testChatPickOf(content, inputMetadata)) : undefined}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
                             conversationId={side?.conversationId}

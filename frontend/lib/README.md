@@ -60,7 +60,9 @@ constructing ad hoc fetches.
   adds the declaration to the host page's capabilities on every request. It also
   holds card picks: which items can be picked, what a pick sends
   (`item_select` with the card's title as the message), and what each reply's
-  pick was, read from the visitor messages so a reload shows it.
+  pick was, read from the visitor messages so a reload shows it. Test Chat sends
+  the same pick through `test-chat-item-pick.ts`: the card's title as `message`
+  with its `selection`, alone, while the composer keeps its draft.
 - `routine-consent-editor.ts`: a routine's consents in the Document view — the
   sensitive fields each covers, the decline choice, and the wording per language,
   edited through the exact-greeting variant transitions — plus where each is asked

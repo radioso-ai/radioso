@@ -106,6 +106,13 @@ the same turn with other photos is refused with `409`. Read a photo back with
 `GET /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}` in
 a dashboard session. See [Let visitors send photos](/guides/image-input#try-photos-in-test-chat).
 
+A test message can pick a card a routine step showed. Send the card's title as
+`message` with `selection`, the `{ messageId, blockId, itemKey }` of the answer
+that showed it, and no photos. A side whose own answer showed that card takes it
+as a pick from the stored card, as live chat does, and fills the step's `item`
+value; another side, such as the other version in a comparison, runs `message`
+as typed.
+
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
 private Test Chat history. An execution is listed once it has a user message,
 sent by the operator or copied from a real conversation, so one holding only its

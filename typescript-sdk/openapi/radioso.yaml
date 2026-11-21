@@ -21117,6 +21117,25 @@ components:
           minItems: 1
           maxItems: 3
           description: Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo.
+        selection:
+          type: object
+          properties:
+            messageId:
+              type: string
+              format: uuid
+            blockId:
+              type: string
+              minLength: 1
+              maxLength: 64
+            itemKey:
+              type: string
+              minLength: 1
+              maxLength: 128
+          required:
+            - messageId
+            - blockId
+            - itemKey
+          description: "The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed."
       required:
         - executionGeneration
         - turnId

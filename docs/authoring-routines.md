@@ -811,6 +811,12 @@ to normal answering when it finishes.
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before you publish the agent.
 
+Cards a step shows work in the test as they do for a visitor: **Select** fills
+the step's `item` value, and a typed answer such as "the second one" or a
+card's title resolves to the same card. A comparison sends a tap to both
+versions; a version whose own reply never showed that card reads it as the
+card's title, typed.
+
 A private test keeps skills with outward effects off by default. A tool step
 that calls an external MCP tool, a webhook, or a customer email or Slack skill
 reports `failed` with the reason *skills are off in this test*, and the

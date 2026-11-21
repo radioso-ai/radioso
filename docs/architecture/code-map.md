@@ -561,7 +561,7 @@ Related docs:
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
-webhook skills (`webhookSkills`), and Slack skills (`slackSkills`) share one persistence spine: `agent_skills`
+webhook skills (`webhookSkills`), Slack skills (`slackSkills`), and API request skills (`apiRequestSkills`, capability `api_request`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
 `config` object. Database triggers enforce the current target references for MCP
@@ -622,6 +622,31 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/webhook-destinations-service.test.ts tests/unit/webhook-delivery.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/webhook-destination-repository.integration.test.ts`
+
+## API Request Skills
+
+Owns API connections (workspace-owned base URL and encrypted credential) and the
+`api_request` skill: parameter placement, typed input resolution with the
+verified-only gate, the executor, outcome mapping, and the connection test
+request. Routines run these skills; the typed output contract is shared.
+
+Public surfaces and key files:
+
+- `backend/src/modules/apiRequestSkills/public.ts`
+- `backend/src/modules/apiRequestSkills/connections/apiConnectionService.ts`
+- `backend/src/modules/apiRequestSkills/executor/apiRequestSkillExecutor.ts`
+- `backend/src/modules/apiRequestSkills/routineSkillResolver.ts`
+- `backend/src/db/repositories/apiConnectionRepository.ts`
+- `backend/src/app/http/routes/settingsApiConnectionRoutes.ts`
+- `backend/src/shared/domain/skillDataContract/` (typed contract, pure)
+- `backend/src/shared/infra/http/publicHttpRequest.ts` (egress transport)
+- `backend/src/db/migrations/267_api_connections.sql`
+- Module brief: `backend/src/modules/apiRequestSkills/README.md`; docs: `docs/api-request-skills.md`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/contract/settings-api-connections.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts`
 
 ## Notify
 

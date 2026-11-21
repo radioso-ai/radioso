@@ -1,6 +1,5 @@
 import {
   classifyWebsiteCrawlerFailure,
-  WebsiteCrawlerBadRequestError,
   WebsiteCrawlerProviderError,
   WebsiteCrawlerStreamCallbackError,
   redactSensitiveText,
@@ -13,6 +12,13 @@ import type {
   WebsiteCrawlerProvider,
 } from "./provider.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
+import {
+  buildWebsiteExternalDocumentId,
+  normalizeBaseUrl,
+  normalizePageUrl,
+  redactWebsiteCrawlerUrl,
+  safeFailureSourceUrl,
+} from "./pageUrls.js";
 import {
   emptyWebsiteCrawlCheckpoint,
   isFreshWebsiteCrawlCheckpoint,
@@ -731,11 +737,6 @@ export class WebsiteCrawlerService {
   }
 }
 
-const buildWebsiteExternalDocumentId = (input: {
-  websiteBaseUrl: string;
-  pageUrl: string;
-}): string => `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(input.websiteBaseUrl))}:${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
-
 // Per-document metadata is intentionally narrow. Run-level and source-level
 // fields (websiteBaseUrl, provider, runId) live on document_sources.metadata
 // to avoid duplicating run/origin context across every page. Provider-supplied
@@ -834,87 +835,6 @@ const getProviderFailureReason = (page: WebsiteCrawlPage): string | null => {
   }
   const error = typeof metadata.error === "string" ? metadata.error.trim() : "";
   return error ? `Crawler failed: ${redactSensitiveText(error)}` : "Crawler failed to fetch page";
-};
-
-const SENSITIVE_QUERY_PARAM_PATTERNS = [
-  /secret/i,
-  /token/i,
-  /api[-_]?key/i,
-  /authorization/i,
-  /password/i,
-  /credential/i,
-  /signature/i,
-  /^sig$/i,
-  /^key$/i,
-];
-
-const redactWebsiteCrawlerUrl = (value: string): string => {
-  const url = parseHttpUrl(value);
-  rejectUrlCredentials(url);
-  for (const [key, value] of Array.from(url.searchParams.entries())) {
-    const redactedValue = isSensitiveQueryParam(key) ? "[redacted]" : redactSensitiveText(value);
-    if (redactedValue !== value) {
-      url.searchParams.set(key, redactedValue);
-    }
-  }
-  return normalizePageUrl(url.toString());
-};
-
-const isSensitiveQueryParam = (key: string): boolean =>
-  SENSITIVE_QUERY_PARAM_PATTERNS.some((pattern) => pattern.test(key));
-
-const safeFailureSourceUrl = (value: string | null | undefined): string => {
-  if (!value) {
-    return "unknown";
-  }
-  try {
-    return redactWebsiteCrawlerUrl(normalizePageUrl(value));
-  } catch {
-    return "invalid-url";
-  }
-};
-
-export const normalizeBaseUrl = (value: string): string => {
-  const url = parseHttpUrl(value);
-  rejectUrlCredentials(url);
-  url.hash = "";
-  if (url.pathname === "/") {
-    url.pathname = "";
-  } else {
-    url.pathname = url.pathname.replace(/\/+$/, "");
-  }
-  return url.toString().replace(/\/$/, "");
-};
-
-const normalizePageUrl = (value: string): string => {
-  const url = parseHttpUrl(value);
-  rejectUrlCredentials(url);
-  url.hash = "";
-  if (url.pathname === "/") {
-    url.pathname = "";
-  } else {
-    url.pathname = url.pathname.replace(/\/+$/, "");
-  }
-  return url.toString().replace(/\/$/, "");
-};
-
-const parseHttpUrl = (value: string): URL => {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new WebsiteCrawlerBadRequestError("URL must be valid");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new WebsiteCrawlerBadRequestError("URL must use http or https");
-  }
-  return url;
-};
-
-const rejectUrlCredentials = (url: URL): void => {
-  if (url.username || url.password) {
-    throw new WebsiteCrawlerBadRequestError("URL must not include credentials");
-  }
 };
 
 const normalizeProviderResult = (

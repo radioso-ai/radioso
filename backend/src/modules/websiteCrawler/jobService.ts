@@ -12,7 +12,7 @@ import type {
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
-import { normalizeBaseUrl } from "./service.js";
+import { normalizeBaseUrl } from "./pageUrls.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 import type { CrawlTrigger } from "./recrawlSchedule.js";

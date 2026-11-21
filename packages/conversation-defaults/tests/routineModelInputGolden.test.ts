@@ -158,6 +158,16 @@ const replyCases: Array<{ name: string; input: RoutineStepReplyInput; responseLa
     },
   },
   {
+    name: "a finish ending after a booking that went through without returning a value",
+    input: {
+      step: { id: "booked", kind: "terminal", action: "Confirm the viewing is booked and give its reference.", metadata: { terminalKind: "complete" } },
+      steering: [routineRule("Confirm the viewing is booked and give its reference.")],
+      turn,
+      ending: { requestPassedOn: true, skillOutcomes: [{ skillName: "book_viewing", status: "completed" }] },
+      skillResults: [{ skillName: "book_viewing", status: "completed", outputs: {}, outputContract: { reference: { type: "text" } } }],
+    },
+  },
+  {
     name: "a step reply on an unresolved request with directive guidance and one evidence block",
     input: {
       step: askContact,

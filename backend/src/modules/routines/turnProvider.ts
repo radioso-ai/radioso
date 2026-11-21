@@ -531,6 +531,7 @@ export const createRoutineTurnProvider = (
         stepToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-tool-results.md"),
         contextEvidencePromptTemplate: loadPromptTemplate("chat/routine-step-context-evidence.md"),
         stepSourcesPromptTemplate: loadPromptTemplate("chat/routine-step-sources.md"),
+        stepSourcesToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-sources-tool-results.md"),
         stepSourcesNonePromptTemplate: loadPromptTemplate("chat/routine-step-sources-none.md"),
         responseLanguage,
         groundedAnswerRenderer,

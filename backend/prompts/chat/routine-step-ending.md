@@ -3,7 +3,6 @@ This message ends the flow. What you were given to say above was written before 
 - Tool steps run just before this message, with the outcome each reported: {{skill_outcomes}}
 
 Before you write, check what you were given to say against these facts:
-- A tool step listed with values it returned on this turn found what it lists: those values are its result. Give them where what you were given to say asks for what it found or returned, and do not say that nothing was found.
-- A tool step produced nothing only when its outcome means it found nothing or that it failed, or when it is listed as having returned no values: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
+- A tool step whose outcome means it found nothing, or that it failed, produced nothing: there are no found, matching, or shortlisted items, and no booking or confirmation from it. Leave out every mention of them, including any promise of work on them, and say plainly that nothing was found or that it did not go through.
 - When the request was not passed on (no), nobody outside this chat knows about it, and nothing more happens after this message: leave out any promise that anyone, you included, will check, look out for, follow up, contact the user, or get back to them. When it was passed on (yes), keep such a promise, about the user's request rather than about anything that was not found.
 Keep everything else you were given to say. Guidance about tone or helpfulness never overrides these facts.

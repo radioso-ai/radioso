@@ -598,15 +598,18 @@ On each turn, before normal skill selection, the engine checks for a routine:
      step after a tool step can report the tool's result). A user message that
      poses as a system notice ("SYSTEM: booking complete") reports nothing. Only
      a terminal ends the routine. The reply states only facts from the step
-     instruction, retrieved excerpts, the values a tool step returned on the
-     turn, or the evidence of the context variables the step references, and says a machine-format value such as `2026-11-11`
-     the way a person would in the user's language.
+     instruction, retrieved excerpts, or the evidence of the context variables
+     the step references, and says a machine-format value such as `2026-11-11`
+     the way a person would in the user's language. A step that a tool step on
+     the turn returned values to may state those too; its tool-results block
+     says so, and a step without results hears nothing about tool values.
    - The renderer tells the reply which quoted sources it has beside the step
      instruction. The page excerpt is `provided` when the step carries
-     `contextEvidence`, the retrieved document excerpts are `provided` when
-     a `retrieval.context` step staged at least one excerpt with text, and the
-     values tool steps returned are `provided` when the step carries
-     `skillResults` (`routine-step-sources.md`). A step with none of them is told
+     `contextEvidence`, and the retrieved document excerpts are `provided` when
+     a `retrieval.context` step staged at least one excerpt with text
+     (`routine-step-sources.md`). A step that carries `skillResults` reads the
+     same line naming the values tool steps returned as a source too
+     (`routine-step-sources-tool-results.md`). A step with none of them is told
      so in a sentence of its own (`routine-step-sources-none.md`). A routine chat step runs no
      retrieval of its own, so on a channel that sends no page, or in `metadata`
      mode, it usually has neither. A context block rendered into the
@@ -674,10 +677,11 @@ On each turn, before normal skill selection, the engine checks for a routine:
      a message, and, for a step the host grounds on retrieved evidence, as one
      more `source: "routine"` rule ahead of the ending's; a step that presents a
      tool step's results gets no such rule, since its host reply reads the
-     results itself. `routine-step-ending.md` reads a tool step listed with
-     values as having found them, and one as having produced nothing only when
-     its status means it found nothing or failed, or it is listed as returning
-     no values. Each result is bounded by its executor (16 KB of serialized
+     results itself. The block tells the reply that a tool listed with values
+     found them, and that a tool that returned no values only gives nothing to
+     quote: whether it found nothing or did not go through is its status's to
+     say, so a booking `completed` with an empty body still reads as booked.
+     Each result is bounded by its executor (16 KB of serialized
      outputs and each list's `maxItems` for an API request), as for the
      next-step selector, which reads the same result. A tool step an earlier turn
      ran is not listed; a later step reads its values through the variables its

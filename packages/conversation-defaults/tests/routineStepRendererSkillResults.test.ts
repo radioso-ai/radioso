@@ -120,16 +120,51 @@ describe("RoutineStepRenderer gives a step reply what this turn's tool steps ret
       .toContain("first_name — First name (text): \"Emily\"");
   });
 
-  it("counts the results as a source of the reply", async () => {
+  it("counts the results as a source of the reply, and names them only when there are some", async () => {
     const sourcesOf = async (input: Partial<RoutineStepReplyInput>) =>
       (await requestFor(input, {
         promptTemplate: "{{step_sources}}",
-        stepSourcesPromptTemplate: "SOURCES[retrieved={{retrieved_excerpts}},evidence={{context_evidence}},tools={{tool_results}}]",
+        stepSourcesPromptTemplate: "SOURCES[retrieved={{retrieved_excerpts}},evidence={{context_evidence}}]",
+        stepSourcesToolResultsPromptTemplate: "SOURCES[retrieved={{retrieved_excerpts}},evidence={{context_evidence}},tools]",
         stepSourcesNonePromptTemplate: "SOURCES[none]",
       })).systemPrompt;
 
-    expect(await sourcesOf({ skillResults: [foundCustomer] })).toBe("SOURCES[retrieved=none,evidence=none,tools=provided]");
+    expect(await sourcesOf({ skillResults: [foundCustomer] })).toBe("SOURCES[retrieved=none,evidence=none,tools]");
+    expect(await sourcesOf({ contextEvidence: ["<page_excerpt>Rooms</page_excerpt>"] })).toBe("SOURCES[retrieved=none,evidence=provided]");
     expect(await sourcesOf({})).toBe("SOURCES[none]");
+  });
+
+  it("says nothing about tool results in the shipped prompts of a turn that has none", async () => {
+    const shipped = { stepToolResultsPromptTemplate: undefined, stepEndingPromptTemplate: undefined };
+    const mcpEnding: RoutineEndingRun = { requestPassedOn: false, skillOutcomes: [{ skillName: "search_listings", status: "empty" }] };
+    const prompts = [
+      (await requestFor({ step: confirmStep, steering: [routineRule(confirmStep.action ?? "")], contextEvidence: ["<page_excerpt>Rooms</page_excerpt>"] }, shipped)).systemPrompt,
+      (await requestFor({ ending: mcpEnding }, shipped)).systemPrompt,
+      (await requestFor({ step: handoffEnding, ending: mcpEnding }, shipped)).systemPrompt,
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain("returned on this turn");
+      expect(prompt).not.toContain("values tool steps returned");
+      expect(prompt).not.toContain("returned no values");
+    }
+  });
+
+  it("reads a completed write that returned no values as one that went through, with nothing to quote", async () => {
+    const booked: RoutineStepSkillResult = { skillName: "book_viewing", status: "completed", outputs: {}, outputContract: { reference: { type: "text" } } };
+    const ending: RoutineEndingRun = { requestPassedOn: true, skillOutcomes: [{ skillName: "book_viewing", status: "completed" }] };
+    const shipped = { stepToolResultsPromptTemplate: undefined, stepEndingPromptTemplate: undefined };
+
+    for (const step of [finishEnding, handoffEnding]) {
+      const systemPrompt = (await requestFor({ step, ending, skillResults: [booked] }, shipped)).systemPrompt ?? "";
+      const notThroughRules = systemPrompt.split("\n").filter((line) => line.includes("did not go through"));
+
+      expect(systemPrompt).toContain("`book_viewing` → `completed`: returned no values");
+      expect(notThroughRules).not.toEqual([]);
+      // Whether a tool found nothing or did not go through is its outcome's to say, never its values'.
+      expect(notThroughRules.filter((line) => line.includes("no values"))).toEqual([]);
+      expect(systemPrompt).toContain("does not mean the tool found nothing or failed");
+    }
   });
 
   it("puts the results once in the shipped step reply, before its sources line and the ending's facts", async () => {

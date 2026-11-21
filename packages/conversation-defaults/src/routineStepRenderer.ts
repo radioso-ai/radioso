@@ -30,6 +30,7 @@ import {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_PROMPT,
+  DEFAULT_ROUTINE_STEP_SOURCES_TOOL_RESULTS_PROMPT,
   DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
@@ -293,8 +294,10 @@ const sourcePresence = (present: boolean): "provided" | "none" => (present ? "pr
 
 /** The templates the reply prompt's sources line is written from (`chat/routine-step-sources*.md`). */
 interface StepSourcesTemplates {
-  /** Which sources the step has (`{{retrieved_excerpts}}`, `{{context_evidence}}`, `{{tool_results}}`: `provided` or `none`). */
+  /** Which sources the step has (`{{retrieved_excerpts}}`, `{{context_evidence}}`: `provided` or `none`). */
   some: string;
+  /** The same line for a step this turn's tool steps returned values to, which names them as a source (#1883). */
+  withToolResults: string;
   /** A step with no source at all. */
   none: string;
 }
@@ -306,14 +309,19 @@ interface StepSourcesTemplates {
  * excerpts: none", the reply still stated the window as the edition's dates in 4 of 5 runs.
  * Presence only: what the sources say stays in the messages, as untrusted quoted data.
  */
-const stepSourcesBlock = (sources: StepReplySources, templates: StepSourcesTemplates): string =>
-  sources.retrievedExcerpts || sources.contextEvidence || sources.toolResults
-    ? renderPromptTemplate("chat/routine-step-sources.md", templates.some, {
-        retrieved_excerpts: sourcePresence(sources.retrievedExcerpts),
-        context_evidence: sourcePresence(sources.contextEvidence),
-        tool_results: sourcePresence(sources.toolResults),
-      })
+const stepSourcesBlock = (sources: StepReplySources, templates: StepSourcesTemplates): string => {
+  const presence = {
+    retrieved_excerpts: sourcePresence(sources.retrievedExcerpts),
+    context_evidence: sourcePresence(sources.contextEvidence),
+  };
+  // A step without tool results reads the line it always did; only one with them hears of them.
+  if (sources.toolResults) {
+    return renderPromptTemplate("chat/routine-step-sources-tool-results.md", templates.withToolResults, presence);
+  }
+  return sources.retrievedExcerpts || sources.contextEvidence
+    ? renderPromptTemplate("chat/routine-step-sources.md", templates.some, presence)
     : renderPromptTemplate("chat/routine-step-sources-none.md", templates.none, {});
+};
 
 /**
  * Citations the routine step grounded on, drawn from the same staged `retrieval.context`
@@ -448,8 +456,10 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       stepToolResultsPromptTemplate?: string;
       /** Frames the evidence a step's context variables carry (`{{evidence}}`). */
       contextEvidencePromptTemplate?: string;
-      /** Which quoted sources the reply has (`{{retrieved_excerpts}}`, `{{context_evidence}}`, `{{tool_results}}`: `provided` or `none`; #1717, #1883). */
+      /** Which quoted sources the reply has (`{{retrieved_excerpts}}`, `{{context_evidence}}`: `provided` or `none`; #1717). */
       stepSourcesPromptTemplate?: string;
+      /** The same line for a reply this turn's tool steps returned values to, naming them as a source (#1883). */
+      stepSourcesToolResultsPromptTemplate?: string;
       /** The sources line of a reply that has no quoted source at all. */
       stepSourcesNonePromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
@@ -481,6 +491,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       options.contextEvidencePromptTemplate ?? DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT;
     this.stepSourcesTemplates = {
       some: options.stepSourcesPromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_PROMPT,
+      withToolResults: options.stepSourcesToolResultsPromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_TOOL_RESULTS_PROMPT,
       none: options.stepSourcesNonePromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT,
     };
   }

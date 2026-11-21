@@ -533,6 +533,21 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
     expect(next!.job.id).not.toBe(paused!.job.id);
   });
 
+  it("names only the newest crawl of a source, so a paused one resumed after it is not", async () => {
+    const older = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/narrow", limit: 5 });
+    await repository.pauseBySourceId(sourceId, workspaceId);
+    const newer = await repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/", limit: 50 });
+    await repository.resumePausedBySourceId(sourceId, workspaceId);
+    const isNewest = (jobId: string) => repository.isNewestForSource({ jobId, workspaceId, sourceId });
+
+    expect(await isNewest(older!.job.id)).toBe(false);
+    expect(await isNewest(newer!.job.id)).toBe(true);
+    expect(await repository.isNewestForSource({ jobId: newer!.job.id, workspaceId: otherWorkspaceId, sourceId })).toBe(false);
+
+    await repository.cancelBySourceId(sourceId, workspaceId);
+    expect(await isNewest(newer!.job.id)).toBe(false);
+  });
+
   it("lets one of two concurrent requests for a source create the crawl", async () => {
     const results = await Promise.all([1, 2, 3].map(() =>
       repository.createForSource({ accountId, workspaceId, sourceId, requestedUrl: "https://example.com/race", limit: 5 })));

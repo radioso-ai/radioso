@@ -2016,12 +2016,19 @@ plan with `403 recrawl_cadence_not_in_plan`); `recrawlSweep.ts` claims due
 sources (`db/repositories/websiteRecrawlRepository.ts`, `FOR UPDATE SKIP
 LOCKED`) and queues their recrawls through the documents module's
 `DocumentSourceRecrawlService`; `app/composition/websiteRecrawl.ts` wires it as
-the `website-recrawl` periodic task. After a complete crawl,
-`missingPages.ts` (`reconcileMissingPages`) removes the pages it did not find,
-or, for a scheduled crawl that would remove more than a fifth of the source
-(`missingPageRemoval.ts`), holds them in `website_source_missing_pages`
-(`db/repositories/websiteMissingPageRepository.ts`); `heldPagesService.ts`
-removes or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
+the `website-recrawl` periodic task. A crawl removes missing pages only when
+`crawlSawWholeSite` (`missingPages.ts`) says it saw the whole site: the last
+slice's provider reported `frontierExhausted` (`crawlSiteStream` in
+`packages/crawler/src/transport/crawler.ts` returns it), no slice dropped a link
+at a limit (the checkpoint's sticky `linksDroppedAtLimit`), no page failed, and
+the checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
+whether the job is still the source's newest
+(`WebsiteCrawlJobRepository.isNewestForSource`) and removes the pages it did not
+find, or, for a scheduled crawl that would remove more than a fifth of the
+source's pages other than kept ones (`missingPageRemoval.ts`), holds them in
+`website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`);
+`heldPagesService.ts` removes the pages still held (`DocumentRepository.deleteHeldSourcePages`)
+or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
 is the catalog's `fastestRecrawlCadence`, read by the EE usage limit service's
 `getFastestRecrawlCadence`. The dashboard's controls are
 `frontend/components/dashboard/documents/source-recrawl-controls.tsx`; Ray's
@@ -2042,7 +2049,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
-- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
+- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts tests/unit/crawlFrontier.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts tests/integration/website-recrawl-multi-slice.integration.test.ts`
 - `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 

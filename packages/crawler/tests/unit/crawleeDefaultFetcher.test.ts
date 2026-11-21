@@ -133,7 +133,7 @@ describe("default Crawlee fetcher", () => {
     await fetchStarted;
     controller.abort(new Error("slice expired"));
 
-    await expect(crawl).resolves.toEqual({ pages: 0 });
+    await expect(crawl).resolves.toEqual({ pages: 0, frontierExhausted: false });
     expect(onResult).not.toHaveBeenCalled();
   });
 

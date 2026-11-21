@@ -43,6 +43,25 @@ export interface WebsiteHeldPageStore {
 export const MISSING_PAGES_HELD_AUDIT_EVENT = "document.website_crawler.missing_pages_held";
 
 /**
+ * Whether a finished crawl saw the whole site within its scope, so that a page it did not see is
+ * gone rather than unreached. Only then may it remove or hold missing pages. The crawl's last
+ * slice must have stopped because nothing was left to fetch, no slice may have dropped a link at a
+ * limit, no page may have failed, and the checkpoint it resumed from must list every URL.
+ */
+export const crawlSawWholeSite = (crawl: {
+  status: string | null;
+  failedPageCount: number;
+  frontierExhausted: boolean;
+  linksDroppedAtLimit: boolean;
+  resumedCheckpointListsEveryUrl: boolean;
+}): boolean =>
+  crawl.status === "completed" &&
+  crawl.failedPageCount === 0 &&
+  crawl.frontierExhausted &&
+  !crawl.linksDroppedAtLimit &&
+  crawl.resumedCheckpointListsEveryUrl;
+
+/**
  * The external ids of every page a crawl saw across all of its slices: the ids it published, and
  * each canonical URL its checkpoint records as processed, built exactly as ingestion builds a
  * page's id. A page skipped as duplicate content or by policy is processed, so it counts as seen and
@@ -71,26 +90,44 @@ export const pagesSeenByCrawl = (input: {
  * Removes the pages a complete crawl no longer found, or holds them for the operator. A crawl the
  * operator started removes every page it did not see. A scheduled crawl leaves pages the operator
  * kept, and holds the rest instead when they are too large a share of the source
- * ({@link decideMissingPageRemoval}).
+ * ({@link decideMissingPageRemoval}). A crawl that a newer crawl of the source superseded does
+ * neither: what it saw is older than what the newer crawl publishes.
  */
 export const reconcileMissingPages = async (
-  dependencies: {
-    store?: WebsiteMissingPageStore;
-    ingestion: Pick<WebsiteCrawlerDocumentIngestionPort, "reapMissingPages">;
-    audit?: WebsiteCrawlerAuditPort;
+  dependencies: MissingPageReconciliationDependencies,
+  input: CompleteCrawl & {
+    /** Whether the crawl is still the newest of the source's crawls, asked before anything is removed or held. */
+    isNewestCrawlOfSource?: () => Promise<boolean>;
   },
-  input: {
-    trigger: CrawlTrigger;
-    accountId?: string | null;
-    workspaceId: string;
-    sourceId: string;
-    seenExternalDocumentIds: string[];
-    crawlStartedAt: Date;
-  },
-): Promise<void> => {
+): Promise<"reconciled" | "superseded"> => {
+  const { isNewestCrawlOfSource, ...crawl } = input;
   if (!dependencies.ingestion.reapMissingPages) {
-    return;
+    return "reconciled";
   }
+  if (isNewestCrawlOfSource && !(await isNewestCrawlOfSource())) {
+    return "superseded";
+  }
+  await removeOrHoldMissingPages(dependencies, crawl);
+  return "reconciled";
+};
+
+interface MissingPageReconciliationDependencies {
+  store?: WebsiteMissingPageStore;
+  ingestion: Pick<WebsiteCrawlerDocumentIngestionPort, "reapMissingPages">;
+  audit?: WebsiteCrawlerAuditPort;
+}
+
+/** A crawl that saw the whole site ({@link crawlSawWholeSite}), and every page it saw. */
+interface CompleteCrawl {
+  trigger: CrawlTrigger;
+  accountId?: string | null;
+  workspaceId: string;
+  sourceId: string;
+  seenExternalDocumentIds: string[];
+  crawlStartedAt: Date;
+}
+
+const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationDependencies, input: CompleteCrawl): Promise<void> => {
   const remove = async (keepExternalDocumentIds: string[]) => {
     await dependencies.ingestion.reapMissingPages?.({ workspaceId: input.workspaceId, sourceId: input.sourceId, keepExternalDocumentIds });
   };

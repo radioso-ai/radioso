@@ -154,6 +154,8 @@ export interface WebsiteCrawlJobRepositoryPort {
   /** Null when the source is not the workspace's. Returns the source's queued or processing crawl rather than a second one. */
   createForSource(input: WebsiteCrawlJobCreateForSourceInput): Promise<SourceCrawlJobAdmission | null>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  /** Whether no crawl of the source was created after this job. False once the job is gone. */
+  isNewestForSource(input: { jobId: string; workspaceId: string; sourceId: string }): Promise<boolean>;
   findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
@@ -240,6 +242,22 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       .executeTakeFirst();
 
     return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
+  }
+
+  async isNewestForSource(input: { jobId: string; workspaceId: string; sourceId: string }): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("website_crawl_jobs as job")
+      .select((eb) => eb.not(eb.exists(
+        eb.selectFrom("website_crawl_jobs as newer")
+          .select("newer.id")
+          .where("newer.workspace_id", "=", input.workspaceId)
+          .where("newer.source_id", "=", input.sourceId)
+          .whereRef("newer.created_at", ">", "job.created_at"),
+      )).as("newest"))
+      .where("job.id", "=", input.jobId)
+      .where("job.workspace_id", "=", input.workspaceId)
+      .executeTakeFirst();
+    return row?.newest === true;
   }
 
   async findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null> {

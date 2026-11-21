@@ -265,6 +265,9 @@ export class WebsiteCrawlWorker {
         checkpoint: job.checkpoint,
         trigger: job.trigger,
         crawlStartedAt: job.createdAt,
+        // A paused job can resume after a newer crawl of its source started; only the newest removes pages.
+        isNewestCrawlOfSource: (sourceId) =>
+          this.dependencies.repository.isNewestForSource({ jobId: job.id, workspaceId: job.workspaceId, sourceId }),
         onCheckpoint: async (checkpoint) => {
           if (await this.dependencies.repository.updateCheckpoint(job.id, job.attemptCount, checkpoint)) {
             this.publish(job.workspaceId, "crawl.progress");

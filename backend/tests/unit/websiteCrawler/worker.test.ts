@@ -1035,7 +1035,7 @@ describe("website crawl worker", () => {
     expect(publisher.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
+  const scheduledJobWorker = (isNewestForSource: ReturnType<typeof vi.fn>) => {
     const sourceId = "44444444-4444-4444-8444-444444444444";
     const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10, createdAt: new Date("2026-11-21T09:00:00.000Z") };
     const record = vi.fn().mockResolvedValue(undefined);
@@ -1043,13 +1043,16 @@ describe("website crawl worker", () => {
       reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] }),
       holdMissingPages: vi.fn(),
     };
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const markCompleted = vi.fn().mockResolvedValue(true);
     const worker = new WebsiteCrawlWorker({
       repository: {
         claimNext: vi.fn().mockResolvedValue(job),
-        markCompleted: vi.fn().mockResolvedValue(true),
+        markCompleted,
         markFailed: vi.fn().mockResolvedValue(true),
         updateCheckpoint: vi.fn().mockResolvedValue(false),
         releasePausedClaim: vi.fn().mockResolvedValue(false),
+        isNewestForSource,
       } as never,
       provider: {
         name: "test-crawler",
@@ -1057,6 +1060,7 @@ describe("website crawl worker", () => {
           provider: "test-crawler",
           runId: "run-1",
           status: "completed",
+          frontierExhausted: true,
           pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
         }),
       },
@@ -1065,12 +1069,18 @@ describe("website crawl worker", () => {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
         resolveSource: vi.fn().mockResolvedValue({ id: sourceId }),
         updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
-        reapMissingPages: vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 }),
+        reapMissingPages,
       },
       auditService: { record },
       missingPages,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
+    return { worker, job, sourceId, record, missingPages, reapMissingPages, markCompleted };
+  };
+
+  it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
+    const isNewestForSource = vi.fn().mockResolvedValue(true);
+    const { worker, job, sourceId, record, missingPages } = scheduledJobWorker(isNewestForSource);
 
     await worker.runOnce();
 
@@ -1078,7 +1088,20 @@ describe("website crawl worker", () => {
       eventType: "document.website_crawler.crawl",
       metadata: expect.objectContaining({ trigger: "scheduled" }),
     }));
+    expect(isNewestForSource).toHaveBeenCalledWith({ jobId: job.id, workspaceId: job.workspaceId, sourceId });
     // Pages are counted against what the source had when the job started, not when its last slice did.
     expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ trigger: "scheduled", sourceId, crawlStartedAt: job.createdAt }));
+  });
+
+  it("neither removes nor holds missing pages for a job a newer crawl of its source superseded", async () => {
+    // A paused job resumed after the operator started another crawl of the source: its view of the site is older.
+    const { worker, missingPages, reapMissingPages, markCompleted } = scheduledJobWorker(vi.fn().mockResolvedValue(false));
+
+    await worker.runOnce();
+
+    expect(missingPages.reviewMissingPages).not.toHaveBeenCalled();
+    expect(missingPages.holdMissingPages).not.toHaveBeenCalled();
+    expect(reapMissingPages).not.toHaveBeenCalled();
+    expect(markCompleted).toHaveBeenCalledOnce();
   });
 });

@@ -18,6 +18,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
     const pages = await crawlSite({
       baseUrl: request.url,
       pageLimit: request.limit,
+      totalPageLimit: request.totalLimit,
       pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
       userAgent: config.userAgent,
       includeUrlPatterns: request.policy?.includeUrlPatterns,
@@ -61,10 +62,12 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         throw error;
       }
     };
+    let frontierExhausted = false;
     try {
-      await crawlSiteStream({
+      const run = await crawlSiteStream({
         baseUrl: request.url,
         pageLimit: request.limit,
+        totalPageLimit: request.totalLimit,
         pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
         userAgent: config.userAgent,
         includeUrlPatterns: request.policy?.includeUrlPatterns,
@@ -78,6 +81,14 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         signal: slice.signal,
         onCandidateUrl: async (decision) => {
           await runCallback(async () => {
+            if (decision.reason === "page_limit_reached") {
+              await request.onCheckpointEvent?.({
+                type: "dropped",
+                url: decision.canonicalUrl ?? decision.url,
+                canonicalUrl: decision.canonicalUrl,
+              });
+              return;
+            }
             if (decision.decision !== "accepted" || !decision.canonicalUrl) {
               return;
             }
@@ -108,6 +119,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         throw callbackFailure.error;
       }
       request.signal?.throwIfAborted();
+      frontierExhausted = run.frontierExhausted === true && !slice.expired();
     } catch (error) {
       request.signal?.throwIfAborted();
       if (callbackFailure.recorded) {
@@ -124,6 +136,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       provider: PROVIDER_NAME,
       status: "completed",
       outcome: slice.expired() ? "yielded" : "completed",
+      frontierExhausted,
     };
   }
 }

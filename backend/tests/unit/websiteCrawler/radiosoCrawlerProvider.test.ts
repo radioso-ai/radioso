@@ -211,6 +211,7 @@ describe("RadiosoCrawlerProvider", () => {
       await expect(resultPromise).resolves.toMatchObject({
         provider: "radioso-crawler",
         outcome: "yielded",
+        frontierExhausted: false,
       });
     } finally {
       vi.useRealTimers();
@@ -280,6 +281,36 @@ describe("RadiosoCrawlerProvider", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reports whether the crawler exhausted its frontier, sizing discovery from the whole crawl's limit", async () => {
+    mocks.crawlSiteStream.mockResolvedValueOnce({ pages: 2, frontierExhausted: true });
+    mocks.crawlSiteStream.mockResolvedValueOnce({ pages: 3, frontierExhausted: false });
+    const provider = new RadiosoCrawlerProvider();
+
+    const exhausted = await provider.crawlStream({ url: "https://example.com", limit: 3, totalLimit: 10 }, async () => {});
+    const capped = await provider.crawlStream({ url: "https://example.com", limit: 3, totalLimit: 10 }, async () => {});
+
+    expect(mocks.crawlSiteStream).toHaveBeenCalledWith(expect.objectContaining({ pageLimit: 3, totalPageLimit: 10 }));
+    expect(exhausted).toMatchObject({ outcome: "completed", frontierExhausted: true });
+    expect(capped).toMatchObject({ outcome: "completed", frontierExhausted: false });
+  });
+
+  it("records a link the crawler dropped at its discovery limit as a checkpoint event", async () => {
+    mocks.crawlSiteStream.mockImplementation(async ({ onCandidateUrl }: {
+      onCandidateUrl: (decision: { url: string; decision: "rejected"; reason: string; canonicalUrl: string | null }) => Promise<void>;
+    }) => {
+      await onCandidateUrl({ url: "https://example.com/dup", decision: "rejected", reason: "duplicate", canonicalUrl: "https://example.com/dup" });
+      await onCandidateUrl({ url: "https://example.com/late", decision: "rejected", reason: "page_limit_reached", canonicalUrl: "https://example.com/late" });
+      return { pages: 1, frontierExhausted: false };
+    });
+    const onCheckpointEvent = vi.fn().mockResolvedValue(undefined);
+
+    await new RadiosoCrawlerProvider().crawlStream({ url: "https://example.com", limit: 3, onCheckpointEvent }, async () => {});
+
+    expect(onCheckpointEvent.mock.calls).toEqual([
+      [{ type: "dropped", url: "https://example.com/late", canonicalUrl: "https://example.com/late" }],
+    ]);
   });
 
   it("does not turn caller cancellation into a yielded slice", async () => {

@@ -9,13 +9,20 @@ import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "../.
 import { emptyWebsiteCrawlCheckpoint } from "../../../src/modules/websiteCrawler/policy.js";
 import { pagesSeenByCrawl } from "../../../src/modules/websiteCrawler/missingPages.js";
 
-const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"]>>["pages"]): WebsiteCrawlerProvider => ({
+type ProviderResult = Awaited<ReturnType<WebsiteCrawlerProvider["crawl"]>>;
+
+/** A provider whose crawl finds `pages`; by default it reports nothing left to fetch. */
+const createProvider = (
+  pages: ProviderResult["pages"],
+  result: Pick<ProviderResult, "frontierExhausted"> = { frontierExhausted: true },
+): WebsiteCrawlerProvider => ({
   name: "fake",
   async crawl() {
     return {
       provider: "fake",
       runId: "run-1",
       status: "completed",
+      ...result,
       pages,
     };
   },
@@ -157,7 +164,7 @@ describe("website crawler service", () => {
     const checkpointError = new Error("checkpoint write failed token=checkpoint-secret");
     const record = vi.fn();
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
-    const logger = { warn: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
     const service = new WebsiteCrawlerService({
       provider: {
         name: "stream-crawler",
@@ -423,7 +430,7 @@ describe("website crawler service", () => {
     const checkpointError = new Error("checkpoint write failed token=checkpoint-secret");
     const record = vi.fn();
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
-    const logger = { warn: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
     const service = new WebsiteCrawlerService({
       provider: {
         name: "stream-crawler",
@@ -1185,6 +1192,7 @@ describe("website crawler service", () => {
 
     expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       limit: 12,
+      totalLimit: 100,
     }));
   });
 
@@ -1493,7 +1501,7 @@ describe("website crawler service", () => {
     const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
     const reapMissingPages = vi.fn().mockRejectedValue(new Error("delete failed"));
-    const logger = { warn: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
 
     const service = new WebsiteCrawlerService({
       provider: createProvider([
@@ -1529,34 +1537,125 @@ describe("website crawler service", () => {
     );
   });
 
-  it("skips reaping when a successful crawl may have stopped at the page limit", async () => {
-    const ingest = vi.fn().mockResolvedValueOnce({ documentId: "doc-1", status: "queued" });
-    const resolveSource = vi.fn().mockResolvedValue({ id: "source-1" });
-    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
-    const reapMissingPages = vi.fn();
-
+  const reapingService = (
+    provider: WebsiteCrawlerProvider,
+    extra: Partial<Pick<ConstructorParameters<typeof WebsiteCrawlerService>[0], "missingPages" | "logger">> = {},
+  ) => {
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
     const service = new WebsiteCrawlerService({
-      provider: createProvider([
-        {
-          sourceUrl: "https://example.com/a",
-          canonicalUrl: "https://example.com/a",
-          title: "A",
-          content: "alpha",
-          metadata: { statusCode: 200 },
-        },
-      ]),
-      documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
-      auditService: { record: vi.fn() },
+      provider,
+      documentIngestionService: {
+        ingest: vi.fn().mockImplementation(async (input: { externalDocumentId: string }) => ({ documentId: input.externalDocumentId, status: "queued" })),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages,
+      },
+      ...extra,
       assertCrawlUrlAllowed: async () => undefined,
+    });
+    return { service, reapMissingPages };
+  };
+  const pageA = { sourceUrl: "https://example.com/a", canonicalUrl: "https://example.com/a", title: "A", content: "alpha", metadata: {} };
+
+  it("reconciles a crawl whose provider fetched everything it found, even one that used its whole page limit", async () => {
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }));
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 1 });
+
+    expect(reapMissingPages).toHaveBeenCalledOnce();
+  });
+
+  it("does not reconcile a crawl whose provider does not report that nothing was left to fetch, however few pages it counted", async () => {
+    // A request budget spent on redirects to fetched pages, or on pages an earlier slice processed, counts no page.
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], {}));
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5 });
+
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile when it dropped pages a provider sent past the page limit", async () => {
+    const pageB = { ...pageA, sourceUrl: "https://example.com/b", canonicalUrl: "https://example.com/b", content: "bravo" };
+    const { service, reapMissingPages } = reapingService({
+      name: "stream-crawler",
+      crawl: vi.fn(),
+      crawlStream: async (_request, onPage) => {
+        await onPage(pageA);
+        await onPage(pageB);
+        return { provider: "stream-crawler", status: "completed", frontierExhausted: true };
+      },
+    });
+
+    const result = await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 1 });
+
+    expect(result.accepted).toBe(1);
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile once any slice dropped a link at a limit, even when the last slice fetched everything it found", async () => {
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }));
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 5,
+      checkpoint: { ...emptyWebsiteCrawlCheckpoint(), discoveredUrls: ["https://example.com/a"], linksDroppedAtLimit: true },
+    });
+
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("records a link dropped at a limit in the checkpoint, so the job's later slices know", async () => {
+    const checkpoints: Array<{ linksDroppedAtLimit?: boolean; processedCanonicalUrls: string[] }> = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "dropped", url: "https://example.com/late", canonicalUrl: "https://example.com/late" });
+      return { provider: "stream-crawler", status: "completed", outcome: "yielded" };
     });
 
     await service.crawlAndPublish({
       workspaceId: "workspace-1",
       url: "https://example.com",
-      limit: 1,
+      limit: 5,
+      onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); },
+    });
+
+    expect(checkpoints.at(-1)).toMatchObject({ linksDroppedAtLimit: true, processedCanonicalUrls: [] });
+  });
+
+  it("skips reaping when the checkpoint's queued URLs may have been cut at the checkpoint cap", async () => {
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }));
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 20_000,
+      checkpoint: {
+        ...emptyWebsiteCrawlCheckpoint(),
+        queuedUrls: Array.from({ length: 10_000 }, (_, index) => `https://example.com/page-${index}`),
+      },
     });
 
     expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile a crawl a newer crawl of its source superseded", async () => {
+    const reviewMissingPages = vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] });
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }), {
+      missingPages: { reviewMissingPages, holdMissingPages: vi.fn() },
+      logger,
+    });
+    const isNewestCrawlOfSource = vi.fn().mockResolvedValue(false);
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, isNewestCrawlOfSource });
+
+    expect(isNewestCrawlOfSource).toHaveBeenCalledWith("source-1");
+    expect(reviewMissingPages).not.toHaveBeenCalled();
+    expect(reapMissingPages).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      { role: "website-crawler", workspaceId: "workspace-1", sourceId: "source-1" },
+      "Skipped missing-page removal: a newer crawl of the source exists",
+    );
   });
 
   it("reconciles a crawl that resumed from a checkpoint against every page the whole job processed", async () => {

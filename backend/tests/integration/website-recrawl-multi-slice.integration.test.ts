@@ -38,8 +38,14 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
   const service = new WebsiteCrawlerService({
     provider: {
       name: "two-slice-crawler",
-      // Each slice crawls the pages the test hands it; only the last one finishes the frontier.
-      crawl: async (request) => ({ provider: "two-slice-crawler", status: "completed", ...nextSlice(request.checkpoint) }),
+      // Each slice crawls the pages the test hands it, and reports the links it dropped at a limit.
+      crawl: async (request) => {
+        const { droppedLinks = [], ...slice } = nextSlice(request.checkpoint);
+        for (const url of droppedLinks) {
+          await request.onCheckpointEvent?.({ type: "dropped", url, canonicalUrl: url });
+        }
+        return { provider: "two-slice-crawler", status: "completed", ...slice };
+      },
     } satisfies WebsiteCrawlerProvider,
     documentIngestionService: {
       ingest: async (input) => {
@@ -65,7 +71,8 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
     assertCrawlUrlAllowed: async () => undefined,
   });
 
-  let slices: Array<{ pages: WebsiteCrawlPage[]; outcome: "yielded" | "completed" }> = [];
+  type Slice = { pages: WebsiteCrawlPage[]; outcome: "yielded" | "completed"; frontierExhausted?: boolean; droppedLinks?: string[] };
+  let slices: Slice[] = [];
   const nextSlice = (_checkpoint: WebsiteCrawlCheckpoint | undefined) => {
     const slice = slices.shift();
     if (!slice) throw new Error("no slice left");
@@ -73,7 +80,7 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
   };
 
   /** Runs the job's slices the way the worker does: each one resumes from the checkpoint the last one saved. */
-  const crawlInSlices = async (trigger: "manual" | "scheduled", sliceScript: typeof slices) => {
+  const crawlInSlices = async (trigger: "manual" | "scheduled", sliceScript: Slice[]) => {
     slices = [...sliceScript];
     let checkpoint: WebsiteCrawlCheckpoint | null = null;
     for (let slice = 0; slice < sliceScript.length; slice += 1) {
@@ -142,7 +149,7 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
 
     await crawlInSlices("scheduled", [
       { pages: [page("a"), page("b")], outcome: "yielded" },
-      { pages: [page("c")], outcome: "completed" },
+      { pages: [page("c")], outcome: "completed", frontierExhausted: true },
     ]);
 
     expect(await livePages()).toEqual(["a", "b", "c", "d", "e"].map(externalId));
@@ -159,10 +166,33 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
 
     await crawlInSlices("scheduled", [
       { pages: ["a", "b", "c", "d", "e"].map(page), outcome: "yielded" },
-      { pages: ["f", "g", "h", "i", "new"].map(page), outcome: "completed" },
+      { pages: ["f", "g", "h", "i", "new"].map(page), outcome: "completed", frontierExhausted: true },
     ]);
 
     expect(await livePages()).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i", "new"].map(externalId));
+    expect(await heldPages()).toEqual([]);
+  });
+
+  it("removes nothing when the last slice stopped with pages left to fetch", async () => {
+    await seedPages(["a", "b", "c", "d", "e"]);
+
+    await crawlInSlices("manual", [
+      { pages: [page("a"), page("b")], outcome: "yielded" },
+      { pages: [page("c")], outcome: "completed", frontierExhausted: false },
+    ]);
+
+    expect(await livePages()).toEqual(["a", "b", "c", "d", "e"].map(externalId));
+  });
+
+  it("removes nothing once an earlier slice dropped a link at a limit, though the last slice fetched all it found", async () => {
+    await seedPages(["a", "b", "c", "d", "e"]);
+
+    await crawlInSlices("manual", [
+      { pages: [page("a"), page("b")], outcome: "yielded", droppedLinks: [`${site}/d`] },
+      { pages: [page("c")], outcome: "completed", frontierExhausted: true },
+    ]);
+
+    expect(await livePages()).toEqual(["a", "b", "c", "d", "e"].map(externalId));
     expect(await heldPages()).toEqual([]);
   });
 
@@ -171,7 +201,7 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
 
     await crawlInSlices("manual", [
       { pages: [page("a"), page("b")], outcome: "yielded" },
-      { pages: [page("c")], outcome: "completed" },
+      { pages: [page("c")], outcome: "completed", frontierExhausted: true },
     ]);
 
     expect(await livePages()).toEqual(["a", "b", "c"].map(externalId));

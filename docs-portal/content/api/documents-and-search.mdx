@@ -156,14 +156,16 @@ curl -sS -X PUT https://api.radioso.ai/api/v1/document/sources/source-id/recrawl
 
 How fast you can go depends on the plan. Each website source carries `fastestRecrawlCadence`: `daily` on a self-hosted deployment, `weekly` on Comet, and `daily` on Satellite and Planet. A faster cadence answers `403 recrawl_cadence_not_in_plan`. If a workspace moves to a plan with a slower ceiling, its sources keep the cadence you chose and recrawl at the plan's fastest.
 
-A scheduled recrawl never removes a large share of a source on its own. When more than a fifth of the source's pages are missing from the site, it keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
+A recrawl removes a page only once it has seen the whole site: its last slice ran out of pages to fetch rather than out of page limit, it dropped no link for having discovered too many, no page failed, and no newer crawl of the source started meanwhile. A crawl that stopped at its page limit removes nothing, so give a source a limit that covers the site you scoped, or narrow the scope with `includeUrlPatterns` and `excludeUrlPatterns`.
+
+A scheduled recrawl never removes a large share of a source on its own. When more than a fifth of the source's pages are missing from the site, not counting pages you chose to keep, it keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
 
 ```bash
 curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/held-pages/remove \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN"
 ```
 
-`held-pages/remove` deletes them; `held-pages/keep` keeps them, and later scheduled recrawls leave kept pages alone. A fifth or less is removed without asking, the way a manual recrawl removes pages it no longer finds. A manual recrawl always removes every page it does not find, held or not.
+`held-pages/remove` deletes the pages still held when it runs, so a page a crawl found again in the meantime stays; `held-pages/keep` keeps them, and later scheduled recrawls leave kept pages alone. A fifth or less is removed without asking, the way a manual recrawl removes pages it no longer finds. A manual recrawl always removes every page it does not find, held or not.
 
 A source runs one crawl at a time. Recrawling a source that is already crawling answers with the running crawl's `jobId` instead of starting a second one.
 

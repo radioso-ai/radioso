@@ -82,7 +82,14 @@ export type FetchPage = (
 
 type CrawlSiteParams = {
   baseUrl: string;
+  /** The most requests this run makes. */
   pageLimit: number;
+  /**
+   * The whole crawl's page limit when this run continues it from `seedDiscoveredUrls`. The
+   * discovery limit is sized from it, because the URLs earlier runs discovered count against it.
+   * Defaults to `pageLimit`.
+   */
+  totalPageLimit?: number;
   pageConcurrency?: number;
   userAgent?: string;
   includeUrlPatterns?: string[];
@@ -114,11 +121,25 @@ type CrawlSiteParams = {
   signal?: AbortSignal;
 };
 
-const crawlSiteInternal = async (params: CrawlSiteParams) => {
+type CrawlSiteRun = {
+  /** Requests the run handled. */
+  pages: number;
+  /**
+   * True only when the run stopped because nothing was left to fetch: it fetched every URL it
+   * queued and dropped none at the discovery limit. A run stopped by its request budget or an
+   * abort, or with a request that never completed, is not exhausted.
+   */
+  frontierExhausted: boolean;
+};
+
+const discoveryLimitFor = (pageLimit: number): number => Math.max(pageLimit * 10, pageLimit + 50);
+
+const crawlSiteInternal = async (params: CrawlSiteParams): Promise<CrawlSiteRun> => {
   ensureSystemBinaryPaths();
   const {
     baseUrl,
     pageLimit,
+    totalPageLimit,
     pageConcurrency = 1,
     userAgent,
     includeUrlPatterns,
@@ -139,9 +160,12 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     signal
   } = params;
   let processed = 0;
-  const discoveryLimit = Math.max(pageLimit * 10, pageLimit + 50);
+  const discoveryLimit = discoveryLimitFor(totalPageLimit ?? pageLimit);
   const discovered = new Set<string>();
+  // Request keys handed to the crawler, and the ones whose request completed.
   const queued = new Set<string>();
+  const handled = new Set<string>();
+  let droppedAtDiscoveryLimit = false;
   const claimedResolvedUrls = new Set<string>();
   const discoveryOnlyUrls = new Set<string>();
   log.setLevel(LogLevel.ERROR);
@@ -269,6 +293,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       return buildRejectedCandidateDecision(rawUrl, "duplicate", canonicalUrl, policyResolution);
     }
     if (discovered.size >= discoveryLimit) {
+      droppedAtDiscoveryLimit = true;
       return buildRejectedCandidateDecision(rawUrl, "page_limit_reached", canonicalUrl, policyResolution);
     }
 
@@ -343,6 +368,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           claimedResolvedUrls.add(resolvedCanonical);
           if (alreadyClaimed) {
             processed += 1;
+            handled.add(request.uniqueKey);
             return;
           }
           const status = page.notModified ? "unchanged" : "success";
@@ -392,6 +418,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
               });
             }
           }
+          handled.add(request.uniqueKey);
         } catch (error) {
           if (signal?.aborted) {
             return;
@@ -418,6 +445,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           if (onPage) {
             await onPage({ url: next, status: "failed" });
           }
+          handled.add(request.uniqueKey);
         }
       }
     },
@@ -455,16 +483,6 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     await seedPending(baseUrl);
   }
   for (const sitemapUrl of unique(await seedSitemapUrls())) {
-    if (discovered.size >= discoveryLimit) {
-      const canonicalUrl = canonicalize(sitemapUrl);
-      if (onCandidateUrl) {
-        await onCandidateUrl({
-          ...buildRejectedCandidateDecision(sitemapUrl, "page_limit_reached", canonicalUrl),
-          sourcePageUrl: baseUrl
-        });
-      }
-      continue;
-    }
     const decision = await enqueueCandidate(sitemapUrl, { sourcePageUrl: baseUrl, seed: true });
     if (onCandidateUrl) {
       await onCandidateUrl({
@@ -481,7 +499,10 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
 
   await crawler.run(initialUrls);
 
-  return { pages: processed };
+  return {
+    pages: processed,
+    frontierExhausted: !signal?.aborted && !droppedAtDiscoveryLimit && [...queued].every((key) => handled.has(key)),
+  };
 };
 
 export const crawlSiteStream = async (
@@ -502,4 +523,4 @@ export const crawlSite = async (params: Omit<CrawlSiteParams, "onResult">) => {
   return results;
 };
 
-export type { CrawlSiteParams };
+export type { CrawlSiteParams, CrawlSiteRun };

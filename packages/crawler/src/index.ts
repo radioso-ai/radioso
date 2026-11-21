@@ -69,6 +69,7 @@ export {
   crawlSiteStream,
   type CrawledPageResult,
   type CrawlSiteParams,
+  type CrawlSiteRun,
   type FetchPage,
   type FetchedPage,
   type ValidateNavigationUrl

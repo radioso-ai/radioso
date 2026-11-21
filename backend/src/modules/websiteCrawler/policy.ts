@@ -14,6 +14,8 @@ export interface WebsiteCrawlCheckpoint {
   skipped: number;
   failed: number;
   lastProcessedAt: string | null;
+  /** Set once any slice of the crawl dropped a link at a limit; the crawl then never saw the whole site. */
+  linksDroppedAtLimit?: boolean;
 }
 
 export const DEFAULT_WEBSITE_CRAWL_POLICY: WebsiteCrawlPolicy = {
@@ -32,6 +34,7 @@ export const emptyWebsiteCrawlCheckpoint = (): WebsiteCrawlCheckpoint => ({
   skipped: 0,
   failed: 0,
   lastProcessedAt: null,
+  linksDroppedAtLimit: false,
 });
 
 const MAX_PATTERNS = 50;
@@ -39,11 +42,13 @@ const MAX_PATTERN_LENGTH = 200;
 const MAX_CHECKPOINT_URLS = 10_000;
 
 /**
- * Whether a checkpoint still lists every page its crawl processed. A stored list is cut at
- * {@link MAX_CHECKPOINT_URLS} when it is read back, so a list that long may have lost pages.
+ * Whether a checkpoint still lists every URL its crawl discovered, queued and processed. A stored
+ * list is cut at {@link MAX_CHECKPOINT_URLS} when it is read back, so a list that long may have
+ * lost URLs: a lost queued URL is never fetched, and a lost processed page would look missing.
  */
-export const listsEveryProcessedPage = (checkpoint: WebsiteCrawlCheckpoint): boolean =>
-  checkpoint.processedCanonicalUrls.length < MAX_CHECKPOINT_URLS;
+export const listsEveryCrawlUrl = (checkpoint: WebsiteCrawlCheckpoint): boolean =>
+  [checkpoint.discoveredUrls, checkpoint.queuedUrls, checkpoint.processingUrls, checkpoint.processedCanonicalUrls]
+    .every((urls) => urls.length < MAX_CHECKPOINT_URLS);
 
 const normalizePatternList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
@@ -127,5 +132,6 @@ export const normalizeWebsiteCrawlCheckpoint = (value: unknown): WebsiteCrawlChe
     skipped: normalizeCount(record.skipped),
     failed: normalizeCount(record.failed),
     lastProcessedAt: typeof record.lastProcessedAt === "string" ? record.lastProcessedAt : null,
+    linksDroppedAtLimit: record.linksDroppedAtLimit === true,
   };
 };

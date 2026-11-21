@@ -21,13 +21,13 @@ import {
 } from "./pageUrls.js";
 import {
   emptyWebsiteCrawlCheckpoint,
-  listsEveryProcessedPage,
+  listsEveryCrawlUrl,
   normalizeWebsiteCrawlCheckpoint,
   normalizeWebsiteCrawlPolicy,
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
-import { pagesSeenByCrawl, reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
+import { crawlSawWholeSite, pagesSeenByCrawl, reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
 import type { CrawlTrigger } from "./recrawlSchedule.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
 import { usageLimitExceeded } from "../../shared/domain/errors.js";
@@ -107,7 +107,7 @@ export class WebsiteCrawlerService {
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
     missingPages?: WebsiteMissingPageStore;
-    logger?: Pick<AppLogger, "warn">;
+    logger?: Pick<AppLogger, "info" | "warn">;
     assertCrawlUrlAllowed?: (url: string) => Promise<void>;
   }) {}
 
@@ -126,13 +126,15 @@ export class WebsiteCrawlerService {
     trigger?: CrawlTrigger;
     /** When the crawl's job started, for a crawl run in slices; this slice's start when omitted. */
     crawlStartedAt?: Date;
+    /** Whether this crawl is still the newest of the source's crawls, asked right before missing pages are removed or held. */
+    isNewestCrawlOfSource?: (sourceId: string) => Promise<boolean>;
   }): Promise<WebsiteCrawlPublicationResult> {
     const crawlStartedAt = input.crawlStartedAt ?? new Date();
     const websiteBaseUrl = normalizeBaseUrl(input.url);
     const safeWebsiteBaseUrl = redactWebsiteCrawlerUrl(websiteBaseUrl);
     const policy = normalizeWebsiteCrawlPolicy(input.policy ?? {});
     const checkpoint = normalizeWebsiteCrawlCheckpoint(input.checkpoint ?? emptyWebsiteCrawlCheckpoint());
-    const processedPagesListed = listsEveryProcessedPage(checkpoint);
+    const resumedCheckpointListsEveryUrl = listsEveryCrawlUrl(checkpoint);
     const checkpointSets = {
       discovered: new Set(checkpoint.discoveredUrls),
       queued: new Set(checkpoint.queuedUrls),
@@ -201,6 +203,11 @@ export class WebsiteCrawlerService {
     };
     const recordCheckpointEvent = async (event: WebsiteCrawlCheckpointEvent) => {
       if (usageLimitError && event.type === "processed") {
+        return;
+      }
+      if (event.type === "dropped") {
+        checkpoint.linksDroppedAtLimit = true;
+        await persistCheckpoint();
         return;
       }
       const canonical = event.canonicalUrl ?? event.url;
@@ -296,6 +303,8 @@ export class WebsiteCrawlerService {
 
     const assertCrawlUrlAllowed = this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl;
     const seen = new Set<string>();
+    let frontierExhausted = false;
+    let pagesPastLimit = false;
     const completedPageCount = checkpoint.accepted + checkpoint.skipped + checkpoint.failed;
     const remainingLimit = Math.max(input.limit - completedPageCount, 0);
     let pageCount = 0;
@@ -312,7 +321,10 @@ export class WebsiteCrawlerService {
 
     const ingestPage = async (page: WebsiteCrawlPage): Promise<void> => {
       if (usageLimitError) return;
-      if (pageCount >= remainingLimit) return;
+      if (pageCount >= remainingLimit) {
+        pagesPastLimit = true;
+        return;
+      }
       pageCount += 1;
 
       this.throwIfAborted(input.signal);
@@ -476,6 +488,7 @@ export class WebsiteCrawlerService {
           {
             url: websiteBaseUrl,
             limit: remainingLimit,
+            totalLimit: input.limit,
             maxDurationMs: input.maxDurationMs,
             signal: crawlSignal,
             policy,
@@ -488,10 +501,12 @@ export class WebsiteCrawlerService {
         result.status = streamResult.status ?? null;
         result.outcome = streamResult.outcome ?? "completed";
         result.runId = streamResult.runId ?? null;
+        frontierExhausted = streamResult.frontierExhausted === true;
       } else {
         const providerResult = await this.crawlProvider({
           url: websiteBaseUrl,
           limit: remainingLimit,
+          totalLimit: input.limit,
           maxDurationMs: input.maxDurationMs,
           signal: crawlSignal,
           policy,
@@ -502,6 +517,7 @@ export class WebsiteCrawlerService {
         result.status = providerResult.status ?? null;
         result.outcome = providerResult.outcome ?? "completed";
         result.runId = providerResult.runId ?? null;
+        frontierExhausted = providerResult.frontierExhausted === true;
         if (providerResult.invalidPages && providerResult.invalidPages > 0) {
           result.failed += providerResult.invalidPages;
           checkpoint.failed += providerResult.invalidPages;
@@ -569,17 +585,19 @@ export class WebsiteCrawlerService {
       });
 
       // The checkpoint carries every page earlier slices (and a run before a pause) processed, so a
-      // crawl that finished over several slices is complete too, unless that list may have been cut.
-      const isFullSuccessfulCrawl =
-        processedPagesListed &&
-        result.failed === 0 &&
-        result.status === "completed" &&
-        // Until providers expose an explicit frontier-exhausted signal, exact
-        // limit-sized crawls are treated as possibly capped and do not reap.
-        result.accepted + result.skipped + result.failed < input.limit;
-      if (isFullSuccessfulCrawl) {
+      // crawl that finished over several slices sees the whole site too.
+      const sawWholeSite = crawlSawWholeSite({
+        status: result.status,
+        failedPageCount: result.failed,
+        frontierExhausted: frontierExhausted && !pagesPastLimit,
+        linksDroppedAtLimit: checkpoint.linksDroppedAtLimit === true,
+        resumedCheckpointListsEveryUrl,
+      });
+      if (sawWholeSite) {
+        const sourceId = documentSource.id;
+        const isNewestCrawlOfSource = input.isNewestCrawlOfSource;
         try {
-          await reconcileMissingPages({
+          const reconciliation = await reconcileMissingPages({
             store: this.dependencies.missingPages,
             ingestion: this.dependencies.documentIngestionService,
             audit: this.dependencies.auditService,
@@ -587,20 +605,27 @@ export class WebsiteCrawlerService {
             trigger: input.trigger ?? "manual",
             accountId: input.accountId,
             workspaceId: input.workspaceId,
-            sourceId: documentSource.id,
+            sourceId,
             seenExternalDocumentIds: pagesSeenByCrawl({
               websiteBaseUrl: safeWebsiteBaseUrl,
               processedCanonicalUrls: checkpointSets.processed,
               publishedExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
             }),
             crawlStartedAt,
+            ...(isNewestCrawlOfSource ? { isNewestCrawlOfSource: () => isNewestCrawlOfSource(sourceId) } : {}),
           });
+          if (reconciliation === "superseded") {
+            this.dependencies.logger?.info(
+              { role: "website-crawler", workspaceId: input.workspaceId, sourceId },
+              "Skipped missing-page removal: a newer crawl of the source exists",
+            );
+          }
         } catch (error) {
           this.dependencies.logger?.warn(
             {
               role: "website-crawler",
               workspaceId: input.workspaceId,
-              sourceId: documentSource.id,
+              sourceId,
               requestedUrl: safeWebsiteBaseUrl,
               err: error,
             },
@@ -616,6 +641,7 @@ export class WebsiteCrawlerService {
   private async crawlProvider(input: {
     url: string;
     limit: number;
+    totalLimit?: number;
     signal?: AbortSignal;
     maxDurationMs?: number;
     policy?: WebsiteCrawlPolicy;
@@ -637,6 +663,7 @@ export class WebsiteCrawlerService {
     input: {
       url: string;
       limit: number;
+      totalLimit?: number;
       signal?: AbortSignal;
       maxDurationMs?: number;
       policy?: WebsiteCrawlPolicy;
@@ -861,6 +888,7 @@ const normalizeProviderResult = (
     runId?: unknown;
     status?: unknown;
     outcome?: unknown;
+    frontierExhausted?: unknown;
     pages?: unknown;
   };
   if (!Array.isArray(typed.pages)) {
@@ -884,6 +912,8 @@ const normalizeProviderResult = (
     runId: safeProviderText(typed.runId),
     status: safeProviderText(typed.status),
     outcome: typed.outcome === "yielded" ? "yielded" : "completed",
+    // Pages past the limit are dropped here, so a provider that returned them left work undone.
+    frontierExhausted: typed.frontierExhausted === true && typed.pages.length <= limit,
     pages: normalizedPages,
     ...(invalidPages > 0 ? { invalidPages } : {}),
   };

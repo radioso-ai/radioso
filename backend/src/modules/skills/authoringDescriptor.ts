@@ -20,6 +20,8 @@ import type {
   SkillOutcomeDefinition,
   SkillOutcomeStatus,
 } from "./domain.js";
+import type { SkillDataValueType, SkillOutputFieldRole } from "@radioso/conversation-contract";
+
 import type { RoutineSkillCategory } from "./routineAuthoringPolicy.js";
 import { routineSkillCategoryForBuiltIn } from "./routineAuthoringPolicy.js";
 
@@ -56,6 +58,27 @@ export interface SkillAuthoringOutcome {
   status: SkillOutcomeStatus;
 }
 
+/** A field of a list output: what each record carries, and the card role it fills. */
+interface SkillAuthoringOutputField {
+  name: string;
+  type: SkillDataValueType;
+  description?: string;
+  role?: SkillOutputFieldRole;
+}
+
+/**
+ * A data field a skill returns, which a routine step can set a variable from, guard on with the
+ * operators its type allows, or show as cards when it is a list.
+ */
+export interface SkillAuthoringOutput {
+  name: string;
+  type: SkillDataValueType | "list";
+  required: boolean;
+  description?: string;
+  /** A list's fields; absent on a scalar. */
+  fields?: SkillAuthoringOutputField[];
+}
+
 export interface SkillAuthoringDescriptor {
   skillName: string;
   displayName: string;
@@ -68,11 +91,13 @@ export interface SkillAuthoringDescriptor {
    */
   outcomes: SkillAuthoringOutcome[];
   /**
-   * Whether the skill exposes typed data output *fields* (only when it declares
-   * an output schema). Catalog entries expose outcomes, not a data schema, so
-   * this is always false here; external/MCP skills are handled in a later slice.
+   * Whether the skill exposes typed data output *fields*: true when its config
+   * declares outputs (an API request skill's response allowlist). Catalog
+   * entries and MCP skills expose outcomes, not a data schema, so it is false for them.
    */
   hasDataOutputs: boolean;
+  /** The declared output fields, by name; empty when `hasDataOutputs` is false. */
+  outputs: SkillAuthoringOutput[];
 }
 
 /** The narrow slice of a catalog entry this projection needs. */
@@ -133,6 +158,7 @@ export const skillCatalogEntryToAuthoringDescriptor = (
   inputs: (entry.intake?.fields ?? []).map(toAuthoringInput),
   outcomes: (entry.outcomes ?? []).map(toAuthoringOutcome),
   hasDataOutputs: false,
+  outputs: [],
 });
 
 const statusForExternalOutcome = (name: string): SkillOutcomeStatus => {
@@ -206,15 +232,57 @@ const exposedInputsForAgentSkill = (config: Record<string, unknown>): Record<str
   if (isRecord(config.exposedInputs)) {
     return config.exposedInputs;
   }
+  if (isRecord(config.exposedParams)) {
+    return config.exposedParams;
+  }
   return null;
 };
 
-const inputsForAgentSkill = (
+const parsedAgentSkillConfig = (
   source: AgentSkillSpine,
   descriptor: SkillCapabilityDescriptor,
-): SkillAuthoringInput[] => {
+): Record<string, unknown> => {
   const parsedConfig = descriptor.validateConfig(source.config ?? {});
-  const config = isRecord(parsedConfig.data) ? parsedConfig.data : source.config ?? {};
+  return isRecord(parsedConfig.data) ? parsedConfig.data : source.config ?? {};
+};
+
+const valueTypes = new Set<string>(["text", "number", "boolean", "date", "email"]);
+const fieldRoles = new Set<string>(["key", "title", "subtitle", "image", "link"]);
+
+const isValueType = (value: unknown): value is SkillDataValueType => typeof value === "string" && valueTypes.has(value);
+
+const outputField = ([name, spec]: [string, unknown]): SkillAuthoringOutputField[] =>
+  isRecord(spec) && isValueType(spec.type)
+    ? [{
+      name,
+      type: spec.type,
+      ...(optionalDescription(spec) ? { description: optionalDescription(spec) } : {}),
+      ...(typeof spec.role === "string" && fieldRoles.has(spec.role) ? { role: spec.role as SkillOutputFieldRole } : {}),
+    }]
+    : [];
+
+/**
+ * The typed outputs a skill's config declares (`outputs`, keyed by name), in declaration order,
+ * each list with its fields. An entry without a known type is not a typed output and is left out.
+ */
+const declaredOutputsForAgentSkill = (config: Record<string, unknown>): SkillAuthoringOutput[] =>
+  isRecord(config.outputs)
+    ? Object.entries(config.outputs).flatMap(([name, spec]): SkillAuthoringOutput[] => {
+      if (!isRecord(spec) || (spec.type !== "list" && !isValueType(spec.type))) return [];
+      return [{
+        name,
+        type: spec.type,
+        required: spec.required === true,
+        ...(optionalDescription(spec) ? { description: optionalDescription(spec) } : {}),
+        ...(spec.type === "list" && isRecord(spec.fields) ? { fields: Object.entries(spec.fields).flatMap(outputField) } : {}),
+      }];
+    })
+    : [];
+
+const inputsForAgentSkill = (
+  config: Record<string, unknown>,
+  descriptor: SkillCapabilityDescriptor,
+): SkillAuthoringInput[] => {
   const exposedInputs = exposedInputsForAgentSkill(config);
   const fields = exposedInputs
     ? Object.entries(exposedInputs)
@@ -229,7 +297,7 @@ const inputsForAgentSkill = (
     const spec = typeof field === "string" ? exposedInputs?.[field] : field.spec;
     return {
       key,
-      type: inputTypeForKey(key),
+      type: isRecord(spec) && isValueType(spec.type) ? spec.type : inputTypeForKey(key),
       required: exposedRequired(spec, requiredFields.has(payloadKey)),
       ...(optionalDescription(spec) ? { description: optionalDescription(spec) } : {}),
     };
@@ -269,17 +337,23 @@ export const externalSkillToAuthoringDescriptor = (
     })),
     outcomes,
     hasDataOutputs: false,
+    outputs: [],
   };
 };
 
 export const agentSkillToAuthoringDescriptor = (
   source: AgentSkillSpine,
   descriptor: SkillCapabilityDescriptor,
-): SkillAuthoringDescriptor => ({
-  skillName: source.skillName,
-  displayName: humanizeIdentifier(source.skillName),
-  category: agentSkillCategory(source.kind),
-  inputs: inputsForAgentSkill(source, descriptor),
-  outcomes: descriptor.outcomeVocabulary.map(toExternalOutcome),
-  hasDataOutputs: false,
-});
+): SkillAuthoringDescriptor => {
+  const config = parsedAgentSkillConfig(source, descriptor);
+  const outputs = declaredOutputsForAgentSkill(config);
+  return {
+    skillName: source.skillName,
+    displayName: humanizeIdentifier(source.skillName),
+    category: agentSkillCategory(source.kind),
+    inputs: inputsForAgentSkill(config, descriptor),
+    outcomes: descriptor.outcomeVocabulary.map(toExternalOutcome),
+    hasDataOutputs: outputs.length > 0,
+    outputs,
+  };
+};

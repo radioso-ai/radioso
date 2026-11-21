@@ -64,7 +64,32 @@ describe('routineSkillCatalogApi', () => {
       ],
       outcomes: [{ name: 'sent', displayName: 'Sent', status: 'sent', description: 'Message accepted by provider' }],
       hasDataOutputs: false,
+      outputs: [],
     }])
+  })
+
+  it('reads the typed outputs an API request skill declares', () => {
+    const [skill] = parseSkillAuthoringCatalogResponse({
+      skills: [{
+        skillName: 'order_status',
+        displayName: 'Order status',
+        category: 'api_request',
+        inputs: [],
+        outcomes: [],
+        hasDataOutputs: true,
+        outputs: [
+          { name: 'status', type: 'text', required: true, description: 'Order status' },
+          { name: 'items', type: 'list', required: false, fields: [{ name: 'title', type: 'text', role: 'title' }] },
+          { name: 'odd', type: 'unknown', required: false },
+        ],
+      }],
+    })
+
+    expect(skill?.category).toBe('api_request')
+    expect(skill?.outputs).toEqual([
+      { name: 'status', type: 'text', required: true, description: 'Order status' },
+      { name: 'items', type: 'list', required: false, fields: [{ name: 'title', type: 'text', role: 'title' }] },
+    ])
   })
 
   it('rejects malformed catalog descriptors', () => {

@@ -8,6 +8,7 @@ import type {
 } from '@/lib/api-skills'
 import { getToolInputFields, normalizeSkillName, parseBoundParamValue, type ToolInputField, type ToolInputFieldType } from '@/lib/external-skills'
 import type { AgentSourceScope, RetrievalMetadataRule } from '@/lib/api'
+import { buildApiRequestConfig, createApiRequestDraft, type ApiRequestDraft } from './api-request-skill-model'
 
 export type SkillInputMode = 'bind' | 'expose' | 'ignore'
 
@@ -29,6 +30,8 @@ export type SkillFormDraft = {
   settingDrafts: Record<string, SkillSettingDraftValue>
   selectedOutcomes: string[]
   extraConfigJson: string
+  // Only an `api_request` skill carries one: its request, typed inputs and outputs.
+  apiRequest?: ApiRequestDraft
 }
 
 type DerivedSkillField = ToolInputField
@@ -133,6 +136,7 @@ export const createInitialSkillDraft = (
     settingDrafts: createSettingDrafts(capability?.settingsFields ?? [], existingSkill?.config),
     selectedOutcomes: readOutcomeList(existingSkill?.config, capability?.outcomeVocabulary ?? DEFAULT_OUTCOMES),
     extraConfigJson: JSON.stringify(additionalConfig, null, 2),
+    ...(capability?.id === 'api_request' ? { apiRequest: createApiRequestDraft(existingSkill?.config) } : {}),
   }
 }
 
@@ -200,6 +204,16 @@ export const buildAgentSkillInput = (
   draft: SkillFormDraft,
   fields: readonly DerivedSkillField[],
 ): AgentSkillCreateInput => {
+  if (capability.id === 'api_request') {
+    return {
+      name: normalizeSkillName(draft.name),
+      capability: capability.id,
+      target: { kind: capability.targetKind, id: draft.targetId || null },
+      config: buildApiRequestConfig(draft.apiRequest ?? createApiRequestDraft()),
+      invocationMode: draft.invocationMode,
+      enabled: draft.enabled,
+    }
+  }
   const extraConfig = parseExtraConfig(draft.extraConfigJson)
   const inputConfig = buildInputConfig(capability, draft, fields)
   const mergedInputConfig = mergeInputConfig(capability, extraConfig, inputConfig, fields)
@@ -230,6 +244,7 @@ const capabilityLabels: Record<string, string> = {
   email: 'Email',
   slack_post: 'Slack Post',
   webhook_call: 'Webhook Call',
+  api_request: 'API request',
   notify: 'Notify Human',
 }
 
@@ -306,6 +321,9 @@ const suggestSkillNameBase = (capabilityId: AgentSkillCapabilityId, targetLabel?
   }
   if (capabilityId === 'webhook_call') {
     return targetSlug ? `call_${targetSlug}` : 'call_webhook'
+  }
+  if (capabilityId === 'api_request') {
+    return targetSlug ? `call_${targetSlug}` : 'call_api'
   }
   if (capabilityId === 'notify') {
     // Canonical name the contact-request gate and built-in contact routine key on

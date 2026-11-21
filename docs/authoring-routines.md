@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-18
+last_updated: 2026-11-21
 ---
 
 # Authoring Routines
@@ -554,6 +554,15 @@ input receives either a fixed value or an `@` value already held by the routine.
 Assign a skill output to an `@` value when another step or branch needs it.
 For example, a refund step can use `@order_id`, set `channel` to `support`, and
 store the result as `@refund_id` for its final message.
+
+An `api_request` skill (see [API Request Skills](api-request-skills.md)) declares
+typed outputs, and the skill catalog lists them with their types and list
+fields. Assign a scalar output, such as `status`, to an `@` value, and use it in
+a **Rule** row or a field guard. An empty list counts as absent, so "is set" on
+a list output means the API found something. A list output whose fields carry
+roles (`key`, `title`, `subtitle`, `image`, `link`) shows as cards in a later
+chat step. A step branches on the outcome: `completed`, `not_found`,
+`rejected`, `missing_input`, `invalid_input`, `unverified` or `failed`.
 
 A skill name with no matching capability on the agent appears as **unknown
 skill**. Choose the intended skill, then validate the routine.

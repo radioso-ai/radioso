@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { isLocalDevelopmentHttpUrl } from "../../domain/publicNetwork.js";
 import { fetchPublicUrl } from "./publicUrlFetch.js";
 
 export interface WebhookHttpClient {
@@ -30,27 +31,6 @@ export class WebhookTargetUrlError extends Error {
 
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
-
-/** Plain http to this machine: a target only where `allowHttpLoopback` is set (local development, e2e). */
-const isLocalDevelopmentHttpUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:") {
-      return false;
-    }
-    const hostname = url.hostname.toLowerCase();
-    return (
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "host.docker.internal" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1" ||
-      hostname === "[::1]"
-    );
-  } catch {
-    return false;
-  }
-};
 
 /**
  * The rule a signed-webhook target meets when it is saved: a URL over https whose host resolves to

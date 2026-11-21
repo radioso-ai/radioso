@@ -88,43 +88,43 @@ export const fetchPublicBytes = async (
       });
       if (!REDIRECT_STATUSES.has(response.status)) return await readBounded(response, current, limits);
       const location = response.headers.get("location");
-      await discard(response);
+      await discardBody(response);
       if (!location) return failed("http_status", response.status);
-      current = assertUrl(resolveLocation(location, current));
+      current = assertUrl(resolveRedirectLocation(location, current));
     }
     return failed("too_many_redirects");
   } catch (error) {
     if (signal.aborted) return failed("timeout");
-    return failed(isPolicyRefusal(error) ? "blocked" : "unreachable");
+    return failed(isPublicNetworkRefusal(error) ? "blocked" : "unreachable");
   }
 };
 
 const readBounded = async (response: Response, url: URL, limits: PublicBytesLimits): Promise<PublicBytesFetchResult> => {
   if (response.status === 304 && limits.ifNoneMatch) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "not_modified", url: url.toString() };
   }
   if (!response.ok) {
-    await discard(response);
+    await discardBody(response);
     return failed("http_status", response.status);
   }
   const contentType = response.headers.get("content-type");
   if (limits.contentTypePrefix !== undefined && !(contentType ?? "").trim().toLowerCase().startsWith(limits.contentTypePrefix.toLowerCase())) {
-    await discard(response);
+    await discardBody(response);
     return failed("content_type");
   }
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > limits.maxBytes) {
-    await discard(response);
+    await discardBody(response);
     return failed("too_large");
   }
-  const bytes = await readCapped(response, limits.maxBytes);
+  const bytes = await readCappedBody(response, limits.maxBytes);
   const etag = response.headers.get("etag");
   return bytes ? { kind: "fetched", bytes, contentType, url: url.toString(), ...(etag ? { etag } : {}) } : failed("too_large");
 };
 
 /** Reads the body up to the cap and no further: a body that outgrows it is cut off and `null` comes back. */
-const readCapped = async (response: Response, maxBytes: number): Promise<Buffer | null> => {
+export const readCappedBody = async (response: Response, maxBytes: number): Promise<Buffer | null> => {
   if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -141,12 +141,12 @@ const readCapped = async (response: Response, maxBytes: number): Promise<Buffer 
   }
 };
 
-const discard = async (response: Response): Promise<void> => {
+export const discardBody = async (response: Response): Promise<void> => {
   await response.body?.cancel().catch(() => undefined);
 };
 
 /** A relative Location resolves against the URL that sent it; one that does not parse goes to the policy as it is, to be refused. */
-const resolveLocation = (location: string, base: URL): string => {
+export const resolveRedirectLocation = (location: string, base: URL): string => {
   try {
     return new URL(location, base).toString();
   } catch {
@@ -155,7 +155,7 @@ const resolveLocation = (location: string, base: URL): string => {
 };
 
 /** The transport wraps a refused connection in its own error; the policy's error is somewhere in the cause chain. */
-const isPolicyRefusal = (error: unknown): boolean => {
+export const isPublicNetworkRefusal = (error: unknown): boolean => {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
     if (current instanceof PublicNetworkPolicyError) return true;

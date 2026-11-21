@@ -51,6 +51,8 @@ import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
 import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
+import { EndDialog } from '@/components/dashboard/settings/routine-end-dialog'
+import { guardOpIsInvalidForList } from '@/lib/routine-skill-outputs'
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
 // A chip is an atomic inline reference the author picks instead of typing raw syntax.
@@ -540,65 +542,10 @@ function approvalChipTargets(stepTargets: ApprovalChipTarget[]): ApprovalChipTar
   return [...stepTargets, { id: 'done', label: 'End (complete)' }, { id: 'handoff', label: 'Handoff' }]
 }
 
-// Name an ending and give it its own completion message. A blank name is the default ending
-// (the primary complete terminal, whose message is the header field); a name makes it an
-// additional completion whose message is carried here, so a branch can finish with its own copy.
-function EndDialog({
-  open,
-  onOpenChange,
-  initialName,
-  initialMessage,
-  onConfirm,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  initialName: string
-  initialMessage: string
-  onConfirm: (name: string, message: string) => void
-}) {
-  const [name, setName] = useState(initialName)
-  const [message, setMessage] = useState(initialMessage)
-  // A named ending becomes a terminal id, so it can't reuse the reserved `done`/`handoff` refs —
-  // that would collide with the default completion or the handoff terminal. (The backend
-  // validator also rejects any id shared by two nodes, covering collisions with step ids.)
-  const reservedCollision = name.trim().length > 0 && (slugifyVariableKey(name.trim()) === 'done' || slugifyVariableKey(name.trim()) === 'handoff')
-  const confirm = () => {
-    if (reservedCollision) return
-    onConfirm(name, message)
-    onOpenChange(false)
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Ending</DialogTitle>
-          <DialogDescription>Leave the name blank for the routine&apos;s default ending. Give it a name to add a separate ending with its own completion message.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="endName">Ending name (optional)</Label>
-            <Input id="endName" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. ineligible" />
-            {reservedCollision ? (
-              <p className="text-xs text-destructive">That name is reserved — pick a different name for this ending.</p>
-            ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="endMessage">Completion message (optional)</Label>
-            <Input id="endMessage" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What the agent says at this ending" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button type="button" onClick={confirm} disabled={reservedCollision}>Save ending</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
   const { isSelected, select, convertToText, onMenuOpenChange, onMenuCloseAutoFocus, suppressNextCloseFocus } = useChipController(nodeKey)
-  const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables, supportsStepBindings } = useRoutineVariables()
+  const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables, supportsStepBindings, listVariableIds } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
   const skillCatalog = useSkillDescriptor(refId, label)
 
@@ -921,9 +868,15 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     // (a structured rule, op set) ⇄ decided-by-AI (a free phrase, no op). The mode is read
     // from the node so it reflects the current state after a toggle.
     let isAi = false
+    let isInvalid = false
     editor.getEditorState().read(() => {
       const node = $getNodeByKey(nodeKey)
-      if ($isChipNode(node)) isAi = node.getChipOp() === null
+      if ($isChipNode(node)) {
+        const op = node.getChipOp()
+        isAi = op === null
+        // A check stored before its variable became a list no longer fits it.
+        isInvalid = op !== null && guardOpIsInvalidForList(op, getType(refId), listVariableIds?.has(refId) ?? false)
+      }
     })
     return (
       <>
@@ -938,7 +891,8 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
               onClick={select}
               onDoubleClick={convertToText}
             >
-              <ChipBadge label={isAi ? 'AI decides' : label} type={null} suffix={isAi ? undefined : 'rule'} alwaysShowDetails={isSelected} />
+              {isInvalid ? <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> : null}
+              <ChipBadge label={isAi ? 'AI decides' : label} type={null} suffix={isAi ? undefined : isInvalid ? 'invalid for a list' : 'rule'} alwaysShowDetails={isSelected} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56" onCloseAutoFocus={onMenuCloseAutoFocus}>
@@ -956,6 +910,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
           open={isConditionBuilderOpen}
           onOpenChange={setIsConditionBuilderOpen}
           variables={variables}
+          listVariableIds={listVariableIds}
           onConfirm={promoteToCode}
           onSetVariableType={setType}
         />

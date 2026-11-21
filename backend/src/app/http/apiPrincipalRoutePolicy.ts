@@ -322,6 +322,13 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PUT", "/api/v1/settings/webhook-destinations/:id", "workspace.settings.manage"],
     ["POST", "/api/v1/settings/webhook-destinations/:id/rotate-secret", "workspace.settings.manage"],
     ["DELETE", "/api/v1/settings/webhook-destinations/:id", "workspace.settings.manage"],
+    ["GET", "/api/v1/settings/api-connections", "workspace.settings.read"],
+    ["POST", "/api/v1/settings/api-connections", "workspace.settings.manage"],
+    ["GET", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.read"],
+    ["PATCH", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.manage"],
+    ["DELETE", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.manage"],
+    // Sends a real request with the stored credential, so only a signed-in teammate may run it.
+    ["POST", "/api/v1/settings/api-connections/:connectionId/test-request", "workspace.settings.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/agents/:agentId/mcp-connections", "workspace.agents.read"],

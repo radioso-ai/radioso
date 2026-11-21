@@ -45,6 +45,8 @@ const catalogToolCoverage = {
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
   getMcpConnection: "agent_skills",
+  listApiConnections: "agent_skills",
+  getApiConnection: "agent_skills",
   listExternalSkills: "agent_skills",
   getExternalSkill: "agent_skills",
   getEvalCaseBySourceMessage: "eval_results",
@@ -183,6 +185,15 @@ const webhookDestinationConfiguration = deferred(
 );
 const webhookDestinationRemoval = deferred(
   "Deferred: deleting a destination silently stops delivery and recreating one mints a new secret the receiver must be reconfigured with, so removal needs its own proposal shape.",
+);
+const apiConnectionCredentialWrite = permanent(
+  "Permanent exclusion: the body carries the connection's write-only credential, which the operator types into the dashboard and the copilot must never handle; Ray proposes the skills that use a connection, through propose_skill_config, not the connection.",
+);
+const apiConnectionRemoval = permanent(
+  "Permanent exclusion: a deleted connection can only be recreated with its credential, which only the operator can supply, so Ray could neither undo nor redo the removal; it is refused anyway while a skill targets the connection.",
+);
+const apiConnectionTestRequest = permanent(
+  "Permanent exclusion: it sends a real request with the stored credential, and its answer carries the API's raw response body, which can hold a customer's records; the model reads API data only through a skill's declared, typed outputs.",
 );
 const channelConnectionStatusRead = deferred(
   "Deferred to Wave 5 channel configuration: non-secret connection, installation, and binding status that no family reader covers; these land with the channel tools that act on them.",
@@ -447,6 +458,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateWebhookDestination",
   ], webhookDestinationConfiguration),
   ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
+  ...coverage(["createApiConnection", "updateApiConnection"], apiConnectionCredentialWrite),
+  ...coverage(["deleteApiConnection"], apiConnectionRemoval),
+  ...coverage(["testApiConnectionRequest"], apiConnectionTestRequest),
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["queryHistory"], historyTextSearch),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),

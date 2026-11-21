@@ -302,6 +302,9 @@ export const skillDefinitionSchema = skillCatalogEntrySchema.omit({
   // The executor resolves delivery or state through the persisted conversation row;
   // it cannot run against an ephemeral (replay/test) conversation.
   requiresDurableConversation: z.boolean().optional(),
+  // Running the skill only reads from the systems it reaches and changes nothing outside the
+  // conversation, so a safe test or a replay runs it for real.
+  readOnly: z.boolean().optional(),
 });
 
 // Compile-time guard: fails the build if skillDefinitionSchema ever infers a

@@ -9283,6 +9283,74 @@
           "status"
         ]
       },
+      "SkillAuthoringOutput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "date",
+              "email",
+              "list"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "number",
+                    "boolean",
+                    "date",
+                    "email"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "key",
+                    "title",
+                    "subtitle",
+                    "image",
+                    "link"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "required"
+        ]
+      },
       "SkillAuthoringDescriptor": {
         "type": "object",
         "properties": {
@@ -9301,7 +9369,8 @@
               "customer_email",
               "webhook",
               "slack",
-              "notify"
+              "notify",
+              "api_request"
             ]
           },
           "description": {
@@ -9321,6 +9390,12 @@
           },
           "hasDataOutputs": {
             "type": "boolean"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringOutput"
+            }
           }
         },
         "required": [
@@ -9329,7 +9404,8 @@
           "category",
           "inputs",
           "outcomes",
-          "hasDataOutputs"
+          "hasDataOutputs",
+          "outputs"
         ]
       },
       "RoutineSkillCatalogResponse": {
@@ -23874,6 +23950,359 @@
         "type": "string",
         "description": "A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier.",
         "example": "event: ready\ndata: {\"protocolVersion\":1}\n\nevent: invalidate\ndata: {\"protocolVersion\":1,\"changeKinds\":[\"document.status_changed\"]}\n\nevent: resync\ndata: {\"protocolVersion\":1}\n"
+      },
+      "ApiConnection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "authScheme": {
+            "type": "string",
+            "enum": [
+              "none",
+              "bearer",
+              "header",
+              "basic"
+            ]
+          },
+          "authHeaderName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credentialMask": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The credential's last four characters behind asterisks; null when the connection has none. The credential itself is never returned."
+          },
+          "defaultHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "baseUrl",
+          "authScheme",
+          "authHeaderName",
+          "credentialMask",
+          "defaultHeaders",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ApiConnectionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string",
+            "description": "https base URL every request's path is appended to; no query or fragment."
+          },
+          "authScheme": {
+            "type": "string",
+            "enum": [
+              "none",
+              "bearer",
+              "header",
+              "basic"
+            ],
+            "default": "none"
+          },
+          "authHeaderName": {
+            "type": "string",
+            "description": "The header the credential is sent in; required for the header scheme."
+          },
+          "credential": {
+            "type": "string",
+            "description": "Write-only. A bearer token, a header value, or username:password for basic; required unless the scheme is none."
+          },
+          "defaultHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "name",
+          "baseUrl"
+        ]
+      },
+      "ApiConnectionUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "authScheme": {
+            "type": "string",
+            "enum": [
+              "none",
+              "bearer",
+              "header",
+              "basic"
+            ]
+          },
+          "authHeaderName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credential": {
+            "type": "string",
+            "description": "Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name."
+          },
+          "defaultHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ApiRequestOutput": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "number",
+                  "boolean",
+                  "date",
+                  "email"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "path",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "list"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean",
+                "default": false
+              },
+              "maxItems": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "default": 10
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "boolean",
+                        "date",
+                        "email"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "key",
+                        "title",
+                        "subtitle",
+                        "image",
+                        "link"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "type"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "path",
+              "type",
+              "fields"
+            ]
+          }
+        ]
+      },
+      "ApiRequestTestRequest": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Path appended to the base URL; a {param} placeholder takes the param's value."
+          },
+          "boundParams": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {}
+          },
+          "exposedSampleValues": {
+            "type": "object",
+            "additionalProperties": {},
+            "default": {}
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ApiRequestOutput"
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "method",
+          "path"
+        ]
+      },
+      "ApiRequestTestResult": {
+        "type": "object",
+        "properties": {
+          "httpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "not_found",
+              "rejected",
+              "missing_input",
+              "invalid_input",
+              "unverified",
+              "failed"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "response_mismatch",
+              "outputs_too_large",
+              "non_json_response",
+              "timeout",
+              "network",
+              "upstream_error",
+              "auth_rejected",
+              "rate_limited",
+              "redirect_refused",
+              "connection_not_found",
+              "blocked",
+              "response_too_large",
+              "credential_unavailable",
+              "skill_not_found",
+              "invalid_config",
+              "context_missing"
+            ]
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "The declared outputs projected to their types: what a routine step would get."
+          },
+          "mismatches": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Required outputs the response left absent."
+          },
+          "body": {
+            "description": "The parsed JSON body cut down to 16 KB; null when empty or not JSON."
+          },
+          "bodyTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "httpStatus",
+          "durationMs",
+          "outcome",
+          "outputs",
+          "mismatches",
+          "bodyTruncated"
+        ]
       },
       "AgentVoiceConnection": {
         "type": "object",
@@ -39363,6 +39792,426 @@
         }
       }
     },
+    "/api/v1/settings/api-connections": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "List workspace API connections",
+        "operationId": "listApiConnections",
+        "responses": {
+          "200": {
+            "description": "API connections returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiConnection"
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "Create a workspace API connection",
+        "operationId": "createApiConnection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiConnectionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "API connection created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "$ref": "#/components/schemas/ApiConnection"
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Connection name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/api-connections/{connectionId}": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "Get a workspace API connection",
+        "operationId": "getApiConnection",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API connection returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "$ref": "#/components/schemas/ApiConnection"
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "Update a workspace API connection",
+        "description": "Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for.",
+        "operationId": "updateApiConnection",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiConnectionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API connection updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "$ref": "#/components/schemas/ApiConnection"
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Connection name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "Delete a workspace API connection",
+        "operationId": "deleteApiConnection",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "API connection deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An agent skill uses the connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/api-connections/{connectionId}/test-request": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "summary": "Send a test request through an API connection",
+        "description": "Sends one real request the way an API request skill would and returns its outcome, the declared outputs and the parsed body. A method other than GET acts on the target.",
+        "operationId": "testApiConnectionRequest",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiRequestTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Test request settled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiRequestTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}/revision-state": {
       "get": {
         "tags": [
@@ -52739,7 +53588,8 @@
                               "email",
                               "slack_post",
                               "webhook_call",
-                              "notify"
+                              "notify",
+                              "api_request"
                             ]
                           },
                           "storedKind": {
@@ -53176,7 +54026,8 @@
                               "email",
                               "slack_post",
                               "webhook_call",
-                              "notify"
+                              "notify",
+                              "api_request"
                             ]
                           },
                           "storedKind": {
@@ -53349,7 +54200,8 @@
                       "email",
                       "slack_post",
                       "webhook_call",
-                      "notify"
+                      "notify",
+                      "api_request"
                     ]
                   },
                   "target": {
@@ -53433,7 +54285,8 @@
                             "email",
                             "slack_post",
                             "webhook_call",
-                            "notify"
+                            "notify",
+                            "api_request"
                           ]
                         },
                         "storedKind": {
@@ -54032,7 +54885,8 @@
                             "email",
                             "slack_post",
                             "webhook_call",
-                            "notify"
+                            "notify",
+                            "api_request"
                           ]
                         },
                         "storedKind": {

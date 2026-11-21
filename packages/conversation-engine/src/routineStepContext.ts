@@ -17,7 +17,8 @@ export const projectStep = (step: RoutineStep): SteeringRule[] =>
 
 /**
  * A skill step's result as the turn stages it for every later step: its outputs, under the step
- * that ran it, so a presenting step can find its source's records by `metadata.stepId` (#1763).
+ * that ran it, so a presenting step can find its source's records by `metadata.stepId` (#1763),
+ * with the typed contract they follow when the skill declares one.
  */
 export const stagedContextForSkillResult = (
   step: RoutineStep,
@@ -33,6 +34,7 @@ export const stagedContextForSkillResult = (
     metadata: {
       stepId: step.id,
       status: result.status,
+      ...(result.outputContract ? { outputContract: result.outputContract } : {}),
       ...(result.metadata ? { skillMetadata: result.metadata } : {}),
     },
   };

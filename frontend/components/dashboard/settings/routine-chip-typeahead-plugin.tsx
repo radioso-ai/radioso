@@ -27,10 +27,11 @@ import {
 } from '@/components/dashboard/settings/routine-chip-node'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { useInsertSkillChip } from '@/components/dashboard/settings/use-insert-skill-chip'
-import type { RoutineFieldGuardOp } from '@/lib/api-types'
+import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import { slugifyVariableKey, type ApprovalDocOption } from '@/lib/routine-prose'
 
-export type RoutineEditorVariable = { id: string; name: string }
+// `type` is set when the variable is made from a typed skill output; otherwise it starts as text.
+export type RoutineEditorVariable = { id: string; name: string; type?: RoutineSlotType }
 
 class ChipMenuOption extends MenuOption {
   display: string

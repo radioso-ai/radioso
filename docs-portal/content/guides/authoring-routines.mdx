@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-11-18
+last_updated: 2026-11-21
 ---
 
 # Author a routine
@@ -171,6 +171,8 @@ chat step directly. The **+ Step** menu adds chat, skill, approval, and action
 steps. A skill step can use a fixed input or a value the routine holds, then
 assign its outputs to values that later steps can read. For example, a refund
 lookup can use `@order_number` and set `@refund_status` for a later branch.
+
+A skill that calls a REST API declares typed outputs, such as `status` (text) or a list of `items`, and the step editor offers them as the values to set. A **Rule** row can test one, and an empty list counts as absent, so "is set" on a list means the API found something. A list whose fields carry roles (key, title, subtitle, image, link) shows as cards in a later chat step. The step branches on the outcome: `completed`, `not_found`, `rejected`, `missing_input`, `invalid_input`, `unverified` or `failed`. [Call a REST API from a routine](/automation/api-request-skills) covers the skill.
 
 A chat step's instruction is the controlling instruction for its reply. The
 agent's directives still shape how the reply is said — tone, formality, what it

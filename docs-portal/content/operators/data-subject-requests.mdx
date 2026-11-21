@@ -1,7 +1,7 @@
 ---
 title: "Answering a data subject request"
 description: "How to find one person's conversations across the website, email and Slack, export what Radioso holds about them as JSON, and erase it."
-last_updated: 2026-10-20
+last_updated: 2026-11-21
 ---
 
 # Answering a data subject request
@@ -150,7 +150,7 @@ Each section is a list of records, and every section is present even when it hol
 | `routine_values` | What the routine a conversation last ran collected, such as a booking's date or a phone number. |
 | `routine_actions` | What routines handed on about the person: each contact request as it was queued, with every value the routine had collected by then, and the values a routine's ending sent to your team or to a webhook. |
 | `conversation_summaries` | The rolling summary the agent keeps of a long conversation. |
-| `context_values` | Values your site or a skill stored for the person's chat sessions and under their verified customer id. |
+| `context_values` | The [attribute](/operators/context-variables) values kept about the person: on each of their conversations, in those conversations' chat sessions, and under their verified customer id. Each record names the attribute, the `scope` it was kept under (`conversation`, `session` or `customer`), the value, when it last changed, and `writtenBy`, the kind of writer that last set it: `api`, `operator`, `routine` or `classifier`. |
 | `email_messages` | Each mail of their email conversations: direction, subject, sender address and display name, Cc, and attachment names, types and sizes. The mail's text is the conversation's message. |
 | `answer_feedback` | The ratings and comments the person left on answers. |
 

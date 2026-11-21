@@ -1037,7 +1037,7 @@ describe("website crawl worker", () => {
 
   it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
     const sourceId = "44444444-4444-4444-8444-444444444444";
-    const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10 };
+    const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10, createdAt: new Date("2026-11-21T09:00:00.000Z") };
     const record = vi.fn().mockResolvedValue(undefined);
     const missingPages = {
       reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] }),
@@ -1078,6 +1078,7 @@ describe("website crawl worker", () => {
       eventType: "document.website_crawler.crawl",
       metadata: expect.objectContaining({ trigger: "scheduled" }),
     }));
-    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ trigger: "scheduled", sourceId }));
+    // Pages are counted against what the source had when the job started, not when its last slice did.
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ trigger: "scheduled", sourceId, crawlStartedAt: job.createdAt }));
   });
 });

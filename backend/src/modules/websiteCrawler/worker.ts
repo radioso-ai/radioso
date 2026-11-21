@@ -264,6 +264,7 @@ export class WebsiteCrawlWorker {
         policy: job.policy,
         checkpoint: job.checkpoint,
         trigger: job.trigger,
+        crawlStartedAt: job.createdAt,
         onCheckpoint: async (checkpoint) => {
           if (await this.dependencies.repository.updateCheckpoint(job.id, job.attemptCount, checkpoint)) {
             this.publish(job.workspaceId, "crawl.progress");

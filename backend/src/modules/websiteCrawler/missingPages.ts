@@ -1,4 +1,5 @@
 import { decideMissingPageRemoval } from "./missingPageRemoval.js";
+import { buildWebsiteExternalDocumentId, normalizePageUrl, redactWebsiteCrawlerUrl } from "./pageUrls.js";
 import type { CrawlTrigger } from "./recrawlSchedule.js";
 import type { WebsiteCrawlerAuditPort, WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 
@@ -38,6 +39,31 @@ export interface WebsiteHeldPageStore {
 }
 
 export const MISSING_PAGES_HELD_AUDIT_EVENT = "document.website_crawler.missing_pages_held";
+
+/**
+ * The external ids of every page a crawl saw across all of its slices: the ids it published, and
+ * each canonical URL its checkpoint records as processed, built exactly as ingestion builds a
+ * page's id. A page skipped as duplicate content or by policy is processed, so it counts as seen and
+ * is never removed for being skipped.
+ */
+export const pagesSeenByCrawl = (input: {
+  websiteBaseUrl: string;
+  processedCanonicalUrls: Iterable<string>;
+  publishedExternalDocumentIds: readonly string[];
+}): string[] => {
+  const seen = new Set(input.publishedExternalDocumentIds);
+  for (const canonicalUrl of input.processedCanonicalUrls) {
+    try {
+      seen.add(buildWebsiteExternalDocumentId({
+        websiteBaseUrl: input.websiteBaseUrl,
+        pageUrl: redactWebsiteCrawlerUrl(normalizePageUrl(canonicalUrl)),
+      }));
+    } catch {
+      // An address the crawler cannot read names no page it published.
+    }
+  }
+  return [...seen];
+};
 
 /**
  * Removes the pages a complete crawl no longer found, or holds them for the operator. A crawl the

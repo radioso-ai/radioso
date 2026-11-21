@@ -2043,7 +2043,7 @@ Focused checks:
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
 - `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts tests/integration/website-recrawl-multi-slice.integration.test.ts`
 - `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 
 Related docs:

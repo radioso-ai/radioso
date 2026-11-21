@@ -34,23 +34,16 @@ export const emptyWebsiteCrawlCheckpoint = (): WebsiteCrawlCheckpoint => ({
   lastProcessedAt: null,
 });
 
-/**
- * Whether a crawl starts from nothing rather than resuming. A job's checkpoint is stored from the
- * moment it is created, so an empty checkpoint, not a missing one, is what a fresh crawl carries;
- * any recorded progress means an earlier slice or a paused run already crawled part of the site.
- */
-export const isFreshWebsiteCrawlCheckpoint = (checkpoint: WebsiteCrawlCheckpoint | null | undefined): boolean =>
-  !checkpoint || (
-    checkpoint.accepted + checkpoint.skipped + checkpoint.failed === 0
-    && checkpoint.discoveredUrls.length === 0
-    && checkpoint.queuedUrls.length === 0
-    && checkpoint.processingUrls.length === 0
-    && checkpoint.processedCanonicalUrls.length === 0
-  );
-
 const MAX_PATTERNS = 50;
 const MAX_PATTERN_LENGTH = 200;
 const MAX_CHECKPOINT_URLS = 10_000;
+
+/**
+ * Whether a checkpoint still lists every page its crawl processed. A stored list is cut at
+ * {@link MAX_CHECKPOINT_URLS} when it is read back, so a list that long may have lost pages.
+ */
+export const listsEveryProcessedPage = (checkpoint: WebsiteCrawlCheckpoint): boolean =>
+  checkpoint.processedCanonicalUrls.length < MAX_CHECKPOINT_URLS;
 
 const normalizePatternList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {

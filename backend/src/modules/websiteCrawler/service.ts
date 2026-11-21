@@ -21,13 +21,13 @@ import {
 } from "./pageUrls.js";
 import {
   emptyWebsiteCrawlCheckpoint,
-  isFreshWebsiteCrawlCheckpoint,
+  listsEveryProcessedPage,
   normalizeWebsiteCrawlCheckpoint,
   normalizeWebsiteCrawlPolicy,
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
-import { reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
+import { pagesSeenByCrawl, reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
 import type { CrawlTrigger } from "./recrawlSchedule.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
 import { usageLimitExceeded } from "../../shared/domain/errors.js";
@@ -124,13 +124,15 @@ export class WebsiteCrawlerService {
     onCheckpoint?: (checkpoint: WebsiteCrawlCheckpoint) => Promise<void>;
     /** Who started the crawl; `manual` unless the recrawl sweep queued it. */
     trigger?: CrawlTrigger;
+    /** When the crawl's job started, for a crawl run in slices; this slice's start when omitted. */
+    crawlStartedAt?: Date;
   }): Promise<WebsiteCrawlPublicationResult> {
-    const crawlStartedAt = new Date();
-    const startedFresh = isFreshWebsiteCrawlCheckpoint(input.checkpoint);
+    const crawlStartedAt = input.crawlStartedAt ?? new Date();
     const websiteBaseUrl = normalizeBaseUrl(input.url);
     const safeWebsiteBaseUrl = redactWebsiteCrawlerUrl(websiteBaseUrl);
     const policy = normalizeWebsiteCrawlPolicy(input.policy ?? {});
     const checkpoint = normalizeWebsiteCrawlCheckpoint(input.checkpoint ?? emptyWebsiteCrawlCheckpoint());
+    const processedPagesListed = listsEveryProcessedPage(checkpoint);
     const checkpointSets = {
       discovered: new Set(checkpoint.discoveredUrls),
       queued: new Set(checkpoint.queuedUrls),
@@ -566,8 +568,10 @@ export class WebsiteCrawlerService {
         syncedAt: new Date(),
       });
 
+      // The checkpoint carries every page earlier slices (and a run before a pause) processed, so a
+      // crawl that finished over several slices is complete too, unless that list may have been cut.
       const isFullSuccessfulCrawl =
-        startedFresh &&
+        processedPagesListed &&
         result.failed === 0 &&
         result.status === "completed" &&
         // Until providers expose an explicit frontier-exhausted signal, exact
@@ -584,7 +588,11 @@ export class WebsiteCrawlerService {
             accountId: input.accountId,
             workspaceId: input.workspaceId,
             sourceId: documentSource.id,
-            seenExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
+            seenExternalDocumentIds: pagesSeenByCrawl({
+              websiteBaseUrl: safeWebsiteBaseUrl,
+              processedCanonicalUrls: checkpointSets.processed,
+              publishedExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
+            }),
             crawlStartedAt,
           });
         } catch (error) {

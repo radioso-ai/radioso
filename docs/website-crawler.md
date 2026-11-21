@@ -199,7 +199,7 @@ A source runs one crawl at a time. When a crawl for the source is already queued
 
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
 
-After a complete crawl, the source's pages the crawl did not find are removed. A crawl counts as complete when it started from nothing, rather than resuming a paused crawl or continuing an earlier two-minute slice, finished every page it fetched, and stopped below its page limit. Any other crawl removes nothing.
+After a complete crawl, the source's pages the crawl did not find are removed. A crawl counts as complete when it finished with no failed pages and stopped below its page limit, however many two-minute slices it took and whether or not it was paused and resumed. It is measured against every page the whole job processed, which the job's checkpoint carries from slice to slice: a page skipped as duplicate content or by the crawl policy counts as found and stays. A checkpoint lists at most 10,000 processed pages, so a crawl whose list reached that size removes nothing. Any other crawl removes nothing.
 
 ### Keeping a website source up to date
 
@@ -230,7 +230,7 @@ The `website-recrawl` periodic task queues the crawls. Every 15 minutes it claim
 
 ### Pages a scheduled recrawl holds
 
-A scheduled recrawl never removes a large share of a source on its own. When the pages it did not find are more than a fifth of the pages the source had before it ran, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less is removed as a manual recrawl removes it. A manual recrawl or a new crawl of the same URL removes every page it did not find, held or not, because the operator asked for a fresh copy of the site.
+A scheduled recrawl never removes a large share of a source on its own. When the pages it did not find are more than a fifth of the pages the source had when its job started, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less is removed as a manual recrawl removes it. A manual recrawl or a new crawl of the same URL removes every page it did not find, held or not, because the operator asked for a fresh copy of the site.
 
 Decide on held pages with:
 

@@ -7,6 +7,7 @@ import {
 import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
 import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "../../../src/modules/websiteCrawler/errors.js";
 import { emptyWebsiteCrawlCheckpoint } from "../../../src/modules/websiteCrawler/policy.js";
+import { pagesSeenByCrawl } from "../../../src/modules/websiteCrawler/missingPages.js";
 
 const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"]>>["pages"]): WebsiteCrawlerProvider => ({
   name: "fake",
@@ -1558,11 +1559,13 @@ describe("website crawler service", () => {
     expect(reapMissingPages).not.toHaveBeenCalled();
   });
 
-  it("skips reaping when the crawl resumed from a checkpoint", async () => {
+  it("reconciles a crawl that resumed from a checkpoint against every page the whole job processed", async () => {
     const ingest = vi.fn().mockResolvedValueOnce({ documentId: "doc-1", status: "queued" });
     const resolveSource = vi.fn().mockResolvedValue({ id: "source-2" });
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
-    const reapMissingPages = vi.fn();
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const reviewMissingPages = vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 3, missingPages: [] });
+    const jobStartedAt = new Date("2026-11-21T09:00:00.000Z");
 
     const service = new WebsiteCrawlerService({
       provider: createProvider([
@@ -1575,6 +1578,7 @@ describe("website crawler service", () => {
         },
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      missingPages: { reviewMissingPages, holdMissingPages: vi.fn() },
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1583,13 +1587,55 @@ describe("website crawler service", () => {
       workspaceId: "workspace-1",
       url: "https://example.com",
       limit: 5,
+      crawlStartedAt: jobStartedAt,
       checkpoint: {
         discoveredUrls: ["https://example.com/old"],
         queuedUrls: [],
         processingUrls: [],
-        processedCanonicalUrls: ["https://example.com/old"],
+        processedCanonicalUrls: ["https://example.com/old", "https://example.com/duplicate-of-old"],
         processedContentHashes: [],
         accepted: 1,
+        skipped: 1,
+        failed: 0,
+        lastProcessedAt: null,
+      },
+    });
+
+    const seen = [
+      "website:https://example.com:https://example.com/old",
+      "website:https://example.com:https://example.com/duplicate-of-old",
+      "website:https://example.com:https://example.com/a",
+    ];
+    expect(reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId: "source-2", crawlStartedAt: jobStartedAt }));
+    expect([...reviewMissingPages.mock.calls[0][0].seenExternalDocumentIds].sort()).toEqual([...seen].sort());
+    expect([...reapMissingPages.mock.calls[0][0].keepExternalDocumentIds].sort()).toEqual([...seen].sort());
+  });
+
+  it("skips reaping when the checkpoint's processed pages may have been cut at the checkpoint cap", async () => {
+    const reapMissingPages = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([]),
+      documentIngestionService: {
+        ingest: vi.fn(),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-2" }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages,
+      },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 20_000,
+      checkpoint: {
+        discoveredUrls: [],
+        queuedUrls: [],
+        processingUrls: [],
+        processedCanonicalUrls: Array.from({ length: 10_000 }, (_, index) => `https://example.com/page-${index}`),
+        processedContentHashes: [],
+        accepted: 10_000,
         skipped: 0,
         failed: 0,
         lastProcessedAt: null,
@@ -1597,6 +1643,35 @@ describe("website crawler service", () => {
     });
 
     expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
+  it("reaches the same ids from the checkpoint's processed pages that ingestion published", async () => {
+    const ingest = vi.fn().mockImplementation(async (input: { externalDocumentId: string }) => ({ documentId: input.externalDocumentId, status: "queued" }));
+    let lastCheckpoint: { processedCanonicalUrls: string[] } | null = null;
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        { sourceUrl: "https://example.com/a/", canonicalUrl: "https://example.com/a/", title: "A", content: "alpha", metadata: {} },
+        { sourceUrl: "https://example.com/b?token=abc&x=1", canonicalUrl: null, title: "B", content: "bravo", metadata: {} },
+        { sourceUrl: "https://example.com/c#top", canonicalUrl: "https://example.com/c?q=a%20b", title: "C", content: "charlie", metadata: {} },
+      ]),
+      documentIngestionService: { ingest },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 5,
+      onCheckpoint: async (checkpoint) => { lastCheckpoint = checkpoint; },
+    });
+
+    const published = ingest.mock.calls.map(([input]) => (input as { externalDocumentId: string }).externalDocumentId);
+    expect(published).toHaveLength(3);
+    expect(pagesSeenByCrawl({
+      websiteBaseUrl: "https://example.com",
+      processedCanonicalUrls: lastCheckpoint!.processedCanonicalUrls,
+      publishedExternalDocumentIds: [],
+    }).sort()).toEqual([...published].sort());
   });
 
   it("skips reaping when the crawl had failures", async () => {

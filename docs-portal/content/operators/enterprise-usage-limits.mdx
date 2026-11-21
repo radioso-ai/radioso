@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-11-16
+last_updated: 2026-11-21
 ---
 
 # Enterprise usage limits
@@ -32,6 +32,8 @@ Recrawls update the existing indexed page rather than appending duplicate storag
 - After a fresh, fully successful crawl, pages that were previously indexed for the source but were not found in the new run are removed from the active corpus.
 
 Partial recrawls (resumed from a checkpoint or that ended with failures) do not remove missing pages. Removal only happens when a fresh crawl completes cleanly.
+
+A website source can also recrawl itself on a schedule. The plan sets how often at most: weekly on Comet, daily on Satellite and Planet, through the catalog's `fastestRecrawlCadence`. A scheduled recrawl removes missing pages only while they are a fifth of the source or less; a larger loss is held for the operator to remove or keep. See [Documents and search](/api/documents-and-search#keep-a-website-source-up-to-date).
 
 ## Configuring a profile
 

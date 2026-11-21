@@ -2000,6 +2000,33 @@ text extraction keeps as main content, with its alt text, its figure's caption
 and its offset in the page text. The provider passes them to ingestion as
 document image candidates; the documents module fetches and stores them.
 
+A source runs one crawl at a time: `WebsiteCrawlJobRepository.createForSource`
+holds the source row's lock and returns the source's queued or processing crawl
+instead of inserting a second, and every path that crawls an existing source
+(recrawl, scheduled recrawl, a new crawl of the same URL) goes through it. A job
+records its `crawl_trigger` (`manual` or `scheduled`).
+
+Scheduled recrawl (migration `270_scheduled_website_recrawl.sql`): a website
+source's `recrawl_cadence` (`off`, `daily`, `weekly`) and `next_recrawl_at` live
+on `document_sources`. `recrawlSchedule.ts` is the pure cadence arithmetic and
+plan clamp, with the `RecrawlPlanPort` the plan's ceiling arrives through;
+`recrawlScheduleService.ts` sets a cadence (`PUT
+/api/v1/document/sources/:sourceId/recrawl-cadence`, refusing a cadence over the
+plan with `403 recrawl_cadence_not_in_plan`); `recrawlSweep.ts` claims due
+sources (`db/repositories/websiteRecrawlRepository.ts`, `FOR UPDATE SKIP
+LOCKED`) and queues their recrawls through the documents module's
+`DocumentSourceRecrawlService`; `app/composition/websiteRecrawl.ts` wires it as
+the `website-recrawl` periodic task. After a complete crawl,
+`missingPages.ts` (`reconcileMissingPages`) removes the pages it did not find,
+or, for a scheduled crawl that would remove more than a fifth of the source
+(`missingPageRemoval.ts`), holds them in `website_source_missing_pages`
+(`db/repositories/websiteMissingPageRepository.ts`); `heldPagesService.ts`
+removes or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
+is the catalog's `fastestRecrawlCadence`, read by the EE usage limit service's
+`getFastestRecrawlCadence`. The dashboard's controls are
+`frontend/components/dashboard/documents/source-recrawl-controls.tsx`; Ray's
+tool is `set_recrawl_cadence` in `operatorCopilot/tools/documents.ts`.
+
 Public surfaces and key files:
 
 - `backend/src/modules/websiteCrawler/public.ts`
@@ -2007,13 +2034,17 @@ Public surfaces and key files:
 - `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
 - `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`)
 - `backend/src/modules/websiteCrawler/routes.ts`
+- `backend/src/modules/websiteCrawler/recrawlSchedule.ts`, `recrawlScheduleService.ts`, `recrawlSweep.ts`, `missingPages.ts`, `missingPageRemoval.ts`, `heldPagesService.ts`
+- `backend/src/app/composition/websiteRecrawl.ts`
 - `packages/crawler/src/transport/htmlImageExtraction.ts`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
 - `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts`
+- `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 
 Related docs:
 
@@ -3240,7 +3271,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set, whether prices include
+  top-up, managed service, the managed-plan model set, the fastest scheduled
+  website recrawl (`fastestRecrawlCadence`), whether prices include
   VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
   data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
   staff-only model spend estimate (list prices, `eurPerUsd`, the conversation

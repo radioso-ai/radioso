@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-11-12
+last_updated: 2026-11-21
 ---
 
 # Ray
@@ -45,11 +45,13 @@ result reads as a knowledge gap when the real cause is a setting. Scoping needs
 against your per-operator limit for calls that spend model budget.
 
 With `workspace.documents.manage`, Ray can reprocess one document or the
-existing documents in one source, and it can recrawl an existing website
-source. These are maintenance acts, so they queue immediately and appear in the
-turn's activity instead of becoming proposal cards. Recrawl uses the source's
-stored URL, page limit, and policy. Creating a source, supplying a different
-URL, and reprocessing the whole workspace stay in the Knowledge Base and
+existing documents in one source, recrawl an existing website source, and set
+how often a website source recrawls itself (off, daily, or weekly, up to what
+the plan allows). These are maintenance acts, so they take effect immediately
+and appear in the turn's activity instead of becoming proposal cards. Recrawl
+uses the source's stored URL, page limit, and policy. Creating a source,
+supplying a different URL, reprocessing the whole workspace, and removing or
+keeping the pages a scheduled recrawl held stay in the Knowledge Base and
 Settings surfaces.
 
 For a skill, Ray sees every setting's name. It also sees the
@@ -761,7 +763,8 @@ the change should have moved, read the result, then ask for the next batch.
   affected turn honestly. The answer identifies the data it could not access.
 - **Document maintenance is unavailable** — your session can read documents
   but does not hold `workspace.documents.manage`. Chunk inspection remains
-  available; reprocess and recrawl do not appear in Ray's tool set.
+  available; reprocess, recrawl, and the recrawl cadence do not appear in
+  Ray's tool set.
 - **Held replies or email facts are unavailable** — your session can read
   workspace settings but does not hold `workspace.conversation.takeover`. The
   mailbox and event-log reads remain available.

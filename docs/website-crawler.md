@@ -1,7 +1,7 @@
 ---
 title: "Website Crawler Provider"
 description: "API and provider contract for website ingestion including crawl policy, job management, deployment topology, and disabling."
-last_updated: 2026-11-08
+last_updated: 2026-11-21
 ---
 
 # Website Crawler Provider
@@ -195,7 +195,53 @@ POST /api/v1/document/sources/{sourceId}/recrawl
 
 Enqueues a new crawl job using the URL and limit stored in the source's `config`. Only works for sources with `kind: "website"`. Returns the same `202` response as `POST /api/v1/document/crawl`.
 
+A source runs one crawl at a time. When a crawl for the source is already queued or processing, the recrawl, a scheduled recrawl, and a new `POST /api/v1/document/crawl` for the same URL all answer with that crawl's `jobId` and start nothing. A paused crawl does not count: a recrawl next to it starts a new one.
+
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
+
+After a complete crawl, the source's pages the crawl did not find are removed. A crawl counts as complete when it started from nothing, rather than resuming a paused crawl or continuing an earlier two-minute slice, finished every page it fetched, and stopped below its page limit. Any other crawl removes nothing.
+
+### Keeping a website source up to date
+
+A website source can recrawl itself with its saved URL, limit, and crawl policy. Each scheduled recrawl does what a manual recrawl does: it skips pages whose content is unchanged, updates changed pages in place, and adds new ones. Choose how often with:
+
+```text
+PUT /api/v1/document/sources/{sourceId}/recrawl-cadence
+```
+
+```json
+{ "recrawlCadence": "weekly" }
+```
+
+`recrawlCadence` is `off`, `daily`, or `weekly`. Every source starts at `off`. Turning a cadence on, or changing it, schedules the next recrawl one interval after the source's last crawl, or now when that is already past, plus up to an hour of jitter so sources set together do not all crawl at once. Sending the cadence the source already has keeps the time already scheduled; `off` clears it. The response is the source, as `GET /api/v1/document/sources` lists it.
+
+Every website source in the source list carries four fields about this:
+
+| Field | Meaning |
+|-------|---------|
+| `recrawlCadence` | The cadence the operator chose. |
+| `nextRecrawlAt` | When the next scheduled recrawl is queued, or `null` while the cadence is `off`. |
+| `fastestRecrawlCadence` | The fastest cadence the workspace's plan allows: `daily` on self-hosted deployments, and on Radioso Cloud `weekly` on Comet and `daily` on Satellite and Planet. |
+| `heldPageCount` | Pages a scheduled recrawl no longer found and held for review. |
+
+Asking for a cadence faster than `fastestRecrawlCadence` answers `403` with code `recrawl_cadence_not_in_plan` and `details.fastestRecrawlCadence`. A workspace that moves to a plan with a slower ceiling keeps its sources' chosen cadence; they recrawl at the plan's fastest.
+
+The `website-recrawl` periodic task queues the crawls. Every 15 minutes it claims the website sources whose next recrawl is due, moves each one interval ahead, and queues a crawl for it. A source that already has a crawl queued, processing, or paused waits for its next time, and so does one whose crawl could not be queued. On a self-hosted deployment the document worker's poll loop runs the task, so a stack started with `./run-dev.sh` or Docker Compose recrawls with no extra settings. On Cloud Run, a Cloud Scheduler job calls `/internal/tasks/periodic-tasks/website-recrawl/run` on the worker task service. Each run logs one line with how many sources were due, queued, skipped because a crawl was active, and failed.
+
+### Pages a scheduled recrawl holds
+
+A scheduled recrawl never removes a large share of a source on its own. When the pages it did not find are more than a fifth of the pages the source had before it ran, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less is removed as a manual recrawl removes it. A manual recrawl or a new crawl of the same URL removes every page it did not find, held or not, because the operator asked for a fresh copy of the site.
+
+Decide on held pages with:
+
+```text
+POST /api/v1/document/sources/{sourceId}/held-pages/remove
+POST /api/v1/document/sources/{sourceId}/held-pages/keep
+```
+
+Remove deletes the held pages the way a recrawl removes missing pages and answers `{ "sourceId": "...", "removedPageCount": 12 }`. Keep answers `{ "sourceId": "...", "keptPageCount": 12 }`; later scheduled recrawls neither hold nor remove a kept page. A held or kept page that a complete crawl finds again goes back to being an ordinary page. A source with nothing held answers with a count of `0`.
+
+The crawl audit event, `document.website_crawler.crawl`, records `trigger`: `manual` for a crawl the operator, the API, or Ray started, `scheduled` for one the sweep queued. A hold records `document.website_crawler.missing_pages_held` with the source, how many pages are held, and how many pages the source had. The operator's decisions record `document.website_crawler.held_pages_removed` and `document.website_crawler.held_pages_kept` with the page count. A scheduled recrawl that stops on the workspace's ingestion quota fails like any other crawl: the job shows the failure and the source's last sync is `failure`.
 
 ### Reprocessing a source
 

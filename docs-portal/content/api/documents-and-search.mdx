@@ -1,7 +1,7 @@
 ---
 title: Documents and search
 description: Upload documents, requeue processing, inspect search behavior, and replay historical searches.
-last_updated: 2026-10-27
+last_updated: 2026-11-21
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -141,6 +141,32 @@ curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/reproc
 
 The response reports `queuedDocumentCount`, `skippedDocumentCount`, and a status of `queued` or `noop`. Documents already queued or processing are skipped rather than duplicated.
 
+## Keep a website source up to date
+
+A crawled site changes after you crawl it. Give its source a cadence and it recrawls itself with the URL, page limit, and crawl policy you saved: unchanged pages are skipped, changed pages are updated in place, and new pages are added.
+
+```bash
+curl -sS -X PUT https://api.radioso.ai/api/v1/document/sources/source-id/recrawl-cadence \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"recrawlCadence":"weekly"}'
+```
+
+`recrawlCadence` is `off`, `daily`, or `weekly`, and every source starts at `off`. The response is the source, with `nextRecrawlAt` set to one interval after its last crawl (or now, if that has passed) plus up to an hour. In the dashboard, the same choice is **Keep up to date** on the website source's panel, beside when it next checks.
+
+How fast you can go depends on the plan. Each website source carries `fastestRecrawlCadence`: `daily` on a self-hosted deployment, `weekly` on Comet, and `daily` on Satellite and Planet. A faster cadence answers `403 recrawl_cadence_not_in_plan`. If a workspace moves to a plan with a slower ceiling, its sources keep the cadence you chose and recrawl at the plan's fastest.
+
+A scheduled recrawl never removes a large share of a source on its own. When more than a fifth of the source's pages are missing from the site, it keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
+
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/held-pages/remove \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN"
+```
+
+`held-pages/remove` deletes them; `held-pages/keep` keeps them, and later scheduled recrawls leave kept pages alone. A fifth or less is removed without asking, the way a manual recrawl removes pages it no longer finds. A manual recrawl always removes every page it does not find, held or not.
+
+A source runs one crawl at a time. Recrawling a source that is already crawling answers with the running crawl's `jobId` instead of starting a second one.
+
 ## Search documents
 
 ```bash
@@ -183,6 +209,9 @@ GET    /api/v1/document/sources/{sourceId}/documents
 PATCH  /api/v1/document/sources/{sourceId}
 POST   /api/v1/document/sources/{sourceId}/reprocess
 POST   /api/v1/document/sources/{sourceId}/recrawl
+PUT    /api/v1/document/sources/{sourceId}/recrawl-cadence
+POST   /api/v1/document/sources/{sourceId}/held-pages/remove
+POST   /api/v1/document/sources/{sourceId}/held-pages/keep
 POST   /api/v1/document/sources/{sourceId}/pause-crawl
 POST   /api/v1/document/sources/{sourceId}/resume-crawl
 DELETE /api/v1/document/sources/{sourceId}
@@ -196,6 +225,7 @@ GET    /api/v1/document/search/history/{searchId}
 - `400` usually means a required field is missing or the search body is invalid.
 - `401` means the personal or service credential is missing, invalid, expired, or outside the route's accepted credential scope.
 - `404` means the document or search id does not exist in the current workspace context.
+- `403 recrawl_cadence_not_in_plan` means the plan recrawls a website more slowly than the cadence you asked for; `details.fastestRecrawlCadence` names the fastest it allows.
 
 ## Read next
 

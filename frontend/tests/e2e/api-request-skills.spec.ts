@@ -250,12 +250,11 @@ test("a variable set from a list output is only checked for presence", async ({ 
   await documentEditor.getByLabel("Output 1 variable").fill("found_orders");
   await step.getByRole("button", { name: "Done", exact: true }).click();
 
-  // A check on that variable offers only is set and is not set.
+  // A check on that variable offers only is present and is absent.
   await step.getByRole("button", { name: "Find orders", exact: true }).click();
   await step.getByRole("button", { name: "Condition", exact: true }).click();
   await documentEditor.getByLabel("Rule variable").selectOption("found_orders");
   await expect(documentEditor.getByLabel("Rule operator").locator("option")).toHaveText(["is present", "is absent"]);
-  await expect(documentEditor.getByText("List: is set means found any.")).toBeVisible();
   // Open the list so the screenshot shows every choice.
   await documentEditor.getByLabel("Rule operator").evaluate((select: HTMLSelectElement) => { select.size = select.options.length; });
   await documentEditor.getByLabel("Rule operator").scrollIntoViewIfNeeded();

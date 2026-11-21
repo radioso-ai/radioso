@@ -1,4 +1,4 @@
-import type { RoutineGroundedAnswerInput, StagedContext, TurnOutcome } from "@radioso/conversation-contract";
+import type { RoutineGroundedAnswerInput, SkillOutputContract, StagedContext, TurnOutcome } from "@radioso/conversation-contract";
 
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../../shared/observability/tracing/operations.js";
@@ -105,7 +105,12 @@ export const routinePresentingStepReply = (
   const outcome: TurnOutcome = {
     kind: AGENT_SKILL_OUTCOME_KIND,
     skillName,
-    outcome: { status: "completed", outputs: staged.data },
+    outcome: {
+      status: "completed",
+      outputs: staged.data,
+      // The runner stages the contract the skill declared beside its outputs.
+      ...(isRecord(staged.metadata.outputContract) ? { outputContract: staged.metadata.outputContract as SkillOutputContract } : {}),
+    },
     stagedContext: [],
     steering: input.steering,
     trace: options.session.turnTrace,

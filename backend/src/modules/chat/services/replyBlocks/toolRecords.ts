@@ -74,6 +74,14 @@ const itemKey = (pointer: string): string => {
     : `sha256:${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
 };
 
+/** The record's own key field, when it holds a short text or number. */
+const declaredKey = (value: unknown, keyField: string | undefined): string | null => {
+  if (!keyField || !isObject(value) || !Object.hasOwn(value, keyField)) return null;
+  const key = value[keyField];
+  const text = typeof key === "string" ? key.trim() : typeof key === "number" && Number.isFinite(key) ? String(key) : "";
+  return text.length > 0 && text.length <= TOOL_RECORD_LIMITS.keyLength ? text : null;
+};
+
 interface FoundRecord {
   pointer: string;
   value: unknown;
@@ -201,7 +209,11 @@ export class ToolRecordLedger {
     this.byHandle = new Map(records.map((record) => [record.handle, record]));
   }
 
-  static fromOutputs(outputs: JsonObject | undefined): ToolRecordLedger {
+  /**
+   * `keyField` names the record field a skill's contract declares as the record's key: a record
+   * with a short text or number there is keyed by it rather than by its pointer.
+   */
+  static fromOutputs(outputs: JsonObject | undefined, options: { keyField?: string } = {}): ToolRecordLedger {
     const found: FoundRecord[] = [];
     if (outputs) {
       collectRecordArrays(outputs, "", 0, found);
@@ -209,7 +221,7 @@ export class ToolRecordLedger {
         found.push({ pointer: "", value: outputs });
       }
     }
-    const candidates = found.map(({ pointer, value }) => ({ key: itemKey(pointer), value }));
+    const candidates = found.map(({ pointer, value }) => ({ key: declaredKey(value, options.keyField) ?? itemKey(pointer), value }));
     const offered: ToolRecord[] = candidates
       .slice(0, TOOL_RECORD_LIMITS.records)
       .map((candidate, index) => ({ handle: `r${index + 1}`, ...candidate }));

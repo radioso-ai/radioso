@@ -45,6 +45,7 @@ const descriptor = (
     status: "completed",
   }],
   hasDataOutputs: false,
+  outputs: [],
 });
 
 const descriptors = (...items: SkillAuthoringDescriptor[]): ReadonlyMap<string, SkillAuthoringDescriptor> =>
@@ -222,6 +223,36 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     });
 
     expect(result).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("lets a text input take any slot type, and refuses a slot type a typed input cannot take", () => {
+    const definition = {
+      ...definitionWithTool("order.lookup"),
+      slots: [
+        { stableSlotId: "slot_count", key: "count", type: "number" as const, required: false, description: null, ordinal: 0 },
+        { stableSlotId: "slot_gift", key: "gift", type: "boolean" as const, required: false, description: null, ordinal: 1 },
+      ],
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0],
+        metadata: {
+          inputBindings: {
+            note: { kind: "variableRef" as const, ref: "count" },
+            label: { kind: "variableRef" as const, ref: "gift" },
+            placed: { kind: "variableRef" as const, ref: "gift" },
+          },
+        },
+      }],
+    };
+    const result = validateRoutineDefinition(definition, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "note", type: "text", required: false },
+        { key: "label", type: "text", required: false },
+        { key: "placed", type: "date", required: false },
+      ])),
+    });
+
+    const mismatches = result.diagnostics.filter((diagnostic) => diagnostic.code === "input_type_mismatch");
+    expect(mismatches.map((diagnostic) => diagnostic.location)).toEqual(["step:lookup.inputBindings.placed"]);
   });
 
   it("flags literal type mismatches and enum values outside the descriptor allow-list", () => {

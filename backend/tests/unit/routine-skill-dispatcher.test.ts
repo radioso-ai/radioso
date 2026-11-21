@@ -459,6 +459,18 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("carries the skill's typed output contract onto the routine result", async () => {
+    const outputContract = { status: { type: "text" as const, description: "Order status" } };
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("order_status")]),
+      registryWith(settledExecutor({ status: "completed", outputs: { status: "shipped" }, outputContract } as unknown as SkillOutcome)),
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "order_status", state: routineState({}), turn });
+
+    expect(result).toMatchObject({ status: "completed", outputs: { status: "shipped" }, outputContract });
+  });
+
   it("preserves non-model skill metadata for host-side routine renderers", async () => {
     const outcome = {
       status: "context_ready",

@@ -302,6 +302,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       return {
         status: result.outcome.status,
         outputs: result.outcome.outputs,
+        ...(result.outcome.outputContract ? { outputContract: result.outcome.outputContract } : {}),
         answer: result.outcome.answer,
         ...(metadata ? { metadata } : {}),
         actsOutsideConversation,

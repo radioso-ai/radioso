@@ -133,6 +133,8 @@ const isSlotTypeCompatibleWithInput = (
   slotType: RoutineDefinition["slots"][number]["type"],
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
+  // Any slot reads as text; a typed input takes only the slot types that can hold its values.
+  if (inputType === "text") return true;
   if (inputType === "number") return slotType === "number";
   if (inputType === "boolean") return slotType === "boolean";
   return slotType === "text" || slotType === "email" || slotType === "date";

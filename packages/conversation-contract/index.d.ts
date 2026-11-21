@@ -19,7 +19,7 @@ import type {
 } from "./routineGraph.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
 import type { RoutineStepReplyInput } from "./routineStepReply.js";
-import type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
+import type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus, SkillOutputContract } from "./skillOutcome.js";
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
@@ -420,7 +420,8 @@ export interface SkillDefinition {
   metadata?: Record<string, unknown>;
 }
 
-export type { RoutineSkillOutcomeStatus, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus } from "./skillOutcome.js";
+export type { RoutineSkillOutcomeStatus, SkillDataValueType, SkillOutcome, SkillOutcomeControl, SkillOutcomeError, SkillOutcomeStatus, SkillOutputContract, SkillOutputContractEntry, SkillOutputFieldContract, SkillOutputFieldRole } from "./skillOutcome.js";
+export { renderSkillOutputLines } from "./skillOutcome.js";
 
 /**
  * Narrow, per-turn channel handed to a skill executor so it can append
@@ -444,8 +445,7 @@ export interface SkillEmitPort {
 }
 
 /**
- * Where a routine skill step's argument came from, so an executor can tell a value the
- * author wrote from one a visitor or host page supplied.
+ * Where a routine skill step's argument came from, so an executor can tell a value the author wrote from one a visitor or host page supplied.
  * - `literal`: the author wrote it into the step's input binding.
  * - `slot`: a routine variable. Extraction can store a value under any routine variable
  *   name, so every routine variable, including one a skill output fills, counts as visitor-provided.
@@ -458,10 +458,7 @@ export type SkillArgumentOrigin = "literal" | "slot" | "context" | "verified_con
 export interface SkillInvocation {
   skill: SkillDefinition;
   collected: Record<string, unknown>;
-  /**
-   * Where each `collected` value came from, keyed like `collected`. A routine skill step
-   * sets it; a dispatch whose inputs the model filled leaves it absent.
-   */
+  /** Where each `collected` value came from, keyed like `collected`; absent when the model filled the inputs. */
   collectedOrigins?: Record<string, SkillArgumentOrigin>;
   context?: Record<string, unknown>;
   /** Interim-event channel for the current turn. */
@@ -1032,14 +1029,15 @@ export interface RoutineNextStepDecision {
 export interface RoutineSkillResult {
   status: RoutineSkillOutcomeStatus;
   outputs?: Record<string, unknown>;
+  /** The typed contract `outputs` follow, when the skill declares one; routine prompts render them by it. */
+  outputContract?: SkillOutputContract;
   answer?: string;
   /** Host-private dispatch metadata. Not rendered into routine prompts. */
   metadata?: Record<string, unknown>;
   /**
-   * Whether running the skill may have acted outside the conversation — sent an email,
-   * called a webhook, posted a message — before the host saves the turn. `false` only when
-   * the host knows the skill stayed inside it (it read workspace evidence, or never ran).
-   * Absent counts as `true`.
+   * Whether running the skill may have acted outside the conversation — sent an email, called a
+   * webhook, posted a message — before the host saves the turn. `false` only when the host knows
+   * the skill stayed inside it (it read workspace evidence, or never ran). Absent counts as `true`.
    */
   actsOutsideConversation?: boolean;
 }

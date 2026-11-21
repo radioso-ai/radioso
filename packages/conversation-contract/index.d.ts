@@ -448,11 +448,11 @@ export interface SkillEmitPort {
  * author wrote from one a visitor or host page supplied.
  * - `literal`: the author wrote it into the step's input binding.
  * - `slot`: a routine variable. Extraction can store a value under any routine variable
- *   name, so every routine variable, including one a skill output fills, counts as
- *   visitor-provided.
+ *   name, so every routine variable, including one a skill output fills, counts as visitor-provided.
  * - `context`: a turn context variable, supplied by the host page or the visitor.
+ * - `verified_context`: a turn context variable whose value the host verified (a signed one).
  */
-export type SkillArgumentOrigin = "literal" | "slot" | "context";
+export type SkillArgumentOrigin = "literal" | "slot" | "context" | "verified_context";
 
 /** Everything a skill executor needs for a single dispatch. */
 export interface SkillInvocation {

@@ -178,4 +178,9 @@ export interface SkillDefinition {
    * it cannot run against an ephemeral (replay/test) conversation.
    */
   requiresDurableConversation?: boolean;
+  /**
+   * Running the skill only reads from the systems it reaches and changes nothing outside
+   * the conversation, so a safe test or a replay runs it for real.
+   */
+  readOnly?: boolean;
 }

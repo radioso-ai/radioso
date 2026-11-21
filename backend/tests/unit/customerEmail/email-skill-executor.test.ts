@@ -214,10 +214,10 @@ describe("EmailSkillExecutor bodyHtml origins", () => {
     expect(message.bodyHtml).toBe(escapedMarkup);
   });
 
-  it("escapes a bodyHtml a turn context variable filled", async () => {
+  it.each(["context", "verified_context"] as const)("escapes a bodyHtml a turn context variable filled (%s)", async (origin) => {
     const message = await deliveredMessage(
       { customerEmail: "customer@example.com", note: visitorMarkup },
-      { customerEmail: "literal", note: "context" },
+      { customerEmail: "literal", note: origin },
     );
 
     expect(message.bodyHtml).toBe(escapedMarkup);

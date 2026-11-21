@@ -2604,7 +2604,10 @@ CREATE TABLE public.document_sources (
     last_sync_status text,
     last_synced_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    recrawl_cadence text DEFAULT 'off'::text NOT NULL,
+    next_recrawl_at timestamp with time zone,
+    CONSTRAINT document_sources_recrawl_cadence_check CHECK ((recrawl_cadence = ANY (ARRAY['off'::text, 'daily'::text, 'weekly'::text])))
 );
 
 
@@ -4554,7 +4557,24 @@ CREATE TABLE public.website_crawl_jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     policy_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     checkpoint_json jsonb DEFAULT '{}'::jsonb NOT NULL,
-    resume_requested_at timestamp with time zone
+    resume_requested_at timestamp with time zone,
+    crawl_trigger text DEFAULT 'manual'::text NOT NULL,
+    CONSTRAINT website_crawl_jobs_crawl_trigger_check CHECK ((crawl_trigger = ANY (ARRAY['manual'::text, 'scheduled'::text])))
+);
+
+
+--
+-- Name: website_source_missing_pages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.website_source_missing_pages (
+    document_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    source_id uuid NOT NULL,
+    missing_since timestamp with time zone DEFAULT now() NOT NULL,
+    decision text DEFAULT 'pending'::text NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT website_source_missing_pages_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'kept'::text])))
 );
 
 
@@ -7073,6 +7093,14 @@ ALTER TABLE ONLY public.website_crawl_jobs
 
 
 --
+-- Name: website_source_missing_pages website_source_missing_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_pkey PRIMARY KEY (document_id);
+
+
+--
 -- Name: workspace_embedding_profiles workspace_embedding_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8962,6 +8990,13 @@ CREATE UNIQUE INDEX idx_document_processing_jobs_revision_phase ON public.docume
 
 
 --
+-- Name: idx_document_sources_due_recrawl; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_document_sources_due_recrawl ON public.document_sources USING btree (next_recrawl_at) WHERE ((kind = 'website'::text) AND (recrawl_cadence <> 'off'::text));
+
+
+--
 -- Name: idx_document_sources_workspace_kind; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9519,6 +9554,13 @@ CREATE INDEX idx_website_crawl_jobs_stale_processing ON public.website_crawl_job
 --
 
 CREATE INDEX idx_website_crawl_jobs_workspace_created ON public.website_crawl_jobs USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_website_source_missing_pages_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_website_source_missing_pages_source ON public.website_source_missing_pages USING btree (workspace_id, source_id, decision);
 
 
 --
@@ -13718,6 +13760,30 @@ ALTER TABLE ONLY public.website_crawl_jobs
 
 ALTER TABLE ONLY public.website_crawl_jobs
     ADD CONSTRAINT website_crawl_jobs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.document_sources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

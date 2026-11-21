@@ -946,6 +946,8 @@ export interface DocumentSources {
   last_synced_at: Timestamp | null;
   metadata: Generated<Json>;
   name: string;
+  next_recrawl_at: Timestamp | null;
+  recrawl_cadence: Generated<string>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -2216,6 +2218,7 @@ export interface WebsiteCrawlJobs {
   claimed_at: Timestamp | null;
   completed_at: Timestamp | null;
   crawl_limit: number;
+  crawl_trigger: Generated<string>;
   created_at: Generated<Timestamp>;
   id: string;
   last_error: string | null;
@@ -2226,6 +2229,15 @@ export interface WebsiteCrawlJobs {
   source_id: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface WebsiteSourceMissingPages {
+  decided_at: Timestamp | null;
+  decision: Generated<string>;
+  document_id: string;
+  missing_since: Generated<Timestamp>;
+  source_id: string;
   workspace_id: string;
 }
 
@@ -2531,6 +2543,7 @@ export interface DB {
   voice_recording_erasures: VoiceRecordingErasures;
   voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
+  website_source_missing_pages: WebsiteSourceMissingPages;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
   workspace_event_subscriptions: WorkspaceEventSubscriptions;

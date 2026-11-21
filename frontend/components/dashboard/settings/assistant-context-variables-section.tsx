@@ -3,6 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
 
+import { AttributeAdvancedFields } from '@/components/dashboard/settings/attribute-advanced-fields'
+import {
+  attributeHelp,
+  sourceLabels,
+  surfacingLabels,
+  valueTypeLabels,
+  type SourceOption,
+  type SurfacingOption,
+  type ValueTypeOption,
+} from '@/components/dashboard/settings/attribute-copy'
 import { AttributeOptionsEditor, attributeOptionsError } from '@/components/dashboard/settings/attribute-options-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
@@ -36,12 +46,8 @@ import {
   type ContextVariableCreateRequest,
   type ContextVariableOption,
 } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 type SaveState = { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }
-type SourceOption = Extract<AgentContextVariableEnablementRequest['source'], 'pushed'>
-type SurfacingOption = AgentContextVariableEnablementRequest['surfacing']
-type ValueTypeOption = ContextVariableCreateRequest['valueType']
 type TrustTierOption = ContextVariableCreateRequest['trustTier']
 type SensitivityOption = ContextVariableCreateRequest['sensitivity']
 
@@ -64,73 +70,6 @@ const emptyForm: VariableFormState = {
   sensitivity: 'normal',
   defaultSurfacing: 'on_reference',
 }
-
-const sourceLabels: Record<SourceOption, string> = {
-  pushed: 'Pushed API',
-}
-
-const surfacingLabels: Record<SurfacingOption, string> = {
-  always: 'Always',
-  on_reference: 'On reference',
-  operator_only: 'Operator only',
-}
-
-const valueTypeLabels: Record<ValueTypeOption, string> = {
-  string: 'Text',
-  json: 'JSON',
-  enum: 'Choice',
-}
-
-const trustTierLabels: Record<TrustTierOption, string> = {
-  unverified: 'Unverified',
-  signed: 'Signed',
-}
-
-const sensitivityLabels: Record<SensitivityOption, string> = {
-  normal: 'Normal',
-  sensitive: 'Sensitive',
-}
-
-const fieldHelp = {
-  name: {
-    description: 'How the agent, routines and the API refer to this attribute.',
-    tooltip:
-      'The stable identifier your directives, routines, and the host API use to read this value — for example `@cart`. Use letters, numbers, and underscores, and start with a letter. Visitors never see it.',
-  },
-  description: {
-    description: 'What this value holds. Helps the agent and operators recognise it.',
-    tooltip:
-      'A short, human description of the value. It helps operators recognise the attribute in the dashboard and gives the agent a hint about what the data represents. It does not change behaviour on its own.',
-  },
-  valueType: {
-    description: 'Text, one of a list of options, or JSON.',
-    tooltip:
-      '**Text** — a single plain-text value, such as a plan name.\n\n**Choice** — one option from a list you define, such as a topic or an order status. Values store the option key.\n\n**JSON** — a structured object or array, such as a full cart with line items.\n\nThe type cannot change once the attribute has values.',
-  },
-  trustTier: {
-    description: "How much the agent trusts the value's origin.",
-    tooltip:
-      '**Unverified** — the value is accepted as sent by the page or host. Fine for low-stakes context like the current page or product.\n\n**Signed** — the value is only accepted when it carries a valid signature from your backend. Use this for identity- or account-bound data (like the logged-in customer) so a visitor cannot spoof it from the browser.',
-  },
-  sensitivity: {
-    description: 'Sensitive values get extra handling and stay out of logs.',
-    tooltip:
-      '**Normal** — standard handling.\n\n**Sensitive** — the value is treated as confidential: it is kept out of logs and diagnostics and handled more conservatively. Use it for anything private, like order details or personal information.',
-  },
-  defaultSurfacing: {
-    description: 'When the value is placed into the conversation by default.',
-    tooltip:
-      'Controls when the value reaches a turn. Each agent can override this per attribute.\n\n**Always** — included in every turn.\n\n**On reference** — included only when the turn seems to need it. A good default to keep prompts lean.\n\n**Operator only** — never sent to the model; visible only to human operators in the Activity view.',
-  },
-  source: {
-    tooltip:
-      '**Pushed API** — your backend writes the value through the Radioso REST API, and Radioso stores it per conversation, session, or customer.',
-  },
-  surfacing: {
-    tooltip:
-      'When this agent places the value into a turn.\n\n**Always** — every turn. **On reference** — only when relevant. **Operator only** — hidden from the model, visible to human operators.',
-  },
-} as const
 
 const activeOptionCount = (options: readonly ContextVariableOption[]): string => {
   const count = options.filter((option) => !option.archived).length
@@ -175,8 +114,6 @@ const enablementToRequest = (
   surfacing: patch.surfacing ?? enablement?.surfacing ?? variable.defaultSurfacing,
   enabled: patch.enabled ?? enablement?.enabled ?? true,
 })
-
-const labelClassName = 'text-[11px] font-medium uppercase tracking-wide text-muted-foreground'
 
 export function AssistantContextVariablesSection({
   agentId,
@@ -399,7 +336,7 @@ export function AssistantContextVariablesSection({
       id="assistant-context-variables-card"
       icon={<Braces className="h-5 w-5 text-primary" />}
       title="Attributes"
-      description="Typed facts about a conversation or visitor. Enable them for this agent and choose how each value reaches a turn."
+      description="Typed facts about a conversation or visitor. Turn on the ones this agent uses."
       headerEnd={(
         <Button type="button" size="sm" onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
@@ -412,9 +349,9 @@ export function AssistantContextVariablesSection({
 
         <p className="rounded-lg border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
           Attributes hold what you know about a conversation or visitor — such as the topic, the current cart, or the
-          plan — so this agent, its routines and your automations share it. Your backend sets values through the API.
+          plan — so this agent, its routines and your automations share it. Your website or API sets the values.
           Built-in page and visitor-identity context is managed by Radioso and isn&apos;t listed here. Use the{' '}
-          <span className="font-medium text-foreground">?</span> on any field for a plain-language explanation.
+          <span className="font-medium text-foreground">?</span> next to a field to see what it does.
         </p>
         <p className="text-xs text-muted-foreground">Shared attribute definitions apply live to every agent that uses them. This agent&apos;s enablement changes are saved to its private draft and go live on Review &amp; Publish.</p>
 
@@ -444,26 +381,16 @@ export function AssistantContextVariablesSection({
                           {valueTypeLabels[variable.valueType]}
                           {variable.options ? ` · ${activeOptionCount(variable.options)}` : null}
                         </span>
-                        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                          {trustTierLabels[variable.trustTier]}
-                        </span>
-                        <span
-                          className={cn(
-                            'rounded-full px-2 py-0.5 text-xs',
-                            variable.sensitivity === 'sensitive'
-                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                              : 'bg-muted text-muted-foreground',
-                          )}
-                        >
-                          {sensitivityLabels[variable.sensitivity]}
-                        </span>
+                        {variable.trustTier === 'signed' ? (
+                          <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">Signed</span>
+                        ) : null}
+                        {variable.sensitivity === 'sensitive' ? (
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">Private</span>
+                        ) : null}
                       </div>
                       {variable.description ? (
                         <p className="text-sm text-muted-foreground">{variable.description}</p>
                       ) : null}
-                      <p className="text-xs text-muted-foreground">
-                        Default surfacing: {surfacingLabels[variable.defaultSurfacing]}
-                      </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Switch
@@ -490,8 +417,8 @@ export function AssistantContextVariablesSection({
                       <div className="space-y-2">
                         <SettingFieldHeader
                           htmlFor={`context-source-${variable.id}`}
-                          label="Source"
-                          tooltip={fieldHelp.source.tooltip}
+                          label="Set by"
+                          tooltip={attributeHelp.setBy.tooltip}
                         />
                         <Select
                           value={source}
@@ -509,8 +436,8 @@ export function AssistantContextVariablesSection({
                       <div className="space-y-2">
                         <SettingFieldHeader
                           htmlFor={`context-surfacing-${variable.id}`}
-                          label="Surfacing"
-                          tooltip={fieldHelp.surfacing.tooltip}
+                          label="Used by"
+                          tooltip={attributeHelp.usedBy.tooltip}
                         />
                         <Select
                           value={enablement?.surfacing ?? variable.defaultSurfacing}
@@ -529,7 +456,6 @@ export function AssistantContextVariablesSection({
                       </div>
                       <div className="flex items-center gap-2 pb-2">
                         {busy ? <Spinner className="h-4 w-4" /> : null}
-                        <span className={labelClassName}>Enabled</span>
                       </div>
                     </div>
                   ) : null}
@@ -553,8 +479,8 @@ export function AssistantContextVariablesSection({
               <SettingFieldHeader
                 htmlFor="contextVariableName"
                 label="Name"
-                description={fieldHelp.name.description}
-                tooltip={fieldHelp.name.tooltip}
+                description={attributeHelp.name.description}
+                tooltip={attributeHelp.name.tooltip}
               />
               <Input
                 id="contextVariableName"
@@ -573,8 +499,8 @@ export function AssistantContextVariablesSection({
               <SettingFieldHeader
                 htmlFor="contextVariableDescription"
                 label="Description"
-                description={fieldHelp.description.description}
-                tooltip={fieldHelp.description.tooltip}
+                description={attributeHelp.description.description}
+                tooltip={attributeHelp.description.tooltip}
               />
               <Textarea
                 id="contextVariableDescription"
@@ -584,93 +510,30 @@ export function AssistantContextVariablesSection({
                 placeholder="What the conversation is about."
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <SettingFieldHeader
-                  htmlFor="contextVariableValueType"
-                  label="Value type"
-                  description={fieldHelp.valueType.description}
-                  tooltip={fieldHelp.valueType.tooltip}
-                />
-                <Select
-                  value={form.valueType}
-                  onValueChange={(value) => {
-                    setOptionsTouched(true)
-                    setDialogError(null)
-                    setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))
-                  }}
-                >
-                  <SelectTrigger id="contextVariableValueType">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="string">{valueTypeLabels.string}</SelectItem>
-                    <SelectItem value="enum">{valueTypeLabels.enum}</SelectItem>
-                    <SelectItem value="json">{valueTypeLabels.json}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <SettingFieldHeader
-                  htmlFor="contextVariableTrustTier"
-                  label="Trust tier"
-                  description={fieldHelp.trustTier.description}
-                  tooltip={fieldHelp.trustTier.tooltip}
-                />
-                <Select
-                  value={form.trustTier}
-                  onValueChange={(value) => setForm((current) => ({ ...current, trustTier: value as TrustTierOption }))}
-                >
-                  <SelectTrigger id="contextVariableTrustTier">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unverified">{trustTierLabels.unverified}</SelectItem>
-                    <SelectItem value="signed">{trustTierLabels.signed}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <SettingFieldHeader
-                  htmlFor="contextVariableSensitivity"
-                  label="Sensitivity"
-                  description={fieldHelp.sensitivity.description}
-                  tooltip={fieldHelp.sensitivity.tooltip}
-                />
-                <Select
-                  value={form.sensitivity}
-                  onValueChange={(value) => setForm((current) => ({ ...current, sensitivity: value as SensitivityOption }))}
-                >
-                  <SelectTrigger id="contextVariableSensitivity">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="normal">{sensitivityLabels.normal}</SelectItem>
-                    <SelectItem value="sensitive">{sensitivityLabels.sensitive}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <SettingFieldHeader
-                  htmlFor="contextVariableDefaultSurfacing"
-                  label="Default surfacing"
-                  description={fieldHelp.defaultSurfacing.description}
-                  tooltip={fieldHelp.defaultSurfacing.tooltip}
-                />
-                <Select
-                  value={form.defaultSurfacing}
-                  onValueChange={(value) => setForm((current) => ({ ...current, defaultSurfacing: value as SurfacingOption }))}
-                >
-                  <SelectTrigger id="contextVariableDefaultSurfacing">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="always">{surfacingLabels.always}</SelectItem>
-                    <SelectItem value="on_reference">{surfacingLabels.on_reference}</SelectItem>
-                    <SelectItem value="operator_only">{surfacingLabels.operator_only}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <SettingFieldHeader
+                htmlFor="contextVariableValueType"
+                label="Type"
+                description={attributeHelp.valueType.description}
+                tooltip={attributeHelp.valueType.tooltip}
+              />
+              <Select
+                value={form.valueType}
+                onValueChange={(value) => {
+                  setOptionsTouched(true)
+                  setDialogError(null)
+                  setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))
+                }}
+              >
+                <SelectTrigger id="contextVariableValueType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="string">{valueTypeLabels.string}</SelectItem>
+                  <SelectItem value="enum">{valueTypeLabels.enum}</SelectItem>
+                  <SelectItem value="json">{valueTypeLabels.json}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {form.valueType === 'enum' ? (
               <AttributeOptionsEditor
@@ -683,6 +546,11 @@ export function AssistantContextVariablesSection({
                 }}
               />
             ) : null}
+            <AttributeAdvancedFields
+              key={editingVariable?.id ?? 'new'}
+              settings={form}
+              onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+            />
             {nameTouched && nameError ? <p className="text-sm text-destructive">{nameError}</p> : null}
             {optionsTouched && optionsError ? <p className="text-sm text-destructive">{optionsError}</p> : null}
             {dialogError ? <p className="text-sm text-destructive" role="alert">{dialogError}</p> : null}

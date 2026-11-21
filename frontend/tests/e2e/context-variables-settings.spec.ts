@@ -133,10 +133,13 @@ test("a refused save and an unusable option list explain themselves inside the e
       } as never,
     ],
   });
-  const refusal = "The value type of a context variable that has values cannot change";
+  const refusal = "This attribute has values, so its type can’t change.";
   await page.route("**/backend/api/v1/context-variables/*", async (route) => {
     if (route.request().method() !== "PATCH") return route.fallback();
-    return route.fulfill({ status: 409, json: { error: { code: "context_variable_has_values", message: refusal } } });
+    return route.fulfill({
+      status: 409,
+      json: { error: { code: "context_variable_has_values", message: "The value type of a context variable that has values cannot change" } },
+    });
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`);

@@ -27,7 +27,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
 import {
   contextVariablesApi,
   type AgentContextVariableEnablement,
@@ -315,7 +315,9 @@ export function AssistantContextVariablesSection({
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
       // The dialog is open and covers the page header, so the refusal is shown there.
-      setDialogError(getApiErrorMessage(saveError, 'Failed to save attribute.'))
+      setDialogError(getApiErrorCode(saveError) === 'context_variable_has_values'
+        ? 'This attribute has values, so its type can’t change.'
+        : getApiErrorMessage(saveError, 'Failed to save attribute.'))
       resetSaveState()
     } finally {
       if (isCurrentSave(saveId)) setIsSaving(false)

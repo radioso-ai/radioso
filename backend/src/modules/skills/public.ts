@@ -38,7 +38,6 @@ export {
 export {
   type SkillAuthoringDescriptor,
   type SkillAuthoringInput,
-  type SkillAuthoringOutput,
 } from "./authoringDescriptor.js";
 export {
   routineAuthoringBuiltInSkills,

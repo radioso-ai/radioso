@@ -18,7 +18,6 @@ export {
   ApiConnectionService,
   type ApiConnectionRepositoryPort,
   type ApiConnectionWrite,
-  type ApiRequestTestResult,
 } from "./connections/apiConnectionService.js";
 export {
   ApiRequestRoutineSkillResolver,

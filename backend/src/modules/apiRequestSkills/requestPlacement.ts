@@ -1,6 +1,6 @@
 import { isBodyMethod, pathPlaceholders, type ApiRequestMethod } from "./domain.js";
 
-export type PlacedApiRequest =
+type PlacedApiRequest =
   | { kind: "placed"; url: string; body?: string }
   /** A path value that cannot be a URL segment: not a scalar, empty, or a `.`/`..` segment. */
   | { kind: "invalid_input"; param: string };

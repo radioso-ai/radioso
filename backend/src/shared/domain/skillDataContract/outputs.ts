@@ -5,7 +5,7 @@ import type { SkillOutputContract, SkillOutputContractEntry } from "@radioso/con
 import { isPrototypeKey, skillSlotBindingPattern } from "../skillPayloadKey.js";
 import { coerceSkillValue, skillDataValueTypes } from "./values.js";
 
-export const SKILL_OUTPUT_LIMITS = {
+const SKILL_OUTPUT_LIMITS = {
   outputs: 50,
   listFields: 20,
   pathSegments: 10,
@@ -14,7 +14,7 @@ export const SKILL_OUTPUT_LIMITS = {
   maxItems: 20,
 } as const;
 
-export const skillOutputFieldRoles = ["key", "title", "subtitle", "image", "link"] as const;
+const skillOutputFieldRoles = ["key", "title", "subtitle", "image", "link"] as const;
 
 const pathSegmentPattern = /^[^.\s]+$/u;
 
@@ -113,7 +113,7 @@ const projectList = (source: unknown, output: SkillListOutput): { present: boole
   return { present: true, value: items };
 };
 
-export type SkillOutputCheck =
+type SkillOutputCheck =
   | { kind: "checked"; outputs: Record<string, unknown> }
   /** A required output came back absent: the response does not follow the declared contract. */
   | { kind: "mismatch"; missing: string[] }

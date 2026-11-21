@@ -59,7 +59,7 @@ export interface SkillAuthoringOutcome {
 }
 
 /** A field of a list output: what each record carries, and the card role it fills. */
-export interface SkillAuthoringOutputField {
+interface SkillAuthoringOutputField {
   name: string;
   type: SkillDataValueType;
   description?: string;

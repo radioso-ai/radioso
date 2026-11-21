@@ -2,8 +2,7 @@ import { assertPublicHttpUrl, isLocalDevelopmentHttpUrl } from "../../domain/pub
 import { discardBody, isPublicNetworkRefusal, readCappedBody, resolveRedirectLocation } from "./publicBytesFetch.js";
 import { fetchPublicUrl } from "./publicUrlFetch.js";
 
-export const publicHttpRequestMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
-export type PublicHttpRequestMethod = (typeof publicHttpRequestMethods)[number];
+export type PublicHttpRequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface PublicHttpRequest {
   readonly method: PublicHttpRequestMethod;

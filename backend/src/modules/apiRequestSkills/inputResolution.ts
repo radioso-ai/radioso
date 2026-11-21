@@ -3,7 +3,7 @@ import type { SkillArgumentOrigin } from "@radioso/conversation-contract";
 import { coerceSkillValue } from "../../shared/domain/skillDataContract/index.js";
 import type { ApiRequestSkillConfig } from "./domain.js";
 
-export type ResolvedApiRequestParams =
+type ResolvedApiRequestParams =
   | { kind: "ready"; params: Record<string, unknown> }
   | { kind: "missing_input"; missingInputs: string[] }
   | { kind: "invalid_input"; invalidInputs: string[] }

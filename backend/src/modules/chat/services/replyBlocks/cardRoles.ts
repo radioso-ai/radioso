@@ -3,7 +3,7 @@ import type { SkillOutputContract, SkillOutputFieldRole } from "@radioso/convers
 import type { RecordPresentHead } from "./recordPresentHead.js";
 
 /** The list output a skill's cards come from, and which of its fields fills each card role. */
-export interface CardRoles {
+interface CardRoles {
   list: string;
   fields: Partial<Record<SkillOutputFieldRole, string>>;
 }

@@ -1,7 +1,7 @@
 import type { PublicHttpRequestFailure } from "../../shared/infra/http/publicHttpRequest.js";
 import type { ApiRequestFailureReason, ApiRequestSkillOutcome } from "./domain.js";
 
-export interface ApiRequestSettlement {
+interface ApiRequestSettlement {
   outcome: ApiRequestSkillOutcome;
   reason?: ApiRequestFailureReason;
 }

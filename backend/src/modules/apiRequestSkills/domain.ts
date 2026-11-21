@@ -251,7 +251,7 @@ const paramKeySchema = z.string().max(200).refine(
 
 const trimmedText = (maxLength: number) => z.string().trim().min(1).max(maxLength);
 
-export const apiRequestExposedParamSchema = z.object({
+const apiRequestExposedParamSchema = z.object({
   /** The value is coerced to this type before it is placed; one that does not fit settles `invalid_input`. */
   type: z.enum(skillDataValueTypes),
   description: trimmedText(1000).optional(),
@@ -261,7 +261,6 @@ export const apiRequestExposedParamSchema = z.object({
   verifiedOnly: z.boolean().default(false),
 }).strict();
 
-export type ApiRequestExposedParam = z.infer<typeof apiRequestExposedParamSchema>;
 
 const placeholderPattern = /\{([^{}]*)\}/gu;
 const pathCharacterPattern = /^[^\s?#\\]+$/u;

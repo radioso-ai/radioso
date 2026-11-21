@@ -8,7 +8,7 @@ import { WebhookRoutineSkillResolver } from "../webhookSkills/public.js";
 import { ApiRequestRoutineSkillResolver, type ApiRequestRoutineSkillRecord } from "../apiRequestSkills/public.js";
 import { StaticRoutineSkillResolver, type RoutineSkillResolver } from "./skillDispatcher.js";
 
-export interface RoutineSkillResolverChainInputs {
+interface RoutineSkillResolverChainInputs {
   webhookSkillNames: readonly string[];
   emailSkillNames: readonly string[];
   slackSkillNames: readonly string[];

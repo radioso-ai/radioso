@@ -58,7 +58,7 @@ interface ApiConnectionActor {
  * here rather than imported: the audit module reaches routines, which route API request skills,
  * so importing it would close a module cycle.
  */
-export interface ApiConnectionAuditPort {
+interface ApiConnectionAuditPort {
   record(event: {
     accountId?: string;
     workspaceId: string;
@@ -69,7 +69,7 @@ export interface ApiConnectionAuditPort {
 }
 
 /** What the operator's test request shows: the same outcome and outputs a skill would get, plus the body. */
-export interface ApiRequestTestResult {
+interface ApiRequestTestResult {
   httpStatus: number | null;
   durationMs: number;
   outcome: ApiRequestSkillOutcome;

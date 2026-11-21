@@ -4,9 +4,9 @@ import type { SkillDataValueType } from "@radioso/conversation-contract";
 export const skillDataValueTypes = ["text", "number", "boolean", "date", "email"] as const satisfies readonly SkillDataValueType[];
 
 /** Inputs normalize a date to the calendar day; outputs keep the time a source returned. */
-export type SkillValueDirection = "input" | "output";
+type SkillValueDirection = "input" | "output";
 
-export type SkillValueCoercion = { ok: true; value: string | number | boolean } | { ok: false };
+type SkillValueCoercion = { ok: true; value: string | number | boolean } | { ok: false };
 
 // Structural format checks, not product vocabulary. The email and decimal rules are the ones the
 // routine slot check applies (conversation-engine `checkSlotValue`); a test pins the agreement.

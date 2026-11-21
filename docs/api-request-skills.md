@@ -201,9 +201,10 @@ image and link. The model only picks which records to show.
 
 The routine's next-step selector reads the outputs this way, and so does the
 reply of every step the routine reaches on the turn the request runs, an ending
-included. An output the response left out reads as not returned, and a reply
-says nothing was found only when the outcome is `not_found` or a failure, or
-when no declared output came back. A step on a later turn reads only the
+included. An output the response left out reads as not returned. A reply says
+nothing was found, or that the request did not go through, only when the
+outcome is `not_found` or a failure: a booking answered with `201 {}` or `204`
+reads as booked, with no value to quote. A step on a later turn reads only the
 variables the skill step set, so set each output a later step needs and name it
 in that step's text, such as `@status`.
 

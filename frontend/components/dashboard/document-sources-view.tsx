@@ -57,6 +57,8 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
+import { SourceRecrawlControls } from '@/components/dashboard/documents/source-recrawl-controls'
+import { formatSourceKind } from '@/lib/document-source-labels'
 import {
   connectorsApi,
   documentsApi,
@@ -92,21 +94,6 @@ import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
-
-const formatSourceKind = (kind: DocumentSourceListItem['kind']) => {
-  switch (kind) {
-    case 'website':
-      return 'Website'
-    case 'upload':
-      return 'Uploads'
-    case 'api':
-      return 'API'
-    case 'connector':
-      return 'Connector'
-    default:
-      return kind
-  }
-}
 
 const formatDate = (value: string | null) => {
   if (!value) {
@@ -618,6 +605,7 @@ function SourceExpandedPanel({
           </>
         )}
       </div>
+      {source.kind === 'website' ? <SourceRecrawlControls source={source} onSourceUpdated={onSourceUpdated} /> : null}
       <Collapsible>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onViewDocuments}>

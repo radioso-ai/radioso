@@ -10,8 +10,11 @@ import type {
   DocumentMetadataRecord,
   DocumentRetrievalUpdateRequest,
   DocumentSourceCrawlSettings,
+  DocumentSourceHeldPagesKept,
+  DocumentSourceHeldPagesRemoved,
   DocumentSourceListItem,
   DocumentSourceListResponse,
+  DocumentSourceRecrawlCadence,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
   SourceReprocessResponse,
@@ -209,6 +212,27 @@ export const documentsApi = {
       ...(input?.documentEnrichmentOverride
         ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
         : {}),
+    }, { withSession: true })
+  },
+
+  async setSourceRecrawlCadence(sourceId: string, recrawlCadence: DocumentSourceRecrawlCadence): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}/recrawl-cadence`, {
+      method: 'PUT',
+      body: JSON.stringify({ recrawlCadence }),
+    }, { withSession: true })
+  },
+
+  /** Deletes the pages a scheduled recrawl held for review. */
+  async removeSourceHeldPages(sourceId: string): Promise<DocumentSourceHeldPagesRemoved> {
+    return request<DocumentSourceHeldPagesRemoved>(`/document/sources/${encodeURIComponent(sourceId)}/held-pages/remove`, {
+      method: 'POST',
+    }, { withSession: true })
+  },
+
+  /** Keeps the pages a scheduled recrawl held; later scheduled recrawls leave them. */
+  async keepSourceHeldPages(sourceId: string): Promise<DocumentSourceHeldPagesKept> {
+    return request<DocumentSourceHeldPagesKept>(`/document/sources/${encodeURIComponent(sourceId)}/held-pages/keep`, {
+      method: 'POST',
     }, { withSession: true })
   },
 

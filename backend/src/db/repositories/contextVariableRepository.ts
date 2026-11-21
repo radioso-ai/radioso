@@ -44,6 +44,13 @@ import type {
   VerifiedCustomerErasureScope,
 } from "../../shared/domain/conversationDataErasure.js";
 import { agentRevisionLockKey, withAgentDraftMutation } from "./agentDraftMutation.js";
+import {
+  contextVariableValueColumns,
+  mapContextVariableValueRow,
+  readContextVariableValue,
+  readFirstScopedValue,
+  storedScopeId,
+} from "./contextVariableValueReads.js";
 
 interface ContextVariableRow {
   id: string;
@@ -86,18 +93,6 @@ interface AgentContextVariableWithVariableRow extends AgentContextVariableRow {
   variable_updated_at: Date | string;
 }
 
-interface ContextVariableValueRow {
-  id: string;
-  workspace_id: string;
-  variable_id: string;
-  scope_type: string;
-  scope_id: string;
-  data: unknown;
-  last_modified: Date | string;
-  written_by_kind: string;
-  written_by_ref: string | null;
-}
-
 const contextVariableColumns = [
   "id",
   "workspace_id",
@@ -126,31 +121,12 @@ const agentContextVariableColumns = [
   "updated_at",
 ] as const;
 
-const contextVariableValueColumns = [
-  "id",
-  "workspace_id",
-  "variable_id",
-  "scope_type",
-  "scope_id",
-  "data",
-  "last_modified",
-  "written_by_kind",
-  "written_by_ref",
-] as const;
-
 /** Options as stored: the jsonb array of an enum variable, null otherwise. */
 const optionsFromRow = (value: unknown): readonly ContextVariableOption[] | null =>
   Array.isArray(value) ? (value as ContextVariableOption[]) : null;
 
 const optionsToRow = (options: readonly ContextVariableOption[] | null | undefined) =>
   options ? toJsonb(options) : null;
-
-/**
- * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in
- * lowercase, so an id sent in uppercase still names the stored value.
- */
-const storedScopeId = (scope: ContextVariableScope): string =>
-  scope.type === "conversation" ? scope.id.toLowerCase() : scope.id;
 
 /** The stored writers an incoming writer may replace, under the module's overwrite rule. */
 const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
@@ -223,18 +199,6 @@ const toRevisionEnablement = (
 const snapshotSelectsVariable = (variableId: string) =>
   sql<boolean>`snapshot @> ${toJsonb({ contextVariableEnablements: [{ variableId }] })}`;
 
-const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariableValue => ({
-  id: row.id,
-  workspaceId: row.workspace_id,
-  variableId: row.variable_id,
-  scope: {
-    type: row.scope_type as ContextVariableScope["type"],
-    id: row.scope_id,
-  },
-  data: row.data,
-  lastModified: new Date(row.last_modified),
-  writtenBy: { kind: row.written_by_kind as ContextValueWriterKind, ref: row.written_by_ref },
-});
 
 // Mirrors RoutineDefinitionService's isRoutineDefinitionNameVersionConstraintError: applyProposal
 // is the only writer of a brand-new context_variables row that has no earlier read to compare
@@ -645,15 +609,8 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return row !== undefined;
   }
 
-  async readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
-    const row = await this.db
-      .selectFrom("context_variable_values")
-      .select(contextVariableValueColumns)
-      .where("variable_id", "=", variableId)
-      .where("scope_type", "=", scope.type)
-      .where("scope_id", "=", storedScopeId(scope))
-      .executeTakeFirst();
-    return row ? mapContextVariableValueRow(row) : null;
+  readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
+    return readContextVariableValue(this.db, variableId, scope);
   }
 
   async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
@@ -680,7 +637,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       if (!variable) {
         continue;
       }
-      const value = await this.readFirstScopedValue(variable.id, scopes);
+      const value = await readFirstScopedValue(this.db, variable.id, scopes);
       if (!value) {
         continue;
       }
@@ -688,19 +645,6 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     }
 
     return resolved;
-  }
-
-  private async readFirstScopedValue(
-    variableId: string,
-    scopes: readonly ContextVariableScope[],
-  ): Promise<ContextVariableValue | null> {
-    for (const scope of scopes) {
-      const value = await this.readValue(variableId, scope);
-      if (value) {
-        return value;
-      }
-    }
-    return null;
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {

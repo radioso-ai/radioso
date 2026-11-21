@@ -25,6 +25,16 @@
 -- then validated, which scans each table under the lock already held; the index build is the other
 -- scan. Both tables are small. The wait for each lock is bounded to three seconds; a deploy that
 -- hits it rolls back and a retry is safe.
+--
+-- Rollback is app-only: the previous release runs on this schema as it stands, and this migration
+-- is not reverted. While it runs, its eraser deletes only `session` values, so a conversation
+-- erased in that window leaves its `conversation` values behind with nothing left to erase or
+-- export them, and it accepts any string as an `enum` value. After rolling forward again, delete
+-- the orphaned values:
+--
+--   DELETE FROM context_variable_values v
+--    WHERE scope_type = 'conversation'
+--      AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id::text = v.scope_id);
 SET LOCAL lock_timeout = '3s';
 
 ALTER TABLE context_variables

@@ -15,12 +15,14 @@ const MAX_OPTIONS = 50
 export const attributeOptionsError = (options: readonly ContextVariableOption[]): string | null => {
   if (options.length === 0) return 'Add at least one option.'
   if (options.length > MAX_OPTIONS) return `Use at most ${MAX_OPTIONS} options.`
+  // Compared without case, as the API compares them: `billing` and `Billing` read as one option.
   const keys = new Set<string>()
   for (const option of options) {
     if (!option.label.trim()) return 'Every option needs a label.'
     if (!OPTION_KEY_PATTERN.test(option.key)) return 'Keys use letters, numbers and underscores, and start with a letter.'
-    if (keys.has(option.key)) return `Key "${option.key}" is used twice.`
-    keys.add(option.key)
+    const folded = option.key.toLowerCase()
+    if (keys.has(folded)) return `Key "${option.key}" is used twice.`
+    keys.add(folded)
   }
   if (options.every((option) => option.archived)) return 'Keep at least one option active.'
   return null

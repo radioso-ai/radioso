@@ -129,7 +129,9 @@ conversation's topic with the options Billing, Shipping and Returns. Each
 option has:
 
 - **Key**, the identifier a value stores, such as `billing`. Letters, digits
-  and underscores, starting with a letter. A key never changes.
+  and underscores, starting with a letter. A key never changes, and two keys
+  of one attribute differ by more than case, so `billing` and `Billing` cannot
+  both be options.
 - **Label**, the name teammates see, such as "Billing".
 - **Description**, up to 300 characters on when the option applies, written
   in whatever language your team works in.

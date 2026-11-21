@@ -388,7 +388,8 @@ The catalog endpoints create and update the definitions:
 - `options`: required for `enum` and refused for other types. Each option is
   `{ "key", "label", "description", "archived" }`; `description` and
   `archived` are optional on input. Keys use letters, digits and underscores,
-  start with a letter, and never change. A `PATCH` that sends `options` sends
+  start with a letter, never change, and differ from each other by more than
+  case. A `PATCH` that sends `options` sends
   the full list with every existing key: set `archived: true` to retire an
   option, keeping at least one active. When another edit adds an option while
   yours is saved, yours returns `409`; read the variable again and resend the

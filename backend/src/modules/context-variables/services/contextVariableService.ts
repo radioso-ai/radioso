@@ -280,7 +280,7 @@ const optionsFaultMessages: Record<OptionsValidationCode, string> = {
   options_not_allowed: "Only an enum context variable has options",
   too_many_options: "An enum context variable has too many options",
   invalid_option_key: "An option key starts with a letter and uses letters, digits and underscores",
-  duplicate_option_key: "Each option key appears once",
+  duplicate_option_key: "Each option key appears once, whatever its case",
   invalid_option_label: "Each option needs a label within the length limit",
   option_description_too_long: "An option description is too long",
   option_removed: "Options are archived, not removed: keep every existing option key",

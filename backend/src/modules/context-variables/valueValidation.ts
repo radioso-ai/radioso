@@ -74,12 +74,15 @@ export const validateOptions = (
   if (valueType !== "enum") return options === null ? accepted : refused("options_not_allowed");
   if (!options || options.length === 0) return refused("options_required");
   if (options.length > limits.maxOptions) return refused("too_many_options");
+  // Keys are compared without case: `billing` and `Billing` would read as one option to a person,
+  // and since a key never changes or goes away, a pair let in once would stay for good.
   const keys = new Set<string>();
   for (const option of options) {
     const fault = optionFault(option);
     if (fault) return refused(fault);
-    if (keys.has(option.key)) return refused("duplicate_option_key");
-    keys.add(option.key);
+    const folded = option.key.toLowerCase();
+    if (keys.has(folded)) return refused("duplicate_option_key");
+    keys.add(folded);
   }
   if (!keepsEveryOptionKey(previous, options)) return refused("option_removed");
   return options.some((option) => !option.archived) ? accepted : refused("active_option_required");

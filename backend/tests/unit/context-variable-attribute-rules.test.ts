@@ -48,6 +48,9 @@ describe("validateOptions", () => {
     expect(validateOptions("enum", [option("tier_2")], null)).toEqual({ ok: true });
     expect(validateOptions("enum", [option("billing"), option("billing")], null))
       .toEqual({ ok: false, code: "duplicate_option_key" });
+    // Keys differing only in case would read as one option to a person, so they cannot coexist.
+    expect(validateOptions("enum", [option("billing"), option("Billing")], null))
+      .toEqual({ ok: false, code: "duplicate_option_key" });
     const many = Array.from({ length: 51 }, (_, index) => option(`option_${index}`));
     expect(validateOptions("enum", many, null)).toEqual({ ok: false, code: "too_many_options" });
     expect(validateOptions("enum", many.slice(0, 50), null)).toEqual({ ok: true });

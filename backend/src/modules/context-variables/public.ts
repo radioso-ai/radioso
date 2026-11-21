@@ -34,6 +34,7 @@ export {
   contextVariableOptionSchema,
   normalizeContextVariableOption,
 } from "./optionSchema.js";
+export { validateValue } from "./valueValidation.js";
 export type {
   AgentContextVariableEnablement,
   ContextScopeKeys,

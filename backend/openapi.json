@@ -43638,7 +43638,7 @@
             }
           },
           "409": {
-            "description": "The stored value was kept: it was set by a writer this one does not replace",
+            "description": "The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write",
             "content": {
               "application/json": {
                 "schema": {

@@ -180,7 +180,7 @@ export const registerContextVariablePaths = (
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Context variable, or the conversation a conversation scope names, not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      409: { description: "The stored value was kept: it was set by a writer this one does not replace", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

@@ -5,6 +5,7 @@ import {
   CONTEXT_VALUE_WRITER_KINDS,
   mayOverwrite,
   resolvedVariableInput,
+  validateValue,
   type AgentContextVariableEnablement,
   type ContextValueWriter,
   type ContextValueWriterKind,
@@ -250,6 +251,48 @@ const lockResolverSkillForEnablement = async (
   return !skill ? "missing" : skill.enabled ? "enabled" : "disabled";
 };
 
+/**
+ * A conversation-scope value names a conversation of its own workspace, so its erasure reaches it.
+ * Returns the conversation's id as stored, whatever case the caller sent it in.
+ */
+const requireConversation = async (db: Db, workspaceId: string, conversationId: string): Promise<string> => {
+  const conversation = await db
+    .selectFrom("conversations")
+    .select("id")
+    .where("workspace_id", "=", workspaceId)
+    .where("id", "=", conversationId)
+    .executeTakeFirst();
+  if (!conversation) throw notFound("Conversation not found");
+  return conversation.id;
+};
+
+/**
+ * Refuses to change the type of a variable that has values. The row is locked for update before the
+ * values are looked for, so a value write in flight, which key-shares it, commits first and is seen.
+ */
+const refuseTypeChangeWithValues = async (
+  trx: Db,
+  workspaceId: string,
+  variableId: string,
+  valueType: ContextVariableValueType,
+): Promise<void> => {
+  const current = await trx
+    .selectFrom("context_variables")
+    .select("value_type")
+    .where("workspace_id", "=", workspaceId)
+    .where("id", "=", variableId)
+    .forUpdate()
+    .executeTakeFirst();
+  if (!current || current.value_type === valueType) return;
+  const value = await trx
+    .selectFrom("context_variable_values")
+    .select("id")
+    .where("variable_id", "=", variableId)
+    .limit(1)
+    .executeTakeFirst();
+  if (value) throw conflict("The value type of a context variable that has values cannot change");
+};
+
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -273,23 +316,26 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   }
 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
-    const row = await this.db
-      .updateTable("context_variables")
-      .set({
-        updated_at: currentTimestamp(),
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...("description" in input ? { description: input.description ?? null } : {}),
-        ...(input.valueType !== undefined ? { value_type: input.valueType } : {}),
-        ...(input.options !== undefined ? { options: optionsToRow(input.options) } : {}),
-        ...(input.trustTier !== undefined ? { trust_tier: input.trustTier } : {}),
-        ...(input.sensitivity !== undefined ? { sensitivity: input.sensitivity } : {}),
-        ...(input.defaultSurfacing !== undefined ? { default_surfacing: input.defaultSurfacing } : {}),
-      })
-      .where("workspace_id", "=", workspaceId)
-      .where("id", "=", id)
-      .returning(contextVariableColumns)
-      .executeTakeFirst();
-    return row ? mapContextVariableRow(row) : null;
+    return this.db.transaction().execute(async (trx) => {
+      if (input.valueType !== undefined) await refuseTypeChangeWithValues(trx, workspaceId, id, input.valueType);
+      const row = await trx
+        .updateTable("context_variables")
+        .set({
+          updated_at: currentTimestamp(),
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...("description" in input ? { description: input.description ?? null } : {}),
+          ...(input.valueType !== undefined ? { value_type: input.valueType } : {}),
+          ...(input.options !== undefined ? { options: optionsToRow(input.options) } : {}),
+          ...(input.trustTier !== undefined ? { trust_tier: input.trustTier } : {}),
+          ...(input.sensitivity !== undefined ? { sensitivity: input.sensitivity } : {}),
+          ...(input.defaultSurfacing !== undefined ? { default_surfacing: input.defaultSurfacing } : {}),
+        })
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "=", id)
+        .returning(contextVariableColumns)
+        .executeTakeFirst();
+      return row ? mapContextVariableRow(row) : null;
+    });
   }
 
   async delete(workspaceId: string, id: string): Promise<boolean> {
@@ -545,58 +591,53 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     data: unknown,
     writtenBy: ContextValueWriter,
   ): Promise<ContextVariableValue | null> {
-    const variable = await this.db
-      .selectFrom("context_variables")
-      .select(["workspace_id"])
-      .where("id", "=", variableId)
-      .executeTakeFirstOrThrow();
-    // A conversation is keyed by its own id, in the form every reader compares against.
-    const scopeId = scope.type === "conversation"
-      ? await this.requireConversation(variable.workspace_id, scope.id)
-      : scope.id;
+    return this.db.transaction().execute(async (trx) => {
+      // Key-shared until the write commits. A type change locks the row for update before it looks
+      // for values, so it waits for this write, and a write after it reads the type it committed.
+      const variable = await trx
+        .selectFrom("context_variables")
+        .select(["workspace_id", "value_type", "options"])
+        .where("id", "=", variableId)
+        .forKeyShare()
+        .executeTakeFirst();
+      if (!variable) throw notFound("Context variable not found");
+      const definition = { valueType: variable.value_type as ContextVariableValueType, options: optionsFromRow(variable.options) };
+      if (!validateValue(definition, data).ok) {
+        throw conflict("The context variable's type or options changed while the value was written");
+      }
+      // A conversation is keyed by its own id, in the form every reader compares against.
+      const scopeId = scope.type === "conversation"
+        ? await requireConversation(trx, variable.workspace_id, scope.id)
+        : scope.id;
 
-    const row = await this.db
-      .insertInto("context_variable_values")
-      .values({
-        id: randomUUID(),
-        workspace_id: variable.workspace_id,
-        variable_id: variableId,
-        scope_type: scope.type,
-        scope_id: scopeId,
-        data: toJsonb(data),
-        last_modified: currentTimestamp(),
-        written_by_kind: writtenBy.kind,
-        written_by_ref: writtenBy.ref,
-      })
-      .onConflict((oc) =>
-        oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
-          workspace_id: eb.ref("excluded.workspace_id"),
-          data: eb.ref("excluded.data"),
+      const row = await trx
+        .insertInto("context_variable_values")
+        .values({
+          id: randomUUID(),
+          workspace_id: variable.workspace_id,
+          variable_id: variableId,
+          scope_type: scope.type,
+          scope_id: scopeId,
+          data: toJsonb(data),
           last_modified: currentTimestamp(),
-          written_by_kind: eb.ref("excluded.written_by_kind"),
-          written_by_ref: eb.ref("excluded.written_by_ref"),
-        // Decided against the stored row in the same statement, so a write racing this one cannot
-        // slip between a read of the stored writer and the update.
-        })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
-      )
-      .returning(contextVariableValueColumns)
-      .executeTakeFirst();
-    return row ? mapContextVariableValueRow(row) : null;
-  }
-
-  /**
-   * A conversation-scope value names a conversation of its own workspace, so its erasure reaches it.
-   * Returns the conversation's id as stored, whatever case the caller sent it in.
-   */
-  private async requireConversation(workspaceId: string, conversationId: string): Promise<string> {
-    const conversation = await this.db
-      .selectFrom("conversations")
-      .select("id")
-      .where("workspace_id", "=", workspaceId)
-      .where("id", "=", conversationId)
-      .executeTakeFirst();
-    if (!conversation) throw notFound("Conversation not found");
-    return conversation.id;
+          written_by_kind: writtenBy.kind,
+          written_by_ref: writtenBy.ref,
+        })
+        .onConflict((oc) =>
+          oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
+            workspace_id: eb.ref("excluded.workspace_id"),
+            data: eb.ref("excluded.data"),
+            last_modified: currentTimestamp(),
+            written_by_kind: eb.ref("excluded.written_by_kind"),
+            written_by_ref: eb.ref("excluded.written_by_ref"),
+          // Decided against the stored row in the same statement, so a write racing this one cannot
+          // slip between a read of the stored writer and the update.
+          })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
+        )
+        .returning(contextVariableValueColumns)
+        .executeTakeFirst();
+      return row ? mapContextVariableValueRow(row) : null;
+    });
   }
 
   async hasValues(variableId: string): Promise<boolean> {
@@ -658,6 +699,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           // proposal can still take the name between this proposal's draft and its Apply: without
           // this translation that raw pg driver error isn't an AppError, so isStale() never
           // recognizes it and the proposal reports "failed" instead of "stale".
+          await refuseTypeChangeWithValues(trx, input.workspaceId, variableId, input.definition.valueType);
           let row: { id: string } | undefined;
           try {
             row = await trx

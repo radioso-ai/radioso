@@ -21326,7 +21326,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description The stored value was kept: it was set by a writer this one does not replace */
+            /** @description The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write */
             409: {
                 headers: {
                     [name: string]: unknown;

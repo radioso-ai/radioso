@@ -9,6 +9,8 @@ import {
 } from "../../src/db/repositories/contextVariableRepository.js";
 import { contextScopeLadder, type ContextVariableOption } from "../../src/modules/context-variables/domain.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../src/shared/infra/kysely/types.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -113,6 +115,59 @@ describeIntegration("typed attributes (Postgres)", () => {
     await new ContextVariableValueEraser(database.kysely).erase({ kind: "conversations", workspaceId, conversationIds: [conversationId] });
     expect(await repository.readValue(topic.id, sent)).toBeNull();
     expect(await repository.hasValues(topic.id)).toBe(false);
+  });
+
+  /**
+   * Runs `hold` in a transaction left open until `release` is called, while the test races it, then
+   * `finish` in the same transaction before it commits.
+   */
+  const holdOpen = (hold: (trx: Db) => Promise<void>, finish: (trx: Db) => Promise<void> = async () => undefined) => {
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let markHeld: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { markHeld = resolve; });
+    const done = database.kysely.transaction().execute(async (trx) => {
+      await hold(trx);
+      markHeld();
+      await released;
+      await finish(trx);
+    });
+    return { held, release, done };
+  };
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const createPlan = () => repository.create({
+    workspaceId, name: uniqueName("plan"), valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always",
+  });
+
+  it("refuses a value that no longer fits a type changed after the writer read the definition", async () => {
+    const plan = await createPlan();
+    await repository.update(workspaceId, plan.id, { valueType: "enum", options: [option("gold")] });
+
+    await expect(repository.upsertValue(plan.id, { type: "session", id: `session-${randomUUID()}` }, "free text", api))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(await repository.hasValues(plan.id)).toBe(false);
+  });
+
+  it("refuses a type change that waited on a value write in flight", async () => {
+    const plan = await createPlan();
+    // A value write holds the variable's row the way the writer does, and has not committed yet.
+    const writer = holdOpen(async (trx) => {
+      await trx.selectFrom("context_variables").select("id").where("id", "=", plan.id).forKeyShare().executeTakeFirstOrThrow();
+      await trx.insertInto("context_variable_values").values({
+        id: randomUUID(), workspace_id: workspaceId, variable_id: plan.id, scope_type: "session",
+        scope_id: `session-${randomUUID()}`, data: toJsonb("free text"), written_by_kind: "api",
+      }).execute();
+    });
+    await writer.held;
+
+    const typeChange = repository.update(workspaceId, plan.id, { valueType: "enum", options: [option("gold")] })
+      .catch((error: unknown) => error);
+    await pause(200);
+    writer.release();
+    await writer.done;
+
+    expect(await typeChange).toMatchObject({ statusCode: 409 });
+    expect((await repository.get(workspaceId, plan.id))?.valueType).toBe("string");
   });
 
   it("reads a value written before writers were recorded as the API's", async () => {

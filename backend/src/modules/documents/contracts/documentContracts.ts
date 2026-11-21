@@ -372,11 +372,13 @@ export interface DocumentRepositoryPort {
     sourceId: string;
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
-  /** Deletes the named pages of the source the way {@link deleteMissingPagesBySourceAndExternalIds} does. */
-  deleteSourcePagesByIds(input: {
+  /**
+   * Deletes the source's pages a scheduled crawl holds for review the way
+   * {@link deleteMissingPagesBySourceAndExternalIds} does: the ones still held when it runs.
+   */
+  deleteHeldSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 

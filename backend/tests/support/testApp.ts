@@ -1536,19 +1536,14 @@ export const createTestDependencies = (overrides: {
       : undefined,
   );
   const websiteMissingPageStore = new InMemoryWebsiteMissingPageStore();
+  documentRepository.setHeldPages(websiteMissingPageStore);
   const websiteRecrawl = createWebsiteRecrawlComposition({
     schedule: new InMemoryWebsiteRecrawlRepository(documentSourceRepository),
     missingPages: websiteMissingPageStore,
     sources: documentSourceRepository,
     usageLimits: usageLimitPolicy,
     recrawls: { recrawlSource: async () => undefined },
-    pages: {
-      removeSourcePages: async (removal) => {
-        const result = await documentIngestionService.removeSourcePages(removal);
-        removal.documentIds.forEach((documentId) => websiteMissingPageStore.forgetDocument(documentId));
-        return result;
-      },
-    },
+    pages: { removeHeldPages: (removal) => documentIngestionService.removeHeldSourcePages(removal) },
     audit: auditService,
     logger,
   });

@@ -21,7 +21,7 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
   const heldPages = new WebsiteHeldPagesService({
     sources: new DocumentSourceRepository(database.kysely),
     heldPages: missingPages,
-    pages: { removeSourcePages: (removal) => documents.deleteSourcePagesByIds(removal) },
+    pages: { removeHeldPages: (removal) => documents.deleteHeldSourcePages(removal) },
     audit,
   });
 

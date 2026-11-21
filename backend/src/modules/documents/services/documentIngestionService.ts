@@ -907,8 +907,8 @@ export class DocumentIngestionService implements DocumentInventoryPort {
   }
 
   /** The operator's removal of pages a scheduled crawl held, through the same deletion as {@link reapMissingPages}. */
-  async removeSourcePages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number }> {
-    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteSourcePagesByIds(input));
+  async removeHeldSourcePages(input: { workspaceId: string; sourceId: string }): Promise<{ deletedCount: number }> {
+    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteHeldSourcePages(input));
   }
 
   private async publishingDeletion<T extends { deletedCount: number }>(workspaceId: string, deletion: Promise<T>): Promise<T> {

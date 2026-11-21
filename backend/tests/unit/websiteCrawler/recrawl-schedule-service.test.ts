@@ -101,29 +101,27 @@ describe("setting how often a website source recrawls", () => {
 });
 
 describe("deciding on held pages", () => {
-  const heldPagesService = (stored: DocumentSourceRecord | null = source(), heldIds: string[] = ["doc-1", "doc-2"]) => {
-    const heldPages = {
-      listHeldPageIds: vi.fn().mockResolvedValue(heldIds),
-      keepHeldPages: vi.fn().mockResolvedValue(heldIds.length),
-    };
-    const removeSourcePages = vi.fn().mockResolvedValue({ deletedCount: heldIds.length });
+  const heldPagesService = (stored: DocumentSourceRecord | null = source(), heldPageCount = 2) => {
+    const heldPages = { keepHeldPages: vi.fn().mockResolvedValue(heldPageCount) };
+    const removeHeldPages = vi.fn().mockResolvedValue({ deletedCount: heldPageCount });
     const audit = { record: vi.fn().mockResolvedValue(undefined) };
     const service = new WebsiteHeldPagesService({
       sources: { findByIdAndWorkspaceId: vi.fn().mockResolvedValue(stored) },
       heldPages,
-      pages: { removeSourcePages },
+      pages: { removeHeldPages },
       audit,
     });
-    return { service, heldPages, removeSourcePages, audit };
+    return { service, heldPages, removeHeldPages, audit };
   };
 
-  it("removes the held pages through the source's page deletion and audits it", async () => {
-    const { service, removeSourcePages, audit } = heldPagesService();
+  it("removes the pages still held when it deletes, in one step, and audits it", async () => {
+    // Listing the held pages first and deleting them after would also delete a page a crawl saw in between.
+    const { service, removeHeldPages, audit } = heldPagesService();
 
     await expect(service.removeHeldPages({ accountId: "account-1", workspaceId: "workspace-1", sourceId: "source-1" }))
       .resolves.toEqual({ sourceId: "source-1", removedPageCount: 2 });
 
-    expect(removeSourcePages).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId: "source-1", documentIds: ["doc-1", "doc-2"] });
+    expect(removeHeldPages).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId: "source-1" });
     expect(audit.record).toHaveBeenCalledWith({
       accountId: "account-1",
       workspaceId: "workspace-1",
@@ -134,25 +132,24 @@ describe("deciding on held pages", () => {
   });
 
   it("keeps the held pages and audits it", async () => {
-    const { service, heldPages, removeSourcePages, audit } = heldPagesService();
+    const { service, heldPages, removeHeldPages, audit } = heldPagesService();
 
     await expect(service.keepHeldPages({ accountId: "account-1", workspaceId: "workspace-1", sourceId: "source-1" }))
       .resolves.toEqual({ sourceId: "source-1", keptPageCount: 2 });
 
     expect(heldPages.keepHeldPages).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId: "source-1" });
-    expect(removeSourcePages).not.toHaveBeenCalled();
+    expect(removeHeldPages).not.toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "document.website_crawler.held_pages_kept",
       metadata: { sourceId: "source-1", pageCount: 2 },
     }));
   });
 
-  it("does nothing, and audits nothing, when no pages are held", async () => {
-    const { service, removeSourcePages, audit } = heldPagesService(source(), []);
+  it("audits nothing when no pages are held", async () => {
+    const { service, audit } = heldPagesService(source(), 0);
 
     await expect(service.removeHeldPages({ accountId: "account-1", workspaceId: "workspace-1", sourceId: "source-1" }))
       .resolves.toEqual({ sourceId: "source-1", removedPageCount: 0 });
-    expect(removeSourcePages).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 

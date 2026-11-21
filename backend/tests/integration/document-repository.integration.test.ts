@@ -1081,32 +1081,31 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(result.deletedContentBytes).toBe(30);
   });
 
-  it("deleteSourcePagesByIds deletes only the named pages of the source and sums freed bytes", async () => {
-    const named = await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "named-1", contentSizeBytes: 40 }),
-      status: "ready",
-    });
-    const other = await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "other-1", contentSizeBytes: 50 }),
-      status: "ready",
-    });
-    const unsourced = await repository.create({
-      ...baseCreateInput({ sourceId: null, externalDocumentId: "manual-1", contentSizeBytes: 60 }),
-      status: "ready",
-    });
+  it("deleteHeldSourcePages deletes only the source's pages still held for review and sums freed bytes", async () => {
+    const page = (externalDocumentId: string, contentSizeBytes: number) =>
+      repository.create({ ...baseCreateInput({ sourceId, externalDocumentId, contentSizeBytes }), status: "ready" });
+    const held = await page("held-1", 40);
+    const kept = await page("kept-1", 50);
+    const back = await page("back-1", 60);
+    const live = await page("live-1", 70);
+    const hold = (documentId: string, decision: "pending" | "kept") => database.query(
+      "INSERT INTO website_source_missing_pages (document_id, workspace_id, source_id, decision) VALUES ($1, $2, $3, $4)",
+      [documentId, workspaceId, sourceId, decision],
+    );
+    await hold(held.id, "pending");
+    await hold(kept.id, "kept");
+    // Held, then seen again by a crawl, which clears its hold before the operator removes the rest.
+    await hold(back.id, "pending");
+    await database.query("DELETE FROM website_source_missing_pages WHERE document_id = $1", [back.id]);
 
-    const result = await repository.deleteSourcePagesByIds({
-      workspaceId,
-      sourceId,
-      documentIds: [named.id, unsourced.id],
-    });
+    const result = await repository.deleteHeldSourcePages({ workspaceId, sourceId });
 
     expect(result).toEqual({ deletedCount: 1, deletedContentBytes: 40 });
-    expect(await repository.findByIdAndWorkspaceId(named.id, workspaceId)).toBeNull();
-    expect(await repository.findByIdAndWorkspaceId(other.id, workspaceId)).not.toBeNull();
-    expect(await repository.findByIdAndWorkspaceId(unsourced.id, workspaceId)).not.toBeNull();
-    await expect(repository.deleteSourcePagesByIds({ workspaceId, sourceId, documentIds: [] }))
-      .resolves.toEqual({ deletedCount: 0, deletedContentBytes: 0 });
+    expect(await repository.findByIdAndWorkspaceId(held.id, workspaceId)).toBeNull();
+    for (const remaining of [kept, back, live]) {
+      expect(await repository.findByIdAndWorkspaceId(remaining.id, workspaceId)).not.toBeNull();
+    }
+    await expect(repository.deleteHeldSourcePages({ workspaceId, sourceId })).resolves.toEqual({ deletedCount: 0, deletedContentBytes: 0 });
   });
 
   it("lists a filtered, cursor-paginated document inventory without reading document content", async () => {

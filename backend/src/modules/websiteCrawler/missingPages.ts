@@ -31,7 +31,6 @@ export interface WebsiteMissingPageStore {
 
 /** What the operator's decision on held pages reads and writes. */
 export interface WebsiteHeldPageStore {
-  listHeldPageIds(input: { workspaceId: string; sourceId: string }): Promise<string[]>;
   /** Marks the source's held pages kept; returns how many. */
   keepHeldPages(input: { workspaceId: string; sourceId: string }): Promise<number>;
   /** Held pages per source, for the sources that have any. */

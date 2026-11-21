@@ -2894,11 +2894,17 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
 
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
+  private heldPages?: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument">;
 
   constructor(private jobRepository?: InMemoryDocumentProcessingJobRepository) {}
 
   setJobRepository(jobRepository: InMemoryDocumentProcessingJobRepository): void {
     this.jobRepository = jobRepository;
+  }
+
+  /** The held-pages table `deleteHeldSourcePages` reads, as Postgres joins it. */
+  setHeldPages(heldPages: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument">): void {
+    this.heldPages = heldPages;
   }
 
   async countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }) {
@@ -3731,18 +3737,18 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return { deletedCount, deletedContentBytes };
   }
 
-  async deleteSourcePagesByIds(input: {
+  async deleteHeldSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
     let deletedCount = 0;
     let deletedContentBytes = 0;
-    for (const id of input.documentIds) {
+    for (const id of this.heldPages?.pendingPageIds(input) ?? []) {
       const doc = this.items.get(id);
       if (doc && doc.workspaceId === input.workspaceId && doc.sourceId === input.sourceId) {
         deletedContentBytes += doc.contentSizeBytes ?? 0;
         this.items.delete(id);
+        this.heldPages?.forgetDocument(id);
         deletedCount += 1;
       }
     }
@@ -3792,14 +3798,14 @@ export class InMemoryWebsiteMissingPageStore implements WebsiteMissingPageStore,
     return this.pages.size - before;
   }
 
-  async listHeldPageIds(input: { workspaceId: string; sourceId: string }): Promise<string[]> {
+  pendingPageIds(input: { workspaceId: string; sourceId: string }): string[] {
     return [...this.pages.entries()]
       .filter(([, page]) => page.workspaceId === input.workspaceId && page.sourceId === input.sourceId && page.decision === "pending")
       .map(([documentId]) => documentId);
   }
 
   async keepHeldPages(input: { workspaceId: string; sourceId: string }): Promise<number> {
-    const held = await this.listHeldPageIds(input);
+    const held = this.pendingPageIds(input);
     for (const documentId of held) this.pages.set(documentId, { ...this.pages.get(documentId)!, decision: "kept" });
     return held.length;
   }

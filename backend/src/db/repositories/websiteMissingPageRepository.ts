@@ -81,17 +81,6 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
     return Number(result.numInsertedOrUpdatedRows ?? 0);
   }
 
-  async listHeldPageIds(input: { workspaceId: string; sourceId: string }): Promise<string[]> {
-    const rows = await this.db
-      .selectFrom("website_source_missing_pages")
-      .select("document_id")
-      .where("workspace_id", "=", input.workspaceId)
-      .where("source_id", "=", input.sourceId)
-      .where("decision", "=", "pending")
-      .execute();
-    return rows.map((row) => row.document_id);
-  }
-
   async keepHeldPages(input: { workspaceId: string; sourceId: string }): Promise<number> {
     const result = await this.db
       .updateTable("website_source_missing_pages")

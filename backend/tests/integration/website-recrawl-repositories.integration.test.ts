@@ -166,7 +166,7 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
     expect(seen).toBeTruthy();
   });
 
-  it("holds pages once, keeping when they first went missing, and keeps or lists them for the operator", async () => {
+  it("holds pages once, keeping when they first went missing, and keeps or counts them for the operator", async () => {
     const first = await insertPage(siteId, "page-1");
     const second = await insertPage(siteId, "page-2");
     const otherSitePage = await insertPage(otherSiteId, "page-3");
@@ -186,12 +186,10 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
 
     await expect(missingPages.countHeldPages({ workspaceId, sourceIds: [siteId, otherSiteId] }))
       .resolves.toEqual(new Map([[siteId, 2]]));
-    await expect(missingPages.listHeldPageIds({ workspaceId, sourceId: siteId })).resolves.toEqual(expect.arrayContaining([first, second]));
 
     await expect(missingPages.keepHeldPages({ workspaceId, sourceId: siteId })).resolves.toBe(2);
-    await expect(missingPages.listHeldPageIds({ workspaceId, sourceId: siteId })).resolves.toEqual([]);
     await expect(missingPages.countHeldPages({ workspaceId, sourceIds: [siteId] })).resolves.toEqual(new Map());
     await expect(missingPages.holdMissingPages({ workspaceId, sourceId: siteId, documentIds: [first] })).resolves.toBe(0);
-    await expect(missingPages.listHeldPageIds({ workspaceId, sourceId: siteId })).resolves.toEqual([]);
+    await expect(missingPages.countHeldPages({ workspaceId, sourceIds: [siteId] })).resolves.toEqual(new Map());
   });
 });

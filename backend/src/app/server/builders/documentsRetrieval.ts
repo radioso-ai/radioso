@@ -270,7 +270,7 @@ export const buildDocumentServices = (input: {
     sources: documentSourceRepository,
     usageLimits: usageLimitPolicy,
     recrawls: { recrawlSource: (recrawl) => documentSourceRecrawlService.recrawlSource(recrawl) },
-    pages: { removeSourcePages: (removal) => documentIngestionService.removeSourcePages(removal) },
+    pages: { removeHeldPages: (removal) => documentIngestionService.removeHeldSourcePages(removal) },
     audit: auditService,
     logger,
   });

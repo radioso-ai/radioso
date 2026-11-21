@@ -1170,24 +1170,24 @@ export class DocumentRepository implements DocumentRepositoryPort {
       : eb("external_document_id", "is not", null));
   }
 
-  /** Deletes the named pages of the source the way the crawl's removal of missing pages does. */
-  async deleteSourcePagesByIds(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    if (input.documentIds.length === 0) return { deletedCount: 0, deletedContentBytes: 0 };
-    return this.deleteSourcePages(input, (eb) => eb("id", "in", [...input.documentIds]));
+  /** Deletes the source's pages still held for review, locking each hold so a crawl cannot clear it mid-deletion. */
+  async deleteHeldSourcePages(input: { workspaceId: string; sourceId: string }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    return this.deleteSourcePages(input, (eb) => eb("id", "in", eb.selectFrom("website_source_missing_pages").select("document_id").forUpdate()
+      .where("workspace_id", "=", input.workspaceId).where("source_id", "=", input.sourceId).where("decision", "=", "pending")));
   }
 
   private async deleteSourcePages(
     input: { workspaceId: string; sourceId: string },
     pages: (eb: ExpressionBuilder<DB, "documents">) => Expression<SqlBool>,
   ): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    // Deletes exactly the rows it locked, so what it releases and what it deletes cannot drift apart.
     const rows = await this.db.transaction().execute(async (trx) => {
-      const documents = await trx.selectFrom("documents").select("id")
+      const ids = (await trx.selectFrom("documents").select("id")
         .where("source_id", "=", input.sourceId).where("workspace_id", "=", input.workspaceId).where(pages)
-        .forUpdate().execute();
-      await this.releaseDeletedDocuments(trx, input.workspaceId, documents.map((document) => document.id));
-      return trx.deleteFrom("documents")
-        .where("source_id", "=", input.sourceId).where("workspace_id", "=", input.workspaceId).where(pages)
-        .returning(["id", "content_size_bytes"]).execute();
+        .forUpdate().execute()).map((document) => document.id);
+      if (ids.length === 0) return [];
+      await this.releaseDeletedDocuments(trx, input.workspaceId, ids);
+      return trx.deleteFrom("documents").where("id", "in", ids).returning(["id", "content_size_bytes"]).execute();
     });
     const deletedContentBytes = rows.reduce((total, row) => {
       const bytes = Number(row.content_size_bytes ?? Number.NaN);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { SkillAuthoringOutput } from '@/lib/api-routine-skill-catalog'
-import { guardOpFitsVariable, guardOpsForVariable, listBackedVariableIds, nextUnassignedOutput, outputVariableType, variablesFittingOutput } from '@/lib/routine-skill-outputs'
+import type { SkillAuthoringOutcome, SkillAuthoringOutput } from '@/lib/api-routine-skill-catalog'
+import { assignedVariables, guardOpFitsVariable, guardOpsForVariable, listBackedVariableIds, nextUnassignedOutput, outcomeRuleChoices, outputVariableType } from '@/lib/routine-skill-outputs'
 import { fieldGuardOpsForType } from '@/lib/routine-prose'
 
 const status: SkillAuthoringOutput = { name: 'status', type: 'text', required: true }
@@ -17,13 +17,34 @@ describe('routine skill outputs', () => {
     expect(outputVariableType(items)).toBe('text')
   })
 
-  it('offers only the variables of the output type', () => {
-    const variables = [
-      { id: 'amount', type: 'number' as const },
-      { id: 'name', type: 'text' as const },
+  it('types each variable a step sets from the output it reads', () => {
+    const outputsOf = (ref: string) => (ref === 'order_status' ? [status, total, items] : undefined)
+    expect(assignedVariables([
+      { kind: 'chat', toolRef: null, outputAssignments: {} },
+      { kind: 'tool', toolRef: 'order_status', outputAssignments: { total: 'order_total', items: 'found_orders', status: '' } },
+      { kind: 'tool', toolRef: 'unknown_skill', outputAssignments: { reference: 'reference' } },
+    ], outputsOf)).toEqual([
+      { id: 'order_total', type: 'number', holdsList: false },
+      { id: 'found_orders', type: 'text', holdsList: true },
+      { id: 'reference', type: 'text', holdsList: false },
+    ])
+  })
+
+  it('offers each declared outcome once, by the name a step reports', () => {
+    // An API request skill's catalog marks every outcome but `failed` with the broad status `completed`.
+    const outcomes: SkillAuthoringOutcome[] = [
+      { name: 'completed', displayName: 'completed', status: 'completed' },
+      { name: 'not_found', displayName: 'not_found', status: 'completed' },
+      { name: 'rejected', displayName: 'rejected', status: 'completed' },
+      { name: 'not_found', displayName: 'not_found', status: 'completed' },
+      { name: 'failed', displayName: 'Failed', status: 'failed' },
     ]
-    expect(variablesFittingOutput(variables, total).map((variable) => variable.id)).toEqual(['amount'])
-    expect(variablesFittingOutput(variables, undefined)).toHaveLength(2)
+    expect(outcomeRuleChoices(outcomes)).toEqual([
+      { value: 'completed', label: 'completed' },
+      { value: 'not_found', label: 'not_found' },
+      { value: 'rejected', label: 'rejected' },
+      { value: 'failed', label: 'Failed' },
+    ])
   })
 
   it('picks the next output that is not assigned yet', () => {

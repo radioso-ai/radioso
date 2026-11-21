@@ -83,6 +83,30 @@ describe("website recrawl sweep", () => {
     expect(fastestRecrawlCadence).toHaveBeenCalledTimes(2);
   });
 
+  it("schedules a workspace whose plan it cannot read at the slowest cadence, logging it once, and still queues the batch", async () => {
+    const { sweep, advancedTo, fastestRecrawlCadence, recrawlSource, logger } = setup([[
+      due("unreadable-1", { workspaceId: "unreadable-workspace" }),
+      due("readable", { workspaceId: "readable-workspace" }),
+      due("unreadable-2", { workspaceId: "unreadable-workspace" }),
+    ]]);
+    fastestRecrawlCadence.mockImplementation(async ({ workspaceId }: { workspaceId: string }) => {
+      if (workspaceId === "unreadable-workspace") throw new Error("billing lookup timed out for acct_123");
+      return "daily";
+    });
+
+    await sweep.run();
+
+    expect(advancedTo.get("unreadable-1")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
+    expect(advancedTo.get("unreadable-2")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
+    expect(advancedTo.get("readable")).toEqual(new Date(now.getTime() + DAY_MS));
+    expect(recrawlSource).toHaveBeenCalledTimes(3);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      { role: "website-recrawl-sweep", workspaceId: "unreadable-workspace" },
+      "Website recrawl plan could not be read; the workspace's sources recrawl weekly this time",
+    );
+  });
+
   it("claims further batches while they come back full, up to its limit per run", async () => {
     const full = (prefix: string) => [due(`${prefix}-1`), due(`${prefix}-2`)];
     const { sweep, claimDueRecrawls, logger } = setup([full("a"), full("b"), full("c"), full("d")]);

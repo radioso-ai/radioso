@@ -27,7 +27,8 @@ export interface WebsiteRecrawlRepositoryPort {
   /**
    * Claims up to `limit` website sources whose next recrawl is due and moves each to the time
    * `nextRecrawlAt` returns, in one transaction. Sources another sweep holds are skipped, so
-   * concurrent sweeps claim disjoint sets.
+   * concurrent sweeps claim disjoint sets. `nextRecrawlAt` runs inside the transaction, so a throw
+   * from it rolls back the whole batch.
    */
   claimDueRecrawls(input: {
     now: Date;

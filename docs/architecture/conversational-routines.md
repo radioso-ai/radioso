@@ -168,7 +168,15 @@ First, which step *collects* a slot: a slot is collected by the **first chat ste
 your reply, {{slot.name}}". Only the collecting step is auto-gated or fast-forwarded;
 a step that merely uses a filled slot still renders its message rather than being
 skipped. Only `chat` steps count — a tool/action step that interpolates a slot does
-not own it. Caveat: "first" is ordinal order, not execution order. In a branching
+not own it. A variable a tool step's `outputAssignments` set is never collected:
+a chat step or an ending that writes `{{slot.first_name}}` for it reads the value
+the skill returned, and the validator counts the reference as declared by the
+assignment, the same name-level rule a field guard and an input binding follow.
+It reports such a reference on a step or ending that some way reaches before the
+tool step runs (`referenced_variable_not_guaranteed`, from the same
+guaranteed-on-entry analysis as a required input binding), and, with the skill
+catalog, one to a variable set from a list output (`referenced_list_variable`).
+Caveat: "first" is ordinal order, not execution order. In a branching
 routine where two branches each ask the same slot, only the lower-ordinal branch is
 treated as collecting it; if the other branch runs, it won't auto-gate/fast-forward
 for that slot. This is fine for the linear common case; branch-specific collection of
@@ -596,13 +604,17 @@ On each turn, before normal skill selection, the engine checks for a routine:
      a terminal ends the routine. The reply states only facts from the step
      instruction, retrieved excerpts, or the evidence of the context variables
      the step references, and says a machine-format value such as `2026-11-11`
-     the way a person would in the user's language.
+     the way a person would in the user's language. A step that a tool step on
+     the turn returned values to may state those too; its tool-results block
+     says so, and a step without results hears nothing about tool values.
    - The renderer tells the reply which quoted sources it has beside the step
      instruction. The page excerpt is `provided` when the step carries
      `contextEvidence`, and the retrieved document excerpts are `provided` when
      a `retrieval.context` step staged at least one excerpt with text
-     (`routine-step-sources.md`). A step with neither is told so in a sentence of
-     its own (`routine-step-sources-none.md`). A routine chat step runs no
+     (`routine-step-sources.md`). A step that carries `skillResults` reads the
+     same line naming the values tool steps returned as a source too
+     (`routine-step-sources-tool-results.md`). A step with none of them is told
+     so in a sentence of its own (`routine-step-sources-none.md`). A routine chat step runs no
      retrieval of its own, so on a channel that sends no page, or in `metadata`
      mode, it usually has neither. A context block rendered into the
      instruction, such as `<page_context>` or `<context_variable>`, is part of
@@ -653,6 +665,31 @@ On each turn, before normal skill selection, the engine checks for a routine:
      already passed the request on, and a miss hand-off would notify the team a
      second time and hand the conversation to a person. A tool step an earlier turn ran
      shows no outcome, because routine state keeps none across turns.
+   - Any step the turn renders after a tool step, a chat step or an ending, is
+     given what the turn's tool steps returned (`RoutineStepReplyInput.skillResults`,
+     set by `stepForReply` from the `skill_result` context the walk staged). Only
+     a result whose skill declares an output contract is listed (an API request
+     skill's `completed` result), one per step, the latest when a step ran twice,
+     with only the outputs the contract declares. A result without a contract,
+     such as an MCP tool's, is not listed, and an ending reads its status in
+     `skillOutcomes` alone. The renderer writes each result in
+     `routine-step-tool-results.md` as typed, described lines from
+     `renderSkillOutputLines` under its tool and status, or says the tool
+     returned no values when none of its declared outputs came back (an empty
+     list counts as none). The block sits before the sources line in
+     `routine-step-reply.md`, before the ending's facts on a hand-off ending with
+     a message, and, for a step the host grounds on retrieved evidence, as one
+     more `source: "routine"` rule ahead of the ending's; a step that presents a
+     tool step's results gets no such rule, since its host reply reads the
+     results itself. The block tells the reply that a tool listed with values
+     found them, and that a tool that returned no values only gives nothing to
+     quote: whether it found nothing or did not go through is its status's to
+     say, so a booking `completed` with an empty body still reads as booked.
+     Each result is bounded by its executor (16 KB of serialized
+     outputs and each list's `maxItems` for an API request), as for the
+     next-step selector, which reads the same result. A tool step an earlier turn
+     ran is not listed; a later step reads its values through the variables its
+     `outputAssignments` set, by `{{slot.<variable>}}` in the step instruction.
    - A `{{context.<name>}}` reference fills the host's rendering of the variable
      into the step instruction; for `page_context` that is the page's URL,
      title, and locale. The host's context renderer can also give a variable's
@@ -1148,7 +1185,8 @@ the retry is unreadable too. The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, `routine-step-progress.md` on a
 chat step, `routine-step-context-evidence.md` around the visitor's page,
 `routine-step-sources.md` and `routine-step-sources-none.md` for the quoted
-sources the step has, `routine-step-ending.md` for what the run did on an
+sources the step has, `routine-step-tool-results.md` for what the turn's tool
+steps returned, `routine-step-ending.md` for what the run did on an
 ending, also inside `routine-step-terminal-handoff-with-message.md`, and
 `routine-step-reask.md` with its `-unanswered` or
 `-unreadable` opening and its `-gap`, `-exhausted-gap`, `-missing-slots`, and

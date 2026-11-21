@@ -45,6 +45,14 @@ const completeEnding = (doc: RoutineBlockDoc): RoutineBlockEnding | undefined =>
     .flatMap((branch) => branch.target.kind === 'ending' && branch.target.ending?.kind === 'complete' ? [branch.target.ending] : [])
     .at(0)
 
+// Where the step sequence ends: the ending the last step's onward (default) edge reaches. An
+// ending a conditional branch reaches is that branch's outcome, not the sequence's, so a step
+// appended after the last one takes this ending over rather than the first finish in the doc.
+const sequenceEnding = (doc: RoutineBlockDoc): RoutineBlockEnding | undefined => {
+  const onward = doc.steps.at(-1)?.branches.find((branch) => branch.guard.kind === 'default')?.target
+  return (onward?.kind === 'ending' ? onward.ending : undefined) ?? completeEnding(doc)
+}
+
 const defaultBranch = (target: RoutineBlockBranch['target']): RoutineBlockBranch => ({
   guard: guardFor('default'),
   target,
@@ -60,8 +68,7 @@ const targetRef = (target: RoutineBlockBranch['target']): string =>
 
 // The document shows an ordinary sequence without rendering its default edges. When a blank
 // document is first edited, materialize that sequence so the backend receives a real graph.
-const connectUnwiredSequence = (doc: RoutineBlockDoc): RoutineBlockDoc => {
-  const ending = completeEnding(doc)
+const connectUnwiredSequence = (doc: RoutineBlockDoc, ending: RoutineBlockEnding | undefined): RoutineBlockDoc => {
   if (!ending) return doc
   const steps = doc.steps.map((step, index) => ({
     ...step,
@@ -82,15 +89,12 @@ const connectUnwiredSequence = (doc: RoutineBlockDoc): RoutineBlockDoc => {
 // Only default edges that previously followed the displayed row order are implicit. Moving or
 // inserting a row rewires those hidden edges, while conditional branches and explicit jumps keep
 // their authored destinations.
-const rewireImplicitSequence = (before: RoutineBlockDoc, after: RoutineBlockDoc): RoutineBlockDoc => {
-  const ending = completeEnding(before)
+const rewireImplicitSequence = (before: RoutineBlockDoc, after: RoutineBlockDoc, ending: RoutineBlockEnding | undefined): RoutineBlockDoc => {
   if (!ending) return after
   const implicitTargetByStepId = new Map(before.steps.map((step, index) => [
     step.stableStepId,
     targetRef(sequentialTarget(before.steps[index + 1], ending)),
   ]))
-  const afterEnding = completeEnding(after)
-  if (!afterEnding) return after
   return {
     ...after,
     // Rewiring the old final default edge can temporarily leave its terminal unreferenced.
@@ -105,7 +109,7 @@ const rewireImplicitSequence = (before: RoutineBlockDoc, after: RoutineBlockDoc)
         ...step,
         branches: step.branches.map((branch) =>
           branch.guard.kind === 'default' && targetRef(branch.target) === previousTarget
-            ? { ...branch, target: sequentialTarget(after.steps[index + 1], afterEnding) }
+            ? { ...branch, target: sequentialTarget(after.steps[index + 1], ending) }
             : branch,
         ),
       }
@@ -142,7 +146,8 @@ export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlo
     }
   } else next.steps.push(step)
   const withApprovalBranches = kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
-  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches))
+  const ending = sequenceEnding(doc)
+  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches, ending), ending)
 }
 
 // Splices a new step right after `afterStepId` instead of appending, so an author can put
@@ -156,29 +161,41 @@ export const insertStep = (doc: RoutineBlockDoc, afterStepId: string, kind: Rout
   const step = createDocumentStep(kind, next.steps)
   next.steps.splice(index + 1, 0, step)
   const withApprovalBranches = kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
-  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches))
+  const ending = sequenceEnding(doc)
+  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches, ending), ending)
 }
+
+const referencedEndingIds = (steps: readonly RoutineBlockStep[]): Set<string> =>
+  new Set(steps.flatMap((step) => step.branches.flatMap((branch) => branch.target.kind === 'ending' ? [branch.target.terminalId] : [])))
 
 export const removeStep = (doc: RoutineBlockDoc, stableStepId: string): RoutineBlockDoc => {
   const next = copy(doc)
+  const removed = next.steps.find((step) => step.stableStepId === stableStepId)
   next.steps = next.steps.filter((step) => step.stableStepId !== stableStepId)
-  // A removed target would make the block document non-projectable. Retain the branch but
-  // send it to a new complete ending, so the author can immediately choose another target.
-  const terminalIds = new Set([
-    ...next.unreferencedEndings.map((ending) => ending.stableStepId),
-    ...next.steps.flatMap((step) => step.branches.flatMap((branch) => branch.target.kind === 'ending' ? [branch.target.terminalId] : [])),
-  ])
+  // Where the removed step continued: a branch that led to it now leads there, so the step before
+  // it continues to the step after, or to the same authored finish.
+  const onward = removed?.branches.find((branch) => branch.guard.kind === 'default'
+    && !(branch.target.kind === 'step' && branch.target.stableStepId === stableStepId))?.target
+  // A removed target would make the block document non-projectable. Without an onward target,
+  // retain the branch but send it to a new complete ending, so the author can choose another.
+  const terminalIds = new Set([...next.unreferencedEndings.map((ending) => ending.stableStepId), ...referencedEndingIds(next.steps)])
   let endingOrdinal = terminalIds.size
+  const blankEnding = (): RoutineBlockBranch['target'] => {
+    const terminalId = nextId('complete', terminalIds)
+    terminalIds.add(terminalId)
+    return { kind: 'ending', terminalId, ending: { stableStepId: terminalId, kind: 'complete', instruction: '', ordinal: endingOrdinal++ } }
+  }
   next.steps = next.steps.map((step) => ({
     ...step,
     branches: step.branches.map((branch) => branch.target.kind === 'step' && branch.target.stableStepId === stableStepId
-      ? (() => {
-          const terminalId = nextId('complete', terminalIds)
-          terminalIds.add(terminalId)
-          return { ...branch, target: { kind: 'ending' as const, terminalId, ending: { stableStepId: terminalId, kind: 'complete' as const, instruction: '', ordinal: endingOrdinal++ } } }
-        })()
+      ? { ...branch, target: onward ? copy(onward) : blankEnding() }
       : branch),
   }))
+  // A finish only the removed step reached stays in the document, authored as it was.
+  if (onward?.kind === 'ending' && onward.ending && !referencedEndingIds(next.steps).has(onward.terminalId)
+    && !next.unreferencedEndings.some((ending) => ending.stableStepId === onward.terminalId)) {
+    next.unreferencedEndings = [...next.unreferencedEndings, copy(onward.ending)]
+  }
   return next
 }
 
@@ -188,7 +205,8 @@ export const moveStep = (doc: RoutineBlockDoc, stableStepId: string, direction: 
   const destination = index + direction
   if (index < 0 || destination < 0 || destination >= next.steps.length) return next
   ;[next.steps[index], next.steps[destination]] = [next.steps[destination], next.steps[index]]
-  return connectUnwiredSequence(rewireImplicitSequence(doc, next))
+  const ending = sequenceEnding(doc)
+  return connectUnwiredSequence(rewireImplicitSequence(doc, next, ending), ending)
 }
 
 export const replaceInstruction = (doc: RoutineBlockDoc, stableStepId: string, instruction: RoutineBlockInstructionSegment[]): RoutineBlockDoc => ({
@@ -485,26 +503,48 @@ export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, s
   return sensitive || key === undefined ? next : dropFieldFromConsents(next, key)
 }
 
+// A place a field is named, and whether a Sets variable of the same name can stand in for the field
+// there: an instruction, an input binding and a field guard read any routine variable by name, and
+// a Sets row is that variable's own declaration.
+interface FieldNameUse {
+  reference: string
+  readsAnyVariable: boolean
+}
+
+const fieldNameUses = (doc: RoutineBlockDoc, key: string): FieldNameUse[] => {
+  const uses: FieldNameUse[] = []
+  const record = (reference: string, readsAnyVariable: boolean) => uses.push({ reference, readsAnyVariable })
+  for (const step of doc.steps) {
+    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) record(`instruction in ${step.stableStepId}`, true)
+    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) record(`binding in ${step.stableStepId}`, true)
+    if (Object.values(step.outputAssignments ?? {}).includes(key)) record(`output in ${step.stableStepId}`, true)
+    // A field guard reads any variable; a slot-filled gate waits on a field the visitor gives.
+    const gatesOnField = step.branches.some((branch) => branch.guard.kind === 'slot_filled' && branch.guard.slotKeys.includes(key))
+    if (gatesOnField || step.branches.some((branch) => branch.guard.kind === 'field' && branch.guard.fieldRef === key)) record(`guard in ${step.stableStepId}`, !gatesOnField)
+    if (step.present?.slot === key) record(`cards in ${step.stableStepId}`, false)
+  }
+  const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
+  for (const endingId of noticeEndings) record(`notice in ${endingId}`, false)
+  return uses
+}
+
+const isSetsVariable = (doc: RoutineBlockDoc, key: string): boolean =>
+  doc.steps.some((step) => Object.values(step.outputAssignments ?? {}).includes(key))
+
 // Every place a field is named. A consent that covers it is one of them, but never a reason to
 // keep the field: removing the field takes it out of the consent (`slotRemovalBlockers`).
 export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => [
-  ...slotRemovalBlockers(doc, key),
+  ...fieldNameUses(doc, key).map((use) => use.reference),
   ...consentsCoveringField(doc, key).map((consentKey) => `consent ${consentKey}`),
 ]
 
-// The references removing a field would leave pointing at nothing, so the operator removes them first.
+// The references removing a field would leave pointing at nothing, so the operator removes them
+// first. A field that collides with a Sets variable of its name, as a draft saved while a Sets row
+// also created a field could, goes without them: the row keeps declaring the name, so the row and
+// what reads the name by it still resolve. Cards and ending notices need a field.
 export const slotRemovalBlockers = (doc: RoutineBlockDoc, key: string): string[] => {
-  const references: string[] = []
-  for (const step of doc.steps) {
-    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) references.push(`instruction in ${step.stableStepId}`)
-    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) references.push(`binding in ${step.stableStepId}`)
-    if (Object.values(step.outputAssignments ?? {}).includes(key)) references.push(`output in ${step.stableStepId}`)
-    if (step.branches.some((branch) => branch.guard.kind === 'slot_filled' ? branch.guard.slotKeys.includes(key) : branch.guard.kind === 'field' && branch.guard.fieldRef === key)) references.push(`guard in ${step.stableStepId}`)
-    if (step.present?.slot === key) references.push(`cards in ${step.stableStepId}`)
-  }
-  const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
-  for (const endingId of noticeEndings) references.push(`notice in ${endingId}`)
-  return references
+  const setsVariable = isSetsVariable(doc, key)
+  return fieldNameUses(doc, key).filter((use) => !(setsVariable && use.readsAnyVariable)).map((use) => use.reference)
 }
 
 export const removeSlot = (doc: RoutineBlockDoc, stableSlotId: string): RoutineBlockDoc => {

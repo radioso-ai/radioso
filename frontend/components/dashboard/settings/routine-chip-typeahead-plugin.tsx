@@ -27,11 +27,11 @@ import {
 } from '@/components/dashboard/settings/routine-chip-node'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { useInsertSkillChip } from '@/components/dashboard/settings/use-insert-skill-chip'
-import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
+import type { RoutineFieldGuardOp } from '@/lib/api-types'
 import { slugifyVariableKey, type ApprovalDocOption } from '@/lib/routine-prose'
 
-// `type` is set when the variable is made from a typed skill output; otherwise it starts as text.
-export type RoutineEditorVariable = { id: string; name: string; type?: RoutineSlotType }
+// `setBy` names the skill whose step sets the variable; a field the visitor gives has none.
+export type RoutineEditorVariable = { id: string; name: string; setBy?: string }
 
 class ChipMenuOption extends MenuOption {
   display: string
@@ -48,6 +48,7 @@ class ChipMenuOption extends MenuOption {
   // A read-only line the menu shows in place of choices (the surface already holds the one
   // skill it can bind). Selecting it only closes the menu.
   notice?: boolean
+  setBy?: string
 
   constructor(key: string, data: {
     display: string
@@ -60,6 +61,7 @@ class ChipMenuOption extends MenuOption {
     chipLabel?: string
     decisionOptions?: ApprovalDocOption[]
     notice?: boolean
+    setBy?: string
   }) {
     super(key)
     this.display = data.display
@@ -72,6 +74,7 @@ class ChipMenuOption extends MenuOption {
     this.chipLabel = data.chipLabel
     this.decisionOptions = data.decisionOptions
     this.notice = data.notice
+    this.setBy = data.setBy
   }
 }
 
@@ -123,7 +126,8 @@ function chipOptionDescription(option: ChipMenuOption): string | null {
   if (option.notice) return null
   switch (option.kind) {
     case 'variable':
-      return option.isNew ? 'Create a new variable to reuse across this routine.' : 'Insert this collected value into the sentence.'
+      if (option.isNew) return 'Create a new variable to reuse across this routine.'
+      return option.setBy ? `Insert the value ${option.setBy} sets.` : 'Insert this collected value into the sentence.'
     case 'context':
       return 'Let this step read what the agent already knows about the visitor.'
     case 'skill':
@@ -143,9 +147,11 @@ function chipOptionDescription(option: ChipMenuOption): string | null {
 
 const NO_VARIABLES: RoutineEditorVariable[] = []
 const NO_RESERVED_REF_KINDS: Record<string, RoutineChipKind> = {}
+const NO_VARIABLE_IDS: ReadonlySet<string> = new Set()
 
 export function ChipTypeaheadPlugin({
   variables = NO_VARIABLES,
+  unofferedVariableIds = NO_VARIABLE_IDS,
   reservedRefKinds = NO_RESERVED_REF_KINDS,
   onCreateVariable,
   onCreateSkill,
@@ -158,6 +164,9 @@ export function ChipTypeaheadPlugin({
   // A routine surface owns slots and flow targets; a skills-only surface has neither, so
   // these narrow to nothing rather than being threaded through as empty ceremony.
   variables?: RoutineEditorVariable[]
+  // Variables this text cannot read, such as one a skill step sets from a list, which renders as
+  // nothing a visitor can read: `@` neither offers them nor offers to create them again.
+  unofferedVariableIds?: ReadonlySet<string>
   reservedRefKinds?: Record<string, RoutineChipKind>
   // Declares a new variable. Without it `@` offers no "Create variable": a chip for a variable
   // nobody declared would reference a slot the routine never collects.
@@ -311,6 +320,7 @@ export function ChipTypeaheadPlugin({
       return skills.slice(0, 8)
     }
     const result: ChipMenuOption[] = variables
+      .filter((variable) => !unofferedVariableIds.has(variable.id))
       .filter((variable) => !lowered || variable.name.toLowerCase().includes(lowered))
       .map((variable) => new ChipMenuOption(`var-${variable.id}`, {
         display: `@${variable.name}`,
@@ -318,6 +328,7 @@ export function ChipTypeaheadPlugin({
         isNew: false,
         refId: variable.id,
         name: variable.name,
+        ...(variable.setBy ? { setBy: variable.setBy } : {}),
       }))
     // Context the agent already holds about the visitor — read by the step, never collected
     // from the visitor, so it is its own group rather than an Information entry.
@@ -417,7 +428,7 @@ export function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, skillCatalog.contextVariables, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, offerContextVariables, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill, onCreateVariable])
+  }, [editor, skillCatalog.skills, skillCatalog.contextVariables, variables, unofferedVariableIds, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, offerContextVariables, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill, onCreateVariable])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {

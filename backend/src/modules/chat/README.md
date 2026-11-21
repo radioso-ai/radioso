@@ -294,7 +294,14 @@ stores the message under one (Test Chat does), and a fresh id otherwise.
   reaches the same claim through `ChatDoorPickTurnPort` (contracts), which
   `AssistantChatService` implements; the connector host runs a WhatsApp tap
   through it and reads `ITEM_SELECTION_REFUSAL_CODES` to refuse a pick the claim
-  refuses, as the web chat does, so no turn runs on it.
+  refuses, as the web chat does, so no turn runs on it. Test Chat keeps no message
+  rows: `TrustedTestExecutionRunnerAdapter` returns what the reply's message would
+  store of its blocks (`replyBlocks/messageReplyBlocks.ts`, shared with
+  `chatTurnLifecycle.ts`) as the result's `messageMetadata`, reads it back as each
+  answer's `metadata` in the replayed history, so `shownItems` reaches the engine as
+  in live chat, and reads a Test Chat pick with `readItemSelection` from the answer
+  on that side that showed the card, handing the item to the replay as
+  `itemSelection`; a side that never showed it runs the card's title as typed.
 - Reply picture readiness (`services/replyBlocks/replyPictureReadiness.ts`): for a
   channel whose provider fetches a card's picture by its address when the cards
   are sent, it reads the picture ids from the reply's stored blocks and asks the

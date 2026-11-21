@@ -548,7 +548,31 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       });
     }
   }
+  // Mirrors the backend validator's variable namespace: a variable a skill step sets is declared
+  // by that assignment, so a field of the same name collides, and a rule may read either.
+  const assignedVariables = new Set<string>();
+  for (const step of routine.steps) {
+    for (const [outputKey, target] of Object.entries(step.metadata?.outputAssignments ?? {})) {
+      assignedVariables.add(target);
+      if (slotKeys.has(target)) {
+        diagnostics.push({
+          code: "variable_name_collision",
+          location: `step:${step.stableStepId}.outputAssignments.${outputKey}`,
+          message: `variable name collision: output assignment target "${target}" collides with a declared slot key.`,
+        });
+      }
+    }
+  }
   for (const transition of routine.transitions) {
+    const approvalStep = routine.steps.find((step) => step.stableStepId === transition.fromStep && step.kind === "approval");
+    const readsApprovalDecision = Boolean(approvalStep?.captureKey) && transition.fieldRef === `${approvalStep?.captureKey}.id`;
+    if (transition.guardKind === "field" && transition.fieldRef && !readsApprovalDecision && !slotKeys.has(transition.fieldRef) && !assignedVariables.has(transition.fieldRef)) {
+      diagnostics.push({
+        code: "field_guard_unknown_reference",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `field guard references "${transition.fieldRef}", which is not a declared variable.`,
+      });
+    }
     if (!stepIds.has(transition.fromStep) || !nodeIds.has(transition.toRef)) {
       diagnostics.push({
         code: "dangling_step_reference",

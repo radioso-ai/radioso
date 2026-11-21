@@ -331,14 +331,15 @@ function SkillCatalogDetails({
         <p className="text-xs font-medium uppercase text-muted-foreground">Outcomes</p>
         {descriptor.outcomes.length > 0 ? (
           <div className="space-y-2">
+            {/* A step reports the outcome's name, so the name is what a rule matches; the
+                catalog's status is only its broad class and repeats across names. */}
             {descriptor.outcomes.map((outcome) => (
-              <div key={`${outcome.name}:${outcome.status}`} className="rounded-md border border-border bg-muted/30 p-2">
+              <div key={outcome.name} className="rounded-md border border-border bg-muted/30 p-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="font-medium text-foreground">{outcome.displayName}</span>
-                  <span className="rounded border border-border px-1.5 py-0.5 text-muted-foreground">{outcome.status}</span>
+                  {outcome.name !== outcome.displayName ? <span className="rounded border border-border px-1.5 py-0.5 font-mono text-muted-foreground">{outcome.name}</span> : null}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{outcome.name}</p>
                 {outcome.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{outcome.description}</p> : null}
               </div>
             ))}

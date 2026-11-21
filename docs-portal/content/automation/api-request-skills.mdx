@@ -106,6 +106,8 @@ Only the outputs you declare leave the skill. The raw response never reaches the
 
 The agent reads outputs as typed, described lines, such as `status — Order status (text): "shipped"`, and lists as numbered items. When a reply shows a list as cards, the roles fill each card and the agent only chooses which records to show. See [Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards).
 
+Every step the routine reaches on the turn the request runs, an ending included, reads the outputs this way, so a finish that says "Tell them the order's status" gives it. The reply says nothing was found, or that the request did not go through, only when the outcome is `not_found` or a failure: a booking answered with `201 {}` or `204` reads as booked, with no value to quote. A step on a later turn reads only the variables the skill step set: set `@status` from `status` and name `@status` in that step's text.
+
 ## Outcomes a step can branch on
 
 | Outcome | Meaning |

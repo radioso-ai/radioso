@@ -34,12 +34,16 @@ const photosOf = (imageIds: readonly string[] | undefined, principal: Authentica
   return { photos: { ids: imageIds, owner } };
 };
 
+/** A transcript entry as a client reads it: the runner's own record of a message stays on the server. */
+const presentHistoryEntry = ({ messageMetadata: _runnerOwned, ...entry }: TestExecution["sides"][number]["history"][number]) =>
+  ({ ...entry, createdAt: entry.createdAt.toISOString() });
+
 const presentSides = (sides: readonly (TestExecution["sides"][number] | TestExecutionHistoryItem["sides"][number])[]) =>
   sides.map((side) => ({
     id: side.id, revision: presentRevisionSummary(side.revision), conversationId: side.conversationId,
     state: side.state === "ready" ? "running" : side.state,
     retryable: side.retryable,
-    history: "history" in side ? side.history.map((entry) => ({ ...entry, createdAt: entry.createdAt.toISOString() })) : [],
+    history: "history" in side ? side.history.map(presentHistoryEntry) : [],
   }));
 
 const presentHistorySides = (sides: readonly (TestExecution["sides"][number] | TestExecutionHistoryItem["sides"][number])[]) =>
@@ -78,7 +82,7 @@ const presentDetail = (execution: TestExecution, attempts: readonly TestExecutio
     testValues: execution.testValues,
     sides: execution.sides.map((side, index) => ({
       ...historySides[index],
-      history: side.history.map((entry) => ({ ...entry, createdAt: entry.createdAt.toISOString() })),
+      history: side.history.map(presentHistoryEntry),
     })),
     attempts: attempts.map((attempt) => ({
       ...attempt,
@@ -134,7 +138,7 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
       const disconnectAbort = new AbortController();
       await sendTestExecutionSse(
         res,
-        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message ?? "", ...photos, generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
+        dependencies.testExecutionService.streamMessage({ workspaceId, agentId, accountId: accountId ?? null, executionId, message: req.body.message ?? "", ...photos, ...(req.body.selection ? { selection: req.body.selection } : {}), generation: req.body.executionGeneration, turnId: req.body.turnId, attemptId: req.body.attemptId, userTimeZone: req.body.userTimeZone, signal: disconnectAbort.signal }),
         { onDisconnectCeilingExceeded: () => disconnectAbort.abort() },
       );
     } catch (error) { if (!res.headersSent) next(error); else res.end(); }

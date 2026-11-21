@@ -198,7 +198,9 @@ export function AssistantContextVariablesSection({
   const [deletingVariable, setDeletingVariable] = useState<ContextVariable | null>(null)
   const [form, setForm] = useState<VariableFormState>(emptyForm)
   const [nameTouched, setNameTouched] = useState(false)
-  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const [optionsTouched, setOptionsTouched] = useState(false)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
 
   const enablementsByVariableId = useMemo(() => {
     const lookup = new Map<string, AgentContextVariableEnablement>()
@@ -208,12 +210,17 @@ export function AssistantContextVariablesSection({
     return lookup
   }, [enablements])
 
-  const formError = useMemo(() => {
+  const nameError = useMemo(() => {
     const name = form.name.trim()
     if (!name) return 'Name is required.'
     if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) return 'Use letters, numbers, and underscores. Start with a letter.'
-    return form.valueType === 'enum' ? attributeOptionsError(form.options) : null
-  }, [form.name, form.valueType, form.options])
+    return null
+  }, [form.name])
+  const optionsError = useMemo(
+    () => (form.valueType === 'enum' ? attributeOptionsError(form.options) : null),
+    [form.valueType, form.options],
+  )
+  const formError = nameError ?? optionsError
 
   useEffect(() => {
     let active = true
@@ -246,6 +253,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(null)
     setForm(emptyForm)
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
     setError(null)
     setDialogOpen(true)
   }
@@ -254,6 +263,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(variable)
     setForm(variableToForm(variable))
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
     setError(null)
     setDialogOpen(true)
   }
@@ -264,6 +275,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(null)
     setForm(emptyForm)
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
   }
 
   const mergeCatalogVariable = (variable: ContextVariable) => {
@@ -285,6 +298,7 @@ export function AssistantContextVariablesSection({
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
+    setDialogError(null)
     try {
       const payload = formToPayload(form)
       const response = editingVariable
@@ -296,12 +310,13 @@ export function AssistantContextVariablesSection({
       setEditingVariable(null)
       setForm(emptyForm)
       setNameTouched(false)
+      setOptionsTouched(false)
       markSaved()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(saveError, 'Failed to save attribute.')
-      setError(message)
-      markError(message)
+      // The dialog is open and covers the page header, so the refusal is shown there.
+      setDialogError(getApiErrorMessage(saveError, 'Failed to save attribute.'))
+      resetSaveState()
     } finally {
       if (isCurrentSave(saveId)) setIsSaving(false)
     }
@@ -544,6 +559,7 @@ export function AssistantContextVariablesSection({
                 value={form.name}
                 onChange={(event) => {
                   setNameTouched(true)
+                  setDialogError(null)
                   setForm((current) => ({ ...current, name: event.target.value }))
                 }}
                 onBlur={() => setNameTouched(true)}
@@ -576,7 +592,11 @@ export function AssistantContextVariablesSection({
                 />
                 <Select
                   value={form.valueType}
-                  onValueChange={(value) => setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))}
+                  onValueChange={(value) => {
+                    setOptionsTouched(true)
+                    setDialogError(null)
+                    setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))
+                  }}
                 >
                   <SelectTrigger id="contextVariableValueType">
                     <SelectValue />
@@ -654,10 +674,16 @@ export function AssistantContextVariablesSection({
               <AttributeOptionsEditor
                 options={form.options}
                 savedCount={editingVariable?.options?.length ?? 0}
-                onChange={(options) => setForm((current) => ({ ...current, options }))}
+                onChange={(options) => {
+                  setOptionsTouched(true)
+                  setDialogError(null)
+                  setForm((current) => ({ ...current, options }))
+                }}
               />
             ) : null}
-            {nameTouched && formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            {nameTouched && nameError ? <p className="text-sm text-destructive">{nameError}</p> : null}
+            {optionsTouched && optionsError ? <p className="text-sm text-destructive">{optionsError}</p> : null}
+            {dialogError ? <p className="text-sm text-destructive" role="alert">{dialogError}</p> : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>

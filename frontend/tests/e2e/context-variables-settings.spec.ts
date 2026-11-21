@@ -111,3 +111,55 @@ test("an operator creates a choice attribute with described options, then archiv
     ],
   });
 });
+
+test("a refused save and an unusable option list explain themselves inside the edit dialog", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    contextVariables: [
+      {
+        id: "88888888-8888-4888-8888-000000000001",
+        name: "topic",
+        description: null,
+        valueType: "enum",
+        options: [
+          { key: "billing", label: "Billing", description: null, archived: false },
+          { key: "shipping", label: "Shipping", description: null, archived: false },
+        ],
+        trustTier: "unverified",
+        sensitivity: "normal",
+        defaultSurfacing: "on_reference",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as never,
+    ],
+  });
+  const refusal = "The value type of a context variable that has values cannot change";
+  await page.route("**/backend/api/v1/context-variables/*", async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    return route.fulfill({ status: 409, json: { error: { code: "context_variable_has_values", message: refusal } } });
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`);
+  await expect(page.getByRole("heading", { name: "Attributes", level: 1 })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Compiling")).toHaveCount(0, { timeout: 15000 });
+
+  await page.getByRole("button", { name: "Edit topic" }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit attribute" });
+
+  // Archiving every option says why Save is off, without touching Name first.
+  await dialog.getByRole("button", { name: "Archive Billing" }).click();
+  await expect(dialog.getByText("Keep at least one option active.")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Archive Shipping" }).click();
+  await expect(dialog.getByText("Keep at least one option active.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Save attribute" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Restore Shipping" }).click();
+  await expect(dialog.getByText("Keep at least one option active.")).toHaveCount(0);
+
+  // A refused save shows in the dialog and is gone once the dialog is cancelled.
+  await dialog.getByRole("button", { name: "Save attribute" }).click();
+  await expect(dialog.getByText(refusal)).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText(refusal)).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit topic" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit attribute" }).getByText(refusal)).toHaveCount(0);
+});

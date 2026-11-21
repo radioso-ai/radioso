@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { CopilotRepository } from "../../src/db/repositories/copilotRepository.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
@@ -20,7 +21,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("reviewed document operations (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new DocumentRepository(database.kysely);
+  const repository = new DocumentRepository(database.kysely, documentEventEraser);
   const copilotRepository = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

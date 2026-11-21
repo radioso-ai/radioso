@@ -1180,6 +1180,31 @@ CREATE TABLE public.audience_pulse_snapshots (
 
 
 --
+-- Name: audience_pulse_topic_dismissals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audience_pulse_topic_dismissals (
+    workspace_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    dismissed_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: audience_pulse_topic_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audience_pulse_topic_drafts (
+    workspace_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: audit_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4502,6 +4527,89 @@ CREATE TABLE public.workspace_embedding_transitions (
 
 
 --
+-- Name: workspace_event_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_event_subscriptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    label text NOT NULL,
+    target_url_ciphertext text NOT NULL,
+    target_url_hash text NOT NULL,
+    target_host text NOT NULL,
+    secret_ciphertext text NOT NULL,
+    event_types text[] NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    disabled_reason text,
+    disabled_at timestamp with time zone,
+    created_by_kind text NOT NULL,
+    created_by_credential_id uuid,
+    created_by_service_account_id uuid,
+    created_by_user_id uuid,
+    cursor_tx xid8 NOT NULL,
+    cursor_position bigint DEFAULT 0 NOT NULL,
+    last_delivery_at timestamp with time zone,
+    last_delivery_outcome text,
+    last_delivery_status_code smallint,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    failing_since timestamp with time zone,
+    next_attempt_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_event_subscriptions_consecutive_failures_check CHECK ((consecutive_failures >= 0)),
+    CONSTRAINT workspace_event_subscriptions_created_by_kind_check CHECK ((created_by_kind = ANY (ARRAY['service_account'::text, 'personal_token'::text, 'teammate'::text]))),
+    CONSTRAINT workspace_event_subscriptions_disabled_check CHECK ((((status = 'active'::text) AND (disabled_reason IS NULL) AND (disabled_at IS NULL)) OR ((status = 'disabled'::text) AND (disabled_reason IS NOT NULL) AND (disabled_at IS NOT NULL)))),
+    CONSTRAINT workspace_event_subscriptions_disabled_reason_check CHECK ((disabled_reason = ANY (ARRAY['delivery_failing'::text, 'creator_revoked'::text]))),
+    CONSTRAINT workspace_event_subscriptions_event_types_check CHECK (((cardinality(event_types) >= 1) AND (cardinality(event_types) <= 50))),
+    CONSTRAINT workspace_event_subscriptions_label_check CHECK ((label = ANY (ARRAY['zapier'::text, 'n8n'::text, 'custom'::text]))),
+    CONSTRAINT workspace_event_subscriptions_last_delivery_outcome_check CHECK ((last_delivery_outcome = ANY (ARRAY['delivered'::text, 'failed'::text]))),
+    CONSTRAINT workspace_event_subscriptions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text]))),
+    CONSTRAINT workspace_event_subscriptions_target_host_check CHECK (((length(target_host) >= 1) AND (length(target_host) <= 255))),
+    CONSTRAINT workspace_event_subscriptions_target_url_hash_check CHECK ((target_url_hash ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: workspace_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    "position" bigint NOT NULL,
+    tx_id xid8 DEFAULT pg_current_xact_id() NOT NULL,
+    type text NOT NULL,
+    version smallint NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text,
+    conversation_id uuid,
+    agent_id uuid,
+    channel text,
+    caller_kind text,
+    visitor_id uuid,
+    data jsonb NOT NULL,
+    CONSTRAINT workspace_events_data_check CHECK ((jsonb_typeof(data) = 'object'::text)),
+    CONSTRAINT workspace_events_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 300)))),
+    CONSTRAINT workspace_events_type_check CHECK ((type ~ '^[a-z_]+\.[a-z_]+$'::text)),
+    CONSTRAINT workspace_events_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: workspace_events_position_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.workspace_events ALTER COLUMN "position" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.workspace_events_position_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: workspace_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5250,6 +5358,22 @@ ALTER TABLE ONLY public.assistant_answer_triage_transitions
 
 ALTER TABLE ONLY public.audience_pulse_snapshots
     ADD CONSTRAINT audience_pulse_snapshots_pkey PRIMARY KEY (workspace_id);
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_pkey PRIMARY KEY (workspace_id, topic_id);
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_pkey PRIMARY KEY (workspace_id, topic_id, document_id);
 
 
 --
@@ -6893,6 +7017,22 @@ ALTER TABLE ONLY public.workspace_embedding_transitions
 
 
 --
+-- Name: workspace_event_subscriptions workspace_event_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_event_subscriptions
+    ADD CONSTRAINT workspace_event_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_events workspace_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: workspace_grants workspace_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7052,6 +7192,27 @@ CREATE INDEX answer_coverage_reaction_traces_assessment_idx ON public.answer_cov
 --
 
 CREATE INDEX approval_resume_effect_decisions_created_at_idx ON public.approval_resume_effect_decisions USING btree (created_at);
+
+
+--
+-- Name: audience_pulse_topic_dismissals_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_dismissals_user_idx ON public.audience_pulse_topic_dismissals USING btree (dismissed_by_user_id) WHERE (dismissed_by_user_id IS NOT NULL);
+
+
+--
+-- Name: audience_pulse_topic_drafts_document_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_drafts_document_idx ON public.audience_pulse_topic_drafts USING btree (document_id);
+
+
+--
+-- Name: audience_pulse_topic_drafts_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audience_pulse_topic_drafts_user_idx ON public.audience_pulse_topic_drafts USING btree (created_by_user_id) WHERE (created_by_user_id IS NOT NULL);
 
 
 --
@@ -9757,6 +9918,62 @@ CREATE UNIQUE INDEX voice_sessions_vendor_conversation_uniq ON public.voice_sess
 
 
 --
+-- Name: workspace_event_subscriptions_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_event_subscriptions_due_idx ON public.workspace_event_subscriptions USING btree (next_attempt_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: workspace_event_subscriptions_target_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspace_event_subscriptions_target_idx ON public.workspace_event_subscriptions USING btree (workspace_id, target_url_hash);
+
+
+--
+-- Name: workspace_event_subscriptions_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_event_subscriptions_workspace_idx ON public.workspace_event_subscriptions USING btree (workspace_id, status);
+
+
+--
+-- Name: workspace_events_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_conversation_idx ON public.workspace_events USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
+-- Name: workspace_events_idempotency_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspace_events_idempotency_idx ON public.workspace_events USING btree (workspace_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+
+--
+-- Name: workspace_events_log_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_log_idx ON public.workspace_events USING btree (workspace_id, tx_id, "position");
+
+
+--
+-- Name: workspace_events_occurred_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_occurred_at_idx ON public.workspace_events USING btree (occurred_at);
+
+
+--
+-- Name: workspace_events_type_log_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_events_type_log_idx ON public.workspace_events USING btree (workspace_id, type, tx_id, "position");
+
+
+--
 -- Name: chunk_embeddings_p0_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -11479,6 +11696,62 @@ ALTER TABLE ONLY public.assistant_answer_triage
 
 ALTER TABLE ONLY public.audience_pulse_snapshots
     ADD CONSTRAINT audience_pulse_snapshots_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_dismissed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_dismissed_by_user_id_fkey FOREIGN KEY (dismissed_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_dismissals audience_pulse_topic_dismissals_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_dismissals
+    ADD CONSTRAINT audience_pulse_topic_dismissals_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_topic_drafts audience_pulse_topic_drafts_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_topic_drafts
+    ADD CONSTRAINT audience_pulse_topic_drafts_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -13391,6 +13664,54 @@ ALTER TABLE ONLY public.workspace_embedding_transitions
 
 ALTER TABLE ONLY public.workspace_embedding_transitions
     ADD CONSTRAINT workspace_embedding_transitions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_event_subscriptions workspace_event_subscriptions_created_by_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_event_subscriptions
+    ADD CONSTRAINT workspace_event_subscriptions_created_by_credential_id_fkey FOREIGN KEY (created_by_credential_id) REFERENCES public.api_credentials(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspace_event_subscriptions workspace_event_subscriptions_created_by_service_account_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_event_subscriptions
+    ADD CONSTRAINT workspace_event_subscriptions_created_by_service_account_i_fkey FOREIGN KEY (created_by_service_account_id) REFERENCES public.workspace_service_accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspace_event_subscriptions workspace_event_subscriptions_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_event_subscriptions
+    ADD CONSTRAINT workspace_event_subscriptions_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspace_event_subscriptions workspace_event_subscriptions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_event_subscriptions
+    ADD CONSTRAINT workspace_event_subscriptions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_events workspace_events_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_events workspace_events_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_events
+    ADD CONSTRAINT workspace_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

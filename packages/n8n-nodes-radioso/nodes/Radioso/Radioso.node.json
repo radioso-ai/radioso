@@ -1,0 +1,12 @@
+{
+	"node": "@radioso/n8n-nodes-radioso.radioso",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Communication", "Development"],
+	"resources": {
+		"credentialDocumentation": [
+			{ "url": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme" }
+		],
+		"primaryDocumentation": [{ "url": "https://github.com/radioso-ai/radioso/tree/main/packages/n8n-nodes-radioso#readme" }]
+	}
+}

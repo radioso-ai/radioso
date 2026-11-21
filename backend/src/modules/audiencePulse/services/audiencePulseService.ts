@@ -13,8 +13,13 @@ import type {
   AudiencePulseStoredReport,
 } from "../domain/report.js";
 import {
+  audiencePulsePreviousPeriod,
+  audiencePulseVisibleFrom,
+  summarizeAudiencePulsePeriod,
+  type AudiencePulsePreviousPeriod,
+} from "../domain/periodTotals.js";
+import {
   applyAudiencePulseNarrative,
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   AudiencePulseReportValidationError,
   buildAudiencePulseCensusReport,
   buildAudiencePulseComputingReport,
@@ -22,16 +27,11 @@ import {
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
 import type {
-  AudiencePulseAnswerStatus,
-  AudiencePulseAnswerSummary,
-} from "../domain/answerStatus.js";
-import type {
   AudiencePulseAuditPort,
   AudiencePulseEvidenceAnchor,
   AudiencePulseFacetDrainPort,
+  AudiencePulseHistoryHorizonSource,
   AudiencePulseHistorySource,
-  AudiencePulseHydratedEvidence,
-  AudiencePulseHydratedReport,
   AudiencePulseInferenceFactory,
   AudiencePulsePort,
   AudiencePulsePromptEvidenceReference,
@@ -39,13 +39,23 @@ import type {
   AudiencePulseReadResult,
   AudiencePulseRefreshResult,
   AudiencePulseRunGate,
-  AudiencePulseSnapshotRecord,
   AudiencePulseSnapshotStore,
+  AudiencePulseTopicDraftLink,
+  AudiencePulseTopicState,
+  AudiencePulseTopicStateStore,
+  AudiencePulseTopicStateWrite,
 } from "../contracts.js";
 import { AUDIENCE_PULSE_ANALYSIS_DAYS } from "../contracts.js";
 import type { CensusServiceFactory } from "../infra/censusServiceFactory.js";
 import type { CensusRunResult, CensusRunTopicResult } from "./censusService.js";
-import { createHydratedEvidence, hydrateThemeEvidence } from "./themeEvidence.js";
+import { createHydratedEvidence } from "./themeEvidence.js";
+import { hydrateReport } from "./reportHydration.js";
+import {
+  previousThemeMemberCounts,
+  previousThemeShares,
+  reusableNarrativeSnapshot,
+  richestFirst,
+} from "./narrativeReuse.js";
 import {
   AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
   AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
@@ -63,17 +73,6 @@ interface SafeLogger {
   warn?(context: Record<string, unknown>, message: string): void;
 }
 
-export { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT };
-/** One or two questions are treated as integer noise even when their ratio is large. */
-export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT = 3;
-export const AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES = 3;
-/**
- * Reuse requires more than 80% mutual retention of full topic membership. This
- * mirrors the existing 20% drift boundary while refusing equality at the boundary;
- * display evidence is intentionally irrelevant to this decision.
- */
-export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP = 0.8;
-
 export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
   snapshotStore: AudiencePulseSnapshotStore;
@@ -83,6 +82,10 @@ export interface AudiencePulseServiceDependencies {
   inferenceFactory: AudiencePulseInferenceFactory;
   usageLimitPolicy: UsageLimitPolicy;
   auditService: AudiencePulseAuditPort;
+  /** Dismissals and draft links, read beside every report and never stored in a snapshot. */
+  topicStateStore: AudiencePulseTopicStateStore;
+  /** How far back the workspace's history is whole, which bounds the previous-period comparison. */
+  historyHorizon: AudiencePulseHistoryHorizonSource;
   logger?: SafeLogger;
   now?: () => Date;
   /**
@@ -99,6 +102,10 @@ const safeAudit = async (
 ): Promise<void> => {
   await auditService.record(input).catch(() => undefined);
 };
+
+const ANALYSIS_WINDOW_MS = AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000;
+
+type AudiencePulseTopicActionInput = { accountId: string; userId: string; workspaceId: string; topicId: string };
 
 const isAbortError = (error: unknown): boolean =>
   Boolean(error && typeof error === "object" && "name" in error && (error as { name?: unknown }).name === "AbortError");
@@ -138,170 +145,6 @@ const unavailableReason = (error: unknown): "provider" | "validation" | "cancell
     return "validation";
   }
   return "provider";
-};
-
-type LegacyAudiencePulseStoredTheme = Omit<
-  AudiencePulseStoredReport["themes"][number],
-  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
-> & {
-  memberCount?: number;
-  previousMemberCount?: number | null;
-  previousShare?: number | null;
-  transition?: AudiencePulseStoredReport["themes"][number]["transition"];
-  sampleCount?: number;
-  share?: number;
-};
-type LegacyAudiencePulseStoredReport = Omit<
-  AudiencePulseStoredReport,
-  | "narrativeGeneratedAt"
-  | "narrativeReuseCount"
-  | "narrativeReuseMaxDrift"
-  | "isFirstCensus"
-  | "unclassifiedQuestionCount"
-  | "dissolvedTopics"
-  | "coverage"
-  | "themes"
-> & {
-  narrativeGeneratedAt?: string;
-  narrativeReuseCount?: number;
-  narrativeReuseMaxDrift?: number;
-  isFirstCensus?: boolean;
-  unclassifiedQuestionCount?: number;
-  dissolvedTopics?: AudiencePulseStoredReport["dissolvedTopics"];
-  coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
-  themes: LegacyAudiencePulseStoredTheme[];
-};
-
-interface ThemeAnswers {
-  answers: AudiencePulseAnswerSummary;
-  /** Undefined when the snapshot stored nothing an example's status could be read from. */
-  statusOf: (evidenceId: string) => AudiencePulseAnswerStatus | undefined;
-}
-
-/**
- * Snapshots saved before topics carried `answers` stored neither the summary nor a
- * per-example status. One rule reads both from what they did store, so the counts
- * and the labels agree. With a coverage summary, the recorded verdicts decide, and a
- * scope-boundary decline stays in the partly answered or unanswered count where that
- * snapshot put it. Without one, the topic's grounding counts decide; no per-example
- * grounding was stored, so those examples carry no status.
- */
-const legacyThemeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
-  const { coverage, coverageByEvidenceId } = theme;
-  if (coverage) {
-    return {
-      answers: {
-        answered: coverage.answered,
-        partial: coverage.partial,
-        unanswered: coverage.unanswered,
-        unclear: coverage.unclear,
-        outOfScope: 0,
-        notAssessed: coverage.unassessed + coverage.legacy,
-      },
-      statusOf: (evidenceId) => {
-        const assessment = coverageByEvidenceId?.[evidenceId];
-        return assessment?.availability === "assessed" ? assessment.coverage : "not_assessed";
-      },
-    };
-  }
-  const { grounding } = theme;
-  return {
-    answers: {
-      answered: grounding.grounded,
-      partial: grounding.degraded,
-      unanswered: grounding.noSupport,
-      unclear: 0,
-      outOfScope: 0,
-      notAssessed: grounding.unknown,
-    },
-    statusOf: () => undefined,
-  };
-};
-
-const themeAnswers = (theme: LegacyAudiencePulseStoredTheme): ThemeAnswers => {
-  if (!theme.answers) return legacyThemeAnswers(theme);
-  const statuses = theme.answerStatusByEvidenceId;
-  return { answers: theme.answers, statusOf: (evidenceId) => statuses?.[evidenceId] };
-};
-
-const hydrateReport = (
-  report: AudiencePulseStoredReport,
-  evidenceById: Map<string, AudiencePulseHydratedEvidence>,
-): AudiencePulseHydratedReport => {
-  const resolve = (evidenceId: string): AudiencePulseHydratedEvidence => {
-    const evidence = evidenceById.get(evidenceId);
-    if (!evidence) {
-      throw new AudiencePulseReportValidationError("A saved report source could not be rehydrated");
-    }
-    return evidence;
-  };
-
-  const legacyReport = report as LegacyAudiencePulseStoredReport;
-  const populationSize = legacyReport.coverage.populationSize;
-  const groupedEvidenceIds = new Set(legacyReport.themes.flatMap((theme) => theme.evidenceIds));
-  const unclassifiedQuestionCount = typeof legacyReport.unclassifiedQuestionCount === "number"
-    ? legacyReport.unclassifiedQuestionCount
-    : [...evidenceById.keys()].filter((evidenceId) => !groupedEvidenceIds.has(evidenceId)).length;
-  const coverage = {
-    ...legacyReport.coverage,
-    facetReadyQuestionCount: legacyReport.coverage.facetReadyQuestionCount
-      ?? legacyReport.coverage.sampleSize
-      ?? populationSize,
-  };
-
-  return {
-    period: report.period,
-    generatedAt: report.generatedAt,
-    isFirstCensus: legacyReport.isFirstCensus ?? false,
-    narrativeGeneratedAt: legacyReport.narrativeGeneratedAt ?? report.generatedAt,
-    narrativeReuseCount: legacyReport.narrativeReuseCount ?? 0,
-    narrativeReuseMaxDrift: legacyReport.narrativeReuseMaxDrift ?? AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
-    coverage,
-    weeklyVolume: report.weeklyVolume,
-    summary: report.summary,
-    // Computed once, in `buildAudiencePulseReport`, against the population -- not
-    // reconstructed here from whichever evidence ids happened to rehydrate.
-    unclassifiedQuestionCount,
-    dissolvedTopics: (legacyReport.dissolvedTopics ?? []).map((topic) => ({ ...topic })),
-    themes: legacyReport.themes.map((theme) => {
-      const legacyTheme: LegacyAudiencePulseStoredTheme = theme;
-      const { answers, statusOf } = themeAnswers(legacyTheme);
-      const memberCount = legacyTheme.memberCount ?? legacyTheme.sampleCount ?? theme.evidenceIds.length;
-      const share = legacyTheme.share ?? (populationSize === 0 ? 0 : memberCount / populationSize);
-      return {
-        id: theme.id,
-        title: theme.title,
-        description: theme.description,
-        memberCount,
-        previousMemberCount: theme.previousMemberCount ?? null,
-        previousShare: theme.previousShare ?? null,
-        transition: theme.transition ? {
-          ...theme.transition,
-          membershipOverlap: theme.transition.membershipOverlap ?? null,
-        } : null,
-        share,
-        ...hydrateThemeEvidence(theme.evidenceIds, resolve, statusOf, theme.coverageByEvidenceId),
-        weeklyPulse: theme.weeklyPulse,
-        grounding: theme.grounding,
-        ...(theme.coverage ? { coverage: theme.coverage } : {}),
-        answers,
-      };
-    }),
-    contentGaps: report.contentGaps,
-    recommendations: report.recommendations.map((recommendation) => ({
-      id: recommendation.id,
-      themeId: recommendation.themeId,
-      title: recommendation.title,
-      rationale: recommendation.rationale,
-      questions: recommendation.questions,
-      evidenceReferences: recommendation.evidenceIds.map((id) => resolve(id).evidenceId),
-      startDraft: {
-        title: recommendation.title,
-        questions: recommendation.questions,
-      },
-    })),
-    caveats: report.caveats,
-  };
 };
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
@@ -360,10 +203,6 @@ const promptEvidenceReferences = (evidence: AudiencePulseEvidence[]): AudiencePu
     conversationId: item.reference.conversationId,
   }));
 
-/** Richest-member topic first, ties broken by id for a deterministic, stable order. */
-const richestFirst = (topics: readonly CensusRunTopicResult[]): CensusRunTopicResult[] =>
-  [...topics].sort((a, b) => b.memberCount - a.memberCount || a.topicId.localeCompare(b.topicId));
-
 /**
  * Builds this run's real topic membership for `buildAudiencePulseReport` (spec 956
  * FR-005): every topic the census produced, carrying every member id the
@@ -382,183 +221,6 @@ const censusTopicsFromRun = (input: {
     transition: topic.transition,
   };
 });
-
-const previousThemeMemberCounts = (snapshot: AudiencePulseSnapshotRecord | null): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (const theme of snapshot?.report.themes ?? []) {
-    if (typeof theme.memberCount === "number") {
-      counts.set(theme.id, theme.memberCount);
-    }
-  }
-  return counts;
-};
-
-const previousThemeShares = (snapshot: AudiencePulseSnapshotRecord | null): Map<string, number> => {
-  const shares = new Map<string, number>();
-  for (const theme of snapshot?.report.themes ?? []) {
-    if (typeof theme.share === "number") {
-      shares.set(theme.id, theme.share);
-    }
-  }
-  return shares;
-};
-
-const reachesNarrativeDriftGate = (absoluteMovement: number, relativeMovement: number): boolean =>
-  absoluteMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT
-  && relativeMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
-
-type AudiencePulseNarrativeSnapshot = AudiencePulseSnapshotRecord & {
-  report: AudiencePulseStoredReport & { summary: string };
-};
-
-const reusableNarrativeSnapshot = (input: {
-  snapshot: AudiencePulseSnapshotRecord | null;
-  censusResult: CensusRunResult;
-  currentEvidenceById: ReadonlyMap<string, AudiencePulseEvidence>;
-  populationSize: number;
-  unclassifiedQuestionCount: number;
-  contentGapThemeIds: readonly string[];
-  recommendationEvidenceIdsByThemeId: ReadonlyMap<string, readonly string[]>;
-}): AudiencePulseNarrativeSnapshot | null => {
-  const {
-    snapshot,
-    censusResult,
-    currentEvidenceById,
-    populationSize,
-    unclassifiedQuestionCount,
-    contentGapThemeIds,
-    recommendationEvidenceIdsByThemeId,
-  } = input;
-  if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
-    return null;
-  }
-  if (!snapshot.report.censusRunId
-    || snapshot.report.censusRunId !== censusResult.membershipBaselineRunId) {
-    return null;
-  }
-  const legacyReport = snapshot.report as LegacyAudiencePulseStoredReport;
-  if ((legacyReport.narrativeReuseCount ?? 0) >= AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES) {
-    return null;
-  }
-  if (!censusResult.fullyFacetReady || censusResult.topics.length === 0) {
-    return null;
-  }
-  if (censusResult.topics.some((topic) =>
-    topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback)) {
-    return null;
-  }
-  if (censusResult.topics.some((topic) =>
-    topic.transition?.membershipOverlap === null
-    || topic.transition?.membershipOverlap === undefined
-    || topic.transition.membershipOverlap <= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP)) {
-    return null;
-  }
-  if (censusResult.dissolvedTopicIds.length > 0) {
-    return null;
-  }
-
-  const currentNarrativeTopicIds = richestFirst(censusResult.topics)
-    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
-    .map((topic) => topic.topicId);
-  const priorNarrativeTopicIds = snapshot.report.themes
-    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
-    .map((theme) => theme.id);
-  if (currentNarrativeTopicIds.length !== priorNarrativeTopicIds.length
-    || currentNarrativeTopicIds.some((topicId, index) => topicId !== priorNarrativeTopicIds[index])) {
-    return null;
-  }
-
-  const priorCounts = previousThemeMemberCounts(snapshot);
-  const priorShares = previousThemeShares(snapshot);
-  const topicDrifts = censusResult.topics.map((topic) => {
-    const previousMemberCount = priorCounts.get(topic.topicId);
-    const previousShare = priorShares.get(topic.topicId);
-    if (previousMemberCount === undefined || previousShare === undefined) {
-      return null;
-    }
-    const countMovement = Math.abs(topic.memberCount - previousMemberCount);
-    const countDrift = countMovement / Math.max(previousMemberCount, 1);
-    const currentShare = topic.memberCount / populationSize;
-    const shareDrift = previousShare === 0
-      ? currentShare === 0 ? 0 : Infinity
-      : Math.abs(currentShare - previousShare) / previousShare;
-    return { countMovement, countDrift, shareDrift };
-  });
-  if (topicDrifts.some((drift) => drift === null
-    || reachesNarrativeDriftGate(drift.countMovement, drift.countDrift))) {
-    return null;
-  }
-  if (topicDrifts.some((drift) => drift !== null
-    && reachesNarrativeDriftGate(drift.countMovement, drift.shareDrift))) {
-    return null;
-  }
-
-  const currentMemberIdsByTopicId = new Map(
-    censusResult.topics.map((topic) => [topic.topicId, new Set(topic.memberIds)]),
-  );
-  if (snapshot.report.themes.some((theme) => {
-    const currentMemberIds = currentMemberIdsByTopicId.get(theme.id);
-    return currentMemberIds === undefined
-      || theme.evidenceIds.some((evidenceId) => !currentMemberIds.has(evidenceId));
-  })) {
-    return null;
-  }
-
-  const priorPopulationSize = snapshot.report.coverage.populationSize;
-  const populationMovement = typeof priorPopulationSize === "number"
-    ? Math.abs(populationSize - priorPopulationSize)
-    : Infinity;
-  if (typeof priorPopulationSize !== "number"
-    || reachesNarrativeDriftGate(
-      populationMovement,
-      populationMovement / Math.max(priorPopulationSize, 1),
-    )) {
-    return null;
-  }
-
-  // Snapshots written before this field exists cannot prove that unclassified demand
-  // stayed stable, so their narratives are regenerated.
-  const priorUnclassifiedQuestionCount = snapshot.report.unclassifiedQuestionCount;
-  const unclassifiedMovement = typeof priorUnclassifiedQuestionCount === "number"
-    ? Math.abs(unclassifiedQuestionCount - priorUnclassifiedQuestionCount)
-    : Infinity;
-  if (typeof priorUnclassifiedQuestionCount !== "number"
-    || reachesNarrativeDriftGate(
-      unclassifiedMovement,
-      unclassifiedMovement / Math.max(priorUnclassifiedQuestionCount, 1),
-    )) {
-    return null;
-  }
-
-  // A snapshot predating content gaps cannot prove which topics qualified, so its
-  // narrative is regenerated rather than trusted -- the same treatment absent legacy
-  // fields get above.
-  const priorContentGaps = snapshot.report.contentGaps as AudiencePulseStoredReport["contentGaps"] | undefined;
-  if (priorContentGaps === undefined) {
-    return null;
-  }
-  const priorContentGapThemeIds = new Set(priorContentGaps.map((gap) => gap.themeId));
-  if (priorContentGapThemeIds.size !== contentGapThemeIds.length
-    || contentGapThemeIds.some((themeId) => !priorContentGapThemeIds.has(themeId))) {
-    return null;
-  }
-
-  if (snapshot.report.recommendations.some((recommendation) => {
-    const currentMemberIds = currentMemberIdsByTopicId.get(recommendation.themeId);
-    const selectedEvidenceIds = recommendationEvidenceIdsByThemeId.get(recommendation.themeId);
-    return currentMemberIds === undefined
-      || selectedEvidenceIds === undefined
-      || recommendation.evidenceIds.length !== selectedEvidenceIds.length
-      || recommendation.evidenceIds.some((evidenceId, index) =>
-        evidenceId !== selectedEvidenceIds[index]
-        || !currentMemberIds.has(evidenceId)
-        || !currentEvidenceById.get(evidenceId)?.contentGapEligible);
-  })) {
-    return null;
-  }
-
-  return snapshot as AudiencePulseNarrativeSnapshot;
-};
 
 /**
  * Builds the narrative call's input (spec 956): the richest
@@ -645,7 +307,8 @@ export class AudiencePulseService implements AudiencePulsePort {
         references: snapshot.promptEvidenceRefs,
       });
       if (hydrated.size === snapshot.promptEvidenceRefs.length) {
-        return { kind: "completed", report: hydrateReport(snapshot.report, hydrated) };
+        const topicStates = await this.readTopicStates(input.workspaceId, snapshot.report);
+        return { kind: "completed", report: hydrateReport(snapshot.report, hydrated, topicStates) };
       }
 
       const invalidated = await this.deps.snapshotStore.invalidate({
@@ -671,9 +334,38 @@ export class AudiencePulseService implements AudiencePulsePort {
     });
   }
 
+  async dismissTopic(input: AudiencePulseTopicActionInput): Promise<AudiencePulseTopicStateWrite> {
+    const result = await this.deps.topicStateStore.dismiss({
+      workspaceId: input.workspaceId,
+      topicId: input.topicId,
+      userId: input.userId,
+    });
+    if (result === "changed") await this.recordTopicAction(input, "audience_pulse.topic_dismissed", {});
+    return result;
+  }
+
+  async restoreTopic(input: AudiencePulseTopicActionInput): Promise<AudiencePulseTopicStateWrite> {
+    const result = await this.deps.topicStateStore.restore({ workspaceId: input.workspaceId, topicId: input.topicId });
+    if (result === "changed") await this.recordTopicAction(input, "audience_pulse.topic_restored", {});
+    return result;
+  }
+
+  async linkTopicDraft(input: AudiencePulseTopicActionInput & { documentId: string }): Promise<AudiencePulseTopicDraftLink> {
+    const result = await this.deps.topicStateStore.linkDraft({
+      workspaceId: input.workspaceId,
+      topicId: input.topicId,
+      documentId: input.documentId,
+      userId: input.userId,
+    });
+    if (result === "changed") {
+      await this.recordTopicAction(input, "audience_pulse.topic_draft_linked", { documentId: input.documentId });
+    }
+    return result;
+  }
+
   async refreshStatus(input: { workspaceId: string }): Promise<{ pending: boolean }> {
     const analysisEnd = this.now();
-    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    const analysisStart = new Date(analysisEnd.getTime() - ANALYSIS_WINDOW_MS);
     return {
       pending: await this.deps.facetDrain?.hasPendingWorkspaceWork({
         workspaceId: input.workspaceId,
@@ -691,7 +383,7 @@ export class AudiencePulseService implements AudiencePulsePort {
   }): Promise<AudiencePulseRefreshResult> {
     const startedAt = this.now();
     const analysisEnd = startedAt;
-    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    const analysisStart = new Date(analysisEnd.getTime() - ANALYSIS_WINDOW_MS);
     await safeAudit(this.deps.auditService, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -766,18 +458,29 @@ export class AudiencePulseService implements AudiencePulsePort {
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
       // call writes a word of narrative about them.
+      // The previous-period read runs beside it: it needs no census, turns a failure into a null
+      // comparison, and rejects only when the refresh is cancelled.
       const census = this.deps.censusServiceFactory.create({ workspaceId: input.workspaceId });
       let censusResult: CensusRunResult;
+      let previousPeriod: AudiencePulsePreviousPeriod | null;
       try {
-        censusResult = await census.run({
-          workspaceId: input.workspaceId,
-          windowStart: analysisStart,
-          windowEnd: analysisEnd,
-          signal: input.signal,
-          onModelCallIssued: () => {
-            modelCallsIssued += 1;
-          },
-        });
+        [censusResult, previousPeriod] = await Promise.all([
+          census.run({
+            workspaceId: input.workspaceId,
+            windowStart: analysisStart,
+            windowEnd: analysisEnd,
+            signal: input.signal,
+            onModelCallIssued: () => {
+              modelCallsIssued += 1;
+            },
+          }),
+          this.readPreviousPeriod({
+            workspaceId: input.workspaceId,
+            currentStart: analysisStart,
+            now: analysisEnd,
+            signal: input.signal,
+          }),
+        ]);
       } catch (error) {
         if (errorStatusCode(error) !== undefined) throw error;
         const reason = unavailableReason(error);
@@ -814,6 +517,8 @@ export class AudiencePulseService implements AudiencePulsePort {
             isFirstCensus: censusResult.isFirstCensus,
             coverage: reportCoverage,
             weeklyVolume: history.weeklyVolume,
+            population: history.evidence,
+            previousPeriod,
           }),
           censusRunId: censusResult.runId,
         };
@@ -824,7 +529,8 @@ export class AudiencePulseService implements AudiencePulsePort {
           report,
           promptEvidenceRefs: [],
         });
-        const hydrated = hydrateReport(report, new Map());
+        // A report with no topics has no content gap to carry operator state.
+        const hydrated = hydrateReport(report, new Map(), new Map());
         await this.recordOutcome(input, "completed", startedAt, {
           populationSize: history.coverage.populationSize,
           sampleSize: history.coverage.sampleSize,
@@ -841,6 +547,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       // carries over only model-authored narrative fields, never an old content-gap
       // decision or a recommendation that the domain no longer qualifies.
       let censusReport: ReturnType<typeof buildAudiencePulseCensusReport>;
+      const priorMemberCounts = previousThemeMemberCounts(priorSnapshot);
       try {
         const computedCensusReport = buildAudiencePulseCensusReport({
           period: { start: analysisStart, end: analysisEnd },
@@ -853,8 +560,11 @@ export class AudiencePulseService implements AudiencePulsePort {
           population: history.evidence,
           topics: censusTopics,
           dissolvedTopics: censusResult.dissolvedTopics,
-          previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+          previousThemeMemberCounts: priorMemberCounts,
           previousThemeShares: previousThemeShares(priorSnapshot),
+          previousPeriod,
+          // Names the snapshot only when it gave some topic a previous count to compare with.
+          previousGeneratedAt: priorMemberCounts.size > 0 ? priorSnapshot?.report.generatedAt ?? null : null,
         });
         censusReport = {
           ...computedCensusReport,
@@ -1026,7 +736,11 @@ export class AudiencePulseService implements AudiencePulsePort {
         report,
         promptEvidenceRefs: promptEvidenceReferences(referencedEvidence),
       });
-      const hydrated = hydrateReport(report, createHydratedEvidence(referencedEvidence));
+      const hydrated = hydrateReport(
+        report,
+        createHydratedEvidence(referencedEvidence),
+        await this.readTopicStates(input.workspaceId, report),
+      );
       await this.recordOutcome(input, "completed", startedAt, {
         populationSize: history.coverage.populationSize,
         sampleSize: history.coverage.sampleSize,
@@ -1066,6 +780,86 @@ export class AudiencePulseService implements AudiencePulsePort {
     }
   }
 
+  /**
+   * The 30 days before the report's window, counted with the same rule as the window itself from
+   * the history source's text-free outcomes. Null when part of those days is out of sight (the
+   * workspace is younger, or retention is sweeping them) and when the read fails: the comparison is
+   * a nicety, so a failure never fails or bills a refresh. An abort rethrows, so a cancelled
+   * refresh stops. The read roughly doubles a refresh's per-question reads, so its cost is logged.
+   */
+  private async readPreviousPeriod(input: {
+    workspaceId: string;
+    currentStart: Date;
+    now: Date;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulsePreviousPeriod | null> {
+    const period = { start: new Date(input.currentStart.getTime() - ANALYSIS_WINDOW_MS), end: input.currentStart };
+    const startedAt = this.now();
+    const durationMs = () => Math.max(0, this.now().getTime() - startedAt.getTime());
+    try {
+      const horizon = await this.deps.historyHorizon.read(input.workspaceId);
+      if (!horizon || period.start < audiencePulseVisibleFrom({ ...horizon, now: input.now })) return null;
+      const outcomes = await this.deps.historySource.readPeriodOutcomes({
+        workspaceId: input.workspaceId,
+        analysisStart: period.start,
+        analysisEnd: period.end,
+        signal: input.signal,
+      });
+      const totals = summarizeAudiencePulsePeriod(outcomes);
+      this.deps.logger?.info?.({
+        workspaceId: input.workspaceId,
+        questionCount: totals.questionCount,
+        durationMs: durationMs(),
+      }, "audience_pulse_previous_period_read");
+      return audiencePulsePreviousPeriod({ period, totals });
+    } catch (error) {
+      // A cancelled refresh stops; only a genuine read failure becomes a missing comparison.
+      if (isAbortError(error) || input.signal?.aborted) throw error;
+      this.deps.logger?.warn?.({
+        workspaceId: input.workspaceId,
+        durationMs: durationMs(),
+        errorName: error instanceof Error ? error.name : "unknown",
+      }, "audience_pulse_previous_period_read_failed");
+      return null;
+    }
+  }
+
+  /**
+   * Operator state is decoration on a report that is already saved and, on refresh, billed: a
+   * failed read serves the report without it rather than failing the request.
+   */
+  private async readTopicStates(
+    workspaceId: string,
+    report: AudiencePulseStoredReport,
+  ): Promise<Map<string, AudiencePulseTopicState>> {
+    const topicIds = report.contentGaps.map((gap) => gap.themeId);
+    if (topicIds.length === 0) return new Map();
+    try {
+      return await this.deps.topicStateStore.readTopicStates({ workspaceId, topicIds });
+    } catch (error) {
+      this.deps.logger?.warn?.({
+        workspaceId,
+        topicCount: topicIds.length,
+        errorName: error instanceof Error ? error.name : "unknown",
+      }, "audience_pulse_topic_state_read_failed");
+      return new Map();
+    }
+  }
+
+  private async recordTopicAction(
+    input: AudiencePulseTopicActionInput,
+    eventType: string,
+    metadata: Record<string, string>,
+  ): Promise<void> {
+    await safeAudit(this.deps.auditService, {
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType,
+      eventStatus: "success",
+      metadata: { userId: input.userId, topicId: input.topicId, ...metadata },
+    });
+  }
+
   private async recordOutcome(
     input: { accountId: string; userId: string; workspaceId: string },
     outcome: string,
@@ -1093,5 +887,3 @@ export class AudiencePulseService implements AudiencePulsePort {
     }
   }
 }
-
-export { hydrateReport };

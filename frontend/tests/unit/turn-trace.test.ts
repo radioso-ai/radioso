@@ -314,6 +314,20 @@ describe('answerCoverageFromTurnTrace', () => {
     }
     expect(answerCoverageFromTurnTrace(envelope)).toBeUndefined()
   })
+
+  // #1817: a turn whose summary says it measured no coverage is not legacy evidence.
+  it('reads a turn that measured no coverage as not recorded, from its summary', () => {
+    const envelope: TurnTraceEnvelope = { ...spineEnvelope(), summary: { totalLlmCalls: 2, answerCoverageAvailability: 'not_recorded' } }
+    expect(answerCoverageFromTurnTrace(envelope)).toEqual({
+      availability: 'not_recorded', originatingTurnId: '', originatingRequestId: '',
+    })
+  })
+
+  it('prefers the verdict stage over the summary, and ignores a summary value it does not know', () => {
+    const assessed = { ...withHeadOutputs({ availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence' }), summary: { answerCoverageAvailability: 'assessed' } }
+    expect(answerCoverageFromTurnTrace(assessed)).toMatchObject({ availability: 'assessed', coverage: 'answered' })
+    expect(answerCoverageFromTurnTrace({ ...spineEnvelope(), summary: { answerCoverageAvailability: 'unmeasured' } })).toBeUndefined()
+  })
 })
 
 describe('resolveAnswerCoverage', () => {

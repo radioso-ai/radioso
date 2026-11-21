@@ -63,7 +63,7 @@ export const createPostgresHeldReplyUnitOfWork = (deps: {
       const result = await runTransactionWithDeadlockRetry(deps.db, (trx) => {
         // An aborted attempt queued nothing.
         queued = null;
-        const conversations = new ConversationRepository(trx);
+        const conversations = ConversationRepository.forExistingConversations(trx);
         const messages = new MessageRepository(trx);
         const outbox = new ActionRequestRepository(trx);
         const bound = new Map<HeldReplyChannelRegistration, HeldReplyChannelScope>();

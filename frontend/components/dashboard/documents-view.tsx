@@ -66,6 +66,7 @@ import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import {
   consumeAudiencePulseDraftSeed,
   formatDraftQuestionsAsMarkdown,
+  linkAudiencePulseDraft,
   type AudiencePulseDraftSeed,
 } from '@/lib/audience-pulse-draft-seed'
 
@@ -483,14 +484,11 @@ export function DocumentsView({
     selectedDocumentId,
   ])
 
-  // Audience Pulse Start-draft handoff. Runs after the selectedDocumentId effect
-  // so its resetDetailState() call cannot clobber the seeded form values on the
-  // same mount. The cached seed deliberately survives React StrictMode's effect
-  // replay and the route replacement that removes the transient marker;
-  // cancelling or saving marks the handoff dismissed and clears it so a later
-  // selectedDocumentId change cannot reopen a stale recommendation.
-  // `consumeAudiencePulseDraftSeed` clears mismatched entries too, so a
-  // cross-workspace seed cannot leak.
+  // Audience Pulse Draft handoff. Runs after the selectedDocumentId effect so its resetDetailState()
+  // cannot clobber the seeded form values on the same mount. The cached seed survives React
+  // StrictMode's effect replay and the route replacement that removes the transient marker; cancelling
+  // or saving dismisses and clears it so a later selectedDocumentId change cannot reopen a stale
+  // draft. `consumeAudiencePulseDraftSeed` clears mismatched entries too, so no seed crosses workspaces.
   useEffect(() => {
     const workspaceId = routeState.workspaceId
     if (!workspaceId) return
@@ -590,7 +588,8 @@ export function DocumentsView({
         await openDocumentPage(editingDocumentId)
         setIsEditingDetail(false)
       } else {
-        await documentsApi.createDocument(payload)
+        const created = await documentsApi.createDocument(payload)
+        await linkAudiencePulseDraft(audiencePulseDraftSeedRef.current.seed, created.documentId)
         invalidateDashboardQueries(['document.status_changed'])
         setDocumentsPage(1)
         audiencePulseDraftSeedRef.current = { seed: null, consumed: true, dismissed: true }

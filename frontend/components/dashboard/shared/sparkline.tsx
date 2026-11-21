@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type Key } from 'react'
 import { Line, LineChart, Tooltip, type TooltipContentProps } from 'recharts'
 
 import { ChartTooltipCard } from '@/components/dashboard/chart-tooltip'
-import type { SparklinePoint } from '@/lib/quality-stats'
+import type { SparklinePoint } from '@/lib/stat-tile'
 
 interface SparklineDotProps {
   cx?: number
@@ -28,11 +28,13 @@ export function Sparkline({
   formatValue,
   ariaLabel,
   height = 40,
+  testId,
 }: {
   points: readonly SparklinePoint[]
   formatValue: (value: number) => string
   ariaLabel: string
   height?: number
+  testId?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -80,7 +82,7 @@ export function Sparkline({
       ref={containerRef}
       role="img"
       aria-label={ariaLabel}
-      data-testid="quality-sparkline"
+      data-testid={testId}
       className="w-full"
       style={{ height }}
     >

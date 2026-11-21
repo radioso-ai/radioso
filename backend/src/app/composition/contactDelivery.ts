@@ -47,7 +47,7 @@ export const buildContactDeliveryResolver = (
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
 ): ConfiguredContactDeliveryResolver =>
   new ConfiguredContactDeliveryResolver(
-    new ConversationRepository(database.kysely),
+    ConversationRepository.forExistingConversations(database.kysely),
     new AgentRepository(database.kysely),
     new WorkspaceOwnerContactRecipientResolver(
       new WorkspaceRepository(database.kysely),

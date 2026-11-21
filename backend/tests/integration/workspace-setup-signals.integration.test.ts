@@ -3,19 +3,21 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceSetupStateRepository } from "../../src/db/repositories/workspaceSetupStateRepository.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("workspace setup signals (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const service = new WorkspaceSummaryService(
-    new DocumentRepository(database.kysely),
-    new ConversationRepository(database.kysely),
+    new DocumentRepository(database.kysely, documentEventEraser),
+    new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
     new WorkspaceSetupStateRepository(database.kysely),
   );
   const accountId = randomUUID();

@@ -4,6 +4,7 @@ import type {
   ConnectorPlugin,
   ConnectorValidationIssue,
 } from "@radioso/connector-api";
+import type { WorkspaceEventRecorder } from "../../../../shared/domain/workspaceEventLog.js";
 
 import { OauthConnectionRepository } from "../../../../db/repositories/oauthConnectionRepository.js";
 import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
@@ -37,6 +38,8 @@ interface SlackPluginOptions {
   encryptionKey?: FieldEncryptionKeyRing;
   /** Lets the webhook enqueue the durable job the worker dispatches; never used for the turn itself. */
   backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+  /** Records the start of a conversation a new Slack thread opens. */
+  workspaceEvents: WorkspaceEventRecorder;
 }
 
 type SlackConnectorContext = ConnectorContext & {
@@ -79,7 +82,7 @@ export class SlackPlugin implements ConnectorPlugin {
     // on its final attempt, dead-lettered — which marks the event `failed` itself), and a
     // skip is now one atomic write, so nothing legitimately stays `received` for a sweep to
     // catch. A time-boxed sweep would only risk marking a still-retrying event failed early.
-    const persistence = new PostgresSlackPersistence(db, this.options.backgroundJobs);
+    const persistence = new PostgresSlackPersistence(db, this.options.workspaceEvents, this.options.backgroundJobs);
     const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,

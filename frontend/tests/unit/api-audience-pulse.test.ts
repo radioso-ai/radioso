@@ -197,6 +197,25 @@ describe('audiencePulseApi', () => {
     })
   })
 
+  it('dismisses, restores, and links a draft to a topic through session-authorized calls', async () => {
+    requestMock.mockResolvedValue(undefined)
+
+    const { audiencePulseApi } = await import('@/lib/api-audience-pulse')
+    await audiencePulseApi.dismissTopic('topic/1')
+    await audiencePulseApi.restoreTopic('topic/1')
+    await audiencePulseApi.linkTopicDraft({ topicId: 'topic-1', documentId: 'document-1' })
+
+    expect(requestMock.mock.calls).toEqual([
+      ['/quality/audience-pulse/topics/topic%2F1/dismissal', { method: 'PUT' }, { withSession: true }],
+      ['/quality/audience-pulse/topics/topic%2F1/dismissal', { method: 'DELETE' }, { withSession: true }],
+      [
+        '/quality/audience-pulse/topics/topic-1/drafts',
+        { method: 'POST', body: JSON.stringify({ documentId: 'document-1' }) },
+        { withSession: true },
+      ],
+    ])
+  })
+
   it('exposes error codes from ErrorResponse-shaped throws', async () => {
     const { getAudiencePulseErrorCode } = await import('@/lib/api-audience-pulse')
 

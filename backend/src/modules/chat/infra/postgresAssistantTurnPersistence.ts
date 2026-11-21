@@ -6,17 +6,15 @@ import type { RoutineState } from "@radioso/conversation-contract";
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { RoutineConsentRepository } from "../../../db/repositories/routineConsentRepository.js";
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
-import {
-  actionIdempotencyKey,
-  type AssistantTurnPersistenceReceipt,
-  type AssistantTurnPersistencePort,
-} from "../services/chatTurnLifecycle.js";
+import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
+import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
+import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
@@ -82,35 +80,6 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   createdAt: new Date(row.created_at),
 });
 
-const enqueueActions = async (
-  db: Db,
-  input: CompleteAssistantTurnInput,
-): Promise<readonly string[]> => {
-  if (!input.actions?.length) {
-    return [];
-  }
-  const insertedActionTypes: string[] = [];
-  for (const action of input.actions) {
-    const result = await sql`
-      INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key, skill_name)
-      VALUES (
-        ${action.type},
-        ${toJsonb(action.payload ?? {})},
-        ${input.workspaceId},
-        ${input.accountId ?? null},
-        ${input.conversationId},
-        ${actionIdempotencyKey(input.conversationId, action.type, action.payload)},
-        ${action.skillName ?? null}
-      )
-      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-    `.execute(db);
-    if (Number(result.numAffectedRows ?? 0) > 0) {
-      insertedActionTypes.push(action.type);
-    }
-  }
-  return insertedActionTypes;
-};
-
 const saveRoutineState = async (
   db: Db,
   state: RoutineState,
@@ -166,42 +135,6 @@ const applyRoutineStateTransition = async (
     return;
   }
   await sql`DELETE FROM routine_states WHERE session_id = ${transition.sessionId}`.execute(db);
-};
-
-const savePendingDecision = async (
-  db: Db,
-  input: PendingDecisionCreateInput,
-): Promise<void> => {
-  await sql`
-    INSERT INTO pending_decisions (
-        handle,
-        conversation_id,
-        session_id,
-        workspace_id,
-        agent_id,
-        routine_id,
-        step_id,
-        reason,
-        options,
-        decider_scope,
-        content_hash,
-        deadline
-      )
-      VALUES (
-        ${input.handle},
-        ${input.conversationId},
-        ${input.sessionId},
-        ${input.workspaceId},
-        ${input.agentId},
-        ${input.routineId},
-        ${input.stepId},
-        ${input.reason ?? null},
-        ${toJsonb(input.options)},
-        ${toJsonb(input.deciderScope)},
-        ${input.contentHash},
-        ${input.deadline ?? null}
-      )
-  `.execute(db);
 };
 
 const saveClarificationState = async (
@@ -314,11 +247,15 @@ const markSensitiveVisitorMessages = async (db: Db, input: CompleteAssistantTurn
 const withdrawnCoverage = (
   withdrawn: ReadonlyArray<{ routineId: string; slotKeys: readonly string[] }>,
   transition: CapturedRoutineTransition | null | undefined,
-): { slotKeys: string[]; valueTexts: string[] } => {
+): { slotKeys: string[]; valueTexts: string[]; withdrawnRoutineSlots: Array<{ routineId: string; slotKeys: readonly string[] }> } => {
   const states = transition ? [transition.kind === "save" ? transition.state : null, transition.startedFrom ?? null] : [];
   const values = withdrawn.flatMap((record) => states.flatMap((state) =>
     state && state.routineId === record.routineId ? record.slotKeys.map((key) => state.variables[key]) : []));
-  return { slotKeys: [...new Set(withdrawn.flatMap((record) => record.slotKeys))], valueTexts: matchableValueTexts(values) };
+  return {
+    slotKeys: [...new Set(withdrawn.flatMap((record) => record.slotKeys))],
+    valueTexts: matchableValueTexts(values),
+    withdrawnRoutineSlots: withdrawn.map((record) => ({ routineId: record.routineId, slotKeys: record.slotKeys })),
+  };
 };
 
 const insertAuditEvent = async (
@@ -343,6 +280,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly db: Db,
     // Records the handoff a turn requests in the turn's own transaction.
     private readonly conversationActivity: ConversationActivityRecorder,
+    // Records what the turn committed that automations act on, in the turn's own transaction.
+    private readonly workspaceEvents: WorkspaceEventRecorder,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
     private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(db),
     // Optional: when wired, a turn that enqueued routine actions (contact.send,
@@ -361,13 +300,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly consentMessageWithholding?: MessageWithholdingBinding,
     // Records the pictures a reply's cards show from a skill's result, with the reply.
     private readonly toolImageRows?: ToolImageRowWriter,
+    // Asks, once the turn has committed, for the workspace's event subscriptions to be delivered:
+    // what the turn recorded, and the conversation's start, which its first turn follows.
+    private readonly eventDeliveryWake?: WorkspaceEventDeliveryWake,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
     let insertedBackgroundJobs = 0;
     let consentWritten: RoutineConsentWritten[] = [];
     const run = async (db: Db): Promise<AssistantTurnPersistenceReceipt> => {
-      const insertedActionTypes = await enqueueActions(db, input);
+      const { insertedActionTypes, contactRequests } = await enqueueActions(db, input);
       insertedBackgroundJobs = await this.enqueueBackgroundJobs(db, input);
       await applyRoutineStateTransition(db, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
@@ -474,6 +416,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       if (input.additionalAuditEvent) {
         await insertAuditEvent(db, input.additionalAuditEvent);
       }
+      // Before the withholding, so a value a consent withdrawal raced this turn for leaves the log too.
+      await recordTurnWorkspaceEvents(db, this.workspaceEvents, input, contactRequests);
       const stored = await this.withholdAfterWithdrawal(db, input, message);
       // Last, inside the transaction: a turn the fence refuses rolls back whole, and one it admits
       // stays latched against a newer turn while COMMIT runs.
@@ -498,20 +442,30 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       ? await run(input.transaction)
       : await this.db.transaction().execute(async (trx) => run(trx));
 
-    await this.requestActionDrain(input.actions);
+    // A transaction this method opened has committed, so the drain goes now. A supplied one commits
+    // after this returns, so its drain waits for `afterCommit`: pushed now, the Cloud Tasks round
+    // trip would hold that transaction, and its id, open.
+    const drainsAfterCommit = input.transaction !== undefined && this.requestsActionDrain(input.actions);
+    if (!input.transaction) {
+      await this.requestActionDrain(input.actions);
+    }
     const queue = insertedBackgroundJobs > 0 ? this.backgroundJobs : undefined;
     const consentReport = this.consentReport(input, consentWritten);
-    if (!queue && !consentReport) {
+    const eventDelivery = this.eventDeliveryWake;
+    if (!queue && !consentReport && !drainsAfterCommit && !eventDelivery) {
       return result;
     }
     // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
     // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
-    // and the worker's sweep runs a job whose wake was lost.
+    // the drain logs a failed push, and the worker's sweeps run what a lost wake or push left; a
+    // lost event delivery wake waits for the delivery sweep.
     return {
       ...result,
       afterCommit: () => {
         if (queue) void queue.wake();
+        if (drainsAfterCommit) void this.requestActionDrain(input.actions);
         consentReport?.();
+        eventDelivery?.requestDelivery(input.workspaceId);
       },
     };
   }
@@ -626,23 +580,24 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
   async storeCutReply(input: CutReplyStoreInput): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       await new MessageRepository(trx).create(input.assistantMessage);
-      await new ConversationRepository(trx).touch(input.conversationId, input.workspaceId);
+      await ConversationRepository.forExistingConversations(trx).touch(input.conversationId, input.workspaceId);
       for (const auditEvent of input.auditEvents) {
         await insertAuditEvent(trx, auditEvent);
       }
     });
   }
 
+  private requestsActionDrain(actions: CompleteAssistantTurnInput["actions"]): boolean {
+    return Boolean(actions?.length && this.actionDrainDispatcher);
+  }
+
   /**
-   * Best-effort push: never fails the turn that already committed. In the normal
-   * (self-managed transaction) path this fires strictly after commit. In the rarer
-   * externally-supplied-transaction path (HITL decision resume) it can fire a few
-   * microseconds before that outer transaction's own commit lands — accepted, since a
-   * Cloud Tasks round trip is far slower than the remaining in-process work before that
-   * commit, and any residual race is covered by the recovery sweep, not silently lost.
+   * Best-effort push: never fails the turn, and fires strictly after the turn's transaction
+   * commits (directly for a transaction this persistence opened, through `afterCommit` for one
+   * the caller supplied, such as a decision's resume). A lost push is covered by the recovery sweep.
    */
   private async requestActionDrain(actions: CompleteAssistantTurnInput["actions"]): Promise<void> {
-    if (!actions?.length || !this.actionDrainDispatcher) {
+    if (!this.requestsActionDrain(actions) || !this.actionDrainDispatcher) {
       return;
     }
     try {

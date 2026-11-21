@@ -124,7 +124,7 @@ export const lockConversationsInOrder = async (
   workspaceId: string,
   conversationIds: readonly string[],
 ): Promise<ReadonlySet<string>> => {
-  const conversations = new ConversationRepository(trx);
+  const conversations = ConversationRepository.forExistingConversations(trx);
   const ownership = new ConversationOwnershipRepository(trx);
   const locked = new Set<string>();
   for (const conversationId of [...new Set(conversationIds)].sort()) {

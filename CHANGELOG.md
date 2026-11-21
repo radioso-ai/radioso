@@ -9,6 +9,96 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.35.0] - 2026-11-20
+
+### Added
+
+- **events:** record document processed and failed events ([#1875](https://github.com/radioso-ai/radioso/pull/1875))
+- **docs-importer:** import the radioso.ai pricing page and keep it current ([#1862](https://github.com/radioso-ai/radioso/pull/1862))
+- **zapier:** add REST hook triggers for Radioso events ([#1869](https://github.com/radioso-ai/radioso/pull/1869))
+- **n8n:** add webhook and polling triggers for Radioso events ([#1868](https://github.com/radioso-ai/radioso/pull/1868))
+- **events:** deliver workspace events to subscribed URLs ([#1866](https://github.com/radioso-ai/radioso/pull/1866))
+
+### Fixed
+
+- **docs-importer:** stop importing the MCP server README ([#1878](https://github.com/radioso-ai/radioso/pull/1878))
+- **documents:** parse DOCX uploads again by keeping mammoth on xmldom 0.8 ([#1877](https://github.com/radioso-ai/radioso/pull/1877))
+- **ee:** meter untiered accounts so the operator console shows their usage ([#1864](https://github.com/radioso-ai/radioso/pull/1864))
+- **docs-importer:** keep the website page under the common source so pruning keeps it ([#1874](https://github.com/radioso-ai/radioso/pull/1874))
+- **docs-importer:** import only product-facing READMEs ([#1859](https://github.com/radioso-ai/radioso/pull/1859))
+- **approvals:** resolve a decision without holding back the event log ([#1865](https://github.com/radioso-ai/radioso/pull/1865))
+
+### Documentation
+
+- answer the questions visitors actually ask, in their words ([#1879](https://github.com/radioso-ai/radioso/pull/1879))
+- make widget customization, site-builder installs, and booking findable; drop stale Enterprise labels ([#1860](https://github.com/radioso-ai/radioso/pull/1860))
+
+### Internal
+
+- **lint:** run the file-size and dead-code gates on git push ([#1867](https://github.com/radioso-ai/radioso/pull/1867))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `265_workspace_event_subscriptions.sql`
+
+[1.35.0]: https://github.com/radioso-ai/radioso/compare/v1.34.0...v1.35.0
+
+## [1.34.0] - 2026-11-19
+
+### Added
+
+- **events:** record workspace business events and list them by cursor ([#1863](https://github.com/radioso-ai/radioso/pull/1863))
+- **n8n:** add a Radioso community node with agent, knowledge and document actions ([#1857](https://github.com/radioso-ai/radioso/pull/1857))
+- **zapier:** add a Zapier app with agent, knowledge, document and conversation steps ([#1856](https://github.com/radioso-ai/radioso/pull/1856))
+- **audience-pulse:** put the stats first and turn suggestions into a ranked content queue ([#1848](https://github.com/radioso-ai/radioso/pull/1848))
+
+### Fixed
+
+- **infra:** keep the live-eu database on db-custom-1-3840 ([#1861](https://github.com/radioso-ai/radioso/pull/1861))
+- **docs-portal:** rebrand the docs link preview card and its copy ([#1858](https://github.com/radioso-ai/radioso/pull/1858))
+- docs and API reference carry version 1 instead of the 0.1 preview label ([#1847](https://github.com/radioso-ai/radioso/pull/1847))
+
+### Documentation
+
+- connect n8n, Zapier and Make to Radioso ([#1855](https://github.com/radioso-ai/radioso/pull/1855))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `263_audience_pulse_topic_state.sql`
+- `264_workspace_events.sql`
+
+[1.34.0]: https://github.com/radioso-ai/radioso/compare/v1.33.0...v1.34.0
+
+## [1.33.0] - 2026-11-19
+
+### Added
+
+- **frontend:** group the sidebar into Build and Insights sections ([#1846](https://github.com/radioso-ai/radioso/pull/1846))
+- **audience-pulse:** topic count scales with question volume ([#1845](https://github.com/radioso-ai/radioso/pull/1845))
+- **infra:** turn on audited engineer database access on live and live-eu ([#1833](https://github.com/radioso-ai/radioso/pull/1833))
+- **infra:** audited engineer access to each stack's database ([#1831](https://github.com/radioso-ai/radioso/pull/1831))
+
+### Fixed
+
+- **workbench:** test chat turn debug counts model calls, shows slot values, and keeps the visitor's message ([#1842](https://github.com/radioso-ai/radioso/pull/1842))
+- **workbench:** test chat replies carry the sources live chat attaches ([#1844](https://github.com/radioso-ai/radioso/pull/1844))
+- **agents:** answer a malformed revision route parameter with 400 ([#1841](https://github.com/radioso-ai/radioso/pull/1841))
+- **infra:** dev frontend watchdog stops restarting Next on escaped chunk names ([#1840](https://github.com/radioso-ai/radioso/pull/1840))
+- **routines:** an ending's reply says what the run did, not what its text assumed ([#1839](https://github.com/radioso-ai/radioso/pull/1839))
+- **routines:** opening a routine no longer saves it or dirties the agent draft ([#1838](https://github.com/radioso-ai/radioso/pull/1838))
+- **dashboard:** readable review dialog, wrapping inbox filters, named public link switch, one-time actions probe ([#1834](https://github.com/radioso-ai/radioso/pull/1834))
+- **routines:** stop offering undeclared slot keys at activation and label unstored slots by reason ([#1835](https://github.com/radioso-ai/radioso/pull/1835))
+- **chat:** treat a committed decline that cites a result as the decline, so the miss hand-off runs ([#1837](https://github.com/radioso-ai/radioso/pull/1837))
+- **infra:** start db-support runs through the Cloud Run API ([#1832](https://github.com/radioso-ai/radioso/pull/1832))
+- **retrieval:** end chunks at word boundaries and carry a document's attributes to every chunk ([#1830](https://github.com/radioso-ai/radioso/pull/1830))
+- **chat:** resolve "the event" to the course the visitor named, not the category they gave first ([#1829](https://github.com/radioso-ai/radioso/pull/1829))
+
+[1.33.0]: https://github.com/radioso-ai/radioso/compare/v1.32.0...v1.33.0
+
 ## [1.32.0] - 2026-11-17
 
 ### Added

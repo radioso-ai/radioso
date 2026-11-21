@@ -3005,6 +3005,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List workspace events
+         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
+         */
+        get: operations["listWorkspaceEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/event-subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List event subscriptions
+         * @description The workspace's subscriptions, newest first, active and disabled. Target URLs are never returned; `targetHost` names where events go. Requires `workspace.event_subscriptions.manage`.
+         */
+        get: operations["listEventSubscriptions"];
+        put?: never;
+        /**
+         * Subscribe a URL to workspace events
+         * @description Each event of `eventTypes` recorded from now on is POSTed to `targetUrl`, one event per request, in the order `GET /api/v1/workspace/events` lists them. The response carries `signingSecret` once; verify every push's `X-Radioso-Signature` with it. Subscribing a URL the workspace already subscribed replaces that subscription with a new one: a new `id` and a new secret, its place in the log carried over from an active one, the newest events for a disabled one. The replaced `id` answers `404` from then on, so a create retried after a lost response never leaves two subscriptions delivering the same events, and a late unsubscribe of the replaced `id` leaves the new one alone. The target must be https, without a username or password, on a host that resolves to a public address. A target that answers `410 Gone` is unsubscribed. Each type also needs the permission that reads it from the event log. A workspace holds at most 25 subscriptions. Requires `workspace.event_subscriptions.manage`.
+         */
+        post: operations["createEventSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/event-subscriptions/{subscriptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an event subscription
+         * @description One subscription, to check it still exists and is `active`. Treat `404` or `disabled` as gone and subscribe the URL again. Requires `workspace.event_subscriptions.manage`.
+         */
+        get: operations["getEventSubscription"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an event subscription
+         * @description Stops pushes to its target. A push already in flight may still arrive. Requires `workspace.event_subscriptions.manage`.
+         */
+        delete: operations["deleteEventSubscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -4437,6 +4505,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/audience-pulse/topics/{topicId}/dismissal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark a topic "not for us"
+         * @description Takes the topic out of the report's content queue: the content gap reads back with dismissedAt set. No count changes, and the dismissal outlasts a refresh while the topic survives. Requires a browser dashboard session and workspace.quality.manage.
+         */
+        put: operations["dismissAudiencePulseTopic"];
+        post?: never;
+        /**
+         * Return a dismissed topic to the content queue
+         * @description Clears the topic's dismissal. Requires a browser dashboard session and workspace.quality.manage.
+         */
+        delete: operations["restoreAudiencePulseTopic"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse/topics/{topicId}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a document drafted from a topic
+         * @description Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session, workspace.quality.manage and workspace.documents.manage.
+         */
+        post: operations["linkAudiencePulseTopicDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/availability": {
         parameters: {
             query?: never;
@@ -5332,7 +5444,28 @@ export interface paths {
         trace?: never;
     };
 }
-export type webhooks = Record<string, never>;
+export interface webhooks {
+    workspaceEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A workspace event pushed to a subscription
+         * @description Radioso POSTs one event per request to the subscription's target, in log order. The body is the same envelope `GET /api/v1/workspace/events` lists. Verify `X-Radioso-Signature` before trusting the body: `sha256=` and the hex HMAC-SHA256, keyed by the subscription's `signingSecret`, of `{X-Radioso-Timestamp}.{raw body}`. Delivery is at-least-once: deduplicate on `Idempotency-Key`, which is the event's `id`. Answer 2xx within 10 seconds to accept it. `410 Gone` deletes the subscription. Any other answer, a timeout or a redirect to another origin is a failure: the event is retried no sooner than 30 seconds later, the wait doubling after each failure to at most an hour, and newer events wait behind it. A subscription failing for 24 hours, after at least 5 attempts, is disabled.
+         */
+        post: operations["receiveWorkspaceEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export interface components {
     schemas: {
         ErrorResponse: {
@@ -10996,10 +11129,71 @@ export interface components {
             answers: components["schemas"]["AudiencePulseAnswerSummary"];
             evidence: components["schemas"]["AudiencePulseEvidence"][];
         };
+        /** @description A document drafted from the topic. It disappears with the document. */
+        AudiencePulseTopicDraft: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         AudiencePulseContentGap: {
             themeId: string;
             eligibleEvidenceCount: number;
             distinctConversationCount: number;
+            /** @description When an operator marked the topic "not for us", read at request time. A dismissal changes no count; null while the topic is in the queue. */
+            dismissedAt: string | null;
+            /** @description The newest document drafted from the topic that still exists, read at request time. */
+            latestDraft: components["schemas"]["AudiencePulseTopicDraft"] | null;
+        };
+        AudiencePulseAnswerTally: {
+            questionCount: number;
+            answers: components["schemas"]["AudiencePulseAnswerSummary"];
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseReportTotals: {
+            /** @description Every eligible question in the period; equals coverage.populationSize. */
+            questionCount: number;
+            /** @description Distinct conversations with at least one eligible question. */
+            conversationCount: number;
+            answers: components["schemas"]["AudiencePulseAnswerSummary"];
+            /** @description Questions with no answer in the workspace's content. */
+            contentGapEligibleCount: number;
+            unclassified: components["schemas"]["AudiencePulseAnswerTally"] & unknown;
+        };
+        AudiencePulseDailyVolume: {
+            /**
+             * Format: date
+             * @description A UTC calendar day.
+             */
+            day: string;
+            questionCount: number;
+            conversationCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        /** @description The 30 days immediately before the report's period, counted by the same rule. */
+        AudiencePulsePreviousPeriod: {
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            questionCount: number;
+            conversationCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseChannelVolume: {
+            /** @description The conversation's source channel; null when it records none. */
+            channel: string | null;
+            questionCount: number;
+            answeredCount: number;
+            contentGapEligibleCount: number;
+        };
+        AudiencePulseTopicDraftLinkRequest: {
+            /** Format: uuid */
+            documentId: string;
         };
         AudiencePulseDissolvedTopic: {
             id: string;
@@ -11040,6 +11234,15 @@ export interface components {
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];
             caveats: string[];
+            totals?: components["schemas"]["AudiencePulseReportTotals"];
+            /** @description One entry per UTC day the period touches, zero-filled and ascending. */
+            dailyVolume?: components["schemas"]["AudiencePulseDailyVolume"][];
+            /** @description Null when the 30 days before the period had no eligible question. */
+            previousPeriod?: components["schemas"]["AudiencePulsePreviousPeriod"] | null;
+            /** @description By the conversation's source channel, the largest first. */
+            channels?: components["schemas"]["AudiencePulseChannelVolume"][];
+            /** @description generatedAt of the earlier report each topic's previousMemberCount and previousShare come from. */
+            previousGeneratedAt?: string | null;
         };
         AudiencePulseReadResponse: {
             /** @enum {string} */
@@ -11419,6 +11622,439 @@ export interface components {
             items: components["schemas"]["NotificationDelivery"][];
             /** @description Pass back as `cursor` for the next page; null on the last one. */
             nextCursor: string | null;
+        };
+        ConversationStartedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "conversation.started";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+            };
+        };
+        ContactRequestCreatedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "contact_request.created";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /**
+                 * Format: uuid
+                 * @description The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`.
+                 */
+                contactRequestId: string;
+                /** @description Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`. */
+                values: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        HandoffRequestedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "handoff.requested";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /**
+                 * @description Why the conversation went to a person, as a handoff reason code.
+                 * @enum {string}
+                 */
+                reason: "routine_handoff" | "routine_stuck" | "routine_consent_declined" | "retrieval_miss" | "operator_takeover" | "operator_only_mailbox" | "generation_budget" | "review_unavailable" | "policy_changed";
+            };
+        };
+        RoutineCompletedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "routine.completed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                routineId: string;
+                /** @description The routine run. A visitor's later correction to the run's values records the run again under the same id. */
+                executionId: string | null;
+                /**
+                 * @description How the run ended: at an authored `complete`, `handoff` or `action` ending, `stuck` past its re-ask limit, or `consent_declined`.
+                 * @enum {string}
+                 */
+                outcome: "complete" | "handoff" | "action" | "stuck" | "consent_declined";
+                /** @description Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`. */
+                values: {
+                    [key: string]: unknown;
+                };
+                /** @description The keys in `values` that are sensitive, whose values are masked. */
+                sensitiveSlotKeys: string[];
+            };
+        };
+        DecisionPendingEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "decision.pending";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                decisionHandle: string;
+                routineId: string;
+                stepId: string;
+                /** @description The reason the routine's author wrote on the decision step. */
+                reason: string | null;
+                options: {
+                    id: string;
+                    label: string;
+                }[];
+                /** Format: date-time */
+                deadline: string | null;
+            };
+        };
+        DocumentProcessedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "document.processed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                documentId: string;
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
+                revision: number;
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
+                title: string;
+                /**
+                 * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
+                 * @enum {string}
+                 */
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
+                /**
+                 * Format: uuid
+                 * @description The document source the document belongs to. Null for a document with no source.
+                 */
+                sourceId: string | null;
+            };
+        };
+        DocumentFailedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "document.failed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                documentId: string;
+                /** @description The document revision the event is about. A changed or reprocessed document is processed again as its next revision. */
+                revision: number;
+                /** @description The document's title when the event was recorded. An uploaded file's title comes from its file name. */
+                title: string;
+                /**
+                 * @description How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file.
+                 * @enum {string}
+                 */
+                contentKind: "inline_text" | "uploaded_file";
+                /**
+                 * @description The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source.
+                 * @enum {string|null}
+                 */
+                sourceKind: "website" | "api" | "connector" | "upload" | null;
+                /**
+                 * Format: uuid
+                 * @description The document source the document belongs to. Null for a document with no source.
+                 */
+                sourceId: string | null;
+                /** @description Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included. */
+                failureCode: string | null;
+            };
+        };
+        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
+        WorkspaceEventPage: {
+            events: components["schemas"]["WorkspaceEvent"][];
+            /** @description Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place. */
+            nextCursor: string;
+            /** @description True when more events follow `nextCursor` now. */
+            hasMore: boolean;
+        };
+        EventSubscription: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Which client registered it.
+             * @enum {string}
+             */
+            label: "zapier" | "n8n" | "custom";
+            /** @description The host events are POSTed to. The full target URL is never returned after create. */
+            targetHost: string;
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            /**
+             * @description `disabled` receives nothing more until its client subscribes the same URL again.
+             * @enum {string}
+             */
+            status: "active" | "disabled";
+            /**
+             * @description `delivery_failing` after a day of failed deliveries; `creator_revoked` once the credential or teammate that created it may no longer read its types.
+             * @enum {string|null}
+             */
+            disabledReason: "delivery_failing" | "creator_revoked" | null;
+            /** Format: date-time */
+            createdAt: string;
+            createdBy: {
+                /** @enum {string} */
+                kind: "service_account" | "personal_token" | "teammate";
+                /** @description The service account's or token's name, or the teammate's display name, as it reads now. Null for a teammate without a display name. */
+                label: string | null;
+            };
+            lastDelivery: {
+                /** Format: date-time */
+                at: string;
+                /** @enum {string} */
+                outcome: "delivered" | "failed";
+                /** @description The target's HTTP status, or null when no response came back (a timeout, a refused or unresolvable host). */
+                statusCode: number | null;
+            } | null;
+            /**
+             * Format: date-time
+             * @description When the current run of failed deliveries began; null while delivering.
+             */
+            failingSince: string | null;
+        };
+        EventSubscriptionCreated: {
+            subscription: components["schemas"]["EventSubscription"];
+            /** @description Verifies `X-Radioso-Signature` on every push. Returned only here; store it now. Subscribing the same URL again issues a new one. */
+            signingSecret: string;
+        };
+        CreateEventSubscriptionRequest: {
+            /** @description The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id. */
+            targetUrl: string;
+            /** @description The event types to receive. Each needs the permission that reads it from the event log. */
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            /**
+             * @description Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings.
+             * @enum {string}
+             */
+            label: "zapier" | "n8n" | "custom";
+        };
+        EventSubscriptionList: {
+            subscriptions: components["schemas"]["EventSubscription"][];
+        };
+        EventSubscriptionResponse: {
+            subscription: components["schemas"]["EventSubscription"];
         };
         /** @description One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation. */
         ConversationConsent: {
@@ -12144,6 +12780,11 @@ export interface components {
             attemptId: string;
             /** Format: uuid */
             sideId: string;
+            /**
+             * Format: uuid
+             * @description The id this side's history stores the turn's message under, the id the turn's trace names it by. Absent for a message stored before messages had ids.
+             */
+            userMessageId?: string;
         } | {
             /** @enum {string} */
             type: "message_delta";
@@ -26251,6 +26892,272 @@ export interface operations {
             };
         };
     };
+    listWorkspaceEvents: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent. */
+                types?: string;
+                /** @description A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log. */
+                after?: string;
+                /** @description Events per page, 1 to 100. Defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of workspace events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEventPage"];
+                };
+            };
+            /** @description An invalid query, an unknown event type, or a cursor issued for different types */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Event log read permission required, or a requested type the caller may not read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The cursor is older than the log's retention window; start again without one */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEventSubscriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace's subscriptions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventSubscriptionList"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Subscription permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEventSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateEventSubscriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Subscribed, or the existing subscription for this URL replaced by a new one with a new `id`. `signingSecret` is shown only here. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventSubscriptionCreated"];
+                };
+            };
+            /** @description An invalid body, or `invalid_target_url`: not https, or not a public host */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Subscription permission required, or `event_type_not_permitted` for a type the caller may not read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `event_subscription_limit_reached`: the workspace already holds 25 subscriptions */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `encryption_not_configured`: the deployment has no key to store the secret */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEventSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The subscription */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventSubscriptionResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Subscription permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such subscription in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteEventSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Subscription permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such subscription in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     createRetrievalAnswer: {
         parameters: {
             query?: never;
@@ -31087,6 +31994,178 @@ export interface operations {
             };
         };
     };
+    dismissAudiencePulseTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restoreAudiencePulseTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    linkAudiencePulseTopicDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudiencePulseTopicDraftLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Done; a repeated call that changes nothing also answers 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed topic id or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.manage or workspace.documents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The topic, or the document, is not in the selected workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getCopilotAvailability: {
         parameters: {
             query?: never;
@@ -34276,6 +35355,42 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+        };
+    };
+    receiveWorkspaceEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description `sha256=<hex HMAC-SHA256 of "{timestamp}.{raw body}" keyed by the signing secret>` */
+                "X-Radioso-Signature": string;
+                /** @description Unix seconds when the request was signed. Refuse one far from your clock to block replays. */
+                "X-Radioso-Timestamp": string;
+                /** @description The event's `id`. The same event always carries the same key. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceEvent"];
+            };
+        };
+        responses: {
+            /** @description Accepted: any 2xx moves the subscription past this event */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Gone: the subscription is deleted and receives nothing more */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

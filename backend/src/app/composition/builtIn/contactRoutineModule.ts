@@ -208,7 +208,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
             new RoutineDefinitionRepository(database.kysely),
-            new ConversationRepository(database.kysely),
+            ConversationRepository.forExistingConversations(database.kysely),
           ),
           summaryGenerator: new ModelRoutineEndingNoticeSummaryGenerator(
             new MessageRepository(database.kysely),
@@ -235,7 +235,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
             recorder: buildNotificationDeliveryRecorder({ database, env, mailer: mailService, logger, metrics }),
           }),
-          new ConversationRepository(database.kysely),
+          ConversationRepository.forExistingConversations(database.kysely),
         );
       },
     });

@@ -125,6 +125,13 @@ const declarations: readonly PolicyDeclaration[] = [
     .map((path) => allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
   // The merged history list's text search, sent as a body so the search stays out of request logs.
   allow("POST", "/api/v1/history/query", "workspace.history.read"),
+  // The workspace event log; each type it serves also needs the permission that reads its subject
+  // elsewhere (history, decisions), checked by the route.
+  allow("GET", "/api/v1/workspace/events", "workspace.events.read"),
+  // Event subscriptions: an automation client (Zapier, n8n) creates and deletes its own with the
+  // token it was given; each subscribed type also needs its event log read permission.
+  ...[["POST", ""], ["GET", ""], ["GET", "/:subscriptionId"], ["DELETE", "/:subscriptionId"]]
+    .map(([method, path]) => allow(method, `/api/v1/workspace/event-subscriptions${path}`, "workspace.event_subscriptions.manage")),
   // Erasure is a destructive workspace act like document deletion; a data-subject request
   // pipeline erases over the API with an admin credential.
   ...["/chat/:conversationId", "/visitors/:visitorId"]
@@ -212,6 +219,10 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/quality/audience-pulse/refresh-status", "workspace.quality.read"),
   sessionOnly("POST", "/api/v1/quality/audience-pulse/evidence-anchor", "workspace.history.read"),
   sessionOnly("POST", "/api/v1/quality/audience-pulse", "workspace.quality.read"),
+  sessionOnly("PUT", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
+  sessionOnly("DELETE", "/api/v1/quality/audience-pulse/topics/:topicId/dismissal", "workspace.quality.manage"),
+  // The route also requires workspace.documents.manage for the document it names.
+  sessionOnly("POST", "/api/v1/quality/audience-pulse/topics/:topicId/drafts", "workspace.quality.manage"),
 
   ...["/snapshots", "/cases", "/cases/run", "/cases/:id/runs", "/runs"]
     .map((path) => allow("POST", `/api/v1/evals${path}`, "workspace.retrieval.query")),

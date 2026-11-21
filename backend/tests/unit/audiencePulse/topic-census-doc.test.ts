@@ -3,11 +3,15 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import {
+  TOPIC_TARGET_MAX,
+  TOPIC_TARGET_MIN,
+} from "../../../src/modules/audiencePulse/domain/censusTopicTarget.js";
+import {
   AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
   AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP,
-} from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+} from "../../../src/modules/audiencePulse/services/narrativeReuse.js";
+import { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT } from "../../../src/modules/audiencePulse/domain/report.js";
 import { AUDIENCE_PULSE_SUMMARY_MAX_TOPICS } from "../../../src/modules/audiencePulse/services/prompt.js";
 
 const topicCensusDocUrl = new URL(
@@ -35,5 +39,14 @@ describe("topic census architecture documentation", () => {
       .toBe(AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES);
     expect(documentedNumber(markdown, /ordered ids of the\s+([\d.]+)\s+richest topics/i))
       .toBe(AUDIENCE_PULSE_SUMMARY_MAX_TOPICS);
+  });
+
+  it("keeps its topic-target bounds equal to the implementation", async () => {
+    const markdown = await readFile(topicCensusDocUrl, "utf8");
+
+    expect(documentedNumber(markdown, /held\s+between\s+(\d+)\s+and\s+\d+\s+topics/i))
+      .toBe(TOPIC_TARGET_MIN);
+    expect(documentedNumber(markdown, /held\s+between\s+\d+\s+and\s+(\d+)\s+topics/i))
+      .toBe(TOPIC_TARGET_MAX);
   });
 });

@@ -94,10 +94,11 @@ export interface OrganizationDirectoryRow {
     used: number;
     limit: number | null;
   };
-  /** Present when the tier meters conversations; `monthlyAnswers` is dormant then. */
+  /** Present unless the tier caps answers; `monthlyAnswers` is dormant then. `limit` is null
+   *  for an account without a conversation limit, untiered included. */
   monthlyConversations: {
     used: number;
-    limit: number;
+    limit: number | null;
   } | null;
   conversationSpend: ConversationSpend | null;
 }

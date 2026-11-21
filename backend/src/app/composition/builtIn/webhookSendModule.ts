@@ -27,7 +27,7 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
           destinations: webhookDestinations,
           deliveryOutcomes: webhookDestinations,
           permission: new ConversationAgentWebhookPermissionResolver(
-            new ConversationRepository(database.kysely),
+            ConversationRepository.forExistingConversations(database.kysely),
             new AgentRepository(database.kysely),
             new AgentSkillRepository(database.kysely),
             buildConversationSkills(database.kysely, metrics),

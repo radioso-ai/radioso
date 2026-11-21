@@ -47,7 +47,9 @@ export const createOpenApiDocument = (
     openapi: "3.1.0",
     info: {
       title: "Radioso API",
-      version: "0.1.0",
+      // The contract version, matching the `/api/v1` paths. It does not track releases: this
+      // document is committed with the SDK snapshot, and a running build names its release at `/health`.
+      version: "1",
       description: "Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token.",
     },
     servers: [
@@ -69,6 +71,7 @@ export const createOpenApiDocument = (
       { name: "Auth" },
       { name: "Account" },
       { name: "Workspace" },
+      { name: "Workspace Events" },
       { name: "Realtime" },
       { name: "Assistant" },
       { name: "Agent Channels" },

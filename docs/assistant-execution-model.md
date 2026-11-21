@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-11-16
+last_updated: 2026-11-19
 ---
 
 # Assistant Execution Model
@@ -14,7 +14,7 @@ Normal agent chat runs in the live request path. That includes:
 
 - authenticated chat turns
 - anonymous public chat turns
-- Enterprise embedded widget chat turns
+- website widget chat turns
 - assistant bootstrap greetings for new conversations
 
 This work is classified in code as `interactive_synchronous`. Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.

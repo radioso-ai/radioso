@@ -1,0 +1,53 @@
+---
+title: "Connect Radioso to your automations"
+description: "Call Radioso from n8n, Zapier or Make, send data from an agent to them, start them on workspace events, and give an n8n AI agent a Radioso agent as a tool."
+last_updated: 2026-11-20
+---
+
+# Connect Radioso to your automations
+
+Your team already runs work in n8n, Zapier or Make: a new lead lands in a CRM, a ticket changes state, a form comes in. Radioso connects to those tools in four ways. Each needs no code to host: you set it up in the dashboard and your automation tool, or, for an event subscription, with one API call from your automation tool.
+
+| You want to | Direction | Use | Page |
+|---|---|---|---|
+| Ask an agent a question, search the knowledge base, or add a document from a workflow | Automation calls Radioso | The REST API with a service-account token | [Call Radioso from n8n, Zapier and Make](/automation/call-radioso) |
+| Hand an agent's collected data to a workflow, such as a lead or a booking request | Radioso calls the automation | A webhook skill that posts a signed request to a catch hook | [Send data to an automation](/automation/webhook-skills) |
+| Start a workflow when a conversation starts, a visitor leaves contact details, a routine ends, a conversation goes to a person, or a document finishes processing or fails | Radioso calls the automation, or the automation polls | An event subscription that pushes each event to a URL, or the event log polled by cursor | [Workspace event subscriptions](/api/workspace-event-subscriptions) and [Workspace event log](/api/workspace-event-log) |
+| Let an n8n AI agent consult a Radioso agent as one of its tools | Automation calls Radioso | The MCP server | [n8n AI agents over MCP](/automation/n8n-ai-agents) |
+
+## Pick the instance URL
+
+Every call goes to the host that serves your workspace:
+
+| Where your workspace lives | Base URL |
+|---|---|
+| Radioso Cloud, EU | `https://api.radioso.ai` |
+| Radioso Cloud, US | `https://api-us.radioso.ai` |
+| Self-hosted | Your app origin plus `/backend`, for example `https://app.example.com/backend` |
+| Self-hosted, local stack | `http://localhost:8080` |
+
+Paths on these pages start with `/api/v1`, so the workspace summary on the EU cloud is `https://api.radioso.ai/api/v1/workspace/summary`. A credential works only on the host that issued it: a token created in the EU workspace gets `401` from the US host.
+
+Hosted n8n, Zapier and Make reach your Radioso host from the internet. A self-hosted Radioso behind a firewall needs a public HTTPS address before they can call it, and a webhook skill needs the same in the other direction: the receiving URL must be public HTTPS.
+
+## Which credential does what
+
+Radioso keeps credentials for different jobs apart, so an automation usually holds one or two of these.
+
+| Credential | Looks like | Made in | Reaches |
+|---|---|---|---|
+| Service-account token | `radioso_svc_v1_…` | **Settings → API access** | Workspace routes: assistant chat, retrieval, documents, history |
+| Agent REST credential | starts with `radioso_`, one-time secret | The agent's **Channels → API** card | `POST /api/v1/agents/{agentId}/chat` for that one agent |
+| Agent MCP credential | starts with `radioso_`, one-time secret | The agent's **Channels → MCP** card | The MCP server, for that one agent |
+| Webhook destination secret | one-time secret, shown at creation | **Settings → Workspace → Webhook destinations** | Verifies the signature on requests Radioso sends |
+
+[Personal tokens and service accounts](/api/workspaces-and-tokens) covers the first row in full, and [Authentication](/guides/authentication) compares all the access modes. Give each automation its own service account, so you can disable one workflow's access without touching another's.
+
+## Read next
+
+- [Call Radioso from n8n, Zapier and Make](/automation/call-radioso)
+- [Send data to an automation](/automation/webhook-skills)
+- [n8n AI agents over MCP](/automation/n8n-ai-agents)
+- [Workspace event subscriptions](/api/workspace-event-subscriptions)
+- [Connectors and webhooks](/api/connectors-and-webhooks)
+- [API Reference](/api-reference)

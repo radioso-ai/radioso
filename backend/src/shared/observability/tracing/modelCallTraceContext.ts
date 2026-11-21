@@ -118,10 +118,10 @@ export const runWithModelCallTrace = <T>(
 export const runWithoutModelCallTrace = <T>(run: () => T): T =>
   modelCallTraceStorage.exit(run);
 
-export const runAsyncIterableWithModelCallTrace = <T>(
+export const runAsyncIterableWithModelCallTrace = <T, TReturn = void>(
   collector: ModelCallTraceCollector,
-  createIterable: () => AsyncIterable<T>,
-): AsyncIterable<T> => runAsyncIterableWithin((run) => runWithModelCallTrace(collector, run), createIterable);
+  createIterable: () => AsyncIterable<T, TReturn>,
+): AsyncGenerator<T, TReturn> => runAsyncIterableWithin((run) => runWithModelCallTrace(collector, run), createIterable);
 
 export const captureModelCallTrace = async <T>(
   run: () => Promise<T>,

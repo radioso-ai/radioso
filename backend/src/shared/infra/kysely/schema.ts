@@ -491,6 +491,21 @@ export interface AudiencePulseSnapshots {
   workspace_id: string;
 }
 
+export interface AudiencePulseTopicDismissals {
+  created_at: Generated<Timestamp>;
+  dismissed_by_user_id: string | null;
+  topic_id: string;
+  workspace_id: string;
+}
+
+export interface AudiencePulseTopicDrafts {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  document_id: string;
+  topic_id: string;
+  workspace_id: string;
+}
+
 export interface AuditEvents {
   account_id: string | null;
   created_at: Generated<Timestamp>;
@@ -2224,6 +2239,51 @@ export interface WorkspaceEmbeddingTransitions {
   workspace_id: string;
 }
 
+export interface WorkspaceEvents {
+  agent_id: string | null;
+  caller_kind: string | null;
+  channel: string | null;
+  conversation_id: string | null;
+  data: Json;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  occurred_at: Generated<Timestamp>;
+  position: Generated<Int8>;
+  tx_id: Generated<string>;
+  type: string;
+  version: number;
+  visitor_id: string | null;
+  workspace_id: string;
+}
+
+export interface WorkspaceEventSubscriptions {
+  consecutive_failures: Generated<number>;
+  created_at: Generated<Timestamp>;
+  created_by_credential_id: string | null;
+  created_by_kind: string;
+  created_by_service_account_id: string | null;
+  created_by_user_id: string | null;
+  cursor_position: Generated<Int8>;
+  cursor_tx: string;
+  disabled_at: Timestamp | null;
+  disabled_reason: string | null;
+  event_types: string[];
+  failing_since: Timestamp | null;
+  id: Generated<string>;
+  label: string;
+  last_delivery_at: Timestamp | null;
+  last_delivery_outcome: string | null;
+  last_delivery_status_code: number | null;
+  next_attempt_at: Timestamp | null;
+  secret_ciphertext: string;
+  status: Generated<string>;
+  target_host: string;
+  target_url_ciphertext: string;
+  target_url_hash: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface WorkspaceGrants {
   account_id: string;
   created_at: Generated<Timestamp>;
@@ -2344,6 +2404,8 @@ export interface DB {
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audience_pulse_snapshots: AudiencePulseSnapshots;
+  audience_pulse_topic_dismissals: AudiencePulseTopicDismissals;
+  audience_pulse_topic_drafts: AudiencePulseTopicDrafts;
   audit_events: AuditEvents;
   background_jobs: BackgroundJobs;
   bootstrap_greeting_cache: BootstrapGreetingCache;
@@ -2457,6 +2519,8 @@ export interface DB {
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
+  workspace_event_subscriptions: WorkspaceEventSubscriptions;
+  workspace_events: WorkspaceEvents;
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
   workspace_service_accounts: WorkspaceServiceAccounts;

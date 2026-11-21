@@ -52,6 +52,7 @@ import {
   seedSupportMailbox,
   type createWorkerNode,
 } from "./emailChannelHarness.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 // The sending side of the email channel's Postgres suites: the API process a teammate replies and
 // resolves delivery failures through, the provider's own record of what it accepted, and reads of
@@ -196,7 +197,7 @@ export const createApiNode = (
   });
 
   const ownership = new ConversationOwnershipService({
-    conversations: new ConversationRepository(db),
+    conversations: new ConversationRepository(db, postgresWorkspaceEventRecorder),
     ownership: new ConversationOwnershipRepository(db),
     changes: createPostgresOwnershipChangeUnitOfWork({ db, activity, actionDrain, logger }),
     replyWrites: createPostgresOwnershipReplyUnitOfWork({ db, activity, actionDrain, logger }),
@@ -208,7 +209,7 @@ export const createApiNode = (
   });
 
   const heldReplies = new HeldReplyService({
-    conversations: new ConversationRepository(db),
+    conversations: new ConversationRepository(db, postgresWorkspaceEventRecorder),
     writes: createPostgresHeldReplyUnitOfWork({
       db,
       channels: options.heldReplyChannels ?? [channel.heldReplyChannel],
@@ -228,7 +229,7 @@ export const createApiNode = (
   const messages = new MessageRepository(db);
   const teammateLabels = createTeammateLabelReader({ users: new UserRepository(db) });
   const history = new ChatHistoryService(
-    new ConversationRepository(db),
+    new ConversationRepository(db, postgresWorkspaceEventRecorder),
     messages,
     new AuditEventRepository(db),
     new HistoryItemsRepository(db),
@@ -238,7 +239,7 @@ export const createApiNode = (
     new AnswerCoverageRepository(db),
     undefined,
     teammateLabels,
-    createConversationActivityComposition({ store: activity, teammateLabels, messages }).reads,
+    createConversationActivityComposition({ repositories: { conversationActivityRepository: activity, messageRepository: messages }, teammateLabels }).reads,
   );
 
   const sessions = new Map<string, Teammate>();

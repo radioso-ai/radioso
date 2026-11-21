@@ -17,6 +17,17 @@ export interface AudiencePulseHistorySnapshot {
   evidence: AudiencePulseEvidence[];
 }
 
+/**
+ * What happened to one question, with no word of it: the facts every Audience Pulse count reads.
+ * The same fields an `AudiencePulseEvidence` carries, so one counting rule serves both.
+ */
+export type AudiencePulseQuestionOutcome = Pick<
+  AudiencePulseEvidence,
+  "grounding" | "answerCoverage" | "legacyCoverage" | "contentGapEligible"
+> & {
+  reference: Pick<AudiencePulseEvidenceReference, "conversationId">;
+};
+
 export interface AudiencePulsePromptEvidenceReference extends AudiencePulseEvidenceReference {
   evidenceId: string;
 }
@@ -79,6 +90,17 @@ export interface AudiencePulseHistorySource {
     analysisStart: Date;
     analysisEnd: Date;
   }): Promise<string[]>;
+  /**
+   * The same eligibility and per-question classification `read()` applies, over another window,
+   * as one text-free outcome per question; an assessment carries its verdict, never the request
+   * it restates. A refresh reads the 30 days before its own window this way to compare against.
+   */
+  readPeriodOutcomes(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulseQuestionOutcome[]>;
   rehydrate(input: {
     workspaceId: string;
     references: AudiencePulsePromptEvidenceReference[];

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import { EmbeddingProfileJobFailureAdapter } from "../../src/app/composition/embeddingProfileJobFailureAdapter.js";
+import { documentEventEraser, workspaceEventRecorder } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { EmbeddingProfileRepository } from "../../src/db/repositories/embeddingProfileRepository.js";
@@ -25,8 +26,8 @@ const afterLease = (claimedAt: Date) => new Date(claimedAt.getTime() + JOB_LEASE
 
 describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const jobs = new DocumentProcessingJobRepository(database.kysely);
-  const documents = new DocumentRepository(database.kysely);
+  const jobs = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
+  const documents = new DocumentRepository(database.kysely, documentEventEraser);
   const profiles = new EmbeddingProfileRepository(database.kysely);
 
   const accountId = randomUUID();
@@ -373,7 +374,7 @@ describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (P
           // sweep's exhausted decision (which just ran, above) and the
           // terminal write the sweep is about to make.
           await database.query("UPDATE documents SET status = 'ready' WHERE id = $1", [documentId]);
-          await expect(jobs.markCompleted(job.id)).resolves.toBe(true);
+          await expect(jobs.markCompleted(outcome.job)).resolves.toBe(true);
         }
         return outcome;
       });

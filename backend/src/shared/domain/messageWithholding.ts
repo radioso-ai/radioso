@@ -49,6 +49,12 @@ export const messageWithholdingOf = (metadata: unknown): MessageWithholding | un
     : undefined;
 };
 
+/** One withdrawn consent's routine and the slots it covered. */
+export interface WithdrawnRoutineSlots {
+  readonly routineId: string;
+  readonly slotKeys: readonly string[];
+}
+
 /** The messages one withholding covers, all in one conversation, and the values they carried. */
 export interface WithheldMessages {
   readonly workspaceId: string;
@@ -60,6 +66,11 @@ export interface WithheldMessages {
    * framed with an earlier turn's words.
    */
   readonly valueTexts: readonly string[];
+  /**
+   * The withdrawn consents, by routine. A copy kept per routine run or keyed by slot goes by this
+   * structure, which outlives the values: they are read from the routine's state, which expires.
+   */
+  readonly withdrawnRoutineSlots: readonly WithdrawnRoutineSlots[];
 }
 
 /** One module's copies of message text, withheld with the messages they copy, bound to the withholding's transaction. */
@@ -80,6 +91,8 @@ export interface MessageWithholdingTarget {
   readonly conversationId: string;
   readonly slotKeys: readonly string[];
   readonly valueTexts: readonly string[];
+  /** The withdrawn consents, by routine; see {@link WithheldMessages.withdrawnRoutineSlots}. */
+  readonly withdrawnRoutineSlots: readonly WithdrawnRoutineSlots[];
   /** When the consent was withdrawn, recorded on each message. */
   readonly at: Date;
   /** Only among these messages; any of the conversation's when absent. */
@@ -111,7 +124,7 @@ export const withholdMessagesWithCopies = async (
 ): Promise<MessageWithholdingResult> => {
   const messageIds = await scope.messages.withhold(target);
   const rowsByOwner: Record<string, number> = {};
-  if (messageIds.length === 0 && target.valueTexts.length === 0) {
+  if (messageIds.length === 0 && target.valueTexts.length === 0 && target.withdrawnRoutineSlots.length === 0) {
     return { messageIds, rowsByOwner };
   }
   const withheld: WithheldMessages = {
@@ -119,6 +132,7 @@ export const withholdMessagesWithCopies = async (
     conversationId: target.conversationId,
     messageIds,
     valueTexts: target.valueTexts,
+    withdrawnRoutineSlots: target.withdrawnRoutineSlots,
   };
   for (const copies of scope.messageCopies) {
     rowsByOwner[copies.owner] = (rowsByOwner[copies.owner] ?? 0) + await copies.withhold(withheld);

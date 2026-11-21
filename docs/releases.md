@@ -1,7 +1,7 @@
 ---
 title: "Cutting a Release"
 description: "How Radioso versions itself: what a release names, how to cut one from main, and where the changelog comes from."
-last_updated: 2026-09-06
+last_updated: 2026-11-19
 ---
 
 # Cutting a Release
@@ -82,6 +82,12 @@ since:   <the commit the first release starts after>
 ```
 
 Every release after that needs neither input.
+
+## The docs name the major version
+
+The docs portal describes the current major version and labels its home page with it, such as `v1.x`. The build reads the major from the workspace version, so a minor or patch release leaves the label alone and a major release moves it. The portal deploys from `main`, which usually runs a few commits ahead of the last tag, so a label naming one exact release would claim changes that release does not contain.
+
+The API reference carries the API contract version instead: `1`, the same number as the `/api/v1` paths. A product release leaves it alone; a new API path version moves it. To see which release a stack runs, read `/health`.
 
 ## The SDK versions separately
 

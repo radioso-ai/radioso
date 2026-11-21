@@ -62,6 +62,11 @@ export interface EnqueueActionRequestInput {
    * shape. Actions a routine step emits directly (no named skill) leave this null.
    */
   skillName?: string | null;
+  /**
+   * Not stored. The payload as a copy kept beyond the delivery carries it (the workspace event
+   * log's contact request), with a sensitive slot's value masked. Absent when the payload holds none.
+   */
+  maskedPayload?: Record<string, unknown>;
 }
 
 /**

@@ -317,6 +317,15 @@ export const failTestExecutionSide = (state: TestExecutionState, sideId: string,
   }
 }
 
+/**
+ * The turn's message takes the id its side stores it under, the id the turn's trace names it by,
+ * so a live session lists it as a reopened one does.
+ */
+const withStoredUserMessageId = (messages: TestExecutionMessage[], turnId: string, userMessageId: string | undefined): TestExecutionMessage[] =>
+  userMessageId
+    ? messages.map((message) => message.role === 'user' && message.turnId === turnId ? { ...message, id: userMessageId } : message)
+    : messages
+
 /** Ignore delayed events from an execution that the operator has already replaced. */
 export const reduceTestExecutionEvent = (
   state: TestExecutionState,
@@ -343,7 +352,7 @@ export const reduceTestExecutionEvent = (
     : side.messages
 
   const nextSide: TestExecutionSideState = event.type === 'side_started'
-    ? { ...side, state: 'running', errorCode: undefined, retryable: false, messages: updateLastAssistant({ state: 'streaming' }) }
+    ? { ...side, state: 'running', errorCode: undefined, retryable: false, messages: withStoredUserMessageId(updateLastAssistant({ state: 'streaming' }), event.turnId, event.userMessageId) }
     : event.type === 'message_delta'
       ? {
         ...side,

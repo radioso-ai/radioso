@@ -4241,9 +4241,15 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     };
   }
 
-  async markCompleted(jobId: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  /** The job still processing under this claim, as the real repository's fence reads it. */
+  private claimed(claim: { id: string; attemptCount: number }): DocumentProcessingJobRecord | undefined {
+    const existing = this.items.get(claim.id);
+    return existing && existing.status === "processing" && existing.attemptCount === claim.attemptCount ? existing : undefined;
+  }
+
+  async markCompleted(claim: { id: string; attemptCount: number }): Promise<boolean> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return false;
     }
     this.update(jobId, {
@@ -4253,9 +4259,9 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return true;
   }
 
-  async markSkipped(jobId: string, reason: string): Promise<void> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  async markSkipped(claim: { id: string; attemptCount: number }, reason: string): Promise<void> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return;
     }
     this.update(jobId, {
@@ -4265,9 +4271,9 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing") {
+  async markFailed(claim: { id: string; attemptCount: number }, errorMessage: string): Promise<boolean> {
+    const jobId = claim.id;
+    if (!this.claimed(claim)) {
       return false;
     }
     this.update(jobId, {
@@ -4279,18 +4285,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   }
 
   async markFailedIfDocumentMatches(input: {
-    jobId: string;
+    claim: { id: string; attemptCount: number };
     documentId: string;
     workspaceId: string;
     revision: number;
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
-    const existingJob = this.items.get(input.jobId);
     // Mirrors the real repository: confirm the job is still ours to fail
     // before touching the document at all. A run that was not actually dead
     // can complete it first.
-    if (!documentRepository || !existingJob || existingJob.status !== "processing") {
+    if (!documentRepository || !this.claimed(input.claim)) {
       return false;
     }
 
@@ -4306,7 +4311,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       updatedAt: new Date(),
     });
 
-    this.update(input.jobId, {
+    this.update(input.claim.id, {
       status: "failed",
       lastError: input.errorMessage,
       completedAt: new Date(),
@@ -4543,44 +4548,6 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     const bound = existing.agentRevisionId ? existing : { ...existing, agentRevisionId: input.agentRevisionId };
     this.items.set(bound.id, bound);
     return bound;
-  }
-
-  async createWithInitialAssistantMessage(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    sourceChannel?: string | null;
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    channelContext?: ConversationRecord["channelContext"];
-    verifiedCustomerId?: string | null;
-    entryPageUrl?: string | null;
-    content: string;
-  }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    const conversation = await this.create({
-      workspaceId: input.workspaceId,
-      agentId: input.agentId ?? null,
-      sourceChannel: input.sourceChannel ?? null,
-      anonymousSessionId: input.anonymousSessionId ?? null,
-      sourceOrigin: input.sourceOrigin ?? null,
-      channelContext: input.channelContext ?? null,
-      verifiedCustomerId: input.verifiedCustomerId ?? null,
-      entryPageUrl: input.entryPageUrl ?? null,
-    });
-    const assistantMessage: MessageRecord = {
-      id: randomUUID(),
-      conversationId: conversation.id,
-      workspaceId: input.workspaceId,
-      role: "assistant",
-      content: input.content,
-      createdAt: new Date(),
-    };
-
-    if (this.messageRepository) {
-      const existing = this.messageRepository.items.get(conversation.id) ?? [];
-      this.messageRepository.items.set(conversation.id, [...existing, assistantMessage]);
-    }
-
-    return { conversation, assistantMessage };
   }
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {

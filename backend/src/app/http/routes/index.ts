@@ -31,6 +31,8 @@ import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js"
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
+import { createWorkspaceEventRoutes } from "./workspaceEventLogRoutes.js";
+import { createWorkspaceEventSubscriptionRoutes } from "./workspaceEventSubscriptionRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
@@ -83,6 +85,8 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createOperatorMcpDashboardRoutes },
   { path: "/api/v1/operator-mcp/oauth", createRouter: createOperatorMcpOauthRoutes },
   { path: "/api/v1/internal/operator-copilot/mcp", createRouter: createOperatorMcpInternalRoutes },
+  { path: "/api/v1/workspace/events", createRouter: createWorkspaceEventRoutes },
+  { path: "/api/v1/workspace/event-subscriptions", createRouter: createWorkspaceEventSubscriptionRoutes },
   { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes },
   { path: "/api/v1", createRouter: createOauthConnectionRoutes },
   { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },

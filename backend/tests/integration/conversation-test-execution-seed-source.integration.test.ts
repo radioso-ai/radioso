@@ -10,6 +10,7 @@ import { RoutineStateRepository } from "../../src/db/repositories/routineStateRe
 import { ConversationTestExecutionSeedSource } from "../../src/modules/chat/services/conversationTestExecutionSeedSource.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 // Verifies the seed against real Postgres: the human-visible thread plus the conversation's
 // live routine, clarification, and directive rows come back as one v1 continuation, keyed to
@@ -23,7 +24,7 @@ describeIntegration("ConversationTestExecutionSeedSource (Postgres)", () => {
   const directiveStateRepository = new DirectiveStateRepository(database.kysely);
   const routineStateRepository = new RoutineStateRepository(database.kysely);
   const source = new ConversationTestExecutionSeedSource({
-    conversations: new ConversationRepository(database.kysely),
+    conversations: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
     messages: new MessageRepository(database.kysely),
     routineStates: routineStateRepository,
     clarifications: clarificationStateRepository,

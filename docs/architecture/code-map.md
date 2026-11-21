@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-18
+last_updated: 2026-11-19
 ---
 
 # Code Map
@@ -936,15 +936,33 @@ Owns the generic approval-gate primitive a routine step or Operator Copilot
 tool call pauses on: a pending decision proposal, its content hash, and the
 resume path once an operator decides.
 
+Resolving claims the decision (`PendingDecisionRepository.claimInTransaction`:
+an advisory lock on the handle and a plain read), then runs the `ResumeRunner`
+(`chat/services/approvalResumeTurn.ts`). The runner reaches the claim's
+transaction only through `commit(work)`, which it calls after its model calls
+and skill dispatches. `commit` locks the conversation row, writes the
+resolution and the `approval_decided` activity, then runs the turn's writes in
+the same transaction. So the transaction takes its transaction id only to
+commit, and the workspace event log keeps serving events while the routine
+resumes. Every write that changes a decision's status holds the
+`pending-decision:<handle>` advisory lock.
+
+The claim locks no rows while the routine resumes. An erasure, including the
+inactivity retention sweep, can therefore remove the conversation mid-resume.
+A skill that already acted has acted once, and the resolve returns `404`
+with nothing of the turn written.
+
 Public surfaces and key files:
 
 - `backend/src/modules/approvals/public.ts`
 - `backend/src/modules/approvals/decisionProposal.ts`
 - `backend/src/modules/approvals/service.ts`
+- `backend/src/db/repositories/pendingDecisionRepository.ts`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts tests/unit/approval-resume-time-zone.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/approvals --no-file-parallelism` (needs `INTEGRATION_DATABASE_URL`)
 - `cd backend && pnpm exec vitest run tests/integration/operatorMcp/operator-mcp-reviewed-approval.integration.test.ts`
 
 ## Operator Notifications
@@ -2339,7 +2357,7 @@ Primary internals:
 - `RoutineHostEffects` in `packages/conversation-contract/index.d.ts` (what a routine turn asks its host to record with the turn: a decision gate, consent events; the engine carries it unread from the runner to the claim's effects and `ProcessTurnResult` as `hostEffects`)
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
-- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector
+- `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector, and `frontend/components/dashboard/routine-filled-slots.tsx` lists the filled slots, beside their values on a Test Chat trace
 - `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
@@ -2555,12 +2573,110 @@ Related docs:
 - `docs/human-takeover.md#conversation-activity`
 - `docs/human-takeover.md#held-replies`
 
+## Workspace Event Log
+
+Owns the workspace event log (#1851): business events an automation acts on
+(`conversation.started`, `contact_request.created`, `handoff.requested`,
+`routine.completed`, `decision.pending`), each written in the transaction of the
+change it records and listed at `GET /api/v1/workspace/events` by a cursor that
+never passes a row still being committed. It is not the dashboard's
+`GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
+module builds each event from its own facts and records it through the
+`WorkspaceEventRecorder` that `app/composition/workspaceEventLog.ts`, the one
+seam, hands it; the log copies the conversation's agent, channel, caller kind
+and visitor from the conversation row in the same statement, and records
+nothing for a conversation history's default lists leave out (operator testing).
+
+Where each type is recorded:
+
+- `conversation.started`: `ConversationRepository`'s insert methods, which take
+  the recorder in their constructor (`forExistingConversations(db)` builds one
+  that cannot start a conversation)
+- `contact_request.created`, `decision.pending`, `routine.completed`: the chat
+  turn's transaction (`modules/chat/infra/turnOutboxWrites.ts`), and a notify
+  step's `contact.send` through `ContactRequestRecordingOutbox`, with an input
+  bound to a sensitive slot masked (`maskedPayload`); an ended run's masked
+  values and the routine's declared slots are captured with the routine-state
+  transition (`modules/chat/services/routines/routineRunEvents.ts`)
+- `handoff.requested`: every `handoff_requested` conversation activity, through
+  `withWorkspaceEvents` in the composition seam
+- `document.processed`, `document.failed`: a vectorize job's terminal write
+  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
+  fence (`status = 'processing'` and the claimed attempt) hits, from drafts the
+  worker builds (`modules/documents/services/documentWorkspaceEvents.ts`); the
+  log copies the document's title, content kind and source from its row, and
+  records nothing for a revision the document has moved past. Deleting a
+  document removes its events through `DocumentEventEraser`, which
+  `DocumentRepository` takes from the composition seam
+
+Reads run in one repeatable-read snapshot and stop at
+`pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
+long write transaction delays newer events until it ends; every pool sets
+`idle_in_transaction_session_timeout` to five minutes (`shared/infra/database.ts`)
+so one left open cannot hold the horizon for long, and the `workspace_events.list`
+span reports `workspace_events.horizon_xid_lag`. Events are kept 30 days (a
+`ConversationDataRetentionRule`), go with their conversation by a cascading key,
+and a withdrawn consent's events leave through a `MessageCopyWithholder` that
+removes them by routine and slot keys as well as by value.
+
+Event subscriptions (#1852) push the same events to URLs that receivers
+subscribe and unsubscribe over the API at
+`/api/v1/workspace/event-subscriptions` under
+`workspace.event_subscriptions.manage`. One `workspace_events.deliver`
+background job per subscription (`rerun`, keyed by the subscription) drains up
+to ten of its events per run, in log order through the log's own reader, and
+moves its cursor to the read's horizon when it catches up; one signed POST per event
+(`createSignedWebhookHeaders`, `Idempotency-Key` = event id), after re-checking
+the creating credential or teammate (`EventSubscriptionOwnerCheck`, adapted from
+machine access and account access in the composition seam). A `2xx` advances the
+subscription's cursor, `410` deletes it, anything else backs off
+`min(30 s × 2^(n−1), 1 h)` with newer events behind it, and a day of failures
+(five tries at least) disables it. The built-in `workspace-event-delivery`
+periodic task (every minute; Cloud Scheduler `workspace_event_delivery` in
+`infra/terraform/scheduler.tf`) starts every due drain, and the chat turn's
+`afterCommit` and the document worker's event-bearing completions and failures
+wake their workspace's drains sooner. Target URLs pass the outbound
+URL rule (`normalizeWebhookTargetUrl` in `shared/infra/http/signedWebhook.ts`,
+shared with webhook destinations) at create and the DNS-pinned guard at every
+hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`, and a keyed
+hash of the URL makes a create of a subscribed URL replace its subscription with a
+new id (carrying an active one's cursor). Settings
+lists and deletes them on the API access tab; Ray reads them with
+`list_event_subscriptions`.
+
+Public surfaces and key files:
+
+- `backend/src/shared/domain/workspaceEventLog.ts` (types, versions, data schemas, recorder and store ports)
+- `backend/src/shared/domain/workspaceEventSubscriptions.ts` (subscription store port, delivery wake port)
+- `backend/src/modules/workspaceEventLog/README.md`, `public.ts` (`WorkspaceEventLog`, read permissions, `EventSubscriptionService`, `WorkspaceEventDeliveryDrain`, `WorkspaceEventDeliveryScheduler`)
+- `backend/src/db/repositories/workspaceEventLogRepository.ts` (recorder, snapshot reads, retention, withholder)
+- `backend/src/db/repositories/workspaceEventSubscriptionRepository.ts` (subscriptions, cap under an advisory lock, due search)
+- `backend/src/app/composition/workspaceEventLog.ts` (the recorder seam, the bridged activity recorder, the log, delivery, the owner check, the wake)
+- `backend/src/app/http/routes/workspaceEventLogRoutes.ts` (`GET /api/v1/workspace/events`, `workspace.events.read`)
+- `backend/src/app/http/routes/workspaceEventSubscriptionRoutes.ts` (subscription CRUD; the push is the OpenAPI `workspaceEvent` webhook)
+- `frontend/components/dashboard/settings/event-subscriptions-card.tsx` (Settings → API access list and delete)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/workspaceEventLog tests/unit/deferred-routine-store.test.ts tests/contract/workspace-event-log.contract.test.ts tests/contract/workspace-event-subscriptions.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/workspace-event-log.integration.test.ts tests/integration/workspace-event-subscriptions.integration.test.ts tests/integration/consent-withdrawal.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec playwright test tests/e2e/event-subscriptions.spec.ts`
+
+Related docs:
+
+- [Workspace event log](../../docs-portal/content/api/workspace-event-log.mdx)
+- [Workspace event subscriptions](../../docs-portal/content/api/workspace-event-subscriptions.mdx)
+- `specs/957-workspace-events/spec.md`
+
 ## Audience Pulse
 
 Owns the saved 30-day dashboard analysis that groups recurring conversation
 topics, identifies recurring content gaps from grounding evidence, proposes
 content to write, and opens bounded evidence or a seeded document draft in the
-existing dashboard surfaces. It also owns the topic census: an exact
+existing dashboard surfaces. The report also counts the whole window by answer
+status, by UTC day, and by channel, against the 30 days before it, and keeps the
+operator's state on its content queue: topics marked "not for us" and documents
+drafted from a topic. It also owns the topic census: an exact
 clustering of every eligible visitor question in an analysis window into
 topics, with topic identity (survived, split, merged, emerged, dissolved)
 tracked across analyses so growth and decline are attributable rather than
@@ -2579,15 +2695,19 @@ Public surfaces and contracts:
 - `backend/src/modules/audiencePulse/contracts/topicCensus.ts` (`TopicRepositoryPort` and the run/topic/membership/transition input shapes)
 - `backend/src/modules/audiencePulse/contracts/topicLabel.ts` (`TopicNamingPort`, `TopicLabelPrivacyAuditPort`)
 - `backend/src/modules/audiencePulse/composition.ts`
-- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
-- `frontend/components/dashboard/audience-pulse-view.tsx`
-- `frontend/lib/api-audience-pulse.ts`
-- `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
-- `frontend/lib/audience-pulse-answer-status.ts` (pure answer-status labels, counts line, and example ordering for the topic rows)
+- `backend/src/modules/audiencePulse/contracts/history.ts` (`AudiencePulseHistorySource`, including `readPeriodOutcomes`, the text-free per-question outcomes of the previous window)
+- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, `POST /api/v1/quality/audience-pulse/evidence-anchor`, `PUT|DELETE /api/v1/quality/audience-pulse/topics/:topicId/dismissal`, and `POST /api/v1/quality/audience-pulse/topics/:topicId/drafts`)
+- `frontend/components/dashboard/audience-pulse-view.tsx` (read, refresh, and the evidence and draft handoffs) over `frontend/components/dashboard/audience-pulse/` (`pulse-report.tsx` composes tiles, the answer split, the topics table, By channel, Content to write, and the footer; `use-topic-dismissals.ts` saves "not for us" behind an optimistic choice)
+- `frontend/lib/api-audience-pulse.ts` (including `dismissTopic`, `restoreTopic`, and `linkTopicDraft`)
+- `frontend/lib/audience-pulse-figures.ts` (pure figures: the answer split shared by the window and each topic, tile deltas, the 50-question sample floor, topic comparison, filters and sorting, the Other row, the channel flag) and `frontend/lib/audience-pulse-queue.ts` (Content to write: ranking, titles and questions with their fallbacks, dismissals)
+- `frontend/lib/audience-pulse-draft-seed.ts` (the seed carries its `topicId`; `linkAudiencePulseDraft` records the saved document, best-effort) and `frontend/lib/audience-pulse-evidence-handoff.ts`
+- `frontend/components/dashboard/shared/stat-tile.tsx`, `delta-chip.tsx`, and `sparkline.tsx`, the tile anatomy Quality's health row shares
 
 Primary internals:
 
-- `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
+- `backend/src/modules/audiencePulse/services/audiencePulseService.ts` (refresh orchestration, the previous-period read, and the topic queue actions)
+- `backend/src/modules/audiencePulse/services/reportHydration.ts` (stored report plus rehydrated evidence plus topic state into the response) and `narrativeReuse.ts`
+- `backend/src/modules/audiencePulse/domain/report.ts` and `domain/periodTotals.ts` (pure report aggregation: totals with the unclassified remainder, daily volume, channels, previous period)
 - `backend/src/modules/audiencePulse/services/censusService.ts` (orchestrates one census run: population, facets, clustering, naming, identity matching, persistence)
 - `backend/src/modules/audiencePulse/infra/censusServiceFactory.ts`, `modelTopicNamingGateway.ts`, `modelTopicLabelPrivacyAuditGateway.ts`
 - `backend/src/modules/audiencePulse/services/topicLabelPrivacyAudit.ts` (regenerate-once-then-neutral-fallback privacy pass over a generated label)
@@ -2595,8 +2715,10 @@ Primary internals:
 - `backend/src/modules/audiencePulse/infra/audiencePulseRefreshRateLimiter.ts`
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
+- `backend/src/db/repositories/audiencePulseTopicStateRepository.ts` (`audience_pulse_topic_dismissals`, `audience_pulse_topic_drafts`)
+- `backend/src/db/repositories/audiencePulseHistoryHorizonRepository.ts` (workspace creation and conversation retention, which bound the previous-period comparison)
 - `backend/src/db/repositories/topicRepository.ts` (`topics`, `topic_census_runs`, `topic_memberships`, `topic_transitions`)
-- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`
+- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`, `263_audience_pulse_topic_state.sql`
 - `backend/prompts/audience-pulse.md`, `audience-pulse-topic-naming.md`, `audience-pulse-topic-fallback.md`, `audience-pulse-topic-audit.md`
 
 Useful searches:
@@ -2606,7 +2728,8 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/audiencePulse tests/integration/audiencePulse tests/contract/audiencePulse`
-- `cd frontend && pnpm exec playwright test tests/e2e/audience-pulse.spec.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/audience-pulse-figures.test.ts tests/unit/audience-pulse-queue.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/audience-pulse.spec.ts` (busy and quiet reports in `tests/e2e/audience-pulse-fixtures.ts`)
 
 Related specs:
 
@@ -2883,7 +3006,13 @@ Turn debug view entry points:
   by the Flow, the dispatch stage detail, and the routine step timeline
 - `frontend/components/dashboard/turn-flow-graph.tsx` and `turn-flow-overlay.tsx` —
   the draw layer and its full-screen host
-- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts`
+- `frontend/lib/turn-trace.ts` (`answerCoverageFromTurnTrace`) — a turn's coverage
+  from its verdict stage or its summary's `answerCoverageAvailability`
+- Test Chat's messages carry the ids its transcript stores them under (each side's
+  history entries, and `side_started.userMessageId` for a message just sent), the
+  ids the turn's trace names, so the Flow's Message and History steps resolve them;
+  `TrustedTestExecutionRunnerAdapter` replays a turn under those ids
+- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts tests/unit/turn-trace.test.ts tests/unit/agent-test-execution-state.test.ts`
 
 Useful searches:
 
@@ -2962,6 +3091,34 @@ Related docs and specs:
 - `packages/radioso-mcp-server/README.md`
 - `specs/043-mcp-context-server/`
 - `specs/061-mcp-deployment-modes/`
+
+## n8n Community Node
+
+Owns the `@radioso/n8n-nodes-radioso` package: the Radioso API credential and the
+Radioso action node (ask an agent, search and answer from knowledge, add a
+document, get a conversation), usable as an AI Agent tool.
+
+Should not import the TypeScript SDK or any runtime dependency: n8n verifies
+community nodes only when the package has none, so requests go through n8n's own
+HTTP helpers. Backend and frontend never import it. Its linter is `n8n-node lint`
+(the root ESLint config ignores it); it installs with npm and its own
+`package-lock.json` outside the pnpm workspace, so n8n's tooling advisories stay
+out of the root lockfile. It has its own CI job and provenance publish workflow.
+
+Primary paths:
+
+- `packages/n8n-nodes-radioso/nodes/Radioso/requests.ts` (operation to request mapping)
+- `packages/n8n-nodes-radioso/nodes/Radioso/errors.ts` (HTTP status to n8n error text)
+- `packages/n8n-nodes-radioso/credentials/RadiosoApi.credentials.ts`
+- `.github/workflows/publish-n8n-node.yml`
+
+Focused checks:
+
+- `cd packages/n8n-nodes-radioso && npm ci && npm run lint && npm test && npm run build`
+
+Every route the node calls must stay machine-eligible in
+`backend/src/app/http/apiPrincipalRoutePolicy.ts`; operator reply and decision
+routes are session-only, so the node does not expose them.
 
 ## TypeScript SDK
 

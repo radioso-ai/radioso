@@ -224,7 +224,7 @@ The package has no stdio MCP entrypoint. Hosted clients require a public HTTPS d
 
 ### Website embed
 
-One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work on the host site, and origin policy stays under your control. The widget, theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top. The **Web chat** page under an agent's Channels section holds both placements — public link and website widget — with each public-launch credential's status and last use; rotation stops new sessions on the old value immediately. Public-launch credentials are separate from personal and service API credentials. See the [website embed quickstart](https://docs.radioso.ai/quickstarts/website-embed).
+One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work on the host site, and origin policy stays under your control. The widget, its theming, origin approval, and handing a conversation to a person are all part of the open-source build. Enterprise Edition (`ee/`) holds what Radioso needs to run as a cloud service for many separate organizations: organization creation, plans and billing, usage limits, managed models, Google sign-in, and a staff console. The **Web chat** page under an agent's Channels section holds both placements — public link and website widget — with each public-launch credential's status and last use; rotation stops new sessions on the old value immediately. Public-launch credentials are separate from personal and service API credentials. See the [website embed quickstart](https://docs.radioso.ai/quickstarts/website-embed), [Customize the website widget](https://docs.radioso.ai/guides/customize-the-widget) for colors, position, the welcome message, and suggested questions, and [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders) for Wix, Shopify, Webflow, Squarespace, WordPress, and Google Tag Manager.
 
 ## Configuration and operations
 
@@ -258,9 +258,10 @@ Found a security vulnerability? Report it privately — see [SECURITY.md](./SECU
 
 ## License
 
-Radioso is dual-licensed:
+Radioso is licensed in three parts:
 
 - The open-source edition is licensed under the [Apache License, Version 2.0](./LICENSE).
 - The files under [`ee/`](./ee) are Radioso Enterprise Edition, commercial source-available software governed by [`ee/LICENSE`](./ee/LICENSE), and are **not** covered by Apache 2.0. We are happy for everyone to run Radioso for business and personal purposes; `ee/` holds the features and setups we need to run Radioso as a cloud service, and using them requires a commercial license. Contact us for inquiries!
+- The files under [`packages/n8n-nodes-radioso/`](./packages/n8n-nodes-radioso) are the n8n community node, licensed under the [MIT License](./packages/n8n-nodes-radioso/LICENSE), which n8n requires of verified community nodes.
 
-See [NOTICE](./NOTICE) for attribution and the Enterprise Edition.
+See [NOTICE](./NOTICE) for attribution and these carve-outs.

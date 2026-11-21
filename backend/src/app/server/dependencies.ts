@@ -39,7 +39,7 @@ import {
   FacetExtractionService,
   FacetExtractionWorkspaceDrainService,
 } from "../../modules/facets/composition.js";
-import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
+import { ProbeRoutineReader, RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
@@ -100,7 +100,7 @@ import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCop
 import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ConversationIngestService, ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
-import { ProbeRoutineReader } from "../../modules/routines/public.js";
+import { buildWorkspaceEventDelivery } from "../composition/workspaceEventLog.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
@@ -142,8 +142,7 @@ import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitO
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
 import { createConsentWithdrawal } from "../composition/consentWithdrawal.js";
 import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
-import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
-import { identityNoncePrunePeriodicTask } from "../composition/identityNoncePrune.js";
+import { buildPeriodicTaskEntries } from "../composition/periodicTasks.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { createPostgresDataSubjectAccess } from "../composition/dataSubjectAccess.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
@@ -237,6 +236,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     personalCredentialLifecycle,
     lifecycleUnitOfWork: new AccessGrantLifecycleUnitOfWork(infrastructure.database.kysely),
   });
+  // Event subscriptions (#1852): their service, the drain job's handler, and the delivery sweep.
+  const workspaceEventDelivery = buildWorkspaceEventDelivery({ infrastructure, env, queue: backgroundJobs.queue, access, workspaces: repositories.workspaceRepository, logger });
   const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
   const notificationRecipientPolicy = buildNotificationRecipientPolicy({
     database: infrastructure.database,
@@ -281,6 +282,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     infrastructure,
     logger,
     repositories,
+    workspaceEventDelivery: workspaceEventDelivery.wake,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
@@ -344,11 +346,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
   });
   const teammateLabels = createTeammateLabelReader({ users: repositories.userRepository });
-  const conversationActivity = createConversationActivityComposition({
-    store: repositories.conversationActivityRepository,
-    teammateLabels,
-    messages: repositories.messageRepository,
-  });
+  const conversationActivity = createConversationActivityComposition({ repositories, teammateLabels });
   // Photos visitors and API callers attach: stored under the workspace, read with the agent's chat model.
   const visitorImages = wireVisitorImages({ infrastructure, storage: documents.documentStorage, agents: repositories.agentRepository, resolver: llmCapabilityResolver, logger });
   const chat = buildChatServices({
@@ -361,6 +359,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     backgroundJobs: backgroundJobs.queue,
+    workspaceEventDelivery: workspaceEventDelivery.wake,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
     conversationActivity,
@@ -1037,6 +1036,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     notificationDeliveries,
+    eventSubscriptions: workspaceEventDelivery.subscriptions,
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -1162,29 +1162,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     invalidation: realtimePublisherComposition.publisher, auditLog: infrastructure.auditService,
   });
-  const periodicTaskEntries = [
-    // Built in: every deployment enforces the retention its workspaces set, through the erasure.
-    conversationRetentionPeriodicTask(createConversationRetentionSweep({
-      db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService,
-      logger, metrics: infrastructure.metricsRegistry,
-    })),
-    // Built in: recordings a deletion left pending with no job working on them are queued again.
-    voiceRecordings.erasureRecoveryTask,
-    // Built in: single-use nonces of verified visitor identities are deleted once their window has passed.
-    identityNoncePrunePeriodicTask({ nonces: repositories.identityNonceRepository, logger }),
-    ...composition.periodicTaskRegistrations.map((registration) => ({
-      id: registration.id,
-      intervalMs: registration.intervalMs,
-      handle: registration.create({
-        database: infrastructure.database,
-        logger,
-        audit: infrastructure.auditService,
-        noticeMail,
-        accountAdministrators,
-        appBaseUrl: env.APP_BASE_URL ?? null,
-      }),
-    })),
-  ];
+  const periodicTaskEntries = buildPeriodicTaskEntries({
+    retention: { db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger, metrics: infrastructure.metricsRegistry },
+    identityNonces: { nonces: repositories.identityNonceRepository, logger },
+    voiceRecordingErasureRecovery: voiceRecordings.erasureRecoveryTask,
+    workspaceEventDelivery: workspaceEventDelivery.periodicTask,
+    contributed: {
+      registrations: composition.periodicTaskRegistrations,
+      context: { database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null },
+    },
+  });
   const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
   const conversationLinks = buildConversationLinkResolver({
     database: infrastructure.database,
@@ -1194,6 +1181,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
   const slackInboundJobs = buildSlackInboundJobComposition({
     db: infrastructure.database.kysely,
+    workspaceEvents: infrastructure.workspaceEvents,
     logger,
     chatService: chat.chatService,
     conversationIngestService,
@@ -1209,6 +1197,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     slackInbound: slackInboundJobs.backgroundJobHandlers,
     voiceRecordingErasure: voiceRecordings.erasureJobHandler,
     visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
+    workspaceEventDelivery: workspaceEventDelivery.jobHandler,
     workspaceStoragePurge: workspaceStoragePurgeHandler({
       storage: documents.documentStorage,
       owners: repositories.documentStorageOwnerRepository,
@@ -1409,6 +1398,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     operatorNoticeDestinations,
     notificationDeliveries,
+    workspaceEventLog: infrastructure.workspaceEventLog,
+    workspaceEventSubscriptions: workspaceEventDelivery.subscriptions,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,

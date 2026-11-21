@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Radioso API",
-    "version": "0.1.0",
+    "version": "1",
     "description": "Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token."
   },
   "servers": [
@@ -31,6 +31,9 @@
     },
     {
       "name": "Workspace"
+    },
+    {
+      "name": "Workspace Events"
     },
     {
       "name": "Realtime"
@@ -23181,6 +23184,24 @@
           "evidence"
         ]
       },
+      "AudiencePulseTopicDraft": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "documentId",
+          "createdAt"
+        ],
+        "description": "A document drafted from the topic. It disappears with the document."
+      },
       "AudiencePulseContentGap": {
         "type": "object",
         "properties": {
@@ -23194,13 +23215,225 @@
           "distinctConversationCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "dismissedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When an operator marked the topic \"not for us\", read at request time. A dismissal changes no count; null while the topic is in the queue."
+          },
+          "latestDraft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudiencePulseTopicDraft"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest document drafted from the topic that still exists, read at request time."
           }
         },
         "required": [
           "themeId",
           "eligibleEvidenceCount",
-          "distinctConversationCount"
+          "distinctConversationCount",
+          "dismissedAt",
+          "latestDraft"
         ]
+      },
+      "AudiencePulseAnswerTally": {
+        "type": "object",
+        "properties": {
+          "questionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "answers": {
+            "$ref": "#/components/schemas/AudiencePulseAnswerSummary"
+          },
+          "contentGapEligibleCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "questionCount",
+          "answers",
+          "contentGapEligibleCount"
+        ]
+      },
+      "AudiencePulseReportTotals": {
+        "type": "object",
+        "properties": {
+          "questionCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Every eligible question in the period; equals coverage.populationSize."
+          },
+          "conversationCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Distinct conversations with at least one eligible question."
+          },
+          "answers": {
+            "$ref": "#/components/schemas/AudiencePulseAnswerSummary"
+          },
+          "contentGapEligibleCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Questions with no answer in the workspace's content."
+          },
+          "unclassified": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AudiencePulseAnswerTally"
+              },
+              {
+                "description": "The questions no topic claimed. With every topic's own counts, they make up the totals."
+              }
+            ]
+          }
+        },
+        "required": [
+          "questionCount",
+          "conversationCount",
+          "answers",
+          "contentGapEligibleCount",
+          "unclassified"
+        ]
+      },
+      "AudiencePulseDailyVolume": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "A UTC calendar day."
+          },
+          "questionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conversationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "answeredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contentGapEligibleCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "day",
+          "questionCount",
+          "conversationCount",
+          "answeredCount",
+          "contentGapEligibleCount"
+        ]
+      },
+      "AudiencePulsePreviousPeriod": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ]
+          },
+          "questionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conversationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "answeredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contentGapEligibleCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "period",
+          "questionCount",
+          "conversationCount",
+          "answeredCount",
+          "contentGapEligibleCount"
+        ],
+        "description": "The 30 days immediately before the report's period, counted by the same rule."
+      },
+      "AudiencePulseChannelVolume": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conversation's source channel; null when it records none."
+          },
+          "questionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "answeredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contentGapEligibleCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "channel",
+          "questionCount",
+          "answeredCount",
+          "contentGapEligibleCount"
+        ]
+      },
+      "AudiencePulseTopicDraftLinkRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "documentId"
+        ],
+        "additionalProperties": false
       },
       "AudiencePulseDissolvedTopic": {
         "type": "object",
@@ -23358,6 +23591,46 @@
             "items": {
               "type": "string"
             }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AudiencePulseReportTotals"
+          },
+          "dailyVolume": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudiencePulseDailyVolume"
+            },
+            "description": "One entry per UTC day the period touches, zero-filled and ascending."
+          },
+          "previousPeriod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudiencePulsePreviousPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the 30 days before the period had no eligible question."
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudiencePulseChannelVolume"
+            },
+            "description": "By the conversation's source channel, the largest first."
+          },
+          "previousGeneratedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "generatedAt of the earlier report each topic's previousMemberCount and previousShare come from."
           }
         },
         "required": [
@@ -24791,6 +25064,1039 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "ConversationStartedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "conversation.started"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation was with when the event was recorded."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "ContactRequestCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "contact_request.created"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation was with when the event was recorded."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
+              },
+              "contactRequestId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The queued contact request's stable id. Read the conversation it came from with `GET /api/v1/history/chat/{conversationId}`."
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "contactRequestId",
+              "values"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "HandoffRequestedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "handoff.requested"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation was with when the event was recorded."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "routine_handoff",
+                  "routine_stuck",
+                  "routine_consent_declined",
+                  "retrieval_miss",
+                  "operator_takeover",
+                  "operator_only_mailbox",
+                  "generation_budget",
+                  "review_unavailable",
+                  "policy_changed"
+                ],
+                "description": "Why the conversation went to a person, as a handoff reason code."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "RoutineCompletedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "routine.completed"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation was with when the event was recorded."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "executionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The routine run. A visitor's later correction to the run's values records the run again under the same id."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "handoff",
+                  "action",
+                  "stuck",
+                  "consent_declined"
+                ],
+                "description": "How the run ended: at an authored `complete`, `handoff` or `action` ending, `stuck` past its re-ask limit, or `consent_declined`."
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`."
+              },
+              "sensitiveSlotKeys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The keys in `values` that are sensitive, whose values are masked."
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "routineId",
+              "executionId",
+              "outcome",
+              "values",
+              "sensitiveSlotKeys"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "DecisionPendingEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "decision.pending"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "conversationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The agent the conversation was with when the event was recorded."
+              },
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The channel the conversation arrived on, as history's `sourceChannel` names it."
+              },
+              "callerKind": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "description": "`human` for a person, `agent` for software calling the agent."
+              },
+              "visitorId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The visitor the conversation belonged to when the event was recorded, when the channel identifies one."
+              },
+              "decisionHandle": {
+                "type": "string"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "stepId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The reason the routine's author wrote on the decision step."
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                }
+              },
+              "deadline": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "conversationId",
+              "agentId",
+              "channel",
+              "callerKind",
+              "visitorId",
+              "decisionHandle",
+              "routineId",
+              "stepId",
+              "reason",
+              "options",
+              "deadline"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "DocumentProcessedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "document.processed"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "The document revision the event is about. A changed or reprocessed document is processed again as its next revision."
+              },
+              "title": {
+                "type": "string",
+                "description": "The document's title when the event was recorded. An uploaded file's title comes from its file name."
+              },
+              "contentKind": {
+                "type": "string",
+                "enum": [
+                  "inline_text",
+                  "uploaded_file"
+                ],
+                "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
+              },
+              "sourceKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "website",
+                  "api",
+                  "connector",
+                  "upload",
+                  null
+                ],
+                "description": "The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source."
+              },
+              "sourceId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The document source the document belongs to. Null for a document with no source."
+              }
+            },
+            "required": [
+              "documentId",
+              "revision",
+              "title",
+              "contentKind",
+              "sourceKind",
+              "sourceId"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "DocumentFailedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's id: stable, and the key a delivery or a poller deduplicates on."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "document.failed"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The version of this type's `data` schema the event was written with."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change the event records happened."
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "The document revision the event is about. A changed or reprocessed document is processed again as its next revision."
+              },
+              "title": {
+                "type": "string",
+                "description": "The document's title when the event was recorded. An uploaded file's title comes from its file name."
+              },
+              "contentKind": {
+                "type": "string",
+                "enum": [
+                  "inline_text",
+                  "uploaded_file"
+                ],
+                "description": "How the content arrived, as the document's own `sourceKind`: `inline_text` for text, `uploaded_file` for a file."
+              },
+              "sourceKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "website",
+                  "api",
+                  "connector",
+                  "upload",
+                  null
+                ],
+                "description": "The kind of document source the document belongs to, as the document source's `kind`: `website` for a crawled site, `connector` for a synced connector, `upload` for the workspace's uploads, `api` for an API source. Null for a document with no source."
+              },
+              "sourceId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "The document source the document belongs to. Null for a document with no source."
+              },
+              "failureCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why processing failed, as an error code such as `provider_misconfigured`. Null when the failure carried no code. The failure's message is never included."
+              }
+            },
+            "required": [
+              "documentId",
+              "revision",
+              "title",
+              "contentKind",
+              "sourceKind",
+              "sourceId",
+              "failureCode"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "version",
+          "occurredAt",
+          "workspaceId",
+          "data"
+        ]
+      },
+      "WorkspaceEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ConversationStartedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ContactRequestCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/HandoffRequestedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineCompletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionPendingEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentProcessedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentFailedEvent"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "conversation.started": "#/components/schemas/ConversationStartedEvent",
+            "contact_request.created": "#/components/schemas/ContactRequestCreatedEvent",
+            "handoff.requested": "#/components/schemas/HandoffRequestedEvent",
+            "routine.completed": "#/components/schemas/RoutineCompletedEvent",
+            "decision.pending": "#/components/schemas/DecisionPendingEvent",
+            "document.processed": "#/components/schemas/DocumentProcessedEvent",
+            "document.failed": "#/components/schemas/DocumentFailedEvent"
+          }
+        }
+      },
+      "WorkspaceEventPage": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceEvent"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place."
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "True when more events follow `nextCursor` now."
+          }
+        },
+        "required": [
+          "events",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
+      "EventSubscription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "zapier",
+              "n8n",
+              "custom"
+            ],
+            "description": "Which client registered it."
+          },
+          "targetHost": {
+            "type": "string",
+            "description": "The host events are POSTed to. The full target URL is never returned after create."
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "conversation.started",
+                "contact_request.created",
+                "handoff.requested",
+                "routine.completed",
+                "decision.pending",
+                "document.processed",
+                "document.failed"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "description": "`disabled` receives nothing more until its client subscribes the same URL again."
+          },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delivery_failing",
+              "creator_revoked",
+              null
+            ],
+            "description": "`delivery_failing` after a day of failed deliveries; `creator_revoked` once the credential or teammate that created it may no longer read its types."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "service_account",
+                  "personal_token",
+                  "teammate"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The service account's or token's name, or the teammate's display name, as it reads now. Null for a teammate without a display name."
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ],
+            "additionalProperties": false
+          },
+          "lastDelivery": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "delivered",
+                  "failed"
+                ]
+              },
+              "statusCode": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The target's HTTP status, or null when no response came back (a timeout, a refused or unresolvable host)."
+              }
+            },
+            "required": [
+              "at",
+              "outcome",
+              "statusCode"
+            ],
+            "additionalProperties": false
+          },
+          "failingSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current run of failed deliveries began; null while delivering."
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "targetHost",
+          "eventTypes",
+          "status",
+          "disabledReason",
+          "createdAt",
+          "createdBy",
+          "lastDelivery",
+          "failingSince"
+        ],
+        "additionalProperties": false
+      },
+      "EventSubscriptionCreated": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/EventSubscription"
+          },
+          "signingSecret": {
+            "type": "string",
+            "description": "Verifies `X-Radioso-Signature` on every push. Returned only here; store it now. Subscribing the same URL again issues a new one."
+          }
+        },
+        "required": [
+          "subscription",
+          "signingSecret"
+        ]
+      },
+      "CreateEventSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "targetUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id."
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "conversation.started",
+                "contact_request.created",
+                "handoff.requested",
+                "routine.completed",
+                "decision.pending",
+                "document.processed",
+                "document.failed"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 7,
+            "description": "The event types to receive. Each needs the permission that reads it from the event log."
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "zapier",
+              "n8n",
+              "custom"
+            ],
+            "description": "Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings."
+          }
+        },
+        "required": [
+          "targetUrl",
+          "eventTypes",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "EventSubscriptionList": {
+        "type": "object",
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventSubscription"
+            }
+          }
+        },
+        "required": [
+          "subscriptions"
+        ]
+      },
+      "EventSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/EventSubscription"
+          }
+        },
+        "required": [
+          "subscription"
         ]
       },
       "ConversationConsent": {
@@ -27362,6 +28668,11 @@
               "sideId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "userMessageId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The id this side's history stores the turn's message under, the id the turn's trace names it by. Absent for a message stored before messages had ids."
               }
             },
             "required": [
@@ -53015,6 +54326,369 @@
         }
       }
     },
+    "/api/v1/workspace/events": {
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "List workspace events",
+        "description": "Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.",
+        "operationId": "listWorkspaceEvents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent."
+            },
+            "required": false,
+            "description": "Comma-separated event types to list, such as `routine.completed,contact_request.created`. Every type the caller may read when absent.",
+            "name": "types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "description": "A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log."
+            },
+            "required": false,
+            "description": "A `nextCursor` this list returned for the same `types`. Without it, the newest events and a cursor at the end of the log.",
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Events per page, 1 to 100. Defaults to 50."
+            },
+            "required": false,
+            "description": "Events per page, 1 to 100. Defaults to 50.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of workspace events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid query, an unknown event type, or a cursor issued for different types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Event log read permission required, or a requested type the caller may not read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The cursor is older than the log's retention window; start again without one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspace/event-subscriptions": {
+      "post": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Subscribe a URL to workspace events",
+        "description": "Each event of `eventTypes` recorded from now on is POSTed to `targetUrl`, one event per request, in the order `GET /api/v1/workspace/events` lists them. The response carries `signingSecret` once; verify every push's `X-Radioso-Signature` with it. Subscribing a URL the workspace already subscribed replaces that subscription with a new one: a new `id` and a new secret, its place in the log carried over from an active one, the newest events for a disabled one. The replaced `id` answers `404` from then on, so a create retried after a lost response never leaves two subscriptions delivering the same events, and a late unsubscribe of the replaced `id` leaves the new one alone. The target must be https, without a username or password, on a host that resolves to a public address. A target that answers `410 Gone` is unsubscribed. Each type also needs the permission that reads it from the event log. A workspace holds at most 25 subscriptions. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "createEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscribed, or the existing subscription for this URL replaced by a new one with a new `id`. `signingSecret` is shown only here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid body, or `invalid_target_url`: not https, or not a public host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required, or `event_type_not_permitted` for a type the caller may not read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`event_subscription_limit_reached`: the workspace already holds 25 subscriptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`encryption_not_configured`: the deployment has no key to store the secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "List event subscriptions",
+        "description": "The workspace's subscriptions, newest first, active and disabled. Target URLs are never returned; `targetHost` names where events go. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "listEventSubscriptions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workspace's subscriptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspace/event-subscriptions/{subscriptionId}": {
+      "get": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Get an event subscription",
+        "description": "One subscription, to check it still exists and is `active`. Treat `404` or `disabled` as gone and subscribe the URL again. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "getEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "subscriptionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The subscription",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such subscription in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "Delete an event subscription",
+        "description": "Stops pushes to its target. A push already in flight may still arrive. Requires `workspace.event_subscriptions.manage`.",
+        "operationId": "deleteEventSubscription",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "subscriptionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscription permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such subscription in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/retrieval/answer": {
       "post": {
         "tags": [
@@ -60582,6 +62256,230 @@
         }
       }
     },
+    "/api/v1/quality/audience-pulse/topics/{topicId}/dismissal": {
+      "put": {
+        "tags": [
+          "Audience Pulse"
+        ],
+        "summary": "Mark a topic \"not for us\"",
+        "description": "Takes the topic out of the report's content queue: the content gap reads back with dismissedAt set. No count changes, and the dismissal outlasts a refresh while the topic survives. Requires a browser dashboard session and workspace.quality.manage.",
+        "operationId": "dismissAudiencePulseTopic",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "topicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; a repeated call that changes nothing also answers 204"
+          },
+          "400": {
+            "description": "Malformed topic id or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser dashboard session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.quality.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The topic, or the document, is not in the selected workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Audience Pulse"
+        ],
+        "summary": "Return a dismissed topic to the content queue",
+        "description": "Clears the topic's dismissal. Requires a browser dashboard session and workspace.quality.manage.",
+        "operationId": "restoreAudiencePulseTopic",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "topicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; a repeated call that changes nothing also answers 204"
+          },
+          "400": {
+            "description": "Malformed topic id or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser dashboard session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.quality.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The topic, or the document, is not in the selected workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/quality/audience-pulse/topics/{topicId}/drafts": {
+      "post": {
+        "tags": [
+          "Audience Pulse"
+        ],
+        "summary": "Record a document drafted from a topic",
+        "description": "Links a workspace document to the topic, so the content gap reads back with latestDraft set. Deleting the document removes the link. Requires a browser dashboard session, workspace.quality.manage and workspace.documents.manage.",
+        "operationId": "linkAudiencePulseTopicDraft",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "topicId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudiencePulseTopicDraftLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done; a repeated call that changes nothing also answers 204"
+          },
+          "400": {
+            "description": "Malformed topic id or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Browser dashboard session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.quality.manage or workspace.documents.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The topic, or the document, is not in the selected workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/copilot/availability": {
       "get": {
         "tags": [
@@ -66633,5 +68531,66 @@
       }
     }
   },
-  "webhooks": {}
+  "webhooks": {
+    "workspaceEvent": {
+      "post": {
+        "tags": [
+          "Workspace Events"
+        ],
+        "summary": "A workspace event pushed to a subscription",
+        "description": "Radioso POSTs one event per request to the subscription's target, in log order. The body is the same envelope `GET /api/v1/workspace/events` lists. Verify `X-Radioso-Signature` before trusting the body: `sha256=` and the hex HMAC-SHA256, keyed by the subscription's `signingSecret`, of `{X-Radioso-Timestamp}.{raw body}`. Delivery is at-least-once: deduplicate on `Idempotency-Key`, which is the event's `id`. Answer 2xx within 10 seconds to accept it. `410 Gone` deletes the subscription. Any other answer, a timeout or a redirect to another origin is a failure: the event is retried no sooner than 30 seconds later, the wait doubling after each failure to at most an hour, and newer events wait behind it. A subscription failing for 24 hours, after at least 5 attempts, is disabled.",
+        "operationId": "receiveWorkspaceEvent",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "`sha256=<hex HMAC-SHA256 of \"{timestamp}.{raw body}\" keyed by the signing secret>`"
+            },
+            "required": true,
+            "description": "`sha256=<hex HMAC-SHA256 of \"{timestamp}.{raw body}\" keyed by the signing secret>`",
+            "name": "X-Radioso-Signature",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Unix seconds when the request was signed. Refuse one far from your clock to block replays."
+            },
+            "required": true,
+            "description": "Unix seconds when the request was signed. Refuse one far from your clock to block replays.",
+            "name": "X-Radioso-Timestamp",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The event's `id`. The same event always carries the same key."
+            },
+            "required": true,
+            "description": "The event's `id`. The same event always carries the same key.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted: any 2xx moves the subscription past this event"
+          },
+          "410": {
+            "description": "Gone: the subscription is deleted and receives nothing more"
+          }
+        }
+      }
+    }
+  }
 }

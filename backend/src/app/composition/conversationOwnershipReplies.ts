@@ -36,7 +36,7 @@ export const createPostgresOwnershipReplyUnitOfWork = (deps: {
     const result = await runTransactionWithDeadlockRetry(deps.db, (trx) => {
       // Reset per attempt: an aborted attempt queued nothing.
       queued = null;
-      const conversations = new ConversationRepository(trx);
+      const conversations = ConversationRepository.forExistingConversations(trx);
       const outbox = new ActionRequestRepository(trx);
       return work({
         conversations,

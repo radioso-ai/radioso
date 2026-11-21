@@ -37,8 +37,12 @@ services.
   in those two modules; the graph component only draws.
 - `documents-view.tsx` and `documents/`: document list, import, crawl, edit, and
   inspection UI.
-- `audience-pulse-view.tsx`: saved topic, grounding-gap, and content-recommendation
-  dashboard, with evidence and document-draft handoffs.
+- `audience-pulse-view.tsx`: the saved 30-day Audience Pulse report, its refresh
+  lifecycle, and the evidence and document-draft handoffs. The report itself is
+  `audience-pulse/pulse-report.tsx`: headline tiles, the answer split, the topics
+  table (`topics-table.tsx`, expanding into `topic-detail.tsx`), By channel, and
+  Content to write (`content-queue-section.tsx`). The figures are pure helpers in
+  `frontend/lib/audience-pulse-figures.ts` and `audience-pulse-queue.ts`.
 - `settings-view.tsx` and `settings/`: assistant, retrieval, ingestion, provider,
   and channel settings.
 - `activity-*`: retrieval and activity diagnostics views.
@@ -159,11 +163,16 @@ services.
   client access through `settings/mcp-channel-card.tsx`. The shared credential
   list keeps revoked access in a collapsed history disclosure.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
-- Audience Pulse: `audience-pulse-view.tsx`, `frontend/lib/api-audience-pulse.ts`,
-  `frontend/lib/audience-pulse-answer-status.ts`,
-  `frontend/lib/audience-pulse-draft-seed.ts`,
+- Audience Pulse: `audience-pulse-view.tsx`, `audience-pulse/`,
+  `frontend/lib/api-audience-pulse.ts`, `frontend/lib/audience-pulse-figures.ts`,
+  `frontend/lib/audience-pulse-queue.ts`, `frontend/lib/audience-pulse-draft-seed.ts`,
   `frontend/lib/audience-pulse-evidence-handoff.ts`, `dashboard-routes.ts`, and
-  `documents-view.tsx` / `conversation-drawer.tsx` for handoffs.
+  `documents-view.tsx` (which records a document saved from a Draft against its
+  topic) / `conversation-drawer.tsx` for handoffs. "Not for us" and Draft show for
+  owners and admins (`useWorkspaceCanManage`).
+- Stat tiles: `shared/stat-tile.tsx`, `shared/delta-chip.tsx`, and
+  `shared/sparkline.tsx`, shared by Quality's health row and Audience Pulse;
+  `shared/undo-toast.tsx` is the transient notice with Undo.
 - Shared table/page patterns: `shared/`.
 
 ## Tests

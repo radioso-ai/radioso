@@ -25,6 +25,9 @@ import { createMailAccountInvitationNotifier } from "../../src/app/composition/a
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
 import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
+import { EventSubscriptionService, WorkspaceEventLog } from "../../src/modules/workspaceEventLog/public.js";
+import { InMemoryWorkspaceEventLogStore } from "./inMemoryWorkspaceEventLog.js";
+import { InMemoryWorkspaceEventSubscriptionStore, taggingSealer } from "./inMemoryWorkspaceEventSubscriptions.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -1014,6 +1017,10 @@ export const createTestDependencies = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   /** What happened to each address of each notice; omitted means a workspace that has sent none. */
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
+  /** The workspace event log; omitted means an empty in-memory log. */
+  workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  /** Event subscriptions; omitted means an in-memory store behind the real service, every URL public. */
+  workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
   /** Consent records and their withdrawal; omitted means a conversation with none. */
@@ -2037,6 +2044,13 @@ export const createTestDependencies = (overrides: {
     }) => undefined,
   };
   const notificationDeliveries = new NotificationDeliveryReader({ list: async () => [] });
+  const workspaceEventSubscriptions = overrides.workspaceEventSubscriptions ?? new EventSubscriptionService({
+    store: new InMemoryWorkspaceEventSubscriptionStore(),
+    sealer: taggingSealer,
+    audit: auditService,
+    assertPublicUrl: async () => undefined,
+    allowHttpLoopback: false,
+  });
   const operatorNoticeDestinations = new OperatorNoticeDestinationsReader({
     skills: agentSkillRepository,
     resolver: new ConfiguredContactDeliveryResolver(
@@ -2170,9 +2184,8 @@ export const createTestDependencies = (overrides: {
 
   const teammateLabels = createTeammateLabelReader({ users: userRepository });
   const conversationActivityReads = createConversationActivityComposition({
-    store: conversationActivity,
+    repositories: { conversationActivityRepository: conversationActivity, messageRepository },
     teammateLabels,
-    messages: messageRepository,
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
@@ -2579,7 +2592,7 @@ export const createTestDependencies = (overrides: {
     {
       listPending: async () => [],
       loadByHandle: async () => null,
-      resolveInTransaction: async () => null,
+      claimInTransaction: async () => null,
     },
     {
       resume: async () => {
@@ -2818,6 +2831,7 @@ export const createTestDependencies = (overrides: {
     skillCapabilityRegistry,
     operatorNoticeDestinations,
     notificationDeliveries,
+    eventSubscriptions: workspaceEventSubscriptions,
     contextVariables: contextVariableService,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
@@ -3120,6 +3134,8 @@ export const createTestDependencies = (overrides: {
     agentSkillsService,
     operatorNoticeDestinations,
     notificationDeliveries: overrides.notificationDeliveries ?? notificationDeliveries,
+    workspaceEventLog: overrides.workspaceEventLog ?? new WorkspaceEventLog({ store: new InMemoryWorkspaceEventLogStore() }),
+    workspaceEventSubscriptions,
     notificationRecipientPolicy,
     notificationRecipientSuppressions,
     emailSkillActivityRepository,
@@ -3461,6 +3477,8 @@ export const createTestApp = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
+  workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   conversationErasure?: AppDependencies["conversationErasure"];
   conversationConsents?: AppDependencies["conversationConsents"];
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];

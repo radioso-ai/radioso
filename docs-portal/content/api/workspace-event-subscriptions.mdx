@@ -1,0 +1,148 @@
+---
+title: "Workspace event subscriptions"
+description: "Subscribe a URL to workspace events, verify each signed push, and handle retries, 410 Gone and disabled subscriptions."
+last_updated: 2026-11-20
+---
+
+# Workspace event subscriptions
+
+A subscription sends each new workspace event to a URL you choose, as it happens, so your workflow starts within seconds of a visitor leaving their details instead of on its next poll. Each push is one signed `POST` whose body is the same event the [workspace event log](/api/workspace-event-log) lists.
+
+Any receiver that accepts an HTTPS `POST` works. In n8n, for example, a **Webhook** node gives you the URL, and an **HTTP Request** node, run once with your token, subscribes it. Subscriptions are created over the API; Settings lists them and deletes them.
+
+## Subscribe a URL
+
+Send the target URL, the event types you want, and a label for the client. Use a personal token or a service-account credential that holds `workspace.event_subscriptions.manage`; every role that reads history holds it. Each type also needs the permission that [reads it from the log](/api/workspace-event-log#who-can-read-what), `workspace.events.read` included, the same check every push repeats.
+
+This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching the host where the credential was issued.
+
+```bash
+curl -sS -X POST "https://api.radioso.ai/api/v1/workspace/event-subscriptions" \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetUrl": "https://hooks.example.com/radioso/bookings",
+    "eventTypes": ["routine.completed", "contact_request.created"],
+    "label": "custom"
+  }'
+```
+
+```json
+{
+  "subscription": {
+    "id": "8c3e1f2a-4b5d-4e6f-9a7b-0c1d2e3f4a5b",
+    "label": "custom",
+    "targetHost": "hooks.example.com",
+    "eventTypes": ["routine.completed", "contact_request.created"],
+    "status": "active",
+    "disabledReason": null,
+    "createdAt": "2026-11-19T15:00:00.000Z",
+    "createdBy": { "kind": "service_account", "label": "Booking sync" },
+    "lastDelivery": null,
+    "failingSince": null
+  },
+  "signingSecret": "kV3m9xQ2…"
+}
+```
+
+Store `signingSecret` now: this response is the only time it is shown, and you need it to verify every push. The target URL is never returned again either. Lists show `targetHost` only, because a hook URL can itself be a credential. The host is stored in plain text and named in the workspace's audit log; the full URL and the secret are stored encrypted.
+
+`label` is `zapier`, `n8n` or `custom`, and it is what Settings shows beside the host. The target must be `https`, without a username or password in the URL, on a host that resolves to a public address. A subscription starts at the newest events: it receives what happens after you create it. To catch up on what came before, page the [event log](/api/workspace-event-log).
+
+Subscribe to the types a workflow acts on and no more, because every event is a push your receiver answers. `document.processed` in particular arrives once for each document a crawl, a sync or a reprocess touches, so a large site's sync sends hundreds; the receiver can check `data.sourceKind`, `data.sourceId` and `data.contentKind` to keep only the documents it cares about.
+
+A workspace has one subscription per URL. Subscribing a URL again replaces its subscription with a new one: a new `id`, the new event types, label and creator, and a new `signingSecret` in the response. When the old subscription was active, the new one carries on from the same place in the log, so a create you retry after losing its response neither skips nor repeats an event. When it was disabled, the new one starts at the newest events. The old `id` answers `404` from then on, so an unsubscribe that arrives late for an older copy of your workflow leaves the new subscription alone; treat that `404` as done.
+
+## What a push looks like
+
+Radioso sends one event per request, in the order the log lists them:
+
+```http
+POST /radioso/bookings HTTP/1.1
+Host: hooks.example.com
+Content-Type: application/json
+X-Radioso-Timestamp: 1763564531
+X-Radioso-Signature: sha256=5f0c1b8e…
+Idempotency-Key: 6f1c2d4e-8a90-4b1c-9d2e-3f4a5b6c7d8e
+
+{"id":"6f1c2d4e-8a90-4b1c-9d2e-3f4a5b6c7d8e","type":"routine.completed","version":1,"occurredAt":"2026-11-19T14:02:11.482Z","workspaceId":"4d7293c8-d241-4f8f-a4db-3df5b88da44c","data":{"conversationId":"0b9e6a52-6c1f-4a8e-9f3d-2c7b1e5d4a90","agentId":"a3f0c9d1-2b4e-4f6a-8c7d-9e0f1a2b3c4d","channel":"website_embed","callerKind":"human","visitorId":"c81d4e2a-7f3b-4c9e-a1d5-6b2e8f0c3a7d","routineId":"table-booking","executionId":"5e2d9c1b-3a4f-4e8d-b7c6-1f0a9e8d7c6b","outcome":"complete","values":{"name":"Ada Example","partySize":4,"phone":"[redacted]"},"sensitiveSlotKeys":["phone"]}}
+```
+
+The body is the event envelope, and each type's `data` is described under [event types](/api/workspace-event-log#event-types). `Idempotency-Key` is the event's `id`.
+
+## Verify the signature
+
+`X-Radioso-Signature` is `sha256=` followed by the hex HMAC-SHA256 of `{X-Radioso-Timestamp}.{raw body}`, keyed by the subscription's signing secret. Compute it over the raw bytes you received, before any JSON parsing, and compare in constant time:
+
+```ts
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+export const isRadiosoPush = (rawBody: string, headers: Record<string, string>, secret: string): boolean => {
+  const timestamp = headers['x-radioso-timestamp']
+  const signature = headers['x-radioso-signature']?.replace(/^sha256=/, '') ?? ''
+  if (!/^[a-f0-9]{64}$/i.test(signature)) return false
+  // Refuse a push signed more than five minutes from your clock, so a captured one cannot be replayed later.
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false
+  const expected = createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest()
+  return timingSafeEqual(expected, Buffer.from(signature, 'hex'))
+}
+```
+
+It is the same recipe [webhook skills](/automation/webhook-skills) sign with.
+
+## Answer, retry and unsubscribe
+
+Your answer decides what happens next:
+
+| Your receiver answers | What Radioso does |
+|---|---|
+| Any `2xx` within 10 seconds | Records the delivery and sends the next event. |
+| `410 Gone` | Deletes the subscription. Nothing more is sent. A receiver that no longer wants events answers this to unsubscribe. |
+| Anything else, a timeout, or a redirect to another origin | Records a failure and tries the same event again later. |
+
+Retries wait no sooner than 30 seconds after the first failure, and the wait doubles after each one: 1 minute, 2, 4, and so on up to an hour between tries. Newer events wait behind the failing one, so once your receiver recovers they arrive in order. A subscription that has failed for 24 hours straight, after at least five tries, is disabled with `delivery_failing` and receives nothing more.
+
+Delivery is at least once. If Radioso stops between your `2xx` and recording it, the event is sent again with the same `Idempotency-Key`: deduplicate on it.
+
+Most pushes arrive within seconds of the chat turn or document processing run that recorded the event. Every minute a sweep also delivers anything still waiting, so the slowest push arrives about a minute after its event.
+
+## Check and remove a subscription
+
+`GET /api/v1/workspace/event-subscriptions/{subscriptionId}` returns one subscription, and `GET /api/v1/workspace/event-subscriptions` lists the workspace's subscriptions, newest first. Check `status` before relying on a subscription: one that is `disabled`, or a `404`, is gone, and the fix is to subscribe the URL again.
+
+```bash
+curl -sS -X DELETE "https://api.radioso.ai/api/v1/workspace/event-subscriptions/8c3e1f2a-4b5d-4e6f-9a7b-0c1d2e3f4a5b" \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN"
+```
+
+`DELETE` answers `204`, or `404` when the subscription is already gone, such as one replaced by subscribing its URL again. A push already on its way may still arrive.
+
+## Who a subscription answers to
+
+A subscription remembers the credential or teammate that created it and checks it again before every push. Revoke that token, disable its service account, or remove the teammate from the workspace, and the subscription is disabled with `creator_revoked` at its next event. A role change that takes away the permission for one of its types does the same. Give each automation its own service account, so revoking one workflow's access stops only that workflow's pushes.
+
+Operators see every subscription in **Settings → API access**, under **Event subscriptions**: the client label, the target host, the event types, which service account, token or teammate created it, the last delivery and its outcome, and whether it is active, failing or stopped. They can delete one there, and Ray reads the same list when you ask why an automation stopped. A teammate who created one is named by their display name, never by email.
+
+A workspace holds at most 25 subscriptions, active and disabled together.
+
+## Self-hosted deployments
+
+The worker delivers pushes. On Cloud Run, a Cloud Scheduler job runs the every-minute sweep, named after the deployment's resource prefix with `-workspace-event-delivery` on the end. The target must be public HTTPS. For a receiver on the same machine during development, such as a local n8n, set `WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK=true` outside production and plain `http://localhost` targets are allowed. The signing secret and the target URL are stored encrypted under `CONNECTOR_ENCRYPTION_KEY`, so a deployment without that key answers `503` with `encryption_not_configured`.
+
+## Common failure modes
+
+| Response | What happened | What to do |
+|---|---|---|
+| `400` `invalid_target_url` | The URL is not `https`, carries a username or password, or its host does not resolve to a public address. | Use the public HTTPS address of your receiver. |
+| `403` `event_type_not_permitted` | The credential cannot read one of the event types. | Use a credential whose role holds the permission, or drop the type. |
+| `409` `event_subscription_limit_reached` | The workspace already holds 25 subscriptions. | Delete one you no longer use, in Settings or with `DELETE`. |
+| `503` `encryption_not_configured` | The deployment has no `CONNECTOR_ENCRYPTION_KEY`. | Set the key on the backend and the worker. |
+| `status: "disabled"`, `delivery_failing` | The target failed for a day. | Fix the receiver, then subscribe the same URL again. |
+| `status: "disabled"`, `creator_revoked` | The credential or teammate that created it lost access. | Subscribe the same URL again with a credential that has access. |
+
+## Read next
+
+- [Workspace event log](/api/workspace-event-log) for the event types and how to poll instead.
+- [Personal tokens and service accounts](/api/workspaces-and-tokens) for the credential a subscription answers to.
+- [Connect Radioso to your automations](/automation) for n8n, Zapier and Make.
+- The [API Reference](/api-reference) for the full schema, including the push as the `workspaceEvent` webhook.

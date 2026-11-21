@@ -9,6 +9,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
@@ -55,57 +56,85 @@ interface NavItem {
   isActive: (routeState: DashboardRouteState) => boolean
 }
 
-// Inbox sits first and is visually separated from the build/config sections below —
-// it's the operator's home: handoffs, approvals, and the full conversation log live
-// behind its two lenses (see inbox-lens-toggle.tsx), not a sidebar sub-nav. Audience
-// Pulse and Quality route to the `quality` section (distinguished by `qualityView`),
-// and Quality's Evals sub-item routes to the separate `eval` section — see
-// area-subnavs.tsx.
-const navItems: NavItem[] = [
+interface NavGroup {
+  id: string
+  /** Unlabelled groups (Inbox, Settings) stand on their own. */
+  label?: string
+  items: NavItem[]
+}
+
+// Inbox sits first, unlabelled — it's the operator's home: handoffs, approvals, and
+// the full conversation log live behind its two lenses (see inbox-lens-toggle.tsx),
+// not a sidebar sub-nav. Audience Pulse and Quality route to the `quality` section
+// (distinguished by `qualityView`), and Quality's Evals sub-item routes to the
+// separate `eval` section — see area-subnavs.tsx.
+const navGroups: NavGroup[] = [
   {
-    id: 'inbox',
-    label: 'Inbox',
-    icon: Inbox,
-    section: 'activity',
-    isActive: (routeState) => routeState.section === 'activity',
+    id: 'home',
+    items: [
+      {
+        id: 'inbox',
+        label: 'Inbox',
+        icon: Inbox,
+        section: 'activity',
+        isActive: (routeState) => routeState.section === 'activity',
+      },
+    ],
   },
   {
-    id: 'agents',
-    label: 'Agents',
-    icon: Bot,
-    section: 'agents',
-    isActive: (routeState) => routeState.section === 'agents',
+    id: 'build',
+    label: 'Build',
+    items: [
+      {
+        id: 'agents',
+        label: 'Agents',
+        icon: Bot,
+        section: 'agents',
+        isActive: (routeState) => routeState.section === 'agents',
+      },
+      {
+        id: 'knowledge',
+        label: 'Knowledge Base',
+        icon: BookOpen,
+        section: 'knowledge',
+        isActive: (routeState) => routeState.section === 'knowledge',
+      },
+    ],
   },
   {
-    id: 'knowledge',
-    label: 'Knowledge Base',
-    icon: BookOpen,
-    section: 'knowledge',
-    isActive: (routeState) => routeState.section === 'knowledge',
+    id: 'insights',
+    label: 'Insights',
+    items: [
+      {
+        id: 'audience-pulse',
+        label: 'Audience Pulse',
+        icon: Radar,
+        section: 'quality',
+        extraRouteState: { qualityView: 'audience-pulse' },
+        isActive: (routeState) => routeState.section === 'quality' && routeState.qualityView === 'audience-pulse',
+      },
+      {
+        id: 'quality',
+        label: 'Quality',
+        icon: MessageSquareWarning,
+        section: 'quality',
+        isActive: (routeState) =>
+          routeState.section === 'eval'
+          || (routeState.section === 'quality' && routeState.qualityView !== 'audience-pulse'),
+      },
+    ],
   },
   {
-    id: 'audience-pulse',
-    label: 'Audience Pulse',
-    icon: Radar,
-    section: 'quality',
-    extraRouteState: { qualityView: 'audience-pulse' },
-    isActive: (routeState) => routeState.section === 'quality' && routeState.qualityView === 'audience-pulse',
-  },
-  {
-    id: 'quality',
-    label: 'Quality',
-    icon: MessageSquareWarning,
-    section: 'quality',
-    isActive: (routeState) =>
-      routeState.section === 'eval'
-      || (routeState.section === 'quality' && routeState.qualityView !== 'audience-pulse'),
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: Settings,
-    section: 'settings',
-    isActive: (routeState) => routeState.section === 'settings',
+    id: 'workspace',
+    items: [
+      {
+        id: 'settings',
+        label: 'Settings',
+        icon: Settings,
+        section: 'settings',
+        isActive: (routeState) => routeState.section === 'settings',
+      },
+    ],
   },
 ]
 
@@ -129,45 +158,45 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const isActive = item.isActive(routeState)
-                const showBadge = item.id === 'inbox' && inboxCount > 0
-                const navState: DashboardRouteState = {
-                  section: item.section,
-                  ...item.extraRouteState,
-                  workspaceId: activeWorkspaceId ?? undefined,
-                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                }
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.id}>
+            {group.label ? <SidebarGroupLabel>{group.label}</SidebarGroupLabel> : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const isActive = item.isActive(routeState)
+                  const showBadge = item.id === 'inbox' && inboxCount > 0
+                  const navState: DashboardRouteState = {
+                    section: item.section,
+                    ...item.extraRouteState,
+                    workspaceId: activeWorkspaceId ?? undefined,
+                    workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                  }
 
-                return (
-                  <SidebarMenuItem
-                    key={item.id}
-                    className={item.id === 'inbox' ? 'mb-1' : undefined}
-                  >
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                      <Link href={buildDashboardHref(accountId, navState)}>
-                        <item.icon className="w-4 h-4" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                    {showBadge ? (
-                      <SidebarMenuBadge
-                        className="bg-secondary text-secondary-foreground"
-                        aria-label={`${inboxCount} items need attention`}
-                      >
-                        {inboxCount > 99 ? '99+' : inboxCount}
-                      </SidebarMenuBadge>
-                    ) : null}
-                    {isActive && areaSubNav ? areaSubNav : null}
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                  return (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                        <Link href={buildDashboardHref(accountId, navState)}>
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      {showBadge ? (
+                        <SidebarMenuBadge
+                          className="bg-secondary text-secondary-foreground"
+                          aria-label={`${inboxCount} items need attention`}
+                        >
+                          {inboxCount > 99 ? '99+' : inboxCount}
+                        </SidebarMenuBadge>
+                      ) : null}
+                      {isActive && areaSubNav ? areaSubNav : null}
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter>

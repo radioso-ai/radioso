@@ -10,13 +10,20 @@ import { minimumRole } from "../domain.js";
 
 type ApiPrincipalRepository = Pick<
   MachineAccessPersistencePort,
-  "findCredentialByHash" | "findServiceAccount" | "touchCredentialUse"
+  "findCredentialByHash" | "findCredential" | "findServiceAccount" | "touchCredentialUse"
 >;
 
 type MachineApiPrincipal = Extract<
   AuthenticatedPrincipal,
   { type: "personal_api_credential" | "service_account_credential" }
 >;
+
+type ApiCredential = NonNullable<Awaited<ReturnType<ApiPrincipalRepository["findCredential"]>>>;
+
+/** A credential's principal now, or why it has none. */
+type CredentialResolution =
+  | { ok: true; accountId: string; workspaceId: string; principal: MachineApiPrincipal }
+  | { ok: false; kind: "personal" | "service"; reason: Exclude<MachineAccessAuthenticationReason, "authenticated"> };
 
 const presentedKind = (secret: string): "personal" | "service" | "unknown" => {
   if (/^radioso_pat_v1_[A-Za-z0-9_-]{43}$/.test(secret)) return "personal";
@@ -40,23 +47,41 @@ export class ApiPrincipalAuthenticator {
     const credential = await this.input.repository.findCredentialByHash(hash);
     if (!credential) return this.deny(secretKind, "unknown");
     if (credential.kind !== secretKind) return this.deny(secretKind, credential.kind === "personal" ? "personal_binding_invalid" : "service_binding_invalid");
-    if (credential.revokedAt) return this.deny(secretKind, "revoked");
-    if (credential.expiresAt && credential.expiresAt.getTime() <= this.now().getTime()) return this.deny(secretKind, "expired");
+    const resolved = await this.resolve(credential);
+    if (!resolved.ok) return this.deny(resolved.kind, resolved.reason);
+    this.observe({ outcome: "success", principalKind: credential.kind, reason: "authenticated" });
+    return { accountId: resolved.accountId, workspaceId: resolved.workspaceId, principal: resolved.principal };
+  }
+
+  /**
+   * The principal a stored credential acts as right now, checked exactly as a request presenting
+   * it would be, or null when that request would be refused. For work a credential started that
+   * runs later without it being presented (an event subscription's pushes). Records no authentication.
+   */
+  async principalForCredential(credentialId: string): Promise<{ accountId: string; workspaceId: string; principal: MachineApiPrincipal } | null> {
+    const credential = await this.input.repository.findCredential(credentialId);
+    if (!credential) return null;
+    const resolved = await this.resolve(credential);
+    return resolved.ok ? { accountId: resolved.accountId, workspaceId: resolved.workspaceId, principal: resolved.principal } : null;
+  }
+
+  private async resolve(credential: ApiCredential): Promise<CredentialResolution> {
+    const kind = credential.kind;
+    if (credential.revokedAt) return { ok: false, kind, reason: "revoked" };
+    if (credential.expiresAt && credential.expiresAt.getTime() <= this.now().getTime()) return { ok: false, kind, reason: "expired" };
     if (credential.kind === "personal") {
-      if (!credential.ownerUserId || !credential.accessTenureMembershipId || !credential.roleCeiling) return this.deny("personal", "personal_binding_invalid");
+      if (!credential.ownerUserId || !credential.accessTenureMembershipId || !credential.roleCeiling) return { ok: false, kind, reason: "personal_binding_invalid" };
       const membership = await this.input.accountAccess.findActiveMembershipById(credential.accessTenureMembershipId);
-      if (!membership || membership.userId !== credential.ownerUserId || membership.accountId !== credential.accountId) return this.deny("personal", "personal_membership_inactive");
+      if (!membership || membership.userId !== credential.ownerUserId || membership.accountId !== credential.accountId) return { ok: false, kind, reason: "personal_membership_inactive" };
       const liveRole = await this.input.accountAccess.resolveWorkspaceRole({ accountId: membership.accountId, userId: membership.userId, workspaceId: credential.workspaceId });
-      if (!liveRole) return this.deny("personal", "personal_role_unavailable");
-      this.observe({ outcome: "success", principalKind: "personal", reason: "authenticated" });
-      return { accountId: membership.accountId, workspaceId: credential.workspaceId, principal: { type: "personal_api_credential", userId: credential.ownerUserId, credentialId: credential.id, role: minimumRole(credential.roleCeiling, liveRole === "owner" ? "admin" : liveRole), workspaceId: credential.workspaceId } };
+      if (!liveRole) return { ok: false, kind, reason: "personal_role_unavailable" };
+      return { ok: true, accountId: membership.accountId, workspaceId: credential.workspaceId, principal: { type: "personal_api_credential", userId: credential.ownerUserId, credentialId: credential.id, role: minimumRole(credential.roleCeiling, liveRole === "owner" ? "admin" : liveRole), workspaceId: credential.workspaceId } };
     }
-    if (!credential.serviceAccountId) return this.deny("service", "service_binding_invalid");
+    if (!credential.serviceAccountId) return { ok: false, kind, reason: "service_binding_invalid" };
     const account = await this.input.repository.findServiceAccount(credential.serviceAccountId);
-    if (!account || account.accountId !== credential.accountId || account.workspaceId !== credential.workspaceId) return this.deny("service", "service_binding_invalid");
-    if (account.status !== "enabled") return this.deny("service", "service_account_disabled");
-    this.observe({ outcome: "success", principalKind: "service", reason: "authenticated" });
-    return { accountId: account.accountId, workspaceId: credential.workspaceId, principal: { type: "service_account_credential", serviceAccountId: account.id, credentialId: credential.id, role: account.role, workspaceId: credential.workspaceId } };
+    if (!account || account.accountId !== credential.accountId || account.workspaceId !== credential.workspaceId) return { ok: false, kind, reason: "service_binding_invalid" };
+    if (account.status !== "enabled") return { ok: false, kind, reason: "service_account_disabled" };
+    return { ok: true, accountId: account.accountId, workspaceId: credential.workspaceId, principal: { type: "service_account_credential", serviceAccountId: account.id, credentialId: credential.id, role: account.role, workspaceId: credential.workspaceId } };
   }
 
   recordSuccessfulUse(principal: MachineApiPrincipal): void {

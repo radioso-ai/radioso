@@ -197,3 +197,23 @@ export function formatConversationSource(
 
   return sourceChannel
 }
+
+/** Names for the stored channel ids that have no badge (`backend/src/shared/domain/conversationSource.ts`). */
+const CHANNEL_NAMES: ReadonlyMap<string, string> = new Map([
+  ['email', 'Email'],
+  ['whatsapp', 'WhatsApp'],
+  ['agent_api', 'Agent API'],
+  ['workbench_replay', 'Workbench replay'],
+  ['operator_copilot_probe', 'Ray probe'],
+])
+
+/**
+ * A conversation's channel as one short name, from its stored source channel alone: the badge's
+ * label, else the channel's name, else the source description, else the dashboard chat a
+ * channel-less conversation came from.
+ */
+export const conversationChannelLabel = (sourceChannel: string | null): string =>
+  getConversationSourceBadge(sourceChannel)?.label
+  ?? (sourceChannel === null ? undefined : CHANNEL_NAMES.get(sourceChannel))
+  ?? formatConversationSource(sourceChannel)
+  ?? 'Dashboard chat'

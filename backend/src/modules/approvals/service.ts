@@ -1,4 +1,5 @@
 import type {
+  PendingDecisionClaim,
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../db/repositories/pendingDecisionRepository.js";
@@ -49,7 +50,14 @@ export interface ResumeRunner {
     optionId: string;
     payload?: unknown;
     decidedBy: string;
-    transaction: Db;
+    /**
+     * Writes the decision's resolution, and who decided, then runs `work` on the decision's
+     * transaction, which commits after the resume returns. The transaction is reachable only here,
+     * so it takes its id when the resumed turn writes, after its model and skill work: an open one
+     * holds back the workspace event log (spec 957 §6). Rejects, running nothing, when the decision
+     * is gone; the resume must then fail.
+     */
+    commit<T>(work: (db: Db) => Promise<T>): Promise<T>;
     /** Stable, non-secret identity for deduping skill effects across a rolled-back resume. */
     skillDispatchIdempotencyKey?: string;
     approvalResume?: { pendingDecisionId: string; optionId: string; payloadDigest: string };
@@ -96,7 +104,7 @@ interface ResolveApprovalDecisionResult {
   resumed: true;
 }
 
-type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
+type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "claimInTransaction" | "listPending">;
 
 const canonicalPayload = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalPayload).join(",")}]`;
@@ -180,36 +188,44 @@ export class ApprovalDecisionService {
       }
       throw error;
     }
-    const resume = await this.pendingDecisions.resolveInTransaction({
+    const resume = await this.pendingDecisions.claimInTransaction({
       handle: input.handle,
-      status: "resolved",
-      decision: resolved.decision,
-      decidedBy: input.caller.accountId,
-      decidedByUserId,
       contentHash: input.contentHash,
-    }, async (resolvedRecord, transaction) => {
-      // Recorded before the resume's reply, so the decision dates before the turn it resumes.
-      await this.activity.record(transaction, {
-        kind: "approval_decided",
-        conversationId: resolvedRecord.conversationId,
-        workspaceId: resolvedRecord.workspaceId,
-        actorUserId: decidedByUserId,
-        detail: {
-          handle: resolvedRecord.handle,
-          decision: { optionId: resolved.decision.optionId, label: resolved.decision.label },
-        },
-      });
+    }, async (claim, transaction) => {
+      const claimed = claim.record;
+      // Deferred to the resume's first write, so the claim's transaction holds no transaction id
+      // while the resumed turn calls models and skills. Written once, however often it commits.
+      let resolution: Promise<void> | undefined;
+      const commit = async <T>(work: (db: Db) => Promise<T>): Promise<T> => {
+        if (!resolution) {
+          resolution = this.writeResolution(transaction, {
+            claim,
+            decision: resolved.decision,
+            decidedBy: input.caller.accountId,
+            decidedByUserId,
+          });
+          // Awaited again once the resume returns, so a resume that swallows a failed commit still
+          // fails; this only keeps the rejection from surfacing as unhandled meanwhile.
+          resolution.catch(() => {});
+        }
+        await resolution;
+        return work(transaction);
+      };
       try {
         const result = await this.resumeRunner.resume({
-          record: resolvedRecord,
+          record: claimed,
           optionId: resolved.decision.optionId,
           payload: resolved.decision.payload,
           decidedBy: input.caller.accountId,
-          transaction,
-          skillDispatchIdempotencyKey: `approval-decision:${resolvedRecord.id}`,
-          approvalResume: { ...journalDecision, pendingDecisionId: resolvedRecord.id },
+          commit,
+          skillDispatchIdempotencyKey: `approval-decision:${claimed.id}`,
+          approvalResume: { ...journalDecision, pendingDecisionId: claimed.id },
         });
-        await this.effectJournal?.clearDecision({ pendingDecisionId: resolvedRecord.id, transaction });
+        if (!resolution) {
+          throw new Error("approval_resume_resolution_unwritten");
+        }
+        await resolution;
+        await this.effectJournal?.clearDecision({ pendingDecisionId: claimed.id, transaction });
         return result;
       } catch (error) {
         if (error instanceof ApprovalResumeEffectJournalConflictError) {
@@ -243,6 +259,38 @@ export class ApprovalDecisionService {
       conversationId: resume.conversationId,
       resumed: resume.resumed,
     };
+  }
+
+  /**
+   * The decision's resolution and who decided, in the claim's transaction, just before the turn it
+   * resumes: the activity dates before that turn's reply.
+   */
+  private async writeResolution(transaction: Db, input: {
+    claim: PendingDecisionClaim;
+    decision: ResolvedApprovalDecision["decision"];
+    decidedBy: string;
+    decidedByUserId: string | null;
+  }): Promise<void> {
+    const resolvedRecord = await input.claim.resolve({
+      status: "resolved",
+      decision: input.decision,
+      decidedBy: input.decidedBy,
+      decidedByUserId: input.decidedByUserId,
+    });
+    if (!resolvedRecord) {
+      // The claim keeps other resolvers out, so a miss means the decision was erased with its conversation.
+      throw new ApprovalDecisionServiceError("not_found");
+    }
+    await this.activity.record(transaction, {
+      kind: "approval_decided",
+      conversationId: resolvedRecord.conversationId,
+      workspaceId: resolvedRecord.workspaceId,
+      actorUserId: input.decidedByUserId,
+      detail: {
+        handle: resolvedRecord.handle,
+        decision: { optionId: input.decision.optionId, label: input.decision.label },
+      },
+    });
   }
 
   private async resolveCaller(caller: DecisionCaller): Promise<DecisionCaller> {

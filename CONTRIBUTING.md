@@ -2,7 +2,7 @@
 
 Thanks for wanting to work on Radioso. This guide covers what a human contributor needs: getting a local stack running, the tests each package expects you to pass, and how to shape a pull request so it can be reviewed and merged.
 
-Radioso's open-source edition is licensed under Apache 2.0. The files under [`ee/`](./ee) are the commercial Enterprise Edition and are covered by a separate license — contributions to that directory are handled differently, so open an issue first if that is where your change lands.
+Radioso's open-source edition is licensed under Apache 2.0. The files under [`ee/`](./ee) are the commercial Enterprise Edition and are covered by a separate license — contributions to that directory are handled differently, so open an issue first if that is where your change lands. Contributions to [`packages/n8n-nodes-radioso/`](./packages/n8n-nodes-radioso) are licensed under MIT, the license of that directory.
 
 > There is a companion file, [`AGENTS.md`](./AGENTS.md), written for AI coding agents. It carries the same commands plus repo-specific conventions and context-budget rules. Humans are welcome to skim it, but everything you need to contribute is here.
 

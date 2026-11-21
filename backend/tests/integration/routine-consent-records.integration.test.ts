@@ -18,6 +18,7 @@ import { routineConsentWordingVersionId, type RoutineConsentWording } from "../.
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -466,7 +467,7 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     // The operator withdraws the grant while a turn that read the value is still running.
     await database.query("UPDATE routine_consent_records SET withdrawn_at = now() WHERE conversation_id = $1", [conversation.conversationId]);
 
-    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000).completeAssistantTurn({
       workspaceId: tenant.workspaceId,
       conversationId: conversation.conversationId,
       routineStateTransition: {
@@ -502,7 +503,7 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
     await recordDecision(tenant, conversation, { routineId: "routine-intake", slotKeys: ["pregnant"] });
     await database.query("UPDATE routine_consent_records SET withdrawn_at = now() WHERE conversation_id = $1", [conversation.conversationId]);
 
-    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000).completeAssistantTurn({
+    await new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000).completeAssistantTurn({
       workspaceId: tenant.workspaceId,
       conversationId: conversation.conversationId,
       routineStateTransition: {
@@ -535,7 +536,7 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
   it("records nothing for a consent the turn did not ask, and keeps a decision once however often a turn is retried", async () => {
     const tenant = await seedTenant();
     const conversation = await seedConversation(tenant);
-    const persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
+    const persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), postgresWorkspaceEventRecorder, 60_000);
     const turn = (events: Parameters<typeof persistence.completeAssistantTurn>[0]["routineConsent"]) => persistence.completeAssistantTurn({
       workspaceId: tenant.workspaceId,
       conversationId: conversation.conversationId,

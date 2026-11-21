@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { MessageFacetRepository } from "../../../src/db/repositories/messageFacetRepository.js";
 import { TopicRepository } from "../../../src/db/repositories/topicRepository.js";
 import type { TopicLabel, TopicNamingExemplars, TopicNamingPort } from "../../../src/modules/audiencePulse/contracts/topicLabel.js";
+import { deriveTopicTarget } from "../../../src/modules/audiencePulse/domain/censusTopicTarget.js";
 import { CensusService } from "../../../src/modules/audiencePulse/services/censusService.js";
 import { PostgresAudiencePulseHistorySource } from "../../../src/modules/chat/audiencePulseHistorySource.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -161,6 +162,8 @@ describeIntegration("CensusService (Postgres)", () => {
     expect(persisted?.questionCount).toBe(result.populationSize);
     expect(persisted?.unclassifiedCount).toBe(result.unclassifiedCount);
     expect(persisted?.topics).toEqual([]);
+    // The target the run clustered toward is stored in `topic_census_runs.params_json`.
+    expect(persisted?.params.topicTarget).toBe(deriveTopicTarget(clusterableIds.length));
 
     const membershipRows = await database.query<{ message_id: string }>(
       "SELECT message_id FROM topic_memberships WHERE run_id = $1",

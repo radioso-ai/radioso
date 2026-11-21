@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { DocumentEnrichmentReplyRepository } from "../../src/db/repositories/documentEnrichmentReplyRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import type { DocumentEnrichmentGateway } from "../../src/modules/documents/domain/enrichment/enrichmentGateway.js";
 import { DocumentEnrichmentService } from "../../src/modules/documents/services/documentEnrichmentService.js";
@@ -28,7 +29,7 @@ describeIntegration("DocumentEnrichmentReplyRepository (Postgres)", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl);
-    documents = new DocumentRepository(database.kysely);
+    documents = new DocumentRepository(database.kysely, documentEventEraser);
     replies = new DocumentEnrichmentReplyRepository(database.kysely);
     await database.query(
       `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,

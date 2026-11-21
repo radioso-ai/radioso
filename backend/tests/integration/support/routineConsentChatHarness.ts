@@ -27,6 +27,7 @@ import type { UserMessageInputMetadata } from "../../../src/shared/domain/chatIn
 import type { Database } from "../../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../../support/fakes.js";
+import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 
 export const CONSENT_ROUTINE_ID = "routine-class-booking";
 
@@ -153,7 +154,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
     } as unknown as Parameters<typeof composeRoutineTurnProvider>[0]);
 
     const chat = new ChatService({
-      conversationRepository: new ConversationRepository(database.kysely),
+      conversationRepository: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messageRepository: new MessageRepository(database.kysely),
       retrievalTurn: {
         interpret: async () => { throw new Error("a routine turn retrieves nothing"); },
@@ -182,7 +183,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       assistantTurnPersistence: new PostgresAssistantTurnPersistence(
         database.kysely,
         new ConversationActivityRepository(database.kysely),
-        60_000,
+        postgresWorkspaceEventRecorder, 60_000,
         undefined,
         undefined,
         undefined,
@@ -196,7 +197,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       chat.answer({ workspaceId: workspace.id, agentId, conversationId, query, stream: false, ...(inputMetadata ? { inputMetadata } : {}) });
     // What the chat shows after a page reload: the conversation as its history reads it.
     const reloaded = async () => (await new ChatHistoryService(
-      new ConversationRepository(database.kysely),
+      new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       new MessageRepository(database.kysely),
       new AuditEventRepository(database.kysely),
       new HistoryItemsRepository(database.kysely),

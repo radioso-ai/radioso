@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
-  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
-  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
   AudiencePulseService,
   buildSummaryTopics,
-  hydrateReport,
 } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import {
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
+  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+} from "../../../src/modules/audiencePulse/services/narrativeReuse.js";
+import { hydrateReport } from "../../../src/modules/audiencePulse/services/reportHydration.js";
+import { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT } from "../../../src/modules/audiencePulse/domain/report.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,
+  AudiencePulseHistorySource,
+  AudiencePulseQuestionOutcome,
   AudiencePulseSnapshotRecord,
+  AudiencePulseTopicState,
+  AudiencePulseTopicStateStore,
 } from "../../../src/modules/audiencePulse/contracts.js";
 import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePulse/domain/report.js";
 import type { CensusRunResult, CensusService } from "../../../src/modules/audiencePulse/services/censusService.js";
@@ -23,6 +29,31 @@ const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
 
+/**
+ * Seven previous-window outcomes over five conversations: four answered, two with no answer in the
+ * content, and one unclear.
+ */
+const previousWindowOutcomes = (): AudiencePulseQuestionOutcome[] => [
+  ...["c-1", "c-2", "c-3", "c-4"].map((conversationId) => ({
+    reference: { conversationId },
+    grounding: "grounded" as const,
+    legacyCoverage: true,
+    contentGapEligible: false,
+  })),
+  ...["c-4", "c-5"].map((conversationId) => ({
+    reference: { conversationId },
+    grounding: "no_support" as const,
+    legacyCoverage: true,
+    contentGapEligible: true,
+  })),
+  { reference: { conversationId: "c-5" }, grounding: "unknown" as const, legacyCoverage: false, contentGapEligible: false },
+];
+
+/** A workspace old enough, and keeping conversations long enough, to compare against the 30 days before. */
+const longHistory = () => ({
+  async read() { return { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: null }; },
+});
+
 const history = (): AudiencePulseHistorySnapshot => ({
   period: { start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-07-31T00:00:00.000Z") },
   coverage: { populationSize: 2, sampleSize: 2, sampled: false },
@@ -33,6 +64,7 @@ const history = (): AudiencePulseHistorySnapshot => ({
       reference: { messageId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", conversationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" },
       question: "How do I change a plan?",
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "no_support",
       contentGapEligible: true,
@@ -42,6 +74,7 @@ const history = (): AudiencePulseHistorySnapshot => ({
       reference: { messageId: "cccccccc-cccc-cccc-cccc-cccccccccccc", conversationId: "dddddddd-dddd-dddd-dddd-dddddddddddd" },
       question: "Can I update a subscription?",
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "no_support",
       contentGapEligible: true,
@@ -167,6 +200,30 @@ const snapshotStoreFor = (snapshot: AudiencePulseSnapshotRecord | null) => ({
   async invalidate() { return true; },
 });
 
+const topicStateStoreWith = (overrides: Partial<AudiencePulseTopicStateStore> = {}): AudiencePulseTopicStateStore => ({
+  async readTopicStates() { return new Map(); },
+  async dismiss() { return "changed"; },
+  async restore() { return "changed"; },
+  async linkDraft() { return "changed"; },
+  ...overrides,
+});
+
+const historySourceWith = (overrides: Partial<AudiencePulseHistorySource> = {}): AudiencePulseHistorySource => ({
+  async read() { return history(); },
+  async listEligibleQuestionIds() { return []; },
+  async readPeriodOutcomes() { return []; },
+  async rehydrate(input) {
+    return new Map(input.references.map((reference) => [reference.evidenceId, {
+      evidenceId: reference.evidenceId,
+      conversationId: reference.conversationId,
+      messageId: reference.messageId,
+      question: "Rehydrated question",
+    }]));
+  },
+  async readEvidenceAnchor() { return null; },
+  ...overrides,
+});
+
 const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}) => {
   const calls = {
     inference: 0,
@@ -188,6 +245,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     historySource: {
       async read() { return history(); },
       async listEligibleQuestionIds() { return []; },
+      async readPeriodOutcomes() { return []; },
       async rehydrate(input) {
         return new Map(input.references.map((reference) => [reference.evidenceId, {
           evidenceId: reference.evidenceId,
@@ -272,6 +330,8 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
         calls.auditEvents.push(input);
       },
     },
+    topicStateStore: topicStateStoreWith(),
+    historyHorizon: longHistory(),
     now: () => new Date("2026-08-01T00:00:00.000Z"),
     ...overrides,
   };
@@ -309,6 +369,7 @@ describe("AudiencePulseService", () => {
         historySource: {
           async read() { return photoQuestions(); },
           async listEligibleQuestionIds() { return []; },
+          async readPeriodOutcomes() { return []; },
           async rehydrate() { return new Map(); },
           async readEvidenceAnchor() { return null; },
         },
@@ -377,7 +438,7 @@ describe("AudiencePulseService", () => {
         source(3, "Do you have this in blue?", 2),
         source(4, "", 1),
         source(5, "Do you have this in blue?"),
-      ]));
+      ]), new Map());
 
       expect(hydrated.themes[0]?.evidence.map(({ question, questionPhotoCount, occurrenceCount }) => ({ question, questionPhotoCount, occurrenceCount }))).toEqual([
         { question: "Do you have this in blue?", questionPhotoCount: 1, occurrenceCount: 2 },
@@ -790,6 +851,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -839,6 +901,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -948,6 +1011,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1075,6 +1139,7 @@ describe("AudiencePulseService", () => {
         },
         question: `Question ${memberIndex + 1} for topic ${topicIndex + 1}`,
         weekStart: "2026-06-29T00:00:00.000Z",
+        day: "2026-07-01",
         channel: null,
         grounding: "no_support" as const,
         contentGapEligible: true,
@@ -1151,6 +1216,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1232,6 +1298,7 @@ describe("AudiencePulseService", () => {
       reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
       question: `Question ${index + 1}`,
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "no_support" as const,
       contentGapEligible: true,
@@ -1269,6 +1336,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1357,6 +1425,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1404,6 +1473,7 @@ describe("AudiencePulseService", () => {
         reference: { messageId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", conversationId: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
         question: "A one-off question outside this topic.",
         weekStart: "2026-06-29T00:00:00.000Z",
+        day: "2026-07-01",
         channel: null,
         grounding: "unknown" as const,
         contentGapEligible: false,
@@ -1417,6 +1487,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1448,6 +1519,7 @@ describe("AudiencePulseService", () => {
         },
         question: `A one-off question ${ordinal}.`,
         weekStart: "2026-06-29T00:00:00.000Z",
+        day: "2026-07-01",
         channel: null,
         grounding: "unknown" as const,
         contentGapEligible: false,
@@ -1462,6 +1534,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1490,6 +1563,7 @@ describe("AudiencePulseService", () => {
       },
       question: `One-off question ${index + 1}`,
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "unknown" as const,
       contentGapEligible: false,
@@ -1506,6 +1580,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1535,6 +1610,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return closedGapHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1638,6 +1714,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return currentHistory; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -1788,7 +1865,7 @@ describe("AudiencePulseService", () => {
         messageId: "33333333-3333-3333-3333-333333333333",
         question: "What does the annual plan include?",
       }],
-    ]));
+    ]), new Map());
 
     expect(hydrated).toMatchObject({
       narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
@@ -1861,7 +1938,7 @@ describe("AudiencePulseService", () => {
         "e-3": "  is there   parking? ",
         "e-4": "Can you read my tarot cards?",
         "e-5": "Do you open late?",
-      }));
+      }), new Map());
 
       expect(hydrated.themes[0]?.answers).toEqual(answers);
       expect(hydrated.themes[0]?.evidence.map(({ question, occurrenceCount, answerStatus }) => ({ question, occurrenceCount, answerStatus })))
@@ -1889,7 +1966,7 @@ describe("AudiencePulseService", () => {
         "e-1": "Can you read my tarot cards?",
         "e-2": "Is there parking?",
         "e-3": "Do you open late?",
-      }));
+      }), new Map());
 
       expect(hydrated.themes[0]?.answers).toEqual({ answered: 1, partial: 0, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 2 });
       expect(hydrated.themes[0]?.evidence.map(({ reference, answerStatus }) => [reference, answerStatus])).toEqual([
@@ -1903,7 +1980,7 @@ describe("AudiencePulseService", () => {
       const hydrated = hydrateReport(savedReport({ evidenceIds: ["e-1", "e-2"] }), sources({
         "e-1": "Is there parking?",
         "e-2": "Do you open late?",
-      }));
+      }), new Map());
 
       expect(hydrated.themes[0]?.answers).toEqual({ answered: 1, partial: 1, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 1 });
       expect(hydrated.themes[0]?.evidence.map((item) => "answerStatus" in item)).toEqual([false, false]);
@@ -1950,7 +2027,7 @@ describe("AudiencePulseService", () => {
         messageId: "33333333-3333-3333-3333-333333333333",
         question: "What does annual include?",
       }],
-    ]));
+    ]), new Map());
 
     expect(hydrated.coverage.facetReadyQuestionCount).toBe(3);
     expect(hydrated.narrativeGeneratedAt).toBe(legacyReport.generatedAt);
@@ -2017,6 +2094,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return history(); },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor(input) {
           historyCalls.push(input);
@@ -2048,6 +2126,7 @@ describe("AudiencePulseService", () => {
           return { ...history(), coverage: { populationSize: 0, sampleSize: 0, sampled: false }, evidence: [] };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2077,6 +2156,7 @@ describe("AudiencePulseService", () => {
           return history();
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2124,6 +2204,7 @@ describe("AudiencePulseService", () => {
       reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
       question: `Question ${index + 1}`,
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "no_support" as const,
       contentGapEligible: index < 2 || index >= 4,
@@ -2144,6 +2225,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2189,6 +2271,7 @@ describe("AudiencePulseService", () => {
       reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
       question: `Question ${index + 1}`,
       weekStart: "2026-06-29T00:00:00.000Z",
+      day: "2026-07-01",
       channel: null,
       grounding: "no_support" as const,
       contentGapEligible: true,
@@ -2222,6 +2305,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2353,6 +2437,7 @@ describe("AudiencePulseService", () => {
               reference: { messageId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", conversationId: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
               question: "An unrelated one-off question",
               weekStart: "2026-06-29T00:00:00.000Z",
+              day: "2026-07-01",
               channel: null,
               grounding: "unknown",
               contentGapEligible: false,
@@ -2360,6 +2445,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2395,6 +2481,7 @@ describe("AudiencePulseService", () => {
         },
         question: `Question ${ordinal}`,
         weekStart: "2026-06-29T00:00:00.000Z",
+        day: "2026-07-01",
         channel: null,
         grounding: "unknown" as const,
         contentGapEligible: false,
@@ -2411,6 +2498,7 @@ describe("AudiencePulseService", () => {
           };
         },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2521,6 +2609,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { throw historyFailure; },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2656,6 +2745,7 @@ describe("AudiencePulseService", () => {
       historySource: {
         async read() { return history(); },
         async listEligibleQuestionIds() { return []; },
+        async readPeriodOutcomes() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -2894,5 +2984,450 @@ describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
     expect(calls).toMatchObject({ inference: 1, reserve: 1, commit: 1, release: 0, replace: 1 });
     if (result.kind !== "completed") throw new Error("expected a completed refresh");
     expect(result.report.coverage).toMatchObject({ facetReadyQuestionCount: 1 });
+  });
+});
+
+/** A saved report whose examples all still rehydrate. */
+const savedSnapshot = (): AudiencePulseSnapshotRecord => ({
+  ...priorNarrativeSnapshot(),
+  promptEvidenceRefs: history().evidence.map((item) => ({ evidenceId: item.id, ...item.reference })),
+});
+
+describe("whole-window counts and comparisons", () => {
+  /** `history()` dated inside the refresh window that `now` (2026-08-01) gives. */
+  const inWindowHistory = (): AudiencePulseHistorySnapshot => {
+    const base = history();
+    return {
+      ...base,
+      evidence: [
+        { ...base.evidence[0], day: "2026-07-20", channel: "web" },
+        { ...base.evidence[1], day: "2026-07-21", channel: null },
+      ],
+    };
+  };
+
+  it("counts the 30 days before the window from text-free outcomes, beside the census, and logs the read once", async () => {
+    const periodReads: Array<{ workspaceId: string; analysisStart: Date; analysisEnd: Date; signal?: AbortSignal }> = [];
+    const logs: Array<{ context: Record<string, unknown>; message: string }> = [];
+    const stored: AudiencePulseStoredReport[] = [];
+    const controller = new AbortController();
+    let previousReadStarted!: () => void;
+    const previousReadStart = new Promise<void>((resolve) => { previousReadStarted = resolve; });
+    const { service, calls } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes(input) {
+          periodReads.push(input);
+          calls.lifecycle.push("previous-period");
+          previousReadStarted();
+          return previousWindowOutcomes();
+        },
+      }),
+      // The census finishes only once the previous-period read has started: run one after the
+      // other, the refresh would never complete.
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => {
+            calls.lifecycle.push("census");
+            await previousReadStart;
+            return censusResult();
+          },
+        } as unknown as CensusService),
+      },
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) { stored.push(input.report); return { ...input, revision: "revision-1" }; },
+        async invalidate() { return true; },
+      },
+      logger: { info: (context, message) => logs.push({ context, message }), warn: () => undefined },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, signal: controller.signal });
+
+    expect(periodReads).toEqual([{
+      workspaceId: WORKSPACE_ID,
+      analysisStart: new Date("2026-06-02T00:00:00.000Z"),
+      analysisEnd: new Date("2026-07-02T00:00:00.000Z"),
+      signal: controller.signal,
+    }]);
+    expect(calls.lifecycle.indexOf("reserve")).toBeLessThan(calls.lifecycle.indexOf("previous-period"));
+    expect(calls.lifecycle.indexOf("reserve")).toBeLessThan(calls.lifecycle.indexOf("census"));
+    const previousPeriod = {
+      period: { start: "2026-06-02T00:00:00.000Z", end: "2026-07-02T00:00:00.000Z" },
+      questionCount: 7,
+      conversationCount: 5,
+      answeredCount: 4,
+      contentGapEligibleCount: 2,
+    };
+    expect(stored[0]?.previousPeriod).toEqual(previousPeriod);
+    expect(result.kind === "completed" && result.report.previousPeriod).toEqual(previousPeriod);
+    const periodLogs = logs.filter((log) => log.message === "audience_pulse_previous_period_read");
+    expect(periodLogs).toEqual([{
+      message: "audience_pulse_previous_period_read",
+      context: { workspaceId: WORKSPACE_ID, questionCount: 7, durationMs: expect.any(Number) },
+    }]);
+  });
+
+  it("stores no previous period when the 30 days before had no eligible question", async () => {
+    const { service } = createService({
+      historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+  });
+
+  it.each([
+    ["was created 40 days ago", { workspaceCreatedAt: new Date("2026-06-22T00:00:00.000Z"), conversationRetentionDays: null }],
+    ["keeps conversations 45 days", { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: 45 }],
+  ])("compares against nothing when the workspace %s, so part of the 30 days before is out of sight", async (_label, horizon) => {
+    let periodReads = 0;
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { periodReads += 1; return previousWindowOutcomes(); },
+      }),
+      historyHorizon: { async read() { return horizon; } },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+    expect(periodReads).toBe(0);
+  });
+
+  it("compares when retention still keeps the whole previous window", async () => {
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { return previousWindowOutcomes(); },
+      }),
+      historyHorizon: {
+        async read() { return { workspaceCreatedAt: new Date("2025-01-01T00:00:00.000Z"), conversationRetentionDays: 60 }; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousPeriod).toMatchObject({ questionCount: 7 });
+  });
+
+  it.each([
+    ["throws", () => { throw new Error("statement timeout"); }],
+  ])("completes and bills the refresh as usual, with no previous period, when that read %s", async (_label, failure) => {
+    const baseline = createService({ historySource: historySourceWith({ async read() { return inWindowHistory(); } }) });
+    await baseline.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    const warnings: Array<{ context: Record<string, unknown>; message: string }> = [];
+    const { service, calls } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { return failure(); },
+      }),
+      logger: { info: () => undefined, warn: (context, message) => warnings.push({ context, message }) },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    expect(result.kind === "completed" && result.report.previousPeriod).toBeNull();
+    const billing = (counts: typeof calls) => ({ reserve: counts.reserve, commit: counts.commit, release: counts.release, inference: counts.inference });
+    expect(billing(calls)).toEqual(billing(baseline.calls));
+    expect(warnings).toEqual([{
+      message: "audience_pulse_previous_period_read_failed",
+      context: { workspaceId: WORKSPACE_ID, durationMs: expect.any(Number), errorName: expect.any(String) },
+    }]);
+  });
+
+  it("returns and stores whole-window totals, days and channels with the refreshed report", async () => {
+    const stored: AudiencePulseStoredReport[] = [];
+    const { service } = createService({
+      historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) { stored.push(input.report); return { ...input, revision: "revision-1" }; },
+        async invalidate() { return true; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    if (result.kind !== "completed") throw new Error(`expected a completed refresh, got ${result.kind}`);
+
+    expect(result.report.totals).toEqual({
+      questionCount: 2,
+      conversationCount: 2,
+      answers: { answered: 0, partial: 0, unanswered: 2, unclear: 0, outOfScope: 0, notAssessed: 0 },
+      contentGapEligibleCount: 2,
+      unclassified: {
+        questionCount: 0,
+        answers: { answered: 0, partial: 0, unanswered: 0, unclear: 0, outOfScope: 0, notAssessed: 0 },
+        contentGapEligibleCount: 0,
+      },
+    });
+    expect(result.report.dailyVolume).toHaveLength(30);
+    expect(result.report.dailyVolume?.find((entry) => entry.day === "2026-07-20")).toEqual({
+      day: "2026-07-20", questionCount: 1, conversationCount: 1, answeredCount: 0, contentGapEligibleCount: 1,
+    });
+    expect(result.report.channels).toEqual([
+      { channel: "web", questionCount: 1, answeredCount: 0, contentGapEligibleCount: 1 },
+      { channel: null, questionCount: 1, answeredCount: 0, contentGapEligibleCount: 1 },
+    ]);
+    expect(stored[0]).toMatchObject({
+      totals: result.report.totals,
+      dailyVolume: result.report.dailyVolume,
+      channels: result.report.channels,
+    });
+  });
+
+  it("stops a cancelled refresh when the previous-period read is aborted, with no failure warning", async () => {
+    const warnings: string[] = [];
+    const controller = new AbortController();
+    const { service, calls } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() {
+          controller.abort();
+          throw new DOMException("The operation was aborted.", "AbortError");
+        },
+      }),
+      logger: { info: () => undefined, warn: (_context, message) => warnings.push(message) },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, signal: controller.signal });
+
+    expect(result).toEqual({ kind: "unavailable", reason: "cancelled" });
+    expect(calls.replace).toBe(0);
+    expect(warnings).not.toContain("audience_pulse_previous_period_read_failed");
+  });
+
+  it("does no previous-period work when usage capacity cannot be reserved", async () => {
+    let periodReads = 0;
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { periodReads += 1; return previousWindowOutcomes(); },
+      }),
+      usageLimitPolicy: {
+        async reserveAnswer() { throw Object.assign(new Error("usage limit reached"), { code: "usage_limit_exceeded" }); },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "usage_limited" });
+    expect(periodReads).toBe(0);
+  });
+
+  it("names no compared snapshot when the prior one gave no topic a previous count", async () => {
+    const prior = priorNarrativeSnapshot();
+    const { service } = createService({
+      historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
+      snapshotStore: snapshotStoreFor({ ...prior, report: { ...prior.report, themes: [], contentGaps: [], recommendations: [] } }),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousGeneratedAt).toBeNull();
+    expect(result.kind === "completed" && result.report.themes[0]?.previousMemberCount).toBeNull();
+  });
+
+  it("names the snapshot each topic's previous count was read from", async () => {
+    const { service } = createService({
+      historySource: historySourceWith({ async read() { return inWindowHistory(); } }),
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.previousGeneratedAt).toBe("2026-07-01T00:00:00.000Z");
+    expect(result.kind === "completed" && result.report.themes[0]?.previousMemberCount).toBe(2);
+  });
+
+  it("gives a report still waiting on topics its totals and previous period", async () => {
+    const { service } = createService({
+      historySource: historySourceWith({
+        async read() { return inWindowHistory(); },
+        async readPeriodOutcomes() { return previousWindowOutcomes().slice(0, 3); },
+      }),
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({ ...censusResult(), facetReadyQuestionCount: 0, unclassifiedCount: 2, topics: [] }),
+        } as unknown as CensusService),
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    if (result.kind !== "completed") throw new Error(`expected a completed refresh, got ${result.kind}`);
+
+    expect(result.report.themes).toEqual([]);
+    expect(result.report.totals).toMatchObject({ questionCount: 2, unclassified: { questionCount: 2 } });
+    expect(result.report.previousPeriod).toMatchObject({ questionCount: 3 });
+    expect(result.report.channels).toHaveLength(2);
+  });
+
+  it("leaves the counts absent when a snapshot saved before them is read", async () => {
+    const { service } = createService({ snapshotStore: snapshotStoreFor(savedSnapshot()) });
+
+    const result = await service.read({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    if (result.kind !== "completed") throw new Error(`expected a saved report, got ${result.kind}`);
+
+    for (const field of ["totals", "dailyVolume", "previousPeriod", "channels", "previousGeneratedAt"]) {
+      expect(result.report).not.toHaveProperty(field);
+    }
+  });
+});
+
+describe("operator state on content gaps", () => {
+  const draftedAt = new Date("2026-07-20T09:00:00.000Z");
+  const dismissedAt = new Date("2026-07-21T09:00:00.000Z");
+  const DOCUMENT_ID = "44444444-4444-4444-4444-444444444444";
+  const TOPIC_ID = "55555555-5555-4555-8555-555555555555";
+
+  it("reads each content gap's dismissal and latest draft at request time, leaving every count as stored", async () => {
+    const reads: Array<{ workspaceId: string; topicIds: readonly string[] }> = [];
+    const states = new Map<string, AudiencePulseTopicState>([["topic-1", {
+      dismissedAt,
+      latestDraft: { documentId: DOCUMENT_ID, createdAt: draftedAt },
+    }]]);
+    const { service } = createService({
+      snapshotStore: snapshotStoreFor(savedSnapshot()),
+      topicStateStore: topicStateStoreWith({
+        async readTopicStates(input) { reads.push(input); return states; },
+      }),
+    });
+
+    const result = await service.read({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+    if (result.kind !== "completed") throw new Error(`expected a saved report, got ${result.kind}`);
+
+    expect(reads).toEqual([{ workspaceId: WORKSPACE_ID, topicIds: ["topic-1"] }]);
+    expect(result.report.contentGaps).toEqual([{
+      themeId: "topic-1",
+      eligibleEvidenceCount: 2,
+      distinctConversationCount: 2,
+      dismissedAt: dismissedAt.toISOString(),
+      latestDraft: { documentId: DOCUMENT_ID, createdAt: draftedAt.toISOString() },
+    }]);
+    expect(result.report.themes[0]?.memberCount).toBe(2);
+  });
+
+  it("reads a content gap with no operator state as neither dismissed nor drafted", async () => {
+    const { service } = createService({ snapshotStore: snapshotStoreFor(savedSnapshot()) });
+
+    const result = await service.read({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.contentGaps[0]).toMatchObject({ dismissedAt: null, latestDraft: null });
+  });
+
+  it("carries operator state onto a freshly refreshed report too", async () => {
+    const { service } = createService({
+      topicStateStore: topicStateStoreWith({
+        async readTopicStates() { return new Map([["topic-1", { dismissedAt, latestDraft: null }]]); },
+      }),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind === "completed" && result.report.contentGaps[0]).toMatchObject({
+      themeId: "topic-1",
+      dismissedAt: dismissedAt.toISOString(),
+      latestDraft: null,
+    });
+  });
+
+  it("serves the report without operator state, and warns without content, when the state read fails", async () => {
+    const warnings: Array<{ context: Record<string, unknown>; message: string }> = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(savedSnapshot()),
+      topicStateStore: topicStateStoreWith({
+        async readTopicStates() { throw new Error("connection reset"); },
+      }),
+      logger: { info: () => undefined, warn: (context, message) => warnings.push({ context, message }) },
+    });
+    const input = { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID };
+
+    const read = await service.read(input);
+    const refreshed = await service.refresh(input);
+
+    for (const result of [read, refreshed]) {
+      expect(result.kind === "completed" && result.report.contentGaps[0]).toMatchObject({
+        themeId: "topic-1",
+        dismissedAt: null,
+        latestDraft: null,
+      });
+    }
+    // The saved narrative is reused, so the one reservation is released, as it is with state.
+    expect({ reserve: calls.reserve, commit: calls.commit, release: calls.release }).toEqual({ reserve: 1, commit: 0, release: 1 });
+    expect(warnings.filter((warning) => warning.message === "audience_pulse_topic_state_read_failed")).toEqual([
+      { message: "audience_pulse_topic_state_read_failed", context: { workspaceId: WORKSPACE_ID, topicCount: 1, errorName: "Error" } },
+      { message: "audience_pulse_topic_state_read_failed", context: { workspaceId: WORKSPACE_ID, topicCount: 1, errorName: "Error" } },
+    ]);
+  });
+
+  it("audits a dismissal and a restore that changed something, and nothing else", async () => {
+    const outcomes: Array<"changed" | "unchanged" | "topic_not_found"> = ["changed", "unchanged", "topic_not_found"];
+    const writes: string[] = [];
+    const { service, calls } = createService({
+      topicStateStore: topicStateStoreWith({
+        async dismiss(input) { writes.push(`dismiss:${input.topicId}:${input.userId}`); return outcomes.shift()!; },
+        async restore(input) { writes.push(`restore:${input.topicId}`); return "changed"; },
+      }),
+    });
+    const input = { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, topicId: TOPIC_ID };
+
+    expect(await service.dismissTopic(input)).toBe("changed");
+    expect(await service.dismissTopic(input)).toBe("unchanged");
+    expect(await service.dismissTopic(input)).toBe("topic_not_found");
+    expect(await service.restoreTopic(input)).toBe("changed");
+
+    expect(writes).toEqual([
+      `dismiss:${TOPIC_ID}:${USER_ID}`,
+      `dismiss:${TOPIC_ID}:${USER_ID}`,
+      `dismiss:${TOPIC_ID}:${USER_ID}`,
+      `restore:${TOPIC_ID}`,
+    ]);
+    expect(calls.auditEvents).toEqual([
+      {
+        accountId: ACCOUNT_ID,
+        workspaceId: WORKSPACE_ID,
+        eventType: "audience_pulse.topic_dismissed",
+        eventStatus: "success",
+        metadata: { userId: USER_ID, topicId: TOPIC_ID },
+      },
+      {
+        accountId: ACCOUNT_ID,
+        workspaceId: WORKSPACE_ID,
+        eventType: "audience_pulse.topic_restored",
+        eventStatus: "success",
+        metadata: { userId: USER_ID, topicId: TOPIC_ID },
+      },
+    ]);
+  });
+
+  it("links a draft document to a topic, audits the link, and reports a document outside the workspace", async () => {
+    const links: Array<{ topicId: string; documentId: string; userId: string }> = [];
+    const outcomes: Array<"changed" | "document_not_found"> = ["changed", "document_not_found"];
+    const { service, calls } = createService({
+      topicStateStore: topicStateStoreWith({
+        async linkDraft(input) { links.push(input); return outcomes.shift()!; },
+      }),
+    });
+    const input = { accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID };
+
+    expect(await service.linkTopicDraft(input)).toBe("changed");
+    expect(await service.linkTopicDraft(input)).toBe("document_not_found");
+
+    expect(links).toEqual([
+      { workspaceId: WORKSPACE_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID, userId: USER_ID },
+      { workspaceId: WORKSPACE_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID, userId: USER_ID },
+    ]);
+    expect(calls.auditEvents).toEqual([{
+      accountId: ACCOUNT_ID,
+      workspaceId: WORKSPACE_ID,
+      eventType: "audience_pulse.topic_draft_linked",
+      eventStatus: "success",
+      metadata: { userId: USER_ID, topicId: TOPIC_ID, documentId: DOCUMENT_ID },
+    }]);
   });
 });

@@ -103,6 +103,34 @@ describeIntegration("typed attributes (Postgres)", () => {
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("refuses a value for another workspace's conversation, and stores nothing", async () => {
+    const otherAccountId = randomUUID();
+    const otherWorkspaceId = randomUUID();
+    const otherAgentId = randomUUID();
+    const otherConversationId = randomUUID();
+    await database.query("INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)", [
+      otherAccountId, "Other Co", `other-${otherAccountId}@example.com`, "hash",
+    ]);
+    await database.query("INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)", [
+      otherWorkspaceId, otherAccountId, "Other Workspace", `route-${otherWorkspaceId}`,
+    ]);
+    await database.query("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)", [otherAgentId, otherWorkspaceId, "Other Agent"]);
+    await database.query("INSERT INTO conversations (id, workspace_id, agent_id) VALUES ($1, $2, $3)", [
+      otherConversationId, otherWorkspaceId, otherAgentId,
+    ]);
+    try {
+      const topic = await createTopic();
+      const scope = { type: "conversation" as const, id: otherConversationId };
+
+      await expect(repository.upsertValue(topic.id, scope, "billing", api)).rejects.toMatchObject({ statusCode: 404 });
+      expect(await repository.readValue(topic.id, scope)).toBeNull();
+      expect(await repository.hasValues(topic.id)).toBe(false);
+    } finally {
+      await database.query("DELETE FROM workspaces WHERE id = $1", [otherWorkspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM accounts WHERE id = $1", [otherAccountId]).catch(() => undefined);
+    }
+  });
+
   it("keeps a value sent under an uppercase conversation id under the conversation's own id, where its erasure finds it", async () => {
     const topic = await createTopic();
     const conversationId = await createConversation();

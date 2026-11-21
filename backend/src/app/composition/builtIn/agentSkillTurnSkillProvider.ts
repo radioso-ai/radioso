@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { SkillDefinition } from "@radioso/skill-contract";
 
-import type { AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
+import { ConversationSkills, countLiveSkillFallbacks, type AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
+import { withConversationSkills, type ConversationSkillSet } from "../../../shared/domain/conversationSkills.js";
 import type { AgentSkillKind, AgentSkillSpine } from "../../../modules/agentSkills/public.js";
 import type { FinalPromptContext } from "../../../modules/retrieval/public.js";
 import {
@@ -378,6 +379,7 @@ const turnSkillForAgentSkill = (
   recordSuppression: RecordSkillEffectSuppression,
   reportFailure: ReportDispatchFailure,
   renderer: TurnOutcomeRenderer,
+  conversationSkills: ConversationSkillSet,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   return {
@@ -416,6 +418,7 @@ const turnSkillForAgentSkill = (
             conversationId: session.conversation.id,
             conversationDurability: conversationDurability ?? "durable",
             messageId: session.userMessage.id,
+            ...withConversationSkills(conversationSkills),
             turn: {
               agent: toConversationAgentConfig(session.agent),
               sessionId: session.conversation.id,
@@ -465,6 +468,7 @@ const stagedToolFactoryForAgentSkill = (
   skillEffects: SkillEffectPolicy | undefined,
   conversationDurability: ConversationDurability | undefined,
   recordSuppression: RecordSkillEffectSuppression,
+  conversationSkills: ConversationSkillSet,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const toolName = stagedToolNameForSkill(agentSkill.skillName);
@@ -516,6 +520,7 @@ const stagedToolFactoryForAgentSkill = (
           conversationId: session.conversation.id,
           conversationDurability: conversationDurability ?? "durable",
           messageId: session.userMessage.id,
+          ...withConversationSkills(conversationSkills),
           turn: {
             agent: toConversationAgentConfig(session.agent),
             sessionId: session.conversation.id,
@@ -576,7 +581,14 @@ const stagedToolFactoryForAgentSkill = (
 };
 
 export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkillProvider {
-  constructor(private readonly options: RepositoryAgentSkillTurnSkillProviderOptions) {}
+  private readonly conversationSkills: ConversationSkills;
+
+  constructor(private readonly options: RepositoryAgentSkillTurnSkillProviderOptions) {
+    this.conversationSkills = new ConversationSkills({
+      live: options.agentSkills,
+      onLiveFallback: countLiveSkillFallbacks(options.metricsRegistry),
+    });
+  }
 
   async forSession(
     session: PreparedSession,
@@ -592,11 +604,10 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
     const reportFailure = dispatchFailureReporter(this.options.logger);
     // Directives read from the conversation's frozen revision snapshot
     // (session.agent.authoredDirectives) so a pinned turn cannot see an operator's
-    // in-flight live edit. Agent-selectable skills must be frozen the same way: only
-    // fall back to a live lookup when the resolved agent carries no frozen snapshot at
-    // all (no revision was applied — e.g. a trusted historical replay baseline).
-    const records = session.agent.authoredAgentSkills
-      ?? await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
+    // in-flight live edit. Skills are frozen the same way: the release's set decides which
+    // skills this turn offers, and every executor a skill reaches reads its row from that set
+    // (carried on the invocation), live only when the release recorded no skills.
+    const records = await this.conversationSkills.forTurn(session.agent);
     const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean; stagingCapable: boolean; capabilityDenied?: boolean }>();
     const turnSkills: TurnSkill[] = [];
     const stagedRecords: AgentSkillSpine[] = [];
@@ -624,6 +635,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           recordSuppression,
           reportFailure,
           this.options.skillResultRenderer,
+          records,
         ));
       }
       if (!capabilityDenied && stagingCapable) {
@@ -645,6 +657,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               session.skillEffects,
               session.conversationDurability,
               recordSuppression,
+              records,
             )]
           : [];
       }),

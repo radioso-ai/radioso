@@ -3340,6 +3340,36 @@ components:
       required:
         - greeting
         - validation
+    AgentRevisionSkill:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        invocationMode:
+          type: string
+        enabled:
+          type: boolean
+        targetType:
+          type:
+            - string
+            - "null"
+        targetId:
+          type:
+            - string
+            - "null"
+        configRedacted:
+          type: boolean
+          description: The skill has settings; they are not shown, since they can hold recipients, payloads and tool settings.
+      required:
+        - name
+        - kind
+        - invocationMode
+        - enabled
+        - targetType
+        - targetId
+        - configRedacted
     AgentRevisionDetailResponse:
       type: object
       properties:
@@ -3475,6 +3505,34 @@ components:
                         required:
                           - contextVariableId
                           - change
+                    agentSkills:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          skillId:
+                            type: string
+                            format: uuid
+                          skillName:
+                            type: string
+                          change:
+                            type: string
+                            enum:
+                              - added
+                              - removed
+                              - changed
+                          settingsChanged:
+                            type: boolean
+                            description: "For a changed skill: whether its settings changed. They are not shown."
+                          before:
+                            $ref: "#/components/schemas/AgentRevisionSkill"
+                          after:
+                            $ref: "#/components/schemas/AgentRevisionSkill"
+                        required:
+                          - skillId
+                          - skillName
+                          - change
+                      description: "Skills this revision adds, removes or changes against its base release, by name. The default-answer skill is not listed: retrieval settings apply without publishing."
                     greeting:
                       type: object
                       properties:
@@ -3507,6 +3565,7 @@ components:
                     - directives
                     - routines
                     - contextVariableEnablements
+                    - agentSkills
                     - greeting
                     - visitorImagesEnabled
               required:

@@ -388,7 +388,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
     slackSkillDefinitionRepository: repositories.slackSkillDefinitionRepository,
-    routineInvocableSkillNames,
     retrievalPipeline: retrieval.retrievalPipeline,
     retrievalDefaultsProvider,
     skillSettingsResolver,

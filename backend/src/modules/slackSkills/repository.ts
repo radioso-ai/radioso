@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import type { Transaction } from "kysely";
+
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type {
   SlackSkillDefinitionSummary,
   SlackSkillDefinitionUpdateInput,
@@ -36,17 +39,33 @@ const SKILL_COLUMNS = [
   "updated_at",
 ] as const;
 
-const mapRecord = (row: SlackSkillDefinitionRow): SlackSkillDefinitionSummary => ({
+/** A Slack skill read from its `agent_skills` row, live or as a release froze it. */
+export const slackSkillDefinitionFromSkill = (skill: ConversationSkillRow): SlackSkillDefinitionSummary => {
+  const config = (skill.config ?? {}) as SlackSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    installationId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    boundInputs: config.boundInputs ?? {},
+    exposedInputs: config.exposedInputs ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: SlackSkillDefinitionRow): SlackSkillDefinitionSummary => slackSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  installationId: row.target_id,
   skillName: row.skill_name,
-  boundInputs: row.config.boundInputs ?? {},
-  exposedInputs: row.config.exposedInputs ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface CreateSlackSkillDefinitionInput {
@@ -73,8 +92,22 @@ export interface SlackSkillDefinitionRepositoryPort {
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
 }
 
+/**
+ * Runs a skill write and projects the skill it touched into the agent's draft under the agent
+ * revision lock: agentSkills' `writeAgentSkillIntoDraft`, which composition hands in.
+ */
+type AgentSkillDraftWrite = <T>(
+  db: Db,
+  scope: { workspaceId?: string; agentId: string },
+  write: (trx: Transaction<DB>) => Promise<T>,
+  touchedSkillId: (result: T) => string | null,
+) => Promise<T>;
+
 export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepositoryPort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly writeIntoDraft: AgentSkillDraftWrite,
+  ) {}
 
   // Base select scoped to the slack-kind rows of agent_skills.
   private selectSlackSkills() {
@@ -86,22 +119,24 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        workspace_id: input.workspaceId,
-        skill_name: input.skillName,
-        kind: "slack",
-        enabled: input.enabled ?? true,
-        target_type: "slack_installation",
-        target_id: input.installationId,
-        config: toJsonb(config),
-      })
-      .returning(SKILL_COLUMNS)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as unknown as SlackSkillDefinitionRow);
+    return this.writeIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          workspace_id: input.workspaceId,
+          skill_name: input.skillName,
+          kind: "slack",
+          enabled: input.enabled ?? true,
+          target_type: "slack_installation",
+          target_id: input.installationId,
+          config: toJsonb(config),
+        })
+        .returning(SKILL_COLUMNS)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as unknown as SlackSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findEnabledByName(
@@ -151,30 +186,34 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
     // config patch leaves the stored config untouched, like `|| '{}'::jsonb`).
     const enabled = "enabled" in input ? input.enabled ?? null : null;
     const hasConfig = Object.keys(config).length > 0;
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        enabled: eb.fn.coalesce(eb.val(enabled), eb.ref("enabled")),
-        ...(hasConfig ? { config: jsonbConcat(eb.ref("config"), toJsonb(config)) } : {}),
-        updated_at: currentTimestamp(),
-      }))
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "slack")
-      .returning(SKILL_COLUMNS)
-      .executeTakeFirst();
-    return row ? mapRecord(row as unknown as SlackSkillDefinitionRow) : null;
+    return this.writeIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          enabled: eb.fn.coalesce(eb.val(enabled), eb.ref("enabled")),
+          ...(hasConfig ? { config: jsonbConcat(eb.ref("config"), toJsonb(config)) } : {}),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "slack")
+        .returning(SKILL_COLUMNS)
+        .executeTakeFirst();
+      return row ? mapRecord(row as unknown as SlackSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "slack")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return this.writeIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "slack")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 }

@@ -29,7 +29,7 @@ import {
   type CopilotProposalSummary,
   type CopilotProposalStatus,
 } from '@/lib/api-copilot'
-import { announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
+import { announceAgentDraftSaved, announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   createCopilotProposalCardState,
@@ -317,6 +317,11 @@ export function CopilotProposalCard({
         // An open greeting editor holds the wording from before Ray wrote this one.
         const greetingAgentId = targetReference(proposal, detail, result.appliedRef ?? null, defaultAgentId)?.agentId
         if (greetingAgentId) announceAgentGreetingChanged(greetingAgentId)
+      }
+      if (result.status === 'applied' && proposal.targetType === 'agent_skill') {
+        // A skill write moves the agent's draft: Publish and Test Chat read it again.
+        const skillAgentId = targetReference(proposal, detail, result.appliedRef ?? null, defaultAgentId)?.agentId
+        if (skillAgentId) announceAgentDraftSaved(skillAgentId)
       }
     } catch (error) {
       if (isCopilotApiErrorStatus(error, 409)) {

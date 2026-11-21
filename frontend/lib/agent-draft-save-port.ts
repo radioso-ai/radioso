@@ -19,6 +19,11 @@ export const AGENT_DRAFT_SAVED_EVENT = 'radioso:agent-draft-saved'
  */
 export const AGENT_GREETING_CHANGED_EVENT = 'radioso:agent-greeting-changed'
 
+/** Announces a write that moved the agent's draft (a skill saved, Ray's change applied), so the revision header and Test Chat read it again. */
+export function announceAgentDraftSaved(agentId: string): void {
+  window.dispatchEvent(new CustomEvent(AGENT_DRAFT_SAVED_EVENT, { detail: { agentId } }))
+}
+
 /**
  * Announces a greeting write that did not come from the agent page's own save. The draft moved
  * too, so the revision header and Test Chat are told through {@link AGENT_DRAFT_SAVED_EVENT}.

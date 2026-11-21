@@ -1,3 +1,4 @@
+import { writeAgentSkillIntoDraft } from "../../modules/agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -5,6 +6,7 @@ import type {
   CustomerEmailSkillDefinitionSummary,
 } from "../../modules/customerEmail/domain.js";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface EmailSkillDefinitionRecord {
@@ -72,18 +74,34 @@ const emailSkillColumns = [
 const selectEmailSkills = (db: Db) =>
   db.selectFrom("agent_skills").select(emailSkillColumns).where("kind", "=", "customer_email");
 
-const mapRecord = (row: EmailSkillDefinitionRow): EmailSkillDefinitionRecord => ({
+/** A customer email skill read from its `agent_skills` row, live or as a release froze it. */
+export const emailSkillDefinitionFromSkill = (skill: ConversationSkillRow): EmailSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as EmailSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    connectionId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    mode: config.mode ?? "draft",
+    boundInputs: config.boundInputs ?? {},
+    exposedInputs: config.exposedInputs ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: EmailSkillDefinitionRow): EmailSkillDefinitionRecord => emailSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  connectionId: row.target_id,
   skillName: row.skill_name,
-  mode: row.config.mode ?? "draft",
-  boundInputs: row.config.boundInputs ?? {},
-  exposedInputs: row.config.exposedInputs ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface EmailSkillDefinitionRepositoryPort {
@@ -110,22 +128,24 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        workspace_id: input.workspaceId,
-        skill_name: input.skillName,
-        kind: "customer_email",
-        enabled: input.enabled ?? true,
-        target_type: "customer_email_connection",
-        target_id: input.connectionId,
-        config: toJsonb(config),
-      })
-      .returning(emailSkillColumns)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as EmailSkillDefinitionRow);
+    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          workspace_id: input.workspaceId,
+          skill_name: input.skillName,
+          kind: "customer_email",
+          enabled: input.enabled ?? true,
+          target_type: "customer_email_connection",
+          target_id: input.connectionId,
+          config: toJsonb(config),
+        })
+        .returning(emailSkillColumns)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as EmailSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<EmailSkillDefinitionRecord | null> {
@@ -171,31 +191,35 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       ...("boundInputs" in input ? { boundInputs: input.boundInputs ?? {} } : {}),
       ...("exposedInputs" in input ? { exposedInputs: input.exposedInputs ?? {} } : {}),
     };
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        ...(input.enabled != null ? { enabled: input.enabled } : {}),
-        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
-        updated_at: currentTimestamp(),
-      }))
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "customer_email")
-      .returning(emailSkillColumns)
-      .executeTakeFirst();
-    return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          ...(input.enabled != null ? { enabled: input.enabled } : {}),
+          config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "customer_email")
+        .returning(emailSkillColumns)
+        .executeTakeFirst();
+      return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "customer_email")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "customer_email")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 
   async countByConnection(workspaceId: string, connectionId: string): Promise<number> {

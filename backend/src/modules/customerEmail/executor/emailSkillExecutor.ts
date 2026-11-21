@@ -28,7 +28,15 @@ interface EmailSkillActivitySinkPort {
 }
 
 interface EmailSkillExecutorOptions {
-  skills: Pick<EmailSkillDefinitionRepositoryPort, "findEnabledByName">;
+  /** The skill's row for the conversation the invocation runs for (its context carries that conversation's skills). */
+  skills: {
+    findEnabledByName(
+      workspaceId: string,
+      agentId: string,
+      skillName: string,
+      context?: Readonly<Record<string, unknown>>,
+    ): ReturnType<EmailSkillDefinitionRepositoryPort["findEnabledByName"]>;
+  };
   delivery: Pick<CustomerEmailDeliveryService, "deliver">;
   activity?: EmailSkillActivitySinkPort;
 }
@@ -66,7 +74,7 @@ export class EmailSkillExecutor implements SkillExecutorPort {
     const workspaceId = typeof invocation.context?.workspaceId === "string" ? invocation.context.workspaceId : "";
     if (!agentId || !workspaceId) return failure("context_missing");
 
-    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name);
+    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name, invocation.context);
     if (!definition) return failure("skill_not_found");
 
     setTraceAttributes({

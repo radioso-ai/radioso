@@ -161,8 +161,9 @@ The `@` menu also lists what the agent already knows about the visitor under
 **Visitor context**. Choose **Current page** to place it in a step, and the
 step reads the page's URL, title, and language when it runs — enough to write
 "If the visitor is on a program page, confirm that is the program they want to
-book; otherwise ask which program @program". A host-defined context variable
-the agent has enabled appears in the same list. This is a value the step
+book; otherwise ask which program @program". An
+[attribute](/operators/context-variables) the agent has enabled appears in the
+same list. This is a value the step
 reads, not one it stores: nothing is added to **Information**, so ask for
 anything you want to keep with an `@` slot.
 
@@ -716,7 +717,7 @@ ending written for it, with the general path after it.
 ## Validation and publishing
 
 The editor validates as you work. A routine is one of the agent's scoped editable
-areas, alongside directives, skills, and context variables. All four
+areas, alongside directives, skills, and attributes. All four
 share one publication boundary: **Review & Publish** on the agent snapshots them
 together into a revision, and that revision serves conversations. So an edit
 changes what the agent will run after the next Review & Publish, and nothing
@@ -758,7 +759,7 @@ the reason *skills are off in this test*, and the routine takes its failed
 branch, so you can watch that path too. Choose **Run skills for real** in the
 Test Chat actions menu to start a fresh private test where every skill runs
 exactly as it would for a customer. Retrieval skills run in both modes, and
-test values still stand in for context variables either way. Action steps,
+test values still stand in for attributes either way. Action steps,
 handoffs, team notices, and completion export stay off in every private test;
 a test turn that reaches an ending that notifies shows the notice it would
 send, and the address replies would go to, in the turn's trace instead.

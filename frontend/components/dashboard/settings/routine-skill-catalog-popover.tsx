@@ -256,7 +256,7 @@ function SkillCatalogDetails({
                           <SelectItem value="literal">Literal</SelectItem>
                           <SelectItem value="variable">Variable</SelectItem>
                           {binding?.kind === 'contextVariableRef' ? (
-                            <SelectItem value="context">Context variable</SelectItem>
+                            <SelectItem value="context">Attribute</SelectItem>
                           ) : null}
                         </SelectContent>
                       </Select>

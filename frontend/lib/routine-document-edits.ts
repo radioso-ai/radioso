@@ -492,26 +492,48 @@ export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, s
   return sensitive || key === undefined ? next : dropFieldFromConsents(next, key)
 }
 
+// A place a field is named, and whether a Sets variable of the same name can stand in for the field
+// there: an instruction, an input binding and a field guard read any routine variable by name, and
+// a Sets row is that variable's own declaration.
+interface FieldNameUse {
+  reference: string
+  readsAnyVariable: boolean
+}
+
+const fieldNameUses = (doc: RoutineBlockDoc, key: string): FieldNameUse[] => {
+  const uses: FieldNameUse[] = []
+  const use = (reference: string, readsAnyVariable: boolean) => uses.push({ reference, readsAnyVariable })
+  for (const step of doc.steps) {
+    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) use(`instruction in ${step.stableStepId}`, true)
+    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) use(`binding in ${step.stableStepId}`, true)
+    if (Object.values(step.outputAssignments ?? {}).includes(key)) use(`output in ${step.stableStepId}`, true)
+    // A field guard reads any variable; a slot-filled gate waits on a field the visitor gives.
+    const gatesOnField = step.branches.some((branch) => branch.guard.kind === 'slot_filled' && branch.guard.slotKeys.includes(key))
+    if (gatesOnField || step.branches.some((branch) => branch.guard.kind === 'field' && branch.guard.fieldRef === key)) use(`guard in ${step.stableStepId}`, !gatesOnField)
+    if (step.present?.slot === key) use(`cards in ${step.stableStepId}`, false)
+  }
+  const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
+  for (const endingId of noticeEndings) use(`notice in ${endingId}`, false)
+  return uses
+}
+
+const isSetsVariable = (doc: RoutineBlockDoc, key: string): boolean =>
+  doc.steps.some((step) => Object.values(step.outputAssignments ?? {}).includes(key))
+
 // Every place a field is named. A consent that covers it is one of them, but never a reason to
 // keep the field: removing the field takes it out of the consent (`slotRemovalBlockers`).
 export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => [
-  ...slotRemovalBlockers(doc, key),
+  ...fieldNameUses(doc, key).map((use) => use.reference),
   ...consentsCoveringField(doc, key).map((consentKey) => `consent ${consentKey}`),
 ]
 
-// The references removing a field would leave pointing at nothing, so the operator removes them first.
+// The references removing a field would leave pointing at nothing, so the operator removes them
+// first. A field that collides with a Sets variable of its name, as a draft saved while a Sets row
+// also created a field could, goes without them: the row keeps declaring the name, so the row and
+// what reads the name by it still resolve. Cards and ending notices need a field.
 export const slotRemovalBlockers = (doc: RoutineBlockDoc, key: string): string[] => {
-  const references: string[] = []
-  for (const step of doc.steps) {
-    if (step.instruction.some((segment) => segment.kind === 'slotReference' && segment.key === key)) references.push(`instruction in ${step.stableStepId}`)
-    if (Object.values(step.inputBindings ?? {}).some((binding) => binding.kind === 'variableRef' && binding.ref === key)) references.push(`binding in ${step.stableStepId}`)
-    if (Object.values(step.outputAssignments ?? {}).includes(key)) references.push(`output in ${step.stableStepId}`)
-    if (step.branches.some((branch) => branch.guard.kind === 'slot_filled' ? branch.guard.slotKeys.includes(key) : branch.guard.kind === 'field' && branch.guard.fieldRef === key)) references.push(`guard in ${step.stableStepId}`)
-    if (step.present?.slot === key) references.push(`cards in ${step.stableStepId}`)
-  }
-  const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
-  for (const endingId of noticeEndings) references.push(`notice in ${endingId}`)
-  return references
+  const setsVariable = isSetsVariable(doc, key)
+  return fieldNameUses(doc, key).filter((use) => !(setsVariable && use.readsAnyVariable)).map((use) => use.reference)
 }
 
 export const removeSlot = (doc: RoutineBlockDoc, stableSlotId: string): RoutineBlockDoc => {

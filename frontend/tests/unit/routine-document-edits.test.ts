@@ -382,6 +382,34 @@ describe('routine document edits', () => {
     expect(slotReferences(renamed, 'customer_email')).toEqual(expect.arrayContaining(['instruction in ask_email', 'binding in ask_email', 'output in ask_email', 'guard in ask_email']))
   })
 
+  it('lets a field that collides with a Sets variable of the same name go, keeping the row and what reads the name', () => {
+    // A draft from before Sets declared variables: the row also created a field of its name.
+    const tool = addStep(source(), 'tool')
+    const withLookup = updateBindings(tool, 'step_1', { outputAssignments: { first_name: 'first_name' } })
+    const withField = updateSlot(addSlot(withLookup), 'slot_1', { key: 'first_name' })
+    const reading = replaceInstruction(withField, 'ask_email', [
+      { kind: 'text', text: 'Greet ' },
+      { kind: 'slotReference', key: 'first_name', source: '{{slot.first_name}}' },
+    ])
+    const branched = addBranch(reading, 'step_1', 'field')
+    const fieldBranch = branched.steps[1].branches.length - 1
+    const damaged = updateBranchGuard(branched, 'step_1', fieldBranch, { fieldRef: 'first_name', fieldOp: 'is_present' })
+
+    expect(slotReferences(damaged, 'first_name')).toEqual(expect.arrayContaining(['instruction in ask_email', 'output in step_1', 'guard in step_1']))
+    expect(slotRemovalBlockers(damaged, 'first_name')).toEqual([])
+    const repaired = removeSlot(damaged, 'slot_1')
+    expect(repaired.information.map((slot) => slot.key)).toEqual(['email'])
+    expect(repaired.steps[1].outputAssignments).toEqual({ first_name: 'first_name' })
+  })
+
+  it('still keeps a field that only a field can be, such as one an ending notice names, when a Sets variable shares its name', () => {
+    const tool = addStep(source(), 'tool')
+    const withLookup = updateBindings(tool, 'step_1', { outputAssignments: { email: 'email' } })
+    const noticed = setEndingNotice(withLookup, 'complete', { subject: 'Request from {{slot.email}}', intro: null })
+
+    expect(slotRemovalBlockers(noticed, 'email')).toEqual(['notice in complete'])
+  })
+
   it('keeps typed binding edits through the block-document round trip', () => {
     const tool = addStep(source(), 'tool')
     const edited = updateBindings(tool, 'step_1', {

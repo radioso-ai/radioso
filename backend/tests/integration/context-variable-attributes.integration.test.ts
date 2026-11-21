@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
@@ -7,6 +8,7 @@ import {
   ContextVariableValueEraser,
   ContextVariableValueExporter,
 } from "../../src/db/repositories/contextVariableRepository.js";
+import { filterIndexPredicate } from "../../src/db/repositories/contextVariableValueReads.js";
 import { contextScopeLadder, type ContextVariableOption } from "../../src/modules/context-variables/domain.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
@@ -320,6 +322,23 @@ describeIntegration("typed attributes (Postgres)", () => {
     expect(values.get(topic.id)).toMatchObject({ data: "billing", scope: { type: "conversation", id: conversationId } });
     expect(values.get(plan.id)).toMatchObject({ data: "pro", scope: { type: "agent", id: agentId } });
     expect(values.has(unset.id)).toBe(false);
+  });
+
+  it("serves a filter by an enum key from the filter index only when the read carries the index's predicate", async () => {
+    const topic = await createTopic();
+    await repository.upsertValue(topic.id, { type: "conversation", id: await createConversation() }, "billing", api);
+    const plan = (withPredicate: boolean) => database.kysely.transaction().execute(async (trx) => {
+      await sql`SET LOCAL enable_seqscan = off`.execute(trx);
+      const query = trx.selectFrom("context_variable_values")
+        .select("scope_id")
+        .where("variable_id", "=", topic.id)
+        .where("scope_type", "=", "conversation")
+        .where("data", "=", toJsonb("billing"));
+      return JSON.stringify(await (withPredicate ? query.where(filterIndexPredicate) : query).explain("json"));
+    });
+
+    expect(await plan(true)).toContain("idx_context_variable_values_variable_scope_data");
+    expect(await plan(false)).not.toContain("idx_context_variable_values_variable_scope_data");
   });
 
   it("erases a conversation's values with it and exports them with their writer", async () => {

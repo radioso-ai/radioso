@@ -483,6 +483,7 @@ The `contextClassification` module, prompt and job; enqueue in chat; the excerpt
 
 **PR 1c: drawer block and filter (about 16 files).**
 `attributes` on conversation detail; the history list filter; the read-only **Attributes** block; the Inbox filter; Playwright for both; one test that a directive condition reads a classified value and one that a routine step renders it; docs. Contract change: yes.
+The filter's query must carry `filterIndexPredicate` (`backend/src/db/repositories/contextVariableValueReads.ts`), the filter index's predicate: Postgres uses a partial index only when the query implies its predicate, and `data = $1` alone does not. A test runs `EXPLAIN` on the filter query and expects the index.
 
 **What slice 1 proves:**
 

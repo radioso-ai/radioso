@@ -38,6 +38,15 @@ export const contextVariableValueColumns = [
 ] as const;
 
 /**
+ * The predicate of the Inbox filter's partial index, `idx_context_variable_values_variable_scope_data`
+ * (migration 270), word for word. Postgres serves a query from a partial index only when the query's
+ * WHERE implies the index's, and it cannot derive this from `data = $1`, so a read that filters
+ * values by an enum key carries it to be served by the index. Every enum key satisfies it: a string
+ * of at most `maxKeyChars` (120) ASCII characters.
+ */
+export const filterIndexPredicate = sql<boolean>`jsonb_typeof(data) = 'string' and octet_length(data #>> '{}') <= 120`;
+
+/**
  * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in
  * lowercase, so an id sent in uppercase still names the stored value.
  */

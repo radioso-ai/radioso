@@ -38,15 +38,30 @@ export type FullStringPaths = ReadonlySet<string>;
 
 const NO_FULL_STRING_PATHS: FullStringPaths = new Set();
 
+/**
+ * Absolute compactor paths (`$.variables[0].options`) exempt from array-length compaction, on the
+ * same terms as `FullStringPaths`: the owning module's write contract bounds the array above the
+ * generic cap, and the write that replaces it restates it whole, so a cut copy would be one a
+ * reader cannot write back. Its entries are still compacted.
+ */
+type FullArrayPaths = ReadonlySet<string>;
+
+const NO_FULL_ARRAY_PATHS: FullArrayPaths = new Set();
+
+interface CompactionExemptions {
+  readonly fullStringPaths: FullStringPaths;
+  readonly fullArrayPaths: FullArrayPaths;
+}
+
 const compactValue = (
   value: unknown,
   options: CompactionOptions,
   path: string,
   truncation: TruncationEntry[],
-  fullStringPaths: FullStringPaths,
+  exemptions: CompactionExemptions,
 ): unknown => {
   if (typeof value === "string") {
-    if (value.length <= options.maxStringChars || fullStringPaths.has(path)) return value;
+    if (value.length <= options.maxStringChars || exemptions.fullStringPaths.has(path)) return value;
     truncation.push({
       path,
       reason: "string_length",
@@ -56,21 +71,22 @@ const compactValue = (
     return `${value.slice(0, options.maxStringChars)}…`;
   }
   if (Array.isArray(value)) {
-    if (value.length > options.maxArrayItems) {
+    const maxItems = exemptions.fullArrayPaths.has(path) ? value.length : options.maxArrayItems;
+    if (value.length > maxItems) {
       truncation.push({
         path,
         reason: "array_length",
         originalLength: value.length,
-        retainedLength: options.maxArrayItems,
+        retainedLength: maxItems,
       });
     }
-    return value.slice(0, options.maxArrayItems).map((entry, index) =>
-      compactValue(entry, options, `${path}[${index}]`, truncation, fullStringPaths));
+    return value.slice(0, maxItems).map((entry, index) =>
+      compactValue(entry, options, `${path}[${index}]`, truncation, exemptions));
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
       key,
-      compactValue(entry, options, appendPath(path, key), truncation, fullStringPaths),
+      compactValue(entry, options, appendPath(path, key), truncation, exemptions),
     ]));
   }
   return value;
@@ -81,10 +97,11 @@ export const compactRecord = <T extends Record<string, unknown>>(
   options: CompactionOptions,
   initialTruncation: ReadonlyArray<TruncationEntry> = [],
   fullStringPaths: FullStringPaths = NO_FULL_STRING_PATHS,
+  fullArrayPaths: FullArrayPaths = NO_FULL_ARRAY_PATHS,
 ): CompactionResult<T> => {
   const truncation = [...initialTruncation];
   return {
-    value: compactValue(payload, options, "$", truncation, fullStringPaths) as T,
+    value: compactValue(payload, options, "$", truncation, { fullStringPaths, fullArrayPaths }) as T,
     truncation,
   };
 };
@@ -194,17 +211,20 @@ export const compactForBudget = <T extends Record<string, unknown>>(
  * contract already bounds above `MAX_STRING_CHARS`, and that a write tool replaces whole, qualifies
  * — see `agents/agentInputSchema.ts`'s `AGENT_CONFIG_FULL_TEXT_FIELD_PATHS` for the worked example
  * (issue #1352). A field with no write-time bound has no worst case to exempt against and stays
- * generically compacted like everything else.
+ * generically compacted like everything else. `fullArrayPaths` does the same for array length: a
+ * Choice attribute's options, which a proposal restates whole, are read in full.
  */
 export const boundPayload = <T extends Record<string, unknown>>(
   payload: T,
   fullStringPaths: FullStringPaths = NO_FULL_STRING_PATHS,
+  fullArrayPaths: FullArrayPaths = NO_FULL_ARRAY_PATHS,
 ): T => {
   const { value, truncation } = compactRecord(
     payload,
     { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS },
     [],
     fullStringPaths,
+    fullArrayPaths,
   );
   return withTruncation(value, truncation);
 };

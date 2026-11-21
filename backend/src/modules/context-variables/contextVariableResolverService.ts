@@ -3,14 +3,16 @@ import type { ContextVariableResolverRepositoryPort } from "./repository.js";
 import { notFound } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type {
-  AgentContextVariableEnablement,
-  ContextVariable,
-  ContextVariableScope,
-  ContextVariableValue,
+import {
+  resolvedVariableInput,
+  type AgentContextVariableEnablement,
+  type ContextValueWriter,
+  type ContextVariable,
+  type ContextVariableScope,
+  type ContextVariableValue,
 } from "./domain.js";
 import type { ResolvedVariableInput } from "./contextResolutionService.js";
-import { isValueCompatibleWithType } from "./valueCompatibility.js";
+import { validateValue } from "./valueValidation.js";
 
 export interface ContextResolverPort {
   resolve(input: {
@@ -36,6 +38,31 @@ interface ContextVariableResolverServiceOptions {
 type ResolverOutcome = "cache_hit" | "cache_miss" | "fetch" | "timeout" | "error" | "null" | "incompatible_value";
 
 const DEFAULT_RESOLVER_TIMEOUT_MS = 2_500;
+/** A resolver's cache holds what the host's API returned through the resolver skill. */
+const RESOLVER_CACHE_WRITER: ContextValueWriter = { kind: "api", ref: null };
+
+/**
+ * Where a resolver keeps its cache, and the scope it hands its skill.
+ *
+ * A resolver fetches about the visitor, so it caches under the most specific visitor scope, the
+ * chat session or the verified customer, and under the conversation when the turn has neither. It
+ * never caches under the agent or the workspace: every visitor of the agent reads those, and would be
+ * served one visitor's value until it aged out.
+ *
+ * The skill is handed the first scope past the conversation, as it always was. Hosts receive it, as
+ * the skill's `scope` input and a webhook skill's `source.sessionId`, so only the cache key moves.
+ */
+interface ResolverScopes {
+  cache: ContextVariableScope;
+  skill: ContextVariableScope;
+}
+
+const resolverScopes = (scopes: readonly ContextVariableScope[]): ResolverScopes | undefined => {
+  const visitor = scopes.find((scope) => scope.type === "session" || scope.type === "customer");
+  const cache = visitor ?? scopes.find((scope) => scope.type === "conversation");
+  const skill = scopes.find((scope) => scope.type !== "conversation");
+  return cache && skill ? { cache, skill } : undefined;
+};
 const RESOLVE_METRIC_HELP = "Context variable resolver outcomes.";
 const RESOLVE_LATENCY_HELP = "Context variable resolver latency in milliseconds.";
 
@@ -60,8 +87,8 @@ export class ContextVariableResolverService {
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]> {
     const pushed = await this.repository.resolveForAgent(workspaceId, agentId, scopes);
-    const scope = scopes[0];
-    if (!scope) {
+    const resolverScope = resolverScopes(scopes);
+    if (!resolverScope) {
       return pushed;
     }
 
@@ -80,7 +107,7 @@ export class ContextVariableResolverService {
 
     const resolverValues: ResolvedVariableInput[] = [];
     for (const enablement of enablements) {
-      const resolved = await this.resolveEnablement(workspaceId, agentId, scope, enablement);
+      const resolved = await this.resolveEnablement(workspaceId, agentId, resolverScope, enablement);
       if (resolved) {
         resolverValues.push(resolved);
       }
@@ -90,21 +117,28 @@ export class ContextVariableResolverService {
   }
 
   async resolveForEnablements(workspaceId: string, agentId: string, enablements: readonly AgentContextVariableEnablement[], scopes: ContextVariableScope[], conversationSkills?: ConversationSkillSet): Promise<ResolvedVariableInput[]> {
-    const resolved: ResolvedVariableInput[] = [];
+    const selected: { enablement: AgentContextVariableEnablement; variable: ContextVariable }[] = [];
     for (const enablement of enablements) {
       if (!enablement.enabled) continue;
       const variable = await this.repository.get(workspaceId, enablement.variableId);
       if (!variable) throw notFound("A context variable selected by this revision no longer exists");
+      selected.push({ enablement, variable });
+    }
+    // One read covers the ladder of every pushed variable the revision selects.
+    const stored = await this.repository.readMostSpecificValues(
+      selected.filter(({ enablement }) => enablement.source === "pushed").map(({ variable }) => variable.id),
+      scopes,
+    );
+    const resolved: ResolvedVariableInput[] = [];
+    for (const { enablement, variable } of selected) {
       if (enablement.source === "pushed") {
-        for (const scope of scopes) {
-          const value = await this.repository.readValue(variable.id, scope);
-          if (value) { resolved.push(mapResolvedVariable(enablement, variable, value.data)); break; }
-        }
+        const value = stored.get(variable.id);
+        if (value) resolved.push(resolvedVariableInput(enablement, variable, value.data));
         continue;
       }
-      const scope = scopes[0];
-      if (!scope) continue;
-      const value = await this.resolveEnablement(workspaceId, agentId, scope, { ...enablement, variable }, conversationSkills);
+      const resolverScope = resolverScopes(scopes);
+      if (!resolverScope) continue;
+      const value = await this.resolveEnablement(workspaceId, agentId, resolverScope, { ...enablement, variable }, conversationSkills);
       if (value) resolved.push(value);
     }
     return resolved;
@@ -113,7 +147,7 @@ export class ContextVariableResolverService {
   private async resolveEnablement(
     workspaceId: string,
     agentId: string,
-    scope: ContextVariableScope,
+    resolverScope: ResolverScopes,
     enablement: AgentContextVariableEnablement,
     conversationSkills?: ConversationSkillSet,
   ): Promise<ResolvedVariableInput | null> {
@@ -128,9 +162,11 @@ export class ContextVariableResolverService {
 
     const startedAt = this.now();
     try {
-      const cached = await this.repository.readValue(variable.id, scope);
+      const cached = await this.repository.readValue(variable.id, resolverScope.cache);
       if (isFresh(cached, enablement.maxAgeSeconds, this.now())) {
-        if (!isValueCompatibleWithType(variable.valueType, cached.data)) {
+        const verdict = validateValue(variable, cached.data);
+        // A key archived after it was cached still names its option.
+        if (!verdict.ok && verdict.code !== "archived_option") {
           this.recordResolution({
             outcome: "incompatible_value",
             latencyMs: this.now() - startedAt,
@@ -149,7 +185,7 @@ export class ContextVariableResolverService {
           variableId: variable.id,
           variableName: variable.name,
         });
-        return mapResolvedVariable(enablement, variable, cached.data);
+        return resolvedVariableInput(enablement, variable, cached.data);
       }
 
       this.recordResolution({
@@ -167,14 +203,14 @@ export class ContextVariableResolverService {
         resolverSkillId,
         variableName: variable.name,
         variableId: variable.id,
-        scope,
+        scope: resolverScope.skill,
         timeoutMs: enablement.resolverTimeoutMs ?? DEFAULT_RESOLVER_TIMEOUT_MS,
         ...(conversationSkills ? { conversationSkills } : {}),
       });
       if (!fetched) {
         return null;
       }
-      if (!isValueCompatibleWithType(variable.valueType, fetched.value)) {
+      if (!validateValue(variable, fetched.value).ok) {
         this.recordResolution({
           outcome: "incompatible_value",
           latencyMs: this.now() - startedAt,
@@ -185,8 +221,8 @@ export class ContextVariableResolverService {
         });
         return null;
       }
-      await this.repository.upsertValue(variable.id, scope, fetched.value);
-      return mapResolvedVariable(enablement, variable, fetched.value);
+      await this.repository.upsertValue(variable.id, resolverScope.cache, fetched.value, RESOLVER_CACHE_WRITER);
+      return resolvedVariableInput(enablement, variable, fetched.value);
     } catch (error) {
       this.recordResolution({
         outcome: "error",
@@ -331,15 +367,3 @@ const isFresh = (
   return (now - cached.lastModified.getTime()) / 1_000 < maxAgeSeconds;
 };
 
-const mapResolvedVariable = (
-  enablement: AgentContextVariableEnablement,
-  variable: ContextVariable,
-  value: unknown,
-): ResolvedVariableInput => ({
-  name: variable.name,
-  description: variable.description,
-  value,
-  surfacing: enablement.surfacing,
-  sensitive: variable.sensitivity === "sensitive",
-  trust: variable.trustTier === "signed" ? "verified" : "unverified",
-});

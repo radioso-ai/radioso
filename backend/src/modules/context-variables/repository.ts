@@ -1,7 +1,9 @@
 import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import type {
   AgentContextVariableEnablement,
+  ContextValueWriter,
   ContextVariable,
+  ContextVariableOption,
   ContextVariableScope,
   ContextVariableSource,
   ContextVariableTrustTier,
@@ -16,6 +18,7 @@ export interface ContextVariableCreateRecord {
   name: string;
   description?: string | null;
   valueType: ContextVariableValueType;
+  options?: readonly ContextVariableOption[] | null;
   trustTier: ContextVariableTrustTier;
   sensitivity: ContextVariableSensitivity;
   defaultSurfacing: ContextVariableSurfacing;
@@ -25,6 +28,7 @@ export interface ContextVariableUpdateRecord {
   name?: string;
   description?: string | null;
   valueType?: ContextVariableValueType;
+  options?: readonly ContextVariableOption[] | null;
   trustTier?: ContextVariableTrustTier;
   sensitivity?: ContextVariableSensitivity;
   defaultSurfacing?: ContextVariableSurfacing;
@@ -46,6 +50,7 @@ export interface ContextVariableDefinitionWrite {
   readonly name: string;
   readonly description: string | null;
   readonly valueType: ContextVariableValueType;
+  readonly options: readonly ContextVariableOption[] | null;
   readonly trustTier: ContextVariableTrustTier;
   readonly sensitivity: ContextVariableSensitivity;
   readonly defaultSurfacing: ContextVariableSurfacing;
@@ -96,9 +101,15 @@ export interface ContextVariableRepositoryPort {
   upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement>;
   deleteEnablement(agentId: string, variableId: string): Promise<boolean>;
   listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
-  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue>;
+  /**
+   * Stores a value under the overwrite rule (`mayOverwrite`); null when the stored value is kept.
+   * A `conversation` scope must name a conversation of the variable's workspace.
+   */
+  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null>;
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
   deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean>;
+  /** Whether any scope holds a value of the variable. */
+  hasValues(variableId: string): Promise<boolean>;
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
   /**
    * Applies definition and enablement writes atomically with version predicates. A
@@ -113,7 +124,12 @@ export interface ContextVariableResolverRepositoryPort {
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
   listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
-  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue>;
+  /**
+   * Each variable's most specific stored value on the ladder (`scopes`, most specific first), keyed
+   * by variable id, in one read for the whole turn. A variable with no value is absent.
+   */
+  readMostSpecificValues(variableIds: readonly string[], scopes: readonly ContextVariableScope[]): Promise<ReadonlyMap<string, ContextVariableValue>>;
+  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null>;
 }
 
 /** Turn-time read surface exposed to chat; resolution owns its backing reads. */

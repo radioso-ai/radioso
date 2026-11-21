@@ -1,6 +1,7 @@
 import type { RoutineDefinition } from "./domain.js";
 import { collectContextVariableRefs, presentBindingOf, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
@@ -104,6 +105,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   declared_unused_slot: declaredUnusedSlotMessage,
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
   operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
+  context_variable_option_not_accepted: "A Choice attribute is bound to a skill input that does not accept every one of its option keys.",
   ...safeConsentValidationMessages,
   ...safePresentBindingValidationMessages,
 };
@@ -139,7 +141,7 @@ export interface RoutineValidationResult {
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
-  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" }>;
+  availableContextVariables?: ReadonlyMap<string, AvailableContextVariable>;
   /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
@@ -208,13 +210,27 @@ const isSlotTypeCompatibleWithInput = (
 };
 
 const isContextVariableTypeCompatibleWithInput = (
-  valueType: "string" | "json",
+  valueType: ContextVariableValueType,
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
   if (valueType === "json") {
     return true;
   }
+  // An enum value is an option key: text, or a choice from an enum input.
+  if (valueType === "enum") {
+    return inputType === "text" || inputType === "enum";
+  }
   return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
+};
+
+/**
+ * The keys of an enum variable that a choice input bound to it does not accept. Every key counts,
+ * archived ones too, because a value that already holds an archived key keeps it.
+ */
+const optionKeysOutsideInput = (variable: AvailableContextVariable, input: SkillAuthoringInput): string[] => {
+  if (variable.valueType !== "enum" || input.type !== "enum" || !input.enumValues) return [];
+  const accepted = new Set(input.enumValues);
+  return (variable.optionKeys ?? []).filter((key) => !accepted.has(key));
 };
 
 const parsePositiveInteger = (value: string | null): number | null => {
@@ -499,6 +515,15 @@ export const validateRoutineDefinition = (
               location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
               message: `input type mismatch: context variable "${binding.contextVariable}" has type ${contextVariable.valueType}, but skill "${step.toolRef}" input "${inputKey}" expects ${input.type}.`,
             });
+          } else if (contextVariable) {
+            const refused = optionKeysOutsideInput(contextVariable, input);
+            if (refused.length > 0) {
+              diagnostics.push({
+                code: "context_variable_option_not_accepted",
+                location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+                message: `context variable option not accepted: context variable "${binding.contextVariable}" can hold ${refused.map((key) => `"${key}"`).join(", ")}, which skill "${step.toolRef}" input "${inputKey}" does not accept. Add the key to the input's choices, or bind another attribute.`,
+              });
+            }
           }
         } else if (!knownVariableNames.has(binding.ref)) {
           diagnostics.push({

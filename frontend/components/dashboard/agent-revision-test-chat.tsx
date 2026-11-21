@@ -22,6 +22,7 @@ import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/ass
 import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestChatComposer } from "@/components/dashboard/test-chat-composer";
+import { TestValueInput } from "@/components/dashboard/test-value-input";
 import { testChatMessageBody, testChatPickOf, type TestChatPick } from "@/lib/test-chat-item-pick";
 import { parseEvents } from "@/lib/test-execution-events";
 import { evalRevisionLabel, revisionDisplayLabel } from "@/lib/agent-revision-label";
@@ -67,7 +68,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -75,7 +75,6 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   agentRevisionsApi,
@@ -1870,37 +1869,15 @@ export function AgentRevisionTestChat({
                                 {variable.description}
                               </p>
                             ) : null}
-                            {variable.valueType === "json" ? (
-                              <Textarea
-                                id={`test-value-${id}`}
-                                value={valueInputs[id] ?? ""}
-                                placeholder="Valid JSON"
-                                onChange={(event) => {
-                                  const raw = event.target.value;
-                                  setValueInputs((current) => ({
-                                    ...current,
-                                    [id]: raw,
-                                  }));
-                                  clearActiveTest(
-                                    "Test values changed. Start a fresh private test.",
-                                  );
-                                }}
-                              />
-                            ) : (
-                              <Input
-                                id={`test-value-${id}`}
-                                value={valueInputs[id] ?? ""}
-                                onChange={(event) => {
-                                  setValueInputs((current) => ({
-                                    ...current,
-                                    [id]: event.target.value,
-                                  }));
-                                  clearActiveTest(
-                                    "Test values changed. Start a fresh private test.",
-                                  );
-                                }}
-                              />
-                            )}
+                            <TestValueInput
+                              id={`test-value-${id}`}
+                              variable={variable}
+                              value={valueInputs[id] ?? ""}
+                              onChange={(raw) => {
+                                setValueInputs((current) => ({ ...current, [id]: raw }));
+                                clearActiveTest("Test values changed. Start a fresh private test.");
+                              }}
+                            />
                           </div>
                         ) : null,
                       )}

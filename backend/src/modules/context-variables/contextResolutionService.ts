@@ -25,6 +25,8 @@ export interface ResolvedVariableInput {
   name: string;
   description?: string | null;
   value: unknown;
+  /** The label of the option an enum value's key names; absent for every other type. */
+  label?: string;
   surfacing: ContextVariableSurfacing;
   sensitive?: boolean;
   trust?: "unverified" | "verified";
@@ -162,6 +164,7 @@ export const resolveContextForTurn = (
       name,
       description: variable.description ?? null,
       value: variable.value,
+      ...(variable.label !== undefined ? { label: variable.label } : {}),
       trust: variable.trust ?? "unverified",
     };
     fragments.push(fragment);
@@ -176,7 +179,10 @@ export const resolveContextForTurn = (
         sensitive: variable.sensitive ?? false,
       }),
     );
-    snapshotEntries.push({ name, value: variable.value, sensitive: variable.sensitive });
+    // An enum value reaches conditions as its key and label, so one written in the operator's
+    // language matches; a sensitive one is masked whole.
+    const snapshotValue = variable.label !== undefined ? { key: variable.value, label: variable.label } : variable.value;
+    snapshotEntries.push({ name, value: snapshotValue, sensitive: variable.sensitive });
   }
 
   if (fragments.length === 0) {
@@ -189,4 +195,22 @@ export const resolveContextForTurn = (
     staged,
     snapshot: redactSnapshot(snapshotEntries),
   };
+};
+
+const isLabelledVariable = (data: unknown): data is VariableContextFragment & { label: string } =>
+  typeof data === "object" && data !== null
+  && (data as { kind?: unknown }).kind === "variable"
+  && typeof (data as { label?: unknown }).label === "string";
+
+/**
+ * The turn's context as a skill receives it: the redacted snapshot, with an enum value as its key.
+ * The snapshot holds the key and label a condition matches; a skill acts on the key, as a routine
+ * skill input bound to the variable does. A sensitive value stays masked.
+ */
+export const skillContextSnapshot = (context: Pick<ResolvedTurnContext, "snapshot" | "staged">): ContextVariableSnapshot => {
+  const keys = context.staged.flatMap((entry) =>
+    entry.kind === "context_variable" && entry.metadata?.sensitive !== true && isLabelledVariable(entry.data)
+      ? [[entry.data.name, entry.data.value] as const]
+      : []);
+  return { ...context.snapshot, ...Object.fromEntries(keys) };
 };

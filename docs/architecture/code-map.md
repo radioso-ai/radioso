@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-19
+last_updated: 2026-11-21
 ---
 
 # Code Map
@@ -862,7 +862,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
+- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules; the context-variable adapter lives in `contextVariableProposalAdapter.ts`)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `backend/src/modules/operatorCopilot/proposalContribution.ts`, `tools/contributedProposals.ts`, and `proposalCard.ts` (a contributed proposal target type, the propose tool Ray builds for it, and both card producers); `backend/src/app/composition/copilotContributions.ts` assembles the target-type set
@@ -1112,17 +1112,32 @@ Public surfaces and key files:
 
 ## Context Variables
 
-Owns workspace context-variable definitions, per-agent enablements, pushed
-values, resolver-backed values, and the bounded projections staged into an
-agent turn. `ContextVariableService` is the authoring boundary used by HTTP and
-Ray: it resolves agents and variables inside the workspace, validates resolver
+Owns workspace context-variable definitions (the dashboard and docs call them
+attributes), per-agent enablements, stored values, resolver-backed values, and
+the bounded projections staged into an agent turn. A definition's `valueType`
+is `string`, `json` or `enum`; an enum carries `options` (`key`, `label`,
+`description`, `archived`), whose keys never change and which are archived,
+never removed. `ContextVariableService` is the authoring boundary used by HTTP
+and Ray: it resolves agents and variables inside the workspace, checks options
+and refuses a type change on a variable that has values, validates resolver
 skills against the target agent, and applies definition and enablement writes.
-The resolver service owns turn-time reads, caching, timeouts, and compatibility
-checks.
+Every value write goes through `validateValue` and records its writer
+(`written_by_kind` `api | operator | routine | classifier`, `written_by_ref`);
+the repository applies `mayOverwrite` inside the upsert, so the classifier
+fills only an empty or classifier-written value. `contextScopeLadder` is the
+resolution order, `conversation → session → customer → agent → workspace`;
+chat builds each turn's scopes with it. The resolver service owns turn-time
+reads, caching, timeouts, and compatibility checks. It caches under the chat
+session or verified customer, or under the conversation when the turn has
+neither, never under the agent or workspace, and hands its skill the first
+scope past the conversation.
 
 Public surfaces and key files:
 
 - `backend/src/modules/context-variables/public.ts`
+- `backend/src/modules/context-variables/domain.ts` (types, `mayOverwrite`, `contextScopeLadder`)
+- `backend/src/modules/context-variables/valueValidation.ts` (`validateValue`, `validateOptions`; limits in `CONTEXT_VARIABLES_BEHAVIOR.enumOptions`)
+- `backend/src/modules/context-variables/optionSchema.ts` (the one option schema and key pattern the routes, OpenAPI, Ray and `validateOptions` share)
 - `backend/src/modules/context-variables/repository.ts`
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
@@ -1130,21 +1145,27 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/modules/context-variables/identitySigning.ts` (`verifySignedIdentityOutcome` names why a visitor identity token did not verify, from a closed set; `verifySignedIdentity` is its null-or-identity form) and `backend/src/app/http/shared/publicChatIdentity.ts` (the public chat message's use of it: `radioso_public_chat_identity_verifications_total{outcome}`, one log line per refusal with ids and the outcome)
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
-- `backend/src/db/repositories/contextVariableRepository.ts`
-- `backend/src/app/http/routes/contextVariableRoutes.ts`
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts`
+- `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
+- `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
+- `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
+- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
+- `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
+- `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
+- `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts tests/unit/context-variable-attribute-rules.test.ts tests/unit/context-variable-service-attributes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/identity-signing.test.ts tests/unit/identity-nonce-prune.test.ts tests/integration/identity-nonce-repository.integration.test.ts` and the signed-identity case in `tests/contract/public-chat.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/context-variable-attributes.integration.test.ts tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
+- `cd frontend && pnpm exec playwright test tests/e2e/context-variables-settings.spec.ts` (the Attributes page: a Choice attribute with options, archiving one)
 
 Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
-- Issues `#1036`, `#1046`, and `#1115`
+- `specs/1884-typed-attributes/`
+- Issues `#1036`, `#1046`, `#1115`, and `#1884`
 
 ## Visitors
 
@@ -1305,7 +1326,7 @@ about which tables exist.
 Rows a foreign key cannot reach belong to the module that owns them, which
 implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
 customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
-context-variable session and customer values (an eraser reads the session ids
+context-variable conversation, session and customer values (an eraser reads the session ids
 it keys by from the conversations before they go), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the

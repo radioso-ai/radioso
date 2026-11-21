@@ -80,6 +80,7 @@ export const routineValidationCodes = [
   "unknown_input_binding",
   "unknown_variable_ref",
   "unknown_context_variable",
+  "context_variable_option_not_accepted",
   "variable_name_collision",
   "node_id_collision",
   "exposure_tool_name_invalid",

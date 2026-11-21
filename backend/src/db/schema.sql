@@ -2213,7 +2213,10 @@ CREATE TABLE public.context_variable_values (
     scope_id text NOT NULL,
     data jsonb NOT NULL,
     last_modified timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['session'::text, 'customer'::text, 'agent'::text, 'workspace'::text])))
+    written_by_kind text DEFAULT 'api'::text NOT NULL,
+    written_by_ref text,
+    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['conversation'::text, 'session'::text, 'customer'::text, 'agent'::text, 'workspace'::text]))),
+    CONSTRAINT context_variable_values_written_by_kind_check CHECK ((written_by_kind = ANY (ARRAY['api'::text, 'operator'::text, 'routine'::text, 'classifier'::text])))
 );
 
 
@@ -2232,10 +2235,12 @@ CREATE TABLE public.context_variables (
     default_surfacing text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    options jsonb,
     CONSTRAINT context_variables_default_surfacing_check CHECK ((default_surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text]))),
+    CONSTRAINT context_variables_options_check CHECK (((value_type = 'enum'::text) = ((options IS NOT NULL) AND (jsonb_typeof(options) = 'array'::text)))),
     CONSTRAINT context_variables_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT context_variables_trust_tier_check CHECK ((trust_tier = ANY (ARRAY['unverified'::text, 'signed'::text]))),
-    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text])))
+    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text, 'enum'::text])))
 );
 
 
@@ -8875,6 +8880,20 @@ CREATE INDEX idx_connector_whatsapp_message_log_workspace_wa_created ON public.c
 --
 
 CREATE INDEX idx_context_identity_nonces_workspace_expires ON public.context_identity_nonces USING btree (workspace_id, expires_at);
+
+
+--
+-- Name: idx_context_variable_values_variable_scope_data; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_variable_scope_data ON public.context_variable_values USING btree (variable_id, scope_type, data) WHERE ((jsonb_typeof(data) = 'string'::text) AND (octet_length((data #>> '{}'::text[])) <= 120));
+
+
+--
+-- Name: idx_context_variable_values_workspace_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_workspace_scope ON public.context_variable_values USING btree (workspace_id, scope_type, scope_id);
 
 
 --

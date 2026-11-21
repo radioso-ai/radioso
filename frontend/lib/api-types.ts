@@ -62,6 +62,7 @@ export type AgentGreetingValidationIssue = NonNullable<AgentGreetingValidation['
 export type AgentGreetingDraftResponse = ApiSchemas['AgentGreetingDraftResponse']
 
 export type ContextVariable = ApiSchemas['ContextVariable']
+export type ContextVariableOption = ApiSchemas['ContextVariableOption']
 export type ContextVariableCreateRequest = ApiSchemas['ContextVariableCreateRequest']
 export type ContextVariableUpdateRequest = ApiSchemas['ContextVariableUpdateRequest']
 export type ContextVariableResponse = ApiSchemas['ContextVariableResponse']

@@ -32,6 +32,7 @@ import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../../modules/customerEmail/pu
 import { WEBHOOK_SKILLS_ADAPTER } from "../../../modules/webhookSkills/public.js";
 import { SLACK_SKILLS_ADAPTER } from "../../../modules/slackSkills/public.js";
 import { API_REQUEST_SKILLS_ADAPTER } from "../../../modules/apiRequestSkills/public.js";
+import { skillContextSnapshot } from "../../../modules/context-variables/public.js";
 import {
   RETRIEVAL_ANSWER_ADAPTER,
   readRetrievalResult,
@@ -204,7 +205,7 @@ const collectedTurnInput = (session: PreparedSession): Record<string, unknown> =
   query: session.effectiveQuery,
   message: session.userMessage.content,
   pageContext: session.pageContext ?? null,
-  context: session.resolvedContext.snapshot,
+  context: skillContextSnapshot(session.resolvedContext),
 });
 
 const registeredChunkFromContext = (

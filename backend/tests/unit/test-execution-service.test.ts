@@ -168,7 +168,7 @@ const setup = (
     revisions,
     ...(options.defaultRevision ? { defaultRevision: options.defaultRevision } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
-    contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
+    contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, options: null, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
     repository, runner: { stream: options.stream ?? settledTurn(runner) }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
   });
   return { service, repository, runner, revisions };
@@ -344,7 +344,7 @@ describe("TestExecutionService", () => {
     jsonRevision.snapshot.contextVariableEnablements[0].variableId = "40000000-0000-4000-8000-000000000009";
     const jsonService = new TestExecutionService({
       revisions: { findRevision: vi.fn(async () => jsonRevision), readDraftGeneration: vi.fn(async () => 1) },
-      contextCatalog: { get: vi.fn(async () => ({ id: jsonRevision.snapshot.contextVariableEnablements[0].variableId, workspaceId, name: "options", description: null, valueType: "json" as const, trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
+      contextCatalog: { get: vi.fn(async () => ({ id: jsonRevision.snapshot.contextVariableEnablements[0].variableId, workspaceId, name: "options", description: null, valueType: "json" as const, options: null, trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
       repository, runner: { stream: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[3], now: () => new Date(1000),
     });
     await expect(jsonService.start({ idempotencyKey: "idem-json-invalid", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: jsonRevision.snapshot.contextVariableEnablements[0].variableId, value: undefined }] })).rejects.toMatchObject({ code: "bad_request" });

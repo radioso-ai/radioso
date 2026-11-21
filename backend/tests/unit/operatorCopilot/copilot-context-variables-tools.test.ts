@@ -4,6 +4,7 @@ import {
   createContextVariableProposalCopilotTools,
   createContextVariablesCopilotTools,
 } from "../../../src/modules/operatorCopilot/tools/contextVariables.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -23,6 +24,7 @@ const contextVariablePorts = () => {
       name: "loyalty_tier",
       description: "The customer's loyalty tier.",
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "on_reference",
@@ -65,7 +67,7 @@ describe("context_variables reader", () => {
     expect(ports.listByWorkspace).toHaveBeenCalledWith("workspace-1");
     expect(ports.listByAgent).toHaveBeenCalledWith("workspace-1", "agent-1");
     expect(result.variables).toEqual([
-      { id: "variable-1", name: "loyalty_tier", description: "The customer's loyalty tier.", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      { id: "variable-1", name: "loyalty_tier", description: "The customer's loyalty tier.", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
     ]);
     expect(result.enablements).toEqual([
       { id: "enablement-1", variableId: "variable-1", variableName: "loyalty_tier", source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference", enabled: true },
@@ -81,6 +83,41 @@ describe("context_variables reader", () => {
 
     expect(ports.get).toHaveBeenCalledWith("workspace-1", "agent-9");
     expect(ports.listByAgent).not.toHaveBeenCalled();
+  });
+
+  it("reads every option of a Choice attribute up to the most it can have, since a proposal restates them all", async () => {
+    const ports = contextVariablePorts();
+    const options = Array.from({ length: CONTEXT_VARIABLES_BEHAVIOR.enumOptions.maxOptions }, (_, index) => ({
+      key: `option_${index}`, label: `Option ${index}`, description: null, archived: false,
+    }));
+    ports.listByWorkspace.mockResolvedValueOnce([{
+      id: "variable-2", name: "topic", description: "What the conversation is about.", valueType: "enum", options: options as never,
+      trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    }]);
+    const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
+
+    const result = descriptor.outputSchema.parse(await descriptor.createTool(context).invoke({}, {} as never)) as {
+      variables: Array<{ options: unknown[] }>;
+      truncation?: unknown;
+    };
+
+    expect(result.variables[0]?.options).toEqual(options);
+    expect(result.truncation).toBeUndefined();
+  });
+
+  it("says so when it cuts a long list of variables, and the mark survives the output schema", async () => {
+    const ports = contextVariablePorts();
+    const [variable] = await ports.listByWorkspace();
+    ports.listByWorkspace.mockResolvedValueOnce(Array.from({ length: 45 }, (_, index) => ({ ...variable, id: `variable-${index}` })));
+    const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
+
+    const result = descriptor.outputSchema.parse(await descriptor.createTool(context).invoke({}, {} as never)) as {
+      variables: unknown[];
+      truncation?: { entries: Array<{ path: string }> };
+    };
+
+    expect(result.variables).toHaveLength(40);
+    expect(result.truncation?.entries).toEqual([expect.objectContaining({ path: "$.variables", reason: "array_length" })]);
   });
 
   it("falls back to the page context agent and links the agent entity", async () => {
@@ -153,6 +190,27 @@ describe("propose_context_variable", () => {
     // token from the second, fresher read, letting a concurrent edit slip past Apply's version
     // check undetected.
     expect((adapter as { readVersionToken: ReturnType<typeof vi.fn> }).readVersionToken).not.toHaveBeenCalled();
+  });
+
+  it("hands an enum attribute's options to the adapter with the rest of the definition", async () => {
+    const { descriptors, adapter } = buildTools();
+    const descriptor = descriptors.find((entry) => entry.name === "propose_context_variable");
+    const options = [{ key: "billing", label: "Billing", description: "Invoices and payments." }, { key: "legacy", label: "Legacy", archived: true }];
+
+    await descriptor!.createTool(context).invoke({
+      agentId: "agent-1",
+      name: "topic",
+      valueType: "enum",
+      options,
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "on_reference",
+    }, {} as never);
+
+    expect(adapter.validatePayload).toHaveBeenCalledWith("workspace-1", { agentId: "agent-1", variableId: null }, expect.objectContaining({
+      valueType: "enum",
+      options,
+    }));
   });
 
   it("targets an existing variable by id and falls back to the page agent", async () => {

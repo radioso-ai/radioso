@@ -1,5 +1,6 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import type { ContextVariable } from "./domain.js";
+import { validateValue } from "./valueValidation.js";
 
 /** A caller-provided private value; it never invokes a live resolver. */
 export interface TestValue {
@@ -11,6 +12,8 @@ export interface TestValue {
 export interface FrozenTestValue extends TestValue {
   readonly name: string;
   readonly description: string | null;
+  /** The label of the option a Choice sample's key names, so Test Chat reads it as a live turn does. */
+  readonly label?: string;
   readonly sensitive: boolean;
   readonly trust: "unverified" | "verified";
 }
@@ -55,9 +58,13 @@ const deepFreeze = <Value>(value: Value): Value => {
 
 const freezeJsonValue = (value: unknown): unknown => deepFreeze(JSON.parse(JSON.stringify(value)));
 
-const validateValue = (definition: ContextVariable, value: unknown): unknown => {
-  if (definition.valueType === "string") {
-    if (typeof value !== "string") throw badRequest(`Test value for ${definition.name} must be a string.`);
+const acceptTestValue = (definition: ContextVariable, value: unknown): unknown => {
+  if (definition.valueType !== "json") {
+    if (!validateValue(definition, value).ok) {
+      throw badRequest(definition.valueType === "enum"
+        ? `Test value for ${definition.name} must be the key of an active option.`
+        : `Test value for ${definition.name} must be a string.`);
+    }
     return value;
   }
   if (!isJsonValue(value)) throw badRequest(`Test value for ${definition.name} must be JSON-compatible.`);
@@ -99,11 +106,14 @@ export const freezeTestValues = async (input: {
   return input.supplied.map((value) => {
     const definition = definitions.get(value.contextVariableId);
     if (!definition) throw badRequest("A supplied test context-variable definition is unavailable.");
+    const accepted = acceptTestValue(definition, value.value);
+    const label = definition.options?.find((option) => option.key === accepted)?.label;
     return Object.freeze({
       contextVariableId: value.contextVariableId,
-      value: validateValue(definition, value.value),
+      value: accepted,
       name: definition.name,
       description: definition.description,
+      ...(label !== undefined ? { label } : {}),
       sensitive: definition.sensitivity === "sensitive",
       trust: definition.trustTier === "signed" ? "verified" : "unverified",
     });

@@ -220,7 +220,7 @@ export function AgentBundleImportDialog({
                 <dd className="text-foreground">{summary.routineCount}</dd>
                 <dt className="text-muted-foreground">Skills</dt>
                 <dd className="text-foreground">{summary.skillCount}</dd>
-                <dt className="text-muted-foreground">Context variables</dt>
+                <dt className="text-muted-foreground">Attributes</dt>
                 <dd className="text-foreground">{summary.contextVariableCount}</dd>
               </dl>
             ) : null}

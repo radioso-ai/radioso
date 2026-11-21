@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { REDACTED_VALUE } from "../../src/modules/context-variables/redaction.js";
 import { projectContextForMatching } from "../../src/modules/context-variables/matchContextProjection.js";
+import { resolveContextForTurn } from "../../src/modules/context-variables/contextResolutionService.js";
 
 const bound = { maxRenderedVariables: 3, perValueMaxChars: 40, sectionTokenBudget: 1_000 };
 const roomyBound = { maxRenderedVariables: 3, perValueMaxChars: 300, sectionTokenBudget: 1_000 };
@@ -18,6 +19,18 @@ describe("projectContextForMatching", () => {
     );
 
     expect(projection.context).toEqual({ cart_value: 120, loyalty_tier: "gold", subscribed: true });
+  });
+
+  it("hands a condition an enum value's key and label, so one written in the operator's language matches", () => {
+    const { snapshot } = resolveContextForTurn(null, [
+      { name: "topic", value: "billing", label: "Rechnungen", surfacing: "on_reference" },
+      { name: "care_need", value: "dental", label: "Zahnpflege", surfacing: "on_reference", sensitive: true },
+    ]);
+
+    expect(projectContextForMatching(snapshot, roomyBound).context).toEqual({
+      topic: { key: "billing", label: "Rechnungen" },
+      care_need: REDACTED_VALUE,
+    });
   });
 
   it("carries the redaction marker through instead of a sensitive value", () => {

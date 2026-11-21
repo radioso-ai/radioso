@@ -668,6 +668,7 @@ export interface ContextVariables {
   description: string | null;
   id: Generated<string>;
   name: string;
+  options: Json | null;
   sensitivity: string;
   trust_tier: string;
   updated_at: Generated<Timestamp>;
@@ -683,6 +684,8 @@ export interface ContextVariableValues {
   scope_type: string;
   variable_id: string;
   workspace_id: string;
+  written_by_kind: Generated<string>;
+  written_by_ref: string | null;
 }
 
 export interface ConversationActivity {

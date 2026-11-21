@@ -336,7 +336,12 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
       return normalized;
     }
     if (url.protocol !== "https:") throw badRequest("API connection base URL must use https");
-    await this.options.assertPublicUrl(normalized);
+    try {
+      await this.options.assertPublicUrl(normalized);
+    } catch {
+      // The composed guard words its refusal for its own subject (a website); this one is a base URL.
+      throw badRequest("Base URL must resolve to a publicly routable host");
+    }
     return normalized;
   }
 

@@ -168,7 +168,7 @@ const setup = (
     revisions,
     ...(options.defaultRevision ? { defaultRevision: options.defaultRevision } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
-    contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
+    contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, options: null, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
     repository, runner: { stream: options.stream ?? settledTurn(runner) }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
   });
   return { service, repository, runner, revisions };
@@ -279,6 +279,18 @@ describe("TestExecutionService", () => {
     expect(runner.mock.calls[2]?.[0].userMessageId).toBe(failed.history.find((entry) => entry.role === "user")?.messageId);
   });
 
+  // #1763: each side reads the pick against its own transcript; a side that never showed the card runs the words.
+  it("hands a card pick to every side's runner turn", async () => {
+    const selection = { messageId: ids[8], blockId: "b1", itemKey: "122" };
+    const runner = vi.fn(async (_input: RunnerInput): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[8], continuation: null }));
+    const { service } = setup(runner);
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "Phone Two", selection, generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.map(([input]) => [input.message, input.itemSelection])).toEqual([["Phone Two", selection], ["Phone Two", selection]]);
+  });
+
   it("runs a turn without a time zone when the client sent none", async () => {
     const { service, runner } = setup();
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
@@ -332,7 +344,7 @@ describe("TestExecutionService", () => {
     jsonRevision.snapshot.contextVariableEnablements[0].variableId = "40000000-0000-4000-8000-000000000009";
     const jsonService = new TestExecutionService({
       revisions: { findRevision: vi.fn(async () => jsonRevision), readDraftGeneration: vi.fn(async () => 1) },
-      contextCatalog: { get: vi.fn(async () => ({ id: jsonRevision.snapshot.contextVariableEnablements[0].variableId, workspaceId, name: "options", description: null, valueType: "json" as const, trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
+      contextCatalog: { get: vi.fn(async () => ({ id: jsonRevision.snapshot.contextVariableEnablements[0].variableId, workspaceId, name: "options", description: null, valueType: "json" as const, options: null, trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
       repository, runner: { stream: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[3], now: () => new Date(1000),
     });
     await expect(jsonService.start({ idempotencyKey: "idem-json-invalid", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: jsonRevision.snapshot.contextVariableEnablements[0].variableId, value: undefined }] })).rejects.toMatchObject({ code: "bad_request" });

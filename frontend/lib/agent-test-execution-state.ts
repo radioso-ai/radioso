@@ -1,5 +1,6 @@
 import type { ExecutionState, TestExecution, TestExecutionEvent, TestExecutionHistoryDetail } from './api-agent-revisions'
 import type { AnswerSegment, Citation, ReplyBlock, TurnTraceEnvelope, VisitorImageInput } from './api-types'
+import type { ItemSelection } from './reply-blocks'
 
 export interface TestExecutionSideState {
   id: string
@@ -32,6 +33,8 @@ interface TestExecutionMessage {
   imageInput?: VisitorImageInput
   /** The message was just sent and the agent's readings of its photos are not back yet. */
   readingsPending?: true
+  /** The card the message picked, which settles the reply it was picked from. */
+  selection?: ItemSelection
 }
 
 export interface TestExecutionState {
@@ -200,7 +203,7 @@ export const hydrateTestExecutionState = (execution: TestExecutionHistoryDetail)
  * Add the one operator message to every independently pinned test side. A message with photos shows
  * them with what was typed until the test's stored readings replace them (`withStoredImageInputs`).
  */
-export const beginTestExecutionTurn = (state: TestExecutionState, message: string, turnId: string, attemptId: string, imageIds: readonly string[] = []): TestExecutionState => ({
+export const beginTestExecutionTurn = (state: TestExecutionState, message: string, turnId: string, attemptId: string, imageIds: readonly string[] = [], selection?: ItemSelection): TestExecutionState => ({
   ...state,
   activeTurnId: turnId,
   activeAttemptId: attemptId,
@@ -213,6 +216,7 @@ export const beginTestExecutionTurn = (state: TestExecutionState, message: strin
       {
         id: `${sideId}-${turnId}-user`, role: 'user' as const, content: message, state: 'completed' as const, turnId, attemptId,
         ...(imageIds.length > 0 ? { imageInput: { typedText: message, images: imageIds.map((id) => ({ id, reading: null })) }, readingsPending: true as const } : {}),
+        ...(selection ? { selection } : {}),
       },
       { id: `${sideId}-${turnId}-assistant`, role: 'assistant' as const, content: '', state: 'streaming' as const, turnId, attemptId },
     ],

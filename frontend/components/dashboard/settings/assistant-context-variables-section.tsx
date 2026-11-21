@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
 
+import { AttributeOptionsEditor, attributeOptionsError } from '@/components/dashboard/settings/attribute-options-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -26,13 +27,14 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
 import {
   contextVariablesApi,
   type AgentContextVariableEnablement,
   type AgentContextVariableEnablementRequest,
   type ContextVariable,
   type ContextVariableCreateRequest,
+  type ContextVariableOption,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -47,6 +49,7 @@ type VariableFormState = {
   name: string
   description: string
   valueType: ValueTypeOption
+  options: ContextVariableOption[]
   trustTier: TrustTierOption
   sensitivity: SensitivityOption
   defaultSurfacing: SurfacingOption
@@ -56,6 +59,7 @@ const emptyForm: VariableFormState = {
   name: '',
   description: '',
   valueType: 'json',
+  options: [],
   trustTier: 'unverified',
   sensitivity: 'normal',
   defaultSurfacing: 'on_reference',
@@ -72,8 +76,9 @@ const surfacingLabels: Record<SurfacingOption, string> = {
 }
 
 const valueTypeLabels: Record<ValueTypeOption, string> = {
-  string: 'String',
+  string: 'Text',
   json: 'JSON',
+  enum: 'Choice',
 }
 
 const trustTierLabels: Record<TrustTierOption, string> = {
@@ -88,19 +93,19 @@ const sensitivityLabels: Record<SensitivityOption, string> = {
 
 const fieldHelp = {
   name: {
-    description: 'The key the agent and routines use to reference this value.',
+    description: 'How the agent, routines and the API refer to this attribute.',
     tooltip:
       'The stable identifier your directives, routines, and the host API use to read this value — for example `@cart`. Use letters, numbers, and underscores, and start with a letter. Visitors never see it.',
   },
   description: {
     description: 'What this value holds. Helps the agent and operators recognise it.',
     tooltip:
-      'A short, human description of the value. It helps operators recognise the variable in the dashboard and gives the agent a hint about what the data represents. It does not change behaviour on its own.',
+      'A short, human description of the value. It helps operators recognise the attribute in the dashboard and gives the agent a hint about what the data represents. It does not change behaviour on its own.',
   },
   valueType: {
-    description: 'String for plain text, JSON for structured data.',
+    description: 'Text, one of a list of options, or JSON.',
     tooltip:
-      '**String** — a single plain-text value, such as a plan name or an order status.\n\n**JSON** — a structured object or array, such as a full cart with line items. Choose JSON when the host sends more than one field.',
+      '**Text** — a single plain-text value, such as a plan name.\n\n**Choice** — one option from a list you define, such as a topic or an order status. Values store the option key.\n\n**JSON** — a structured object or array, such as a full cart with line items.\n\nThe type cannot change once the attribute has values.',
   },
   trustTier: {
     description: "How much the agent trusts the value's origin.",
@@ -115,17 +120,22 @@ const fieldHelp = {
   defaultSurfacing: {
     description: 'When the value is placed into the conversation by default.',
     tooltip:
-      'Controls when the value reaches a turn. Each agent can override this per variable.\n\n**Always** — included in every turn.\n\n**On reference** — included only when the turn seems to need it. A good default to keep prompts lean.\n\n**Operator only** — never sent to the model; visible only to human operators in the Activity view.',
+      'Controls when the value reaches a turn. Each agent can override this per attribute.\n\n**Always** — included in every turn.\n\n**On reference** — included only when the turn seems to need it. A good default to keep prompts lean.\n\n**Operator only** — never sent to the model; visible only to human operators in the Activity view.',
   },
   source: {
     tooltip:
-      '**Pushed API** — your backend writes the value through the Radioso REST API, and Radioso stores it per session and customer. This is the delivery method available in the dashboard today.',
+      '**Pushed API** — your backend writes the value through the Radioso REST API, and Radioso stores it per conversation, session, or customer.',
   },
   surfacing: {
     tooltip:
       'When this agent places the value into a turn.\n\n**Always** — every turn. **On reference** — only when relevant. **Operator only** — hidden from the model, visible to human operators.',
   },
 } as const
+
+const activeOptionCount = (options: readonly ContextVariableOption[]): string => {
+  const count = options.filter((option) => !option.archived).length
+  return `${count} ${count === 1 ? 'option' : 'options'}`
+}
 
 const isUiSource = (source: AgentContextVariableEnablement['source']): source is SourceOption =>
   source === 'pushed'
@@ -134,6 +144,7 @@ const variableToForm = (variable: ContextVariable): VariableFormState => ({
   name: variable.name,
   description: variable.description ?? '',
   valueType: variable.valueType,
+  options: variable.options ? [...variable.options] : [],
   trustTier: variable.trustTier,
   sensitivity: variable.sensitivity,
   defaultSurfacing: variable.defaultSurfacing,
@@ -143,6 +154,7 @@ const formToPayload = (form: VariableFormState): ContextVariableCreateRequest =>
   name: form.name.trim(),
   description: form.description.trim() || null,
   valueType: form.valueType,
+  options: form.valueType === 'enum' ? form.options.map((option) => ({ ...option, label: option.label.trim() })) : null,
   trustTier: form.trustTier,
   sensitivity: form.sensitivity,
   defaultSurfacing: form.defaultSurfacing,
@@ -186,7 +198,9 @@ export function AssistantContextVariablesSection({
   const [deletingVariable, setDeletingVariable] = useState<ContextVariable | null>(null)
   const [form, setForm] = useState<VariableFormState>(emptyForm)
   const [nameTouched, setNameTouched] = useState(false)
-  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const [optionsTouched, setOptionsTouched] = useState(false)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
 
   const enablementsByVariableId = useMemo(() => {
     const lookup = new Map<string, AgentContextVariableEnablement>()
@@ -196,12 +210,17 @@ export function AssistantContextVariablesSection({
     return lookup
   }, [enablements])
 
-  const formError = useMemo(() => {
+  const nameError = useMemo(() => {
     const name = form.name.trim()
     if (!name) return 'Name is required.'
     if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) return 'Use letters, numbers, and underscores. Start with a letter.'
     return null
   }, [form.name])
+  const optionsError = useMemo(
+    () => (form.valueType === 'enum' ? attributeOptionsError(form.options) : null),
+    [form.valueType, form.options],
+  )
+  const formError = nameError ?? optionsError
 
   useEffect(() => {
     let active = true
@@ -219,7 +238,7 @@ export function AssistantContextVariablesSection({
           setEnablements(enablementResponse.enablements)
         })
         .catch((loadError) => {
-          if (active) setError(getApiErrorMessage(loadError, 'Failed to load context variables.'))
+          if (active) setError(getApiErrorMessage(loadError, 'Failed to load attributes.'))
         })
         .finally(() => {
           if (active) setIsLoading(false)
@@ -234,6 +253,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(null)
     setForm(emptyForm)
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
     setError(null)
     setDialogOpen(true)
   }
@@ -242,6 +263,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(variable)
     setForm(variableToForm(variable))
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
     setError(null)
     setDialogOpen(true)
   }
@@ -252,6 +275,8 @@ export function AssistantContextVariablesSection({
     setEditingVariable(null)
     setForm(emptyForm)
     setNameTouched(false)
+    setOptionsTouched(false)
+    setDialogError(null)
   }
 
   const mergeCatalogVariable = (variable: ContextVariable) => {
@@ -273,6 +298,7 @@ export function AssistantContextVariablesSection({
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
+    setDialogError(null)
     try {
       const payload = formToPayload(form)
       const response = editingVariable
@@ -284,12 +310,15 @@ export function AssistantContextVariablesSection({
       setEditingVariable(null)
       setForm(emptyForm)
       setNameTouched(false)
+      setOptionsTouched(false)
       markSaved()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(saveError, 'Failed to save context variable.')
-      setError(message)
-      markError(message)
+      // The dialog is open and covers the page header, so the refusal is shown there.
+      setDialogError(getApiErrorCode(saveError) === 'context_variable_has_values'
+        ? 'This attribute has values, so its type can’t change.'
+        : getApiErrorMessage(saveError, 'Failed to save attribute.'))
+      resetSaveState()
     } finally {
       if (isCurrentSave(saveId)) setIsSaving(false)
     }
@@ -313,7 +342,7 @@ export function AssistantContextVariablesSection({
       onEnablementSaved?.()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(saveError, 'Failed to update context variable.')
+      const message = getApiErrorMessage(saveError, 'Failed to update attribute.')
       setError(message)
       markError(message)
     } finally {
@@ -335,7 +364,7 @@ export function AssistantContextVariablesSection({
       onEnablementSaved?.()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(saveError, 'Failed to disable context variable.')
+      const message = getApiErrorMessage(saveError, 'Failed to disable attribute.')
       setError(message)
       markError(message)
     } finally {
@@ -357,7 +386,7 @@ export function AssistantContextVariablesSection({
       markSaved()
     } catch (deleteError) {
       if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(deleteError, 'Failed to delete context variable.')
+      const message = getApiErrorMessage(deleteError, 'Failed to delete attribute.')
       setError(message)
       markError(message)
     } finally {
@@ -369,12 +398,12 @@ export function AssistantContextVariablesSection({
     <SettingsCard
       id="assistant-context-variables-card"
       icon={<Braces className="h-5 w-5 text-primary" />}
-      title="Context"
-      description="Enable host-defined context variables for this agent and choose how each value reaches a turn."
+      title="Attributes"
+      description="Typed facts about a conversation or visitor. Enable them for this agent and choose how each value reaches a turn."
       headerEnd={(
         <Button type="button" size="sm" onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
-          Add variable
+          Add attribute
         </Button>
       )}
     >
@@ -382,21 +411,21 @@ export function AssistantContextVariablesSection({
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
         <p className="rounded-lg border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
-          Context variables let your site feed live visitor data — such as the current cart, order, or plan — into
-          this agent so it can ground answers in it. Built-in page and visitor-identity context is managed by Radioso
-          and isn&apos;t listed here; this section is for your own host-defined variables. Use the{' '}
+          Attributes hold what you know about a conversation or visitor — such as the topic, the current cart, or the
+          plan — so this agent, its routines and your automations share it. Your backend sets values through the API.
+          Built-in page and visitor-identity context is managed by Radioso and isn&apos;t listed here. Use the{' '}
           <span className="font-medium text-foreground">?</span> on any field for a plain-language explanation.
         </p>
-        <p className="text-xs text-muted-foreground">Shared variable definitions apply live to every agent that uses them. This agent&apos;s enablement changes are saved to its private draft and go live on Review &amp; Publish.</p>
+        <p className="text-xs text-muted-foreground">Shared attribute definitions apply live to every agent that uses them. This agent&apos;s enablement changes are saved to its private draft and go live on Review &amp; Publish.</p>
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner className="h-4 w-4" />
-            Loading context variables...
+            Loading attributes...
           </div>
         ) : catalog.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-            No host-defined context variables yet.
+            No attributes yet.
           </p>
         ) : (
           <div className="space-y-3">
@@ -413,6 +442,7 @@ export function AssistantContextVariablesSection({
                         <p className="font-mono text-sm font-medium text-foreground">@{variable.name}</p>
                         <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                           {valueTypeLabels[variable.valueType]}
+                          {variable.options ? ` · ${activeOptionCount(variable.options)}` : null}
                         </span>
                         <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                           {trustTierLabels[variable.trustTier]}
@@ -513,7 +543,7 @@ export function AssistantContextVariablesSection({
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingVariable ? 'Edit context variable' : 'Add context variable'}</DialogTitle>
+            <DialogTitle>{editingVariable ? 'Edit attribute' : 'Add attribute'}</DialogTitle>
             <DialogDescription>
               Shared definition — changes apply live to every agent using it. Each agent separately chooses whether to enable it in its private draft.
             </DialogDescription>
@@ -531,6 +561,7 @@ export function AssistantContextVariablesSection({
                 value={form.name}
                 onChange={(event) => {
                   setNameTouched(true)
+                  setDialogError(null)
                   setForm((current) => ({ ...current, name: event.target.value }))
                 }}
                 onBlur={() => setNameTouched(true)}
@@ -550,7 +581,7 @@ export function AssistantContextVariablesSection({
                 value={form.description}
                 onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
                 rows={3}
-                placeholder="Current visitor cart from the host backend."
+                placeholder="What the conversation is about."
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -563,13 +594,18 @@ export function AssistantContextVariablesSection({
                 />
                 <Select
                   value={form.valueType}
-                  onValueChange={(value) => setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))}
+                  onValueChange={(value) => {
+                    setOptionsTouched(true)
+                    setDialogError(null)
+                    setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))
+                  }}
                 >
                   <SelectTrigger id="contextVariableValueType">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="string">{valueTypeLabels.string}</SelectItem>
+                    <SelectItem value="enum">{valueTypeLabels.enum}</SelectItem>
                     <SelectItem value="json">{valueTypeLabels.json}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -636,14 +672,27 @@ export function AssistantContextVariablesSection({
                 </Select>
               </div>
             </div>
-            {nameTouched && formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            {form.valueType === 'enum' ? (
+              <AttributeOptionsEditor
+                options={form.options}
+                savedCount={editingVariable?.options?.length ?? 0}
+                onChange={(options) => {
+                  setOptionsTouched(true)
+                  setDialogError(null)
+                  setForm((current) => ({ ...current, options }))
+                }}
+              />
+            ) : null}
+            {nameTouched && nameError ? <p className="text-sm text-destructive">{nameError}</p> : null}
+            {optionsTouched && optionsError ? <p className="text-sm text-destructive">{optionsError}</p> : null}
+            {dialogError ? <p className="text-sm text-destructive" role="alert">{dialogError}</p> : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>
               Cancel
             </Button>
             <Button type="button" onClick={() => void handleSaveVariable()} disabled={Boolean(formError)} loading={isSaving}>
-              {editingVariable ? 'Save variable' : 'Add variable'}
+              {editingVariable ? 'Save attribute' : 'Add attribute'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -652,7 +701,7 @@ export function AssistantContextVariablesSection({
       <Dialog open={Boolean(deletingVariable)} onOpenChange={(open) => !open && !isSaving && setDeletingVariable(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete context variable?</DialogTitle>
+            <DialogTitle>Delete attribute?</DialogTitle>
             <DialogDescription>
               This removes the catalog declaration and disables it for agents that use it.
             </DialogDescription>
@@ -662,7 +711,7 @@ export function AssistantContextVariablesSection({
               Cancel
             </Button>
             <Button type="button" variant="destructive" onClick={() => void handleDeleteVariable()} loading={isSaving}>
-              Delete variable
+              Delete attribute
             </Button>
           </DialogFooter>
         </DialogContent>

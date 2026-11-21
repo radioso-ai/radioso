@@ -62,6 +62,24 @@ describeDb("test execution repository", () => {
     expect(history[1]).not.toHaveProperty("answerSegments");
   });
 
+  it("keeps the runner's record of an answer's message on its entry, for the runner's later turns (#1763)", async () => {
+    const executionId = randomUUID(), sideId = randomUUID(), cardsTurn = randomUUID(), plainTurn = randomUUID();
+    const messageMetadata = { blocks: [{ type: "item_list", id: "b1", origin: { kind: "routine_step", routineId: "r", stepId: "choose", slot: "chosen" } }] };
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    const answer = async (turnId: string, result: { answer: string; messageMetadata?: unknown }, at: number) => {
+      const claimed = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId: turnId, message: "Phones?", inputFingerprint: turnId, now: new Date(at), leaseMs: 30_000, retry: false });
+      if (typeof claimed === "string") throw new Error(`claim failed: ${claimed}`);
+      await repository.complete({ workspaceId, agentId, executionId, sideId, turnId, attemptId: turnId, fence: claimed.claims[0].attempt.fence, result: { ...result, messageId: randomUUID(), continuation: null }, now: new Date(at + 100) });
+    };
+
+    await answer(cardsTurn, { answer: "Two phones.", messageMetadata }, 1000);
+    await answer(plainTurn, { answer: "Anything else?" }, 2000);
+
+    const history = (await repository.find({ workspaceId, agentId, executionId }))!.sides[0].history.filter((entry) => entry.role === "assistant");
+    expect(history[0]).toMatchObject({ turnId: cardsTurn, messageMetadata });
+    expect(history[1]).not.toHaveProperty("messageMetadata");
+  });
+
   it("lists private execution evidence only inside its workspace and retains turn attempt metadata", async () => {
     const executionId = randomUUID(), sideId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [{ name: "tier", value: "gold" } as never], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });

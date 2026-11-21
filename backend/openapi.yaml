@@ -5395,6 +5395,7 @@ components:
                   - unknown_input_binding
                   - unknown_variable_ref
                   - unknown_context_variable
+                  - context_variable_option_not_accepted
                   - variable_name_collision
                   - node_id_collision
                   - exposure_tool_name_invalid
@@ -5420,6 +5421,8 @@ components:
                   - present_slot_not_item
                   - present_selection_mismatch
                   - item_slot_without_presenting_step
+                  - referenced_variable_not_guaranteed
+                  - referenced_list_variable
               location:
                 type: string
               message:
@@ -15616,6 +15619,54 @@ components:
         - filters
         - items
         - nextCursor
+    ContextVariableOption:
+      type: object
+      properties:
+        key:
+          type: string
+          maxLength: 120
+          pattern: ^[A-Za-z][A-Za-z0-9_]*$
+          description: What a value stores. It never changes.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 300
+        archived:
+          type: boolean
+          description: An archived option is no longer offered or accepted as a new value; values that hold it keep it.
+      required:
+        - key
+        - label
+        - description
+        - archived
+    ContextVariableOptionInput:
+      type: object
+      properties:
+        key:
+          type: string
+          maxLength: 120
+          pattern: ^[A-Za-z][A-Za-z0-9_]*$
+          description: What a value stores. It never changes.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 300
+        archived:
+          type: boolean
+      required:
+        - key
+        - label
+      additionalProperties: false
     ContextVariable:
       type: object
       properties:
@@ -15636,6 +15687,14 @@ components:
           enum:
             - string
             - json
+            - enum
+        options:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ContextVariableOption"
+          description: The options of an `enum` variable; null for every other type.
         trustTier:
           type: string
           enum:
@@ -15664,6 +15723,7 @@ components:
         - name
         - description
         - valueType
+        - options
         - trustTier
         - sensitivity
         - defaultSurfacing
@@ -15686,6 +15746,16 @@ components:
           enum:
             - string
             - json
+            - enum
+          description: The type of every value. It cannot change while the variable has values.
+        options:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ContextVariableOptionInput"
+          maxItems: 50
+          description: "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it."
         trustTier:
           type: string
           enum:
@@ -15725,6 +15795,16 @@ components:
           enum:
             - string
             - json
+            - enum
+          description: The type of every value. It cannot change while the variable has values.
+        options:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ContextVariableOptionInput"
+          maxItems: 50
+          description: "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it."
         trustTier:
           type: string
           enum:
@@ -15874,10 +15954,12 @@ components:
         type:
           type: string
           enum:
+            - conversation
             - session
             - customer
             - agent
             - workspace
+          description: Where a value is kept. A `conversation` scope id is the conversation's id.
         id:
           type: string
       required:
@@ -15898,23 +15980,43 @@ components:
         scope:
           $ref: "#/components/schemas/ContextVariableScope"
         data:
-          description: Arbitrary JSON value. The HTTP API rejects values above the serialized size limit.
+          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
         lastModified:
           type: string
           format: date-time
+        writtenBy:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - api
+                - operator
+                - routine
+                - classifier
+            ref:
+              type:
+                - string
+                - "null"
+              description: "What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session."
+          required:
+            - kind
+            - ref
+          description: The last writer of the value.
       required:
         - id
         - workspaceId
         - variableId
         - scope
         - lastModified
+        - writtenBy
     ContextVariableValueUpsertRequest:
       type: object
       properties:
         scope:
           $ref: "#/components/schemas/ContextVariableScope"
         data:
-          description: Arbitrary JSON value. The HTTP API rejects values above the serialized size limit.
+          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
       required:
         - scope
     ContextVariableValueDeleteRequest:
@@ -21177,6 +21279,25 @@ components:
           minItems: 1
           maxItems: 3
           description: Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo.
+        selection:
+          type: object
+          properties:
+            messageId:
+              type: string
+              format: uuid
+            blockId:
+              type: string
+              minLength: 1
+              maxLength: 64
+            itemKey:
+              type: string
+              minLength: 1
+              maxLength: 128
+          required:
+            - messageId
+            - blockId
+            - itemKey
+          description: "The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed."
       required:
         - executionGeneration
         - turnId
@@ -30289,6 +30410,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The value type cannot change while the variable has values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     delete:
       tags:
         - Context Variables
@@ -30520,7 +30647,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Context variable not found
+          description: Context variable, or the conversation a conversation scope names, not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write"
           content:
             application/json:
               schema:
@@ -30542,11 +30675,14 @@ paths:
         - schema:
             type: string
             enum:
+              - conversation
               - session
               - customer
               - agent
               - workspace
+            description: Where a value is kept. A `conversation` scope id is the conversation's id.
           required: true
+          description: Where a value is kept. A `conversation` scope id is the conversation's id.
           name: scopeType
           in: query
         - schema:

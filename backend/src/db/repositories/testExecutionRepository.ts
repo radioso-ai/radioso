@@ -52,6 +52,7 @@ const appendAssistant = (history: TestExecutionSide["history"], input: CompleteI
   messageId: input.result.messageId,
   ...answerSources(input.result),
   ...(input.result.turnTrace ? { turnTrace: input.result.turnTrace } : {}),
+  ...(input.result.messageMetadata !== undefined ? { messageMetadata: input.result.messageMetadata } : {}),
   createdAt: input.now,
   ...spokenMark(input),
 }];

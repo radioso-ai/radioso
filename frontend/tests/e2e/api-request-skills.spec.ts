@@ -7,6 +7,7 @@ import {
   seedDashboardStorage,
   workspaceKey,
   type AgentSkillFixture,
+  type RoutineMutationFixture,
 } from "./dashboard-fixtures";
 
 const connectionId = "99999999-9999-4999-8999-999999999999";
@@ -45,6 +46,8 @@ const apiRequestCapability = () => ({
 
 test("an operator connects an API, sends a test request and declares an output from the response", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
+  // A response value far wider than the dialog, such as a user agent string.
+  const longValue = `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:97.0) Gecko/20100101 Firefox/97.0 ${"x".repeat(160)}`;
 
   const connections: StoredConnection[] = [];
   const connectionBodies: unknown[] = [];
@@ -91,10 +94,10 @@ test("an operator connects an API, sends a test request and declares an output f
         httpStatus: 200,
         durationMs: 42,
         outcome: "completed",
-        outputs: {},
+        outputs: { client: longValue },
         mismatches: [],
         bodyTruncated: false,
-        body: { order: { status: "shipped", total: 42.5, items: [{ name: "Mug", price: 4.5 }] } },
+        body: { order: { status: "shipped", total: 42.5, items: [{ name: "Mug", price: 4.5 }] }, client: longValue },
       });
     }
     return route.fallback();
@@ -149,6 +152,21 @@ test("an operator connects an API, sends a test request and declares an output f
   await expect(page.getByLabel("Output 2 field 1 path")).toHaveValue("name");
   await page.getByLabel("Test request result").scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("api-request-skill-form.png") });
+
+  // The long value stays inside the response tree: the dialog keeps its width, every output
+  // row keeps its controls, and Create skill stays in view while the body scrolls.
+  const dialogBox = await page.getByRole("dialog", { name: "Configure API request" }).boundingBox();
+  const createSkill = page.getByRole("button", { name: "Create skill" });
+  for (const control of [
+    createSkill,
+    page.getByRole("switch", { name: "Output 2 required" }),
+    page.getByRole("button", { name: "Add client as output" }),
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    await expect(createSkill).toBeInViewport({ ratio: 1 });
+    const box = await control.boundingBox();
+    expect((box?.x ?? Infinity) + (box?.width ?? 0)).toBeLessThanOrEqual((dialogBox?.x ?? 0) + (dialogBox?.width ?? 0));
+  }
 
   await page.getByRole("button", { name: "Create skill" }).click();
   await expect(page.getByText("@order_status", { exact: true })).toBeVisible();
@@ -250,6 +268,18 @@ test("a variable set from a list output is only checked for presence", async ({ 
   await documentEditor.getByLabel("Output 1 variable").fill("found_orders");
   await step.getByRole("button", { name: "Done", exact: true }).click();
 
+  // A list renders as nothing a visitor can read, so `@` in step text neither offers it nor
+  // offers to create it again.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const reply = documentEditor.getByLabel("Step 2 instruction");
+  await reply.click();
+  await reply.pressSequentially("Tell them @found_orders");
+  await expect(page.getByRole("option", { name: /found_orders/ })).toHaveCount(0);
+  await reply.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
   // A check on that variable offers only is present and is absent.
   await step.getByRole("button", { name: "Find orders", exact: true }).click();
   await step.getByRole("button", { name: "Condition", exact: true }).click();
@@ -259,4 +289,108 @@ test("a variable set from a list output is only checked for presence", async ({ 
   await documentEditor.getByLabel("Rule operator").evaluate((select: HTMLSelectElement) => { select.size = select.options.length; });
   await documentEditor.getByLabel("Rule operator").scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("api-request-list-guard.png") });
+});
+
+test("a skill step's Sets declare the variables its rules read, and the routine validates", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  // Tall enough that the screenshots show every Sets row and every outcome.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const outcomeNames = ["completed", "not_found", "rejected", "missing_input", "invalid_input", "unverified", "failed"];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routineSkillCatalog: [{
+      skillName: "lookup_customer",
+      displayName: "Lookup Customer",
+      category: "api_request",
+      inputs: [{ key: "customer_id", type: "number", required: true }],
+      // As the backend describes an API request skill: each outcome by name, with the broad
+      // status the catalog type allows, which is `completed` for every one but `failed`.
+      outcomes: outcomeNames.map((name) => ({ name, displayName: name, status: name === "failed" ? "failed" : "completed" })),
+      hasDataOutputs: true,
+      outputs: [
+        { name: "city", type: "text", required: false },
+        { name: "email", type: "email", required: false },
+        { name: "last_name", type: "text", required: false },
+        { name: "first_name", type: "text", required: true },
+      ],
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Customer lookup");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("the visitor asks to look up a customer by number.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const askInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await askInstruction.click();
+  await askInstruction.pressSequentially("Ask for the customer number @customer_id");
+  await page.getByRole("option", { name: /Create variable “customer_id”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Lookup Customer" }).first().click();
+  const step = documentEditor.getByRole("button", { name: "Lookup Customer", exact: true }).locator("xpath=ancestor::li[1]");
+  await step.getByRole("button", { name: "Lookup Customer", exact: true }).click();
+  await step.getByLabel("Step 2 instruction").click();
+  await step.getByLabel("Step 2 instruction").pressSequentially("Look up the customer.");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  // Each Output row sets a variable named for its output, in the row's own place.
+  await step.getByRole("button", { name: "Lookup Customer", exact: true }).click();
+  await step.getByRole("button", { name: "Edit inputs", exact: true }).click();
+  for (let row = 0; row < 3; row += 1) await step.getByRole("button", { name: "Output", exact: true }).click();
+  await expect(documentEditor.getByLabel("Output 2 variable")).toHaveValue("email");
+  await documentEditor.getByLabel("Output 2 name").selectOption("first_name");
+  await expect(documentEditor.getByLabel("Output 2 name")).toHaveValue("first_name");
+  await expect(documentEditor.getByLabel("Output 2 variable")).toHaveValue("first_name");
+  await expect(documentEditor.getByLabel("Output 3 name")).toHaveValue("last_name");
+
+  // The binding popover lists each outcome by the name a rule matches.
+  await step.getByRole("button", { name: "Edit inputs", exact: true }).click();
+  const catalog = page.getByRole("dialog", { name: "Skill catalog for Edit bindings" });
+  for (const name of outcomeNames) await expect(catalog.getByText(name, { exact: true })).toHaveCount(1);
+  await catalog.getByText("failed", { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("sets-outcome-choices.png") });
+  await page.keyboard.press("Escape");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  // A rule reads a variable the step sets, though no field collects it.
+  await step.getByRole("button", { name: "Lookup Customer", exact: true }).click();
+  await step.getByRole("button", { name: "Condition", exact: true }).click();
+  await expect(documentEditor.getByLabel("Rule variable").locator("option")).toHaveText(["Variable…", "customer_id", "city", "first_name", "last_name"]);
+  await documentEditor.getByLabel("Rule variable").selectOption("first_name");
+  await documentEditor.getByLabel("Rule operator").selectOption("is_absent");
+  await step.getByRole("button", { name: "New finish" }).click();
+  await documentEditor.getByLabel("Ending message").fill("Tell the visitor the record has no name.");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  // An outcome rule offers each outcome once.
+  await step.getByRole("button", { name: "Lookup Customer", exact: true }).click();
+  await step.getByRole("button", { name: "Condition", exact: true }).click();
+  await documentEditor.getByLabel("Rule kind").selectOption("outcome");
+  await expect(documentEditor.locator("#routine-outcome-statuses option")).toHaveCount(outcomeNames.length);
+  expect(await documentEditor.locator("#routine-outcome-statuses option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).toEqual(outcomeNames);
+  await documentEditor.getByLabel("Outcome status").fill("not_found");
+  await step.getByRole("button", { name: "New finish" }).click();
+  await documentEditor.getByLabel("Ending message").fill("Tell the visitor no customer has that number.");
+  await step.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+  await step.getByRole("button", { name: "Lookup Customer", exact: true }).click();
+  await step.getByRole("button", { name: "Edit inputs", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("sets-routine-valid.png") });
+
+  const saved = routineUpdates.filter((update) => update.method === "POST" || update.method === "PATCH").at(-1)?.body;
+  expect(saved?.slots?.map((slot) => slot.key)).toEqual(["customer_id"]);
+  expect(saved?.steps?.find((candidate) => candidate.kind === "tool")?.metadata).toMatchObject({
+    outputAssignments: { city: "city", first_name: "first_name", last_name: "last_name" },
+  });
 });

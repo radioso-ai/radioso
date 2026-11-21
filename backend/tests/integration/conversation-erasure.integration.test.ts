@@ -225,6 +225,11 @@ describeIntegration("conversation erasure (Postgres)", () => {
       [workspaceId, tenant.variableId, chatSessionId],
     );
     await database.query(
+      `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data, written_by_kind, written_by_ref)
+       VALUES ($1, $2, 'conversation', $3, '{"items": ["laces"]}'::jsonb, 'api', 'credential-1')`,
+      [workspaceId, tenant.variableId, conversationId],
+    );
+    await database.query(
       `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json) VALUES
          ($1, $4, $5, 'chat.answer', 'success', jsonb_build_object('conversationId', $6::text, 'suggestions', '["Track order 1182"]'::jsonb, 'rewriteContinuityState', '{"query": "order 1182"}'::jsonb)),
          ($2, $4, $5, 'chat.suspended', 'success', jsonb_build_object('conversationId', $6::text, 'suggestions', '["Approve refund"]'::jsonb)),
@@ -318,6 +323,10 @@ describeIntegration("conversation erasure (Postgres)", () => {
       [seeded.conversationId],
     ),
     email_inbound_events: await count("email_inbound_events WHERE id = $1", [seeded.inboundEventId]),
+    conversation_context_values: await count(
+      "context_variable_values WHERE scope_type = 'conversation' AND scope_id = $1",
+      [seeded.conversationId],
+    ),
     session_context_values: await count(
       "context_variable_values WHERE scope_type = 'session' AND scope_id = $1",
       [seeded.chatSessionId],
@@ -355,7 +364,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(receipt).toEqual({
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
+      rowsByOwner: { "context-variables": 2, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
     });
   });
 
@@ -430,7 +439,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
       conversationId: erased.conversationId,
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
+      rowsByOwner: { "context-variables": 2, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0, "visitor-images": 0, "tool-images": 0, "chat-turns": 2 },
     });
     expect(invalidation.enqueue).toHaveBeenCalledWith(tenant.workspaceId, ["conversation.deleted"]);
   });
@@ -732,8 +741,9 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(values).toEqual([
       { scope_type: "customer", scope_id: "customer-7" },
       { scope_type: "agent", scope_id: tenant.agentId },
+      { scope_type: "conversation", scope_id: someoneElse.conversationId },
     ].sort((a, b) => a.scope_id.localeCompare(b.scope_id)));
-    expect(receipt).toMatchObject({ conversationCount: 2, messageCount: 4, rowsByOwner: { "context-variables": 3 } });
+    expect(receipt).toMatchObject({ conversationCount: 2, messageCount: 4, rowsByOwner: { "context-variables": 5 } });
     const [event] = await database.query<{ metadata_json: Record<string, unknown> }>(
       "SELECT metadata_json FROM audit_events WHERE workspace_id = $1 AND event_type = 'visitor.erased'",
       [tenant.workspaceId],

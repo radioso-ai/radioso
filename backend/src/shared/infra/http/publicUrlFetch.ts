@@ -8,6 +8,7 @@ import {
   isPublicNetworkAddress,
   PublicHostUnresolvedError,
   PublicNetworkPolicyError,
+  stripIpv6Brackets,
 } from "../../domain/publicNetwork.js";
 
 export { assertPublicHttpUrl } from "../../domain/publicNetwork.js";
@@ -18,7 +19,7 @@ type PublicAddressResolver = (hostname: string) => Promise<PublicLookupAddress[]
 const defaultResolver: PublicAddressResolver = (hostname) =>
   dnsLookup(hostname, { all: true, verbatim: true });
 
-export const resolvePublicAddresses = async (
+const resolvePublicAddresses = async (
   hostname: string,
   resolver: PublicAddressResolver = defaultResolver,
 ): Promise<PublicLookupAddress[]> => {
@@ -32,6 +33,16 @@ export const resolvePublicAddresses = async (
     throw new PublicNetworkPolicyError();
   }
   return addresses;
+};
+
+/**
+ * An http(s) URL whose host resolves only to public addresses. Refuses with
+ * `PublicNetworkPolicyError`, and a host that does not resolve with its `PublicHostUnresolvedError`
+ * subclass, so a caller tells a private target from a resolver outage. Any other error is no refusal.
+ */
+export const assertPublicHttpTarget = async (url: string, resolver?: PublicAddressResolver): Promise<void> => {
+  const target = assertPublicHttpUrl(url);
+  await resolvePublicAddresses(stripIpv6Brackets(target.hostname.toLowerCase()), resolver);
 };
 
 export const createConnectionBoundPublicLookup = (

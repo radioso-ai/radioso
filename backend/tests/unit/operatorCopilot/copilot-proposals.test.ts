@@ -2280,7 +2280,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("updates an existing variable's definition by id without touching its enablement", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(5) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(5) };
     const applyProposal = vi.fn(async () => ({ variableId: existingVariableId }));
     const { adapter } = await buildAdapter({ variable, applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
@@ -2307,7 +2307,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("upserts a per-agent enablement onto an existing variable, independent of its definition", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
     const applyProposal = vi.fn(async () => ({ variableId: existingVariableId }));
     const { adapter } = await buildAdapter({ variable, applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
@@ -2346,7 +2346,7 @@ describe("context variable proposal adapter", () => {
     enabled: false,
     updatedAt: new Date(7),
   };
-  const variableForMergeTests = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+  const variableForMergeTests = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
 
   it("preserves an existing enablement's staleness tuning and disabled state when a proposal restates only source, resolverSkillId, and surfacing", async () => {
     const { adapter } = await buildAdapter({
@@ -2458,7 +2458,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("refuses a proposal for an existing variable with neither a definition field nor an enablement", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
     const { adapter } = await buildAdapter({ variable });
     await expect(adapter.validatePayload("workspace-1", { agentId: contextVariableAgentId, variableId: existingVariableId }, {}))
       .rejects.toThrow(/definition change|enablement change/i);
@@ -2482,7 +2482,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("refuses a browser-sourced enablement", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
     const { adapter } = await buildAdapter({ variable });
     await expect(adapter.validatePayload("workspace-1", { agentId: contextVariableAgentId, variableId: existingVariableId }, {
       enablement: { source: "browser", surfacing: "always" },
@@ -2490,7 +2490,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("refuses a resolver enablement with no resolverSkillId", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
     const { adapter } = await buildAdapter({ variable });
     await expect(adapter.validatePayload("workspace-1", { agentId: contextVariableAgentId, variableId: existingVariableId }, {
       enablement: { source: "resolver", surfacing: "always" },
@@ -2498,7 +2498,7 @@ describe("context variable proposal adapter", () => {
   });
 
   it("refuses a non-resolver enablement carrying resolver-only fields", async () => {
-    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+    const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
     const { adapter } = await buildAdapter({ variable });
     await expect(adapter.validatePayload("workspace-1", { agentId: contextVariableAgentId, variableId: existingVariableId }, {
       enablement: { source: "pushed", surfacing: "always", maxAgeSeconds: 60 },

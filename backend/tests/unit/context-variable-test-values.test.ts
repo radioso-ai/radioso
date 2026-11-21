@@ -8,17 +8,27 @@ import {
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const stringId = "00000000-0000-4000-8000-000000000002";
 const jsonId = "00000000-0000-4000-8000-000000000003";
+const enumId = "00000000-0000-4000-8000-000000000004";
 
 const catalog: ContextVariableTestValueCatalogPort = {
   async get(_workspaceId, id) {
     if (id === stringId) return {
-      id, workspaceId, name: "customer", description: null, valueType: "string",
+      id, workspaceId, name: "customer", description: null, valueType: "string", options: null,
       trustTier: "signed", sensitivity: "normal", defaultSurfacing: "always",
       createdAt: new Date(0), updatedAt: new Date(0),
     };
     if (id === jsonId) return {
-      id, workspaceId, name: "cart", description: null, valueType: "json",
+      id, workspaceId, name: "cart", description: null, valueType: "json", options: null,
       trustTier: "unverified", sensitivity: "sensitive", defaultSurfacing: "always",
+      createdAt: new Date(0), updatedAt: new Date(0),
+    };
+    if (id === enumId) return {
+      id, workspaceId, name: "topic", description: null, valueType: "enum",
+      options: [
+        { key: "billing", label: "Billing", description: null, archived: false },
+        { key: "legacy", label: "Legacy", description: null, archived: true },
+      ],
+      trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       createdAt: new Date(0), updatedAt: new Date(0),
     };
     return null;
@@ -55,5 +65,15 @@ describe("freezeTestValues", () => {
       selectedEnablements: [[{ variableId: jsonId, enabled: true }]],
       supplied: [{ contextVariableId: jsonId, value: undefined }],
     })).rejects.toMatchObject({ code: "bad_request" });
+  });
+
+  it("takes an enum sample only as the key of an active option", async () => {
+    const select = [[{ variableId: enumId, enabled: true }]];
+    await expect(freezeTestValues({ workspaceId, catalog, selectedEnablements: select, supplied: [{ contextVariableId: enumId, value: "billing" }] }))
+      .resolves.toMatchObject([{ contextVariableId: enumId, value: "billing", label: "Billing" }]);
+    for (const value of ["legacy", "Billing", 1]) {
+      await expect(freezeTestValues({ workspaceId, catalog, selectedEnablements: select, supplied: [{ contextVariableId: enumId, value }] }))
+        .rejects.toMatchObject({ code: "bad_request" });
+    }
   });
 });

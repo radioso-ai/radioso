@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-19
+last_updated: 2026-11-21
 ---
 
 # Code Map
@@ -862,7 +862,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
+- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules; the context-variable adapter lives in `contextVariableProposalAdapter.ts`)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `backend/src/modules/operatorCopilot/proposalContribution.ts`, `tools/contributedProposals.ts`, and `proposalCard.ts` (a contributed proposal target type, the propose tool Ray builds for it, and both card producers); `backend/src/app/composition/copilotContributions.ts` assembles the target-type set
@@ -1112,17 +1112,32 @@ Public surfaces and key files:
 
 ## Context Variables
 
-Owns workspace context-variable definitions, per-agent enablements, pushed
-values, resolver-backed values, and the bounded projections staged into an
-agent turn. `ContextVariableService` is the authoring boundary used by HTTP and
-Ray: it resolves agents and variables inside the workspace, validates resolver
+Owns workspace context-variable definitions (the dashboard and docs call them
+attributes), per-agent enablements, stored values, resolver-backed values, and
+the bounded projections staged into an agent turn. A definition's `valueType`
+is `string`, `json` or `enum`; an enum carries `options` (`key`, `label`,
+`description`, `archived`), whose keys never change and which are archived,
+never removed. `ContextVariableService` is the authoring boundary used by HTTP
+and Ray: it resolves agents and variables inside the workspace, checks options
+and refuses a type change on a variable that has values, validates resolver
 skills against the target agent, and applies definition and enablement writes.
-The resolver service owns turn-time reads, caching, timeouts, and compatibility
-checks.
+Every value write goes through `validateValue` and records its writer
+(`written_by_kind` `api | operator | routine | classifier`, `written_by_ref`);
+the repository applies `mayOverwrite` inside the upsert, so the classifier
+fills only an empty or classifier-written value. `contextScopeLadder` is the
+resolution order, `conversation → session → customer → agent → workspace`;
+chat builds each turn's scopes with it. The resolver service owns turn-time
+reads, caching, timeouts, and compatibility checks. It caches under the chat
+session or verified customer, or under the conversation when the turn has
+neither, never under the agent or workspace, and hands its skill the first
+scope past the conversation.
 
 Public surfaces and key files:
 
 - `backend/src/modules/context-variables/public.ts`
+- `backend/src/modules/context-variables/domain.ts` (types, `mayOverwrite`, `contextScopeLadder`)
+- `backend/src/modules/context-variables/valueValidation.ts` (`validateValue`, `validateOptions`; limits in `CONTEXT_VARIABLES_BEHAVIOR.enumOptions`)
+- `backend/src/modules/context-variables/optionSchema.ts` (the one option schema and key pattern the routes, OpenAPI, Ray and `validateOptions` share)
 - `backend/src/modules/context-variables/repository.ts`
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
@@ -1130,21 +1145,27 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/modules/context-variables/identitySigning.ts` (`verifySignedIdentityOutcome` names why a visitor identity token did not verify, from a closed set; `verifySignedIdentity` is its null-or-identity form) and `backend/src/app/http/shared/publicChatIdentity.ts` (the public chat message's use of it: `radioso_public_chat_identity_verifications_total{outcome}`, one log line per refusal with ids and the outcome)
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
-- `backend/src/db/repositories/contextVariableRepository.ts`
-- `backend/src/app/http/routes/contextVariableRoutes.ts`
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts`
+- `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
+- `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
+- `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
+- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
+- `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
+- `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
+- `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts tests/unit/context-variable-attribute-rules.test.ts tests/unit/context-variable-service-attributes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/identity-signing.test.ts tests/unit/identity-nonce-prune.test.ts tests/integration/identity-nonce-repository.integration.test.ts` and the signed-identity case in `tests/contract/public-chat.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/context-variable-attributes.integration.test.ts tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
+- `cd frontend && pnpm exec playwright test tests/e2e/context-variables-settings.spec.ts` (the Attributes page: a Choice attribute with options, archiving one)
 
 Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
-- Issues `#1036`, `#1046`, and `#1115`
+- `specs/1884-typed-attributes/`
+- Issues `#1036`, `#1046`, `#1115`, and `#1884`
 
 ## Visitors
 
@@ -1305,7 +1326,7 @@ about which tables exist.
 Rows a foreign key cannot reach belong to the module that owns them, which
 implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
 customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
-context-variable session and customer values (an eraser reads the session ids
+context-variable conversation, session and customer values (an eraser reads the session ids
 it keys by from the conversations before they go), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the
@@ -2006,7 +2027,7 @@ instead of inserting a second, and every path that crawls an existing source
 (recrawl, scheduled recrawl, a new crawl of the same URL) goes through it. A job
 records its `crawl_trigger` (`manual` or `scheduled`).
 
-Scheduled recrawl (migration `270_scheduled_website_recrawl.sql`): a website
+Scheduled recrawl (migration `272_scheduled_website_recrawl.sql`): a website
 source's `recrawl_cadence` (`off`, `daily`, `weekly`) and `next_recrawl_at` live
 on `document_sources`. `recrawlSchedule.ts` is the pure cadence arithmetic and
 plan clamp, with the `RecrawlPlanPort` the plan's ceiling arrives through;
@@ -2423,11 +2444,11 @@ Primary internals:
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
 - `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector, and `frontend/components/dashboard/routine-filled-slots.tsx` lists the filled slots, beside their values on a Test Chat trace
-- `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
+- `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, collects the `contextEvidence` the referenced context variables carry to the step reply, and gives it the turn's typed tool results (`skillResults`, read by `turnSkillResults` in `routineStepContext.ts` and written by `packages/conversation-defaults/src/routineStepToolResults.ts`); the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), `routine-step-sources.md` and `routine-step-sources-none.md` (which quoted sources the reply has), `routine-step-ending.md` (what the run did, on an ending's reply and inside `routine-step-terminal-handoff-with-message.md`), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), `routine-step-sources.md` and `routine-step-sources-none.md` (which quoted sources the reply has), `routine-step-tool-results.md` (what the turn's tool steps returned, by their output contracts), `routine-step-ending.md` (what the run did, on an ending's reply and inside `routine-step-terminal-handoff-with-message.md`), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)

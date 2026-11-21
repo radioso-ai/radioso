@@ -4,9 +4,10 @@
  */
 export { renderContextBlockWithBound } from "./contextBlockRenderer.js";
 export { resolveAvailableContextVariables } from "./availableContextVariables.js";
+export type { AvailableContextVariable } from "./availableContextVariables.js";
 export { boundContextVariableFragments } from "./contextVariablesBound.js";
 export type { ContextVariableRenderBoundConfig } from "./contextVariablesBound.js";
-export { resolveContextForTurn } from "./contextResolutionService.js";
+export { resolveContextForTurn, skillContextSnapshot } from "./contextResolutionService.js";
 export { routineContextRenderer } from "./routineContextRenderer.js";
 export { projectVisitorRequestFacts } from "./visitorRequestFacts.js";
 export type { VisitorRequestFacts } from "./visitorRequestFacts.js";
@@ -27,9 +28,30 @@ export type {
 } from "./contextResolutionService.js";
 export type { ContextResolverPort } from "./contextVariableResolverService.js";
 export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
+export {
+  CONTEXT_VALUE_WRITER_KINDS,
+  CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_VALUE_TYPES,
+  contextScopeLadder,
+  frozenTestValueInput,
+  mayOverwrite,
+  resolvedVariableInput,
+  typeChangeWithValuesRefused,
+} from "./domain.js";
+export {
+  CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
+  contextVariableOptionInputSchema,
+  contextVariableOptionSchema,
+  normalizeContextVariableOption,
+} from "./optionSchema.js";
+export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
 export type {
   AgentContextVariableEnablement,
+  ContextScopeKeys,
+  ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
+  ContextVariableOption,
   ContextVariableScope,
   ContextVariableSensitivity,
   ContextVariableSource,

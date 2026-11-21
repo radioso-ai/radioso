@@ -19,6 +19,10 @@ const revision: AgentRevision = {
       id: "22222222-2222-4222-8222-222222222222", agentId: "agent-1", variableId: "variable-1",
       source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null,
       surfacing: "always", enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
+    }, {
+      id: "33333333-3333-4333-8333-333333333333", agentId: "agent-1", variableId: "variable-2",
+      source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null,
+      surfacing: "on_reference", enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
     }],
   },
   sourceDraftGeneration: 1,
@@ -149,6 +153,14 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
         value: { tier: "gold" },
         sensitive: false,
         trust: "verified",
+      }, {
+        contextVariableId: "variable-2",
+        name: "topic",
+        description: null,
+        value: "billing",
+        label: "Billing",
+        sensitive: false,
+        trust: "unverified",
       }],
       executionMode: "safe_test",
       skillEffects: "allowed",
@@ -170,6 +182,9 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       consentStartState: null,
       preResolvedHostVariables: [{
         name: "plan", description: "Current plan", value: { tier: "gold" }, surfacing: "always", sensitive: false, trust: "verified",
+      }, {
+        // A Choice sample reaches conditions by its key and label, as a stored value does live.
+        name: "topic", description: null, value: "billing", label: "Billing", surfacing: "on_reference", sensitive: false, trust: "unverified",
       }],
       // Test Chat is the one caller that reads routine slot values back off the trace
       // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under
@@ -266,6 +281,36 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     expect(result.blocks).toEqual([block]);
     expect(recordPreview).toHaveBeenCalledWith({ workspaceId: "ws-1", sources: toolImages });
     expect(order).toEqual(["replayed", "pictures recorded"]);
+  });
+
+  // #1763: a typed answer or a pick on a later turn reads the cards a reply showed from the transcript.
+  it("returns what the reply's message keeps of its cards, and hands it back as that message's metadata on later turns", async () => {
+    const stored = { blocks: [{ type: "item_list", id: "b1", layout: "list", selection: "single", caption: "Flats", items: [{ key: "7", title: "Loft", actions: [{ type: "select" }], fields: {} }], origin: { kind: "routine_step", skillName: "search", routineId: "r", stepId: "choose", slot: "flat" } }] };
+    const replay = {
+      stream: vi.fn(async function* (_input: { history: Array<{ id: string; metadata?: unknown }> }) {
+        return { answer: "One loft fits.", messageId: "ephemeral-message", continuation, messageReplyBlocks: stored };
+      }),
+    };
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => revision },
+    });
+    const turn = { workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision, conversationId: "private-side-1", continuation, testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const };
+
+    const { result } = await collect(adapter.stream({ ...turn, message: "Flats in Mitte?", history: [] }));
+    expect(result.messageMetadata).toEqual(stored);
+
+    await collect(adapter.stream({
+      ...turn,
+      message: "The first one",
+      history: [
+        { turnId: "turn-1", attemptId: "attempt-1", role: "user", content: "Flats in Mitte?", messageId: "user-1", createdAt: new Date(0), messageMetadata: stored },
+        { turnId: "turn-1", attemptId: "attempt-1", role: "assistant", content: "One loft fits.", messageId: "answer-1", createdAt: new Date(0), messageMetadata: result.messageMetadata },
+      ],
+    }));
+    const history = replay.stream.mock.calls.at(-1)?.[0].history ?? [];
+    expect(history.map((message) => message.metadata)).toEqual([undefined, stored]);
   });
 
   it("rejects corrupt and version-mismatched continuations before replay", async () => {

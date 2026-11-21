@@ -37,6 +37,8 @@ export interface VariableContextFragment {
   name: string;
   description?: string | null;
   value: unknown;
+  /** The label of the option an enum value's key names. A model reads the label; a skill input gets the key. */
+  label?: string;
   trust?: "unverified" | "verified";
 }
 
@@ -90,7 +92,7 @@ const renderVariables = (
       return {
         name: label,
         prefix: `- ${label}${description}${verified}: `,
-        value: String(JSON.stringify(fragment.value)),
+        value: String(JSON.stringify(fragment.label ?? fragment.value)),
       } satisfies ContextVariableRenderCandidate;
     })
     .filter((candidate): candidate is ContextVariableRenderCandidate => Boolean(candidate));

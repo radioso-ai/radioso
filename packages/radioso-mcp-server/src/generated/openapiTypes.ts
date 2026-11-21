@@ -7383,7 +7383,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable";
                 location: string;
                 message: string;
             }[];
@@ -10951,6 +10951,21 @@ export interface components {
             items: components["schemas"]["InternalUsageEvent"][];
             nextCursor: string | null;
         };
+        ContextVariableOption: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description: string | null;
+            /** @description An archived option is no longer offered or accepted as a new value; values that hold it keep it. */
+            archived: boolean;
+        };
+        ContextVariableOptionInput: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description?: string | null;
+            archived?: boolean;
+        };
         ContextVariable: {
             /** Format: uuid */
             id: string;
@@ -10959,7 +10974,9 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            valueType: "string" | "json";
+            valueType: "string" | "json" | "enum";
+            /** @description The options of an `enum` variable; null for every other type. */
+            options: components["schemas"]["ContextVariableOption"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10974,8 +10991,13 @@ export interface components {
         ContextVariableCreateRequest: {
             name: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10986,8 +11008,13 @@ export interface components {
         ContextVariableUpdateRequest: {
             name?: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType?: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType?: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier?: "unverified" | "signed";
             /** @enum {string} */
@@ -11041,8 +11068,11 @@ export interface components {
             enablements: components["schemas"]["AgentContextVariableEnablement"][];
         };
         ContextVariableScope: {
-            /** @enum {string} */
-            type: "session" | "customer" | "agent" | "workspace";
+            /**
+             * @description Where a value is kept. A `conversation` scope id is the conversation's id.
+             * @enum {string}
+             */
+            type: "conversation" | "session" | "customer" | "agent" | "workspace";
             id: string;
         };
         ContextVariableValue: {
@@ -11053,14 +11083,21 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
             /** Format: date-time */
             lastModified: string;
+            /** @description The last writer of the value. */
+            writtenBy: {
+                /** @enum {string} */
+                kind: "api" | "operator" | "routine" | "classifier";
+                /** @description What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session. */
+                ref: string | null;
+            };
         };
         ContextVariableValueUpsertRequest: {
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
         };
         ContextVariableValueDeleteRequest: {
@@ -13231,6 +13268,13 @@ export interface components {
             message?: string;
             /** @description Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo. */
             imageIds?: string[];
+            /** @description The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed. */
+            selection?: {
+                /** Format: uuid */
+                messageId: string;
+                blockId: string;
+                itemKey: string;
+            };
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;
@@ -21577,6 +21621,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description The value type cannot change while the variable has values */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     listAgentContextVariables: {
@@ -21764,7 +21817,8 @@ export interface operations {
     getContextVariableValue: {
         parameters: {
             query: {
-                scopeType: "session" | "customer" | "agent" | "workspace";
+                /** @description Where a value is kept. A `conversation` scope id is the conversation's id. */
+                scopeType: "conversation" | "session" | "customer" | "agent" | "workspace";
                 scopeId: string;
             };
             header?: never;
@@ -21855,8 +21909,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Context variable not found */
+            /** @description Context variable, or the conversation a conversation scope names, not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

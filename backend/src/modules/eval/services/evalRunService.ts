@@ -11,7 +11,7 @@ import {
 import type { WorkbenchReplayResult } from "../../chat/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { ResolvedVariableInput } from "../../context-variables/public.js";
+import { frozenTestValueInput, type ResolvedVariableInput } from "../../context-variables/public.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
   AssertionVerdict,
@@ -185,14 +185,7 @@ const testExecutionVariables = (snapshot: EvalSnapshotForReplay): ResolvedVariab
       (candidate) => candidate.variableId === value.contextVariableId && candidate.enabled,
     );
     if (!enablement) throw badRequest("Frozen Test Chat context value is not enabled in its captured revision");
-    return {
-      name: value.name,
-      description: value.description,
-      value: value.value,
-      surfacing: enablement.surfacing,
-      sensitive: value.sensitive,
-      trust: value.trust,
-    };
+    return frozenTestValueInput(value, enablement);
   });
 };
 

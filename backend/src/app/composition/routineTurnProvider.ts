@@ -1,7 +1,7 @@
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { RoutineConsentRepository } from "../../db/repositories/routineConsentRepository.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
-import type { AgentSkillRepository, ConversationSkills } from "../../modules/agentSkills/public.js";
+import type { AgentSkillRepository } from "../../modules/agentSkills/public.js";
 import {
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
@@ -30,18 +30,16 @@ type ChatTurnPlanHandle = Parameters<typeof planAwareRoutineActivator>[0]["handl
  */
 /**
  * A routine's skill-backed completion export, read from the `completion_export` skill of the
- * release the routine is served from (the agent's live skills when that release recorded none),
- * or from the agent's live skill for a routine served from no release (a preview).
+ * release the routine is served from, or from the agent's live skill when that release recorded no
+ * skills or the routine is served from no release (a preview). The live read is the one row by name,
+ * once per routine; the turn's own skill read counts the release's live fallback.
  */
 export const createCompletionExportResolver = (
-  conversationSkills: Pick<ConversationSkills, "forTurn">,
   live: Pick<AgentSkillRepository, "findByAgentAndName">,
 ) => async (definition: RoutineDefinition, scope: CompletionExportScope): Promise<RoutineCompletionExport | null> => {
-  const releaseSkills = scope.release
-    ? await conversationSkills.forTurn({ workspaceId: scope.release.workspaceId, id: definition.agentId, authoredAgentSkills: scope.release.agentSkills })
-    : null;
-  const skill = releaseSkills
-    ? releaseSkills.find((candidate) => candidate.skillName === "completion_export") ?? null
+  const recorded = scope.release?.agentSkills;
+  const skill = recorded
+    ? recorded.find((candidate) => candidate.skillName === "completion_export") ?? null
     : await live.findByAgentAndName(definition.agentId, "completion_export");
   if (!skill) {
     return null;
@@ -73,8 +71,6 @@ export const composeRoutineTurnProvider = (
     >;
     db: Db;
     agentSkillRepository: Pick<AgentSkillRepository, "findByAgentAndName" | "listByAgent">;
-    /** How a routine served from a release reads that release's skills (`buildConversationSkills`). */
-    conversationSkills: Pick<ConversationSkills, "forTurn">;
     logger: AppLogger;
     routineDefinitionRepository: RoutineDefinitionRepository;
   },
@@ -113,7 +109,7 @@ export const composeRoutineTurnProvider = (
           "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
         );
       },
-      resolveCompletionExport: createCompletionExportResolver(input.conversationSkills, input.agentSkillRepository),
+      resolveCompletionExport: createCompletionExportResolver(input.agentSkillRepository),
     });
   return createRoutineTurnProvider({
     agentSkillRepository: input.agentSkillRepository,

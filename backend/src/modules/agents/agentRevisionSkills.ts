@@ -26,7 +26,7 @@ export const redactedRevisionSkill = (skill: RevisionSkill) => ({
   enabled: skill.enabled,
   targetType: skill.targetType ?? null,
   targetId: skill.targetId ?? null,
-  configRedacted: skill.config !== undefined,
+  configRedacted: skill.config !== undefined && Object.keys(skill.config).length > 0,
 });
 
 const canonicalSettings = (skill: RevisionSkill): string =>

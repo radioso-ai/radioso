@@ -281,7 +281,6 @@ describe("a completion export a released conversation runs", () => {
     const source = createPublishedRoutineRegistrationSource({ listActiveByAgent: async () => [], listVersionsByAgent: async () => [], findPinnedById: async () => null, findById: async () => null }, {
       revisionReader: { findRevision: async () => revision },
       resolveCompletionExport: createCompletionExportResolver(
-        conversationSkills([{ ...exportSkill, enabled: false }], undefined),
         { findByAgentAndName: async () => ({ ...exportSkill, enabled: false }) },
       ),
     });
@@ -289,6 +288,18 @@ describe("a completion export a released conversation runs", () => {
     const [registration] = await source.load({ agentId, workspaceId, agentRevisionId: revision.id });
 
     expect(registration?.routine.completionExport).toMatchObject({ enabled: true, destinationRef: exportSkill.targetId });
+  });
+
+  it("reads only the agent's live completion_export for a release that recorded no skills", async () => {
+    const listByAgent = vi.fn(async () => [exportSkill]);
+    const findByAgentAndName = vi.fn(async () => exportSkill);
+    const resolve = createCompletionExportResolver({ findByAgentAndName });
+
+    const exported = await resolve(definition, { release: { workspaceId } });
+
+    expect(exported).toMatchObject({ enabled: true, destinationRef: exportSkill.targetId });
+    expect(findByAgentAndName).toHaveBeenCalledWith(agentId, "completion_export");
+    expect(listByAgent).not.toHaveBeenCalled();
   });
 
   it("lets a queued export through while the conversation's release has completion_export on", async () => {

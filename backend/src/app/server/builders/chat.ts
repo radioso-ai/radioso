@@ -617,7 +617,6 @@ export const buildChatServices = (input: {
     logger: input.logger,
     metricsRegistry: input.metricsRegistry,
     routineDefinitionRepository: input.routineDefinitionRepository,
-    conversationSkills,
     routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
     approvalResumeEffectJournal,
   });

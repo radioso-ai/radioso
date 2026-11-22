@@ -25,6 +25,19 @@ const eligibleProposal: CopilotMcpDisposition = {
   retry: { effect: "proposal", idempotent: true, operationIdentity: "client" },
 };
 
+/**
+ * A teammate's edit of a named conversation's attribute. A set writes the option it names and a reset
+ * deletes the conversation's own value, so a lost-response retry lands on the state the first call
+ * left: a repeated set changes nothing, and a repeated reset finds no value and neither audits nor
+ * asks the AI again.
+ */
+const conversationAttributeEdit: CopilotMcpDisposition = {
+  status: "eligible",
+  inputStrategy: "explicit",
+  scope: "operator:act",
+  retry: { effect: "act", idempotent: true, operationIdentity: "client" },
+};
+
 export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposition>> = {
   agent_configuration: eligibleRead,
   agent_skills: eligibleRead,
@@ -131,6 +144,8 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     scope: "operator:act",
     retry: { effect: "act", idempotent: true, operationIdentity: "client" },
   },
+  set_conversation_attribute: conversationAttributeEdit,
+  reset_conversation_attribute: conversationAttributeEdit,
   test_agent_turn: contextDependent,
   // Test Chat's reads scope by the request's own agent and session ids, the same explicit shape as
   // the conversation readers.

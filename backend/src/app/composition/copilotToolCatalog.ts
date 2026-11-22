@@ -24,6 +24,7 @@ import {
   type CopilotSkillCapabilityTargetsPort,
   type CopilotAudiencePulsePort,
   type CopilotContextVariablesPort,
+  type ConversationAttributeCopilotToolDependencies,
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
   type CopilotEmailChannelPort,
@@ -186,6 +187,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly eventSubscriptions: CopilotEventSubscriptionsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly contextVariableUsers: AgentContextVariableUsersReader;
+  readonly conversationAttributeEdits: ConversationAttributeCopilotToolDependencies["conversationAttributeEdits"];
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly workspaceSetupState: CopilotWorkspaceSetupStatePort;
   /** Null when the deployment has no email provider. */

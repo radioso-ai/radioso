@@ -57,6 +57,8 @@ const catalogToolCoverage = {
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   setQualityTurnTriage: "set_triage_state",
+  setHistoryConversationAttribute: "set_conversation_attribute",
+  resetHistoryConversationAttribute: "reset_conversation_attribute",
   getAudiencePulse: "audience_topics",
   getAudiencePulseRefreshStatus: "audience_topics",
   getPlatformSettings: "workspace_settings",

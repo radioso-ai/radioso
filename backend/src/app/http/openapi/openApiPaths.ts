@@ -29,6 +29,7 @@ import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerDocumentChunksPaths } from "./paths/documentChunksPaths.js";
 import { registerWebsiteRecrawlPaths } from "./paths/websiteRecrawlPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
+import { registerHistoryAttributePaths } from "./paths/historyAttributePaths.js";
 import { registerHistoryConsentPaths } from "./paths/historyConsentPaths.js";
 import { registerHistoryContactPaths } from "./paths/historyContactPaths.js";
 import { registerPrivacyPaths } from "./paths/privacyPaths.js";
@@ -98,6 +99,7 @@ export const registerOpenApiPaths = (
   registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
   registerHistoryConsentPaths(registry, schemas, security);
+  registerHistoryAttributePaths(registry, schemas, security);
   registerHistoryContactPaths(registry, schemas, security);
   registerPrivacyPaths(registry, schemas, security);
   registerConversationActivityPaths(registry, schemas, security);

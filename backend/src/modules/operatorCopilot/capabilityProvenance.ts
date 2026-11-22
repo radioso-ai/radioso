@@ -13,7 +13,7 @@ type ProductionDescriptorName =
   | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe" | "set_recrawl_cadence"
-  | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
+  | "routine_definition" | "run_eval_suite" | "set_triage_state" | "set_conversation_attribute" | "reset_conversation_attribute" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_setup_state" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
   | "retrieval_settings" | "prepare_retrieval_settings"
@@ -109,6 +109,8 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
+  set_conversation_attribute: { backingOperationIds: ["setHistoryConversationAttribute"] },
+  reset_conversation_attribute: { backingOperationIds: ["resetHistoryConversationAttribute"] },
   test_chat_sessions: { backingOperationIds: ["listAgentTestExecutions", "getAgentTestExecution"] },
   test_chat_transcript: { backingOperationIds: ["getAgentTestExecution"] },
   test_chat_turn_trace: { backingOperationIds: ["getAgentTestExecution"] },

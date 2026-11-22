@@ -6,6 +6,17 @@ export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+/** One attribute of a conversation, by its name as stored, matched exactly (#1884). */
+export const conversationAttributeParamsSchema = z.object({
+  conversationId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+});
+
+/** A teammate's value for a conversation's Choice attribute: one of its active option keys. */
+export const conversationAttributeValueBodySchema = z.object({
+  value: z.string().min(1).max(120).describe("The key of one of the attribute's active options, such as `billing`."),
+}).strict();
+
 /** One consent record of a conversation (#1544). */
 export const conversationConsentParamsSchema = z.object({
   conversationId: z.string().uuid(),

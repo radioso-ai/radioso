@@ -21,7 +21,7 @@ void valueTypesPublished;
 void writersPublished;
 
 /** A conversation's value change as the log records it: the conversation it names and what changed. */
-export interface ContextValueChangedDraft {
+interface ContextValueChangedDraft {
   readonly type: "context_value.changed";
   readonly workspaceId: string;
   readonly conversationId: string;

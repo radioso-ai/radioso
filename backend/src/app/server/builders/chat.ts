@@ -874,7 +874,7 @@ export const buildChatServices = (input: {
     input.teammateLabels,
     input.conversationActivity.reads,
     replyBlocks.imageUrls,
-    new ConversationAttributeService(new ConversationAttributeReads(input.database.kysely)),
+    new ConversationAttributeService(new ConversationAttributeReads(input.database.kysely, new AgentRevisionRuntimeRepository(input.database.kysely))),
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.

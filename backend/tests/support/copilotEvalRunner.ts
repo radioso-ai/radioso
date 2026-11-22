@@ -530,6 +530,7 @@ callerKind: "human" as const,
     eventSubscriptions: { list: unusedPort("eventSubscriptions.list") },
     contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
     contextVariableUsers: { listContextVariableUsers: unusedPort("contextVariableUsers.listContextVariableUsers") },
+    conversationAttributeEdits: { set: unusedPort("conversationAttributeEdits.set"), reset: unusedPort("conversationAttributeEdits.reset") },
     productDocs: new ProductDocsService(),
     emailChannel: null,
     workspaceSettings: {

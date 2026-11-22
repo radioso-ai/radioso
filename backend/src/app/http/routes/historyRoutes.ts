@@ -58,6 +58,21 @@ const withRecordingAvailability = async <Detail extends { conversationId: string
 };
 
 /**
+ * A dashboard session's read of a conversation's attributes says whether the teammate may set and
+ * reset them: the edit routes take the takeover permission and a signed-in teammate. An API
+ * credential's read, and a page that carries no attributes, leave it out.
+ */
+const withAttributeEditing = async <Detail extends { attributes?: unknown }>(
+  dependencies: HistoryRouteDependencies,
+  res: Response,
+  conversation: Detail,
+): Promise<Detail & { attributesEditable?: boolean }> => {
+  const { authPrincipal } = res.locals as { authPrincipal?: MachineAwareRoutePrincipal };
+  if (conversation.attributes === undefined || isMachinePrincipal(authPrincipal)) return conversation;
+  return { ...conversation, attributesEditable: await holdsWorkspacePermission(dependencies, res, "workspace.conversation.takeover") };
+};
+
+/**
  * Who asked for an erasure or a consent withdrawal: the signed-in teammate, or a personal
  * credential's owner. A service account has no person behind it; its credential joins the audit
  * event from the request's own audit context.
@@ -224,7 +239,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
         await activityScope(res),
       );
-      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, conversation));
+      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, await withAttributeEditing(dependencies, res, conversation)));
     } catch (error) {
       next(error);
     }
@@ -371,7 +386,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
         await activityScope(res),
       );
-      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, conversation));
+      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, await withAttributeEditing(dependencies, res, conversation)));
     } catch (error) {
       next(error);
     }

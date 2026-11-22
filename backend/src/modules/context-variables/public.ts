@@ -51,7 +51,6 @@ export {
 } from "./optionSchema.js";
 export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
 export { contextValueChanged, contextValueChangedEvent } from "./contextValueChangedEvent.js";
-export type { ContextValueChangedDraft } from "./contextValueChangedEvent.js";
 export {
   ConversationValueWriterService,
   planConversationWrite,
@@ -70,12 +69,21 @@ export type {
   ConversationAttributeReader,
   StoredConversationAttributeValue,
 } from "./conversationAttributes.js";
+export { ConversationAttributeEditService } from "./conversationAttributeEdits.js";
+export type {
+  AttributeEditActor,
+  AttributeEditAudit,
+  ConversationAttributeEditReads,
+  ConversationAttributeEdits,
+  ConversationReclassification,
+} from "./conversationAttributeEdits.js";
 export { classificationTargetFrom } from "./classifiedVariables.js";
 export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {
   AgentContextVariableEnablement,
   ClassificationFitRefusal,
   ContextScopeKeys,
+  ConversationScopeKeys,
   ConversationScope,
   ContextValueWriter,
   ContextValueWriterKind,

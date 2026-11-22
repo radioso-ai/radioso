@@ -64,7 +64,7 @@ export type RoutineEventOutcome = typeof ROUTINE_EVENT_OUTCOMES[number];
  * context-variables module checks at compile time that its own lists match.
  */
 export const CONTEXT_VALUE_EVENT_VALUE_TYPES = ["string", "json", "enum"] as const;
-export const CONTEXT_VALUE_EVENT_SCOPES = ["conversation"] as const;
+const CONTEXT_VALUE_EVENT_SCOPES = ["conversation"] as const;
 export const CONTEXT_VALUE_EVENT_WRITERS = ["api", "operator", "routine", "classifier"] as const;
 
 const slotValues = z.record(z.string(), z.unknown())

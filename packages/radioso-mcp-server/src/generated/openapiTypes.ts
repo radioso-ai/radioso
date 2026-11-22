@@ -3827,6 +3827,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/chat/{conversationId}/attributes/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a conversation's attribute
+         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. A change records `context_value.changed` and a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
+         */
+        put: operations["setHistoryConversationAttribute"];
+        post?: never;
+        /**
+         * Reset a conversation's attribute
+         * @description Deletes the value this conversation holds for a Choice attribute, whoever wrote it. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session or verified customer holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
+         */
+        delete: operations["resetHistoryConversationAttribute"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/contact": {
         parameters: {
             query?: never;
@@ -10206,11 +10230,13 @@ export interface components {
             writtenBy: {
                 /** @enum {string} */
                 kind: "api" | "operator" | "routine" | "classifier";
-                /** @description What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`. */
+                /** @description What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator`, the version of the instructions for `classifier`. */
                 ref: string | null;
             };
             /** Format: date-time */
             updatedAt: string;
+            /** @description True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting a teammate's value hands it back to the AI. */
+            classified: boolean;
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -10259,6 +10285,8 @@ export interface components {
             };
             /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
             attributes?: components["schemas"]["ConversationAttribute"][];
+            /** @description With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset one with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API. */
+            attributesEditable?: boolean;
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
@@ -10385,6 +10413,11 @@ export interface components {
         };
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        ConversationAttributeChange: {
+            attribute: components["schemas"]["ConversationAttribute"] & (Record<string, never> | null);
+            /** @description True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued. */
+            classificationQueued: boolean;
+        };
         ContactHistorySummary: {
             /** Format: uuid */
             id: string;
@@ -30258,6 +30291,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsentNotWithdrawableError"];
+                };
+            };
+        };
+    };
+    setHistoryConversationAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The key of one of the attribute's active options, such as `billing`. */
+                    value: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The attribute as the conversation reads it now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAttributeChange"];
+                };
+            };
+            /** @description Request validation failed, an option the attribute doesn't offer, or an attribute a teammate doesn't edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A signed-in teammate is required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.conversation.takeover */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such conversation, or no attribute by that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resetHistoryConversationAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The attribute as the conversation reads it now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAttributeChange"];
+                };
+            };
+            /** @description Request validation failed, or an attribute a teammate doesn't edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A signed-in teammate is required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.conversation.takeover */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such conversation, or no attribute by that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

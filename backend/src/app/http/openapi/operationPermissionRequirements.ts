@@ -53,4 +53,6 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   listDeliveryFailures: ["workspace.conversation.takeover"],
   listHeldReplies: ["workspace.conversation.takeover"],
   getCurrentHeldReply: ["workspace.conversation.takeover"],
+  setHistoryConversationAttribute: ["workspace.conversation.takeover"],
+  resetHistoryConversationAttribute: ["workspace.conversation.takeover"],
 };

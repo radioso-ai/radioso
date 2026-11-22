@@ -42,7 +42,9 @@ Exposed:
 
 - `contextClassificationRequest`, the job request chat writes in a turn's commit
   when the conversation's revision classifies something
-  (`chat/services/turnBackgroundJobs.ts`).
+  (`chat/services/turnBackgroundJobs.ts`). A teammate's reset of a classified
+  attribute writes the same request, so the AI fills it again without waiting
+  for a turn (`app/composition/conversationAttributeEdits.ts`).
 - `ConversationClassifier.classifyNow`, which the job's handler calls.
 - `readDefinitions` and `classifyTranscript`, for a caller that holds a
   conversation that is not stored, as Test Chat does: it reads the definitions,

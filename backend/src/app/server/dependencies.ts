@@ -133,6 +133,7 @@ import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolv
 import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
 import { backgroundJobHandlers } from "../composition/backgroundJobHandlers.js";
 import { buildContextClassification } from "../composition/contextClassification.js";
+import { buildConversationAttributeEdits } from "../composition/conversationAttributeEdits.js";
 import { lateBoundReviewedProposalPorts } from "../composition/lateBoundReviewedProposals.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
@@ -514,12 +515,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailPlugin: emailChannel?.plugin,
     slackBackgroundJobs: backgroundJobs.queue,
   });
-  const connectorManagementService = new ConnectorManagementService({
-    database: infrastructure.database,
-    registry: connectorRegistry,
-  });
+  const connectorManagementService = new ConnectorManagementService({ database: infrastructure.database, registry: connectorRegistry });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely, workspaceEventRecorder);
   const contextClassification = buildContextClassification({ infrastructure, repositories, contextVariableRepository, resolver: llmCapabilityResolver, logger });
+  const conversationAttributeEdits = buildConversationAttributeEdits({ db: infrastructure.database.kysely, values: contextVariableRepository, queue: backgroundJobs.queue, audit: infrastructure.auditService, metrics: infrastructure.metricsRegistry, logger });
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,
     agentReader: { get: agentService.get.bind(agentService) },
@@ -1038,7 +1037,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     notificationDeliveries,
     eventSubscriptions: workspaceEventDelivery.subscriptions,
-    contextVariables: contextVariableService, contextVariableUsers: repositories.agentRevisionRepository,
+    contextVariables: contextVariableService, contextVariableUsers: repositories.agentRevisionRepository, conversationAttributeEdits,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSetupState: workspace.workspaceSummaryService,
@@ -1357,7 +1356,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ...visitorImages.ports,
     voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
-    conversationErasure,
+    conversationErasure, conversationAttributeEdits,
     conversationConsents: createConsentWithdrawal({ db: infrastructure.database.kysely, logger, metricsRegistry: infrastructure.metricsRegistry, auditLog: infrastructure.auditService, invalidation: realtimePublisherComposition.publisher }),
     privacySettingsService,
     timeZoneSettingsService: settings.timeZoneSettingsService,

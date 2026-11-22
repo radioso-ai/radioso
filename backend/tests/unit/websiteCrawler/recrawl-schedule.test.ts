@@ -14,7 +14,12 @@ const DAY_MS = 24 * HOUR_MS;
 const now = new Date("2026-11-21T12:00:00.000Z");
 
 describe("recrawl cadence against the plan's fastest cadence", () => {
-  it("admits off and weekly on every plan, and daily only where the plan allows daily", () => {
+  it("admits off and monthly on every plan, and a faster cadence only where the plan allows it", () => {
+    expect(isRecrawlCadenceWithinPlan("off", "monthly")).toBe(true);
+    expect(isRecrawlCadenceWithinPlan("monthly", "monthly")).toBe(true);
+    expect(isRecrawlCadenceWithinPlan("weekly", "monthly")).toBe(false);
+    expect(isRecrawlCadenceWithinPlan("daily", "monthly")).toBe(false);
+    expect(isRecrawlCadenceWithinPlan("monthly", "daily")).toBe(true);
     expect(isRecrawlCadenceWithinPlan("off", "weekly")).toBe(true);
     expect(isRecrawlCadenceWithinPlan("weekly", "weekly")).toBe(true);
     expect(isRecrawlCadenceWithinPlan("weekly", "daily")).toBe(true);
@@ -27,6 +32,9 @@ describe("recrawl cadence against the plan's fastest cadence", () => {
     expect(effectiveRecrawlCadence("daily", "daily")).toBe("daily");
     expect(effectiveRecrawlCadence("weekly", "daily")).toBe("weekly");
     expect(effectiveRecrawlCadence("off", "daily")).toBe("off");
+    expect(effectiveRecrawlCadence("daily", "monthly")).toBe("monthly");
+    expect(effectiveRecrawlCadence("weekly", "monthly")).toBe("monthly");
+    expect(effectiveRecrawlCadence("monthly", "daily")).toBe("monthly");
   });
 });
 
@@ -54,6 +62,13 @@ describe("when a source next recrawls", () => {
     expect(nextRecrawlAfterRun({ now, cadence: "daily", jitterMs: 0 })).toEqual(new Date(now.getTime() + DAY_MS));
     expect(nextRecrawlAfterRun({ now, cadence: "weekly", jitterMs: 30_000 }))
       .toEqual(new Date(now.getTime() + 7 * DAY_MS + 30_000));
+  });
+
+  it("recrawls monthly every 30 days", () => {
+    expect(nextRecrawlAfterRun({ now, cadence: "monthly", jitterMs: 10_000 }))
+      .toEqual(new Date(now.getTime() + 30 * DAY_MS + 10_000));
+    expect(firstRecrawlAt({ now, lastSyncedAt: now, cadence: "monthly", jitterMs: 0 }))
+      .toEqual(new Date(now.getTime() + 30 * DAY_MS));
   });
 
   it("draws jitter between zero and an hour", () => {

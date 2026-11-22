@@ -332,7 +332,7 @@ describe("a routine's cards on WhatsApp", () => {
     const graph = recordedGraph();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const persistence = new InMemoryWhatsAppPersistence();
-    const stored = { findServable: vi.fn(async (_input: { imageId: string; width: number }) => ({ bucket: "b", objectPath: "p" })) };
+    const stored = { find: vi.fn(async (_input: { imageId: string; width: number }) => ({ kind: "found" as const, object: { bucket: "b", objectPath: "p", generation: null } })) };
     const handler = new WhatsAppMessageHandler({
       db: { query: vi.fn() },
       logger,
@@ -374,7 +374,7 @@ describe("a routine's cards on WhatsApp", () => {
 
     await receive("wamid-in-1", { type: "text", text: { body: "Mitte, fino a 2.000" } });
 
-    expect(stored.findServable.mock.calls.map(([input]) => input)).toEqual([{ imageId: "image-1", width: 640 }, { imageId: "image-2", width: 640 }]);
+    expect(stored.find.mock.calls.map(([input]) => input)).toEqual([{ imageId: "image-1", width: 640 }, { imageId: "image-2", width: 640 }]);
     expect(carousel().type).toBe("carousel");
     expect(carousel().body.text).toBe("Ecco due case a Mitte: quale preferisci?");
     expect(carousel().action.cards.map((card) => card.body.text)).toEqual(["Casa Blu", "Villa Rosa"]);

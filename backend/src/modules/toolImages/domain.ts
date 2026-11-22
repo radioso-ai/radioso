@@ -14,8 +14,15 @@ export const TOOL_IMAGE_LIMITS = {
   jobCaptureDeadlineMs: 20_000,
   /** The same deadline for a capture a browser waits on. */
   onDemandCaptureDeadlineMs: 6_000,
-  /** Captures one process runs at once; an on-demand request that finds none free leaves the picture to the job. */
+  /** Captures one process runs at once; a capture that finds none free waits for one within its deadline. */
   concurrentCaptures: 4,
+  /**
+   * On-demand captures that may wait for a turn, per turn. A carousel of ten fits; past this a
+   * request is `busy` at once instead of pushing every picture behind it and the job back.
+   */
+  onDemandWaitingPerTurn: 4,
+  /** A capture with less of its deadline left than this would only time out: it is `busy` without claiming the picture. */
+  minCaptureMs: 1_000,
   /** A picture no message carries is deleted this long after its row was written. */
   unboundLifetimeMs: 24 * 60 * 60 * 1_000,
   /** Pictures one capture job carries; a reply has at most ten cards. */
@@ -46,9 +53,17 @@ export interface ToolImageRendition extends ToolImageObject {
 export interface ClaimedToolImage {
   readonly id: string;
   readonly workspaceId: string;
-  readonly url: string;
+  /** The address to fetch; null only for a row that lost it, which the capture fails as `source_missing`. */
+  readonly url: string | null;
   readonly claimedAt: Date;
 }
+
+/**
+ * Where a picture's row stands, read without claiming it: `waiting` for a capture (pending, or
+ * held by a claim older than the claim timeout), `held` by a fresh claim, `stored`, `failed`, or
+ * `missing` when no row has the id.
+ */
+export type ToolImageState = "waiting" | "held" | "stored" | "failed" | "missing";
 
 /** Where a picture's row stands when a capture asks to claim it. */
 export type ToolImageClaim =
@@ -61,7 +76,9 @@ export type ToolImageClaim =
 
 /**
  * How a capture ended. Bounded: each is a metric label and the stored failure reason. Transient
- * ones release the row for a retry; the rest fail it for good.
+ * ones release the row for a retry; the rest fail it for good. `busy` is a capture that found no
+ * capture turn in time and never claimed the picture; `decoder_busy` one whose decode found the
+ * decoder full past its wait.
  */
 export type ToolImageCaptureOutcome =
   | "stored"
@@ -74,13 +91,17 @@ export type ToolImageCaptureOutcome =
   | "unreachable"
   | "decode_error"
   | "busy"
+  | "decoder_busy"
   | "source_missing";
 
-/** Failures a later attempt may get past: a timeout, the network or a server error, a busy decoder. */
-export const TRANSIENT_CAPTURE_OUTCOMES: ReadonlySet<ToolImageCaptureOutcome> = new Set(["timeout", "unreachable", "busy"]);
+/** Failures a later attempt may get past: a timeout, the network or a server error, no free turn or decoder. */
+export const TRANSIENT_CAPTURE_OUTCOMES: ReadonlySet<ToolImageCaptureOutcome> = new Set(["timeout", "unreachable", "busy", "decoder_busy"]);
 
 /** The module's rows. The Postgres implementation is `infra/toolImageRepository.ts`. */
 export interface ToolImageStore {
+  /** Where the row stands, read without a lock or a write, so a request learns it has nothing to capture before it waits for a turn. */
+  peek(imageId: string, now: Date): Promise<ToolImageState>;
+  /** Claims a `waiting` row. A claimed row with no address is returned as claimed; the capture fails it. */
   claim(imageId: string, now: Date): Promise<ToolImageClaim>;
   /**
    * Marks the row stored if this claim still holds it, and clears its address. Resolves false when

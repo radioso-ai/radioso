@@ -2085,7 +2085,7 @@ instead of inserting a second, and every path that crawls an existing source
 records its `crawl_trigger` (`manual` or `scheduled`).
 
 Scheduled recrawl (migration `272_scheduled_website_recrawl.sql`): a website
-source's `recrawl_cadence` (`off`, `daily`, `weekly`) and `next_recrawl_at` live
+source's `recrawl_cadence` (`off`, `monthly`, `weekly`, `daily`) and `next_recrawl_at` live
 on `document_sources`. `recrawlSchedule.ts` is the pure cadence arithmetic and
 plan clamp, with the `RecrawlPlanPort` the plan's ceiling arrives through;
 `recrawlScheduleService.ts` sets a cadence (`PUT

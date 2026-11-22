@@ -1112,7 +1112,7 @@ export const createTestDependencies = (overrides: {
   /** The image rows a document's detail lists; omitted means document details carry no images. */
   documentImageRows?: InMemoryDocumentImageRows;
   /** The pictures cards from a skill's result show, found after the documents' images; omitted means none. */
-  toolImages?: Pick<ToolImageLookup, "findServable">;
+  toolImages?: Pick<ToolImageLookup, "find">;
   /** The bus visitor event streams and parked converse callers hear; omitted means an in-process bus. */
   publicConversationEventBus?: PublicConversationEventBus;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -3315,7 +3315,7 @@ export const createTestDependencies = (overrides: {
     } as any,
     documentDeletionService,
     documentStorage,
-    replyImageObjectLookup: composeReplyImageLookup(documentImages, overrides.toolImages ?? { findServable: async () => null }),
+    replyImageObjectLookup: composeReplyImageLookup(documentImages, overrides.toolImages ?? { find: async () => ({ kind: "miss", reason: "not_found", retryable: false }) }),
     chatService,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: async () => undefined,
@@ -3589,7 +3589,7 @@ export const createTestApp = (overrides: {
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   documentImages?: InMemoryDocumentImages;
   documentImageRows?: InMemoryDocumentImageRows;
-  toolImages?: Pick<ToolImageLookup, "findServable">;
+  toolImages?: Pick<ToolImageLookup, "find">;
   publicConversationEventBus?: PublicConversationEventBus;
 } = {}) => {
   const {

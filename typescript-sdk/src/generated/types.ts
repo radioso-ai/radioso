@@ -5537,7 +5537,7 @@ export interface paths {
         };
         /**
          * Read a reply block's image
-         * @description Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. Once the document the image came from is deleted, the image answers 404.
+         * @description Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. The picture on a card built from a skill's records is copied the first time it is asked for, so that request can take up to 6 seconds. Once the document the image came from is deleted, the image answers 404.
          */
         get: operations["getPublicReplyImage"];
         put?: never;
@@ -8464,7 +8464,7 @@ export interface components {
              * @description Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.
              * @enum {string}
              */
-            recrawlCadence?: "off" | "daily" | "weekly";
+            recrawlCadence?: "off" | "monthly" | "weekly" | "daily";
             /**
              * Format: date-time
              * @description Website sources only. When the next scheduled recrawl is queued; null while the cadence is `off`.
@@ -12399,7 +12399,7 @@ export interface components {
              * @description How often the source recrawls itself. `off` stops scheduled recrawls.
              * @enum {string}
              */
-            recrawlCadence: "off" | "daily" | "weekly";
+            recrawlCadence: "off" | "monthly" | "weekly" | "daily";
         };
         DocumentSourceHeldPagesRemoved: {
             /** Format: uuid */
@@ -36108,7 +36108,7 @@ export interface operations {
                     "image/webp": string;
                 };
             };
-            /** @description Unknown image, an image whose document was deleted, or a width other than 320 or 640 */
+            /** @description Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640. A skill card's picture not copied within the request's time answers 404 too; a later request may serve it */
             404: {
                 headers: {
                     [name: string]: unknown;

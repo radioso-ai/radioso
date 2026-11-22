@@ -24,7 +24,7 @@ const source = (overrides: Partial<DocumentSourceRecord> = {}): DocumentSourceRe
   ...overrides,
 });
 
-const scheduleService = (stored: DocumentSourceRecord | null, fastest: "daily" | "weekly" = "daily") => {
+const scheduleService = (stored: DocumentSourceRecord | null, fastest: "daily" | "weekly" | "monthly" = "daily") => {
   const findByIdAndWorkspaceId = vi.fn().mockResolvedValue(stored);
   const setRecrawlSchedule = vi.fn(async (input: { recrawlCadence: DocumentSourceRecord["recrawlCadence"]; nextRecrawlAt: Date | null }) =>
     stored ? { ...stored, recrawlCadence: input.recrawlCadence, nextRecrawlAt: input.nextRecrawlAt } : null);
@@ -80,6 +80,16 @@ describe("setting how often a website source recrawls", () => {
     await expect(service.setRecrawlCadence({ workspaceId: "workspace-1", sourceId: "source-1", recrawlCadence: "daily" }))
       .rejects.toMatchObject({ statusCode: 403, code: "recrawl_cadence_not_in_plan", details: { fastestRecrawlCadence: "weekly" } });
     expect(setRecrawlSchedule).not.toHaveBeenCalled();
+  });
+
+  it("refuses weekly on a plan whose fastest cadence is monthly, and accepts monthly", async () => {
+    const { service, setRecrawlSchedule } = scheduleService(source(), "monthly");
+
+    await expect(service.setRecrawlCadence({ workspaceId: "workspace-1", sourceId: "source-1", recrawlCadence: "weekly" }))
+      .rejects.toMatchObject({ statusCode: 403, code: "recrawl_cadence_not_in_plan", details: { fastestRecrawlCadence: "monthly" } });
+    expect(setRecrawlSchedule).not.toHaveBeenCalled();
+    await service.setRecrawlCadence({ workspaceId: "workspace-1", sourceId: "source-1", recrawlCadence: "monthly" });
+    expect(setRecrawlSchedule).toHaveBeenCalledWith(expect.objectContaining({ recrawlCadence: "monthly" }));
   });
 
   it("refuses a source that is not one of the workspace's websites", async () => {

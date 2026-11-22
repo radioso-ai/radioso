@@ -13,11 +13,11 @@ import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import {
   TOOL_IMAGE_LIMITS,
   TRANSIENT_CAPTURE_OUTCOMES,
-  type ToolImageCaptureOutcome,
   type ToolImageObject,
   type ToolImageObjectStore,
   type ToolImageStore,
 } from "../domain.js";
+import type { ToolImageCaptureResult } from "./toolImageCapture.js";
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
@@ -106,8 +106,11 @@ class ToolImageCaptureRetryError extends Error {
   }
 }
 
+/** What a later run tries again: a picture another capture holds, or one a transient failure handed back. */
+const RETRIED: ReadonlySet<ToolImageCaptureResult> = new Set<ToolImageCaptureResult>(["held", ...TRANSIENT_CAPTURE_OUTCOMES]);
+
 export const toolImageCaptureHandler = (deps: {
-  capture: { capture(imageId: string, trigger: "job", options: { signal: AbortSignal }): Promise<ToolImageCaptureOutcome | "held"> };
+  capture: { capture(imageId: string, trigger: "job", options: { signal: AbortSignal }): Promise<ToolImageCaptureResult> };
   store: Pick<ToolImageStore, "failPending">;
 }): BackgroundJobHandlerRegistration =>
   backgroundJobHandler(
@@ -121,7 +124,7 @@ export const toolImageCaptureHandler = (deps: {
           continue;
         }
         const outcome = await deps.capture.capture(imageId, "job", { signal });
-        if (outcome === "held" || TRANSIENT_CAPTURE_OUTCOMES.has(outcome)) pending += 1;
+        if (RETRIED.has(outcome)) pending += 1;
       }
       if (pending > 0) throw new ToolImageCaptureRetryError(pending);
     },

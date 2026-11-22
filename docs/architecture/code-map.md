@@ -564,8 +564,18 @@ External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
 webhook skills (`webhookSkills`), Slack skills (`slackSkills`), and API request skills (`apiRequestSkills`, capability `api_request`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
-`config` object. Database triggers enforce the current target references for MCP
-connections, customer email connections, and webhook destinations. Each module's
+`config` object. A target in use cannot be deleted: one SQL function,
+`agent_skill_target_uses` (migration `276_skill_target_delete_checks_published_release.sql`),
+lists the agents and skills that use an API connection, MCP connection, webhook
+destination, customer email connection, or Slack installation, from the live
+rows (the draft) and from each agent's published release snapshot. The per-kind
+`BEFORE DELETE` triggers call it through `block_agent_skill_target_delete`, and
+each target's service reads it through `SkillTargetUseReader`
+(`backend/src/shared/domain/skillTargetUses.ts`, implemented by
+`agentSkills/targetUses.ts`, wired in `app/server/builders/integrations.ts`) to
+answer a `409` that names each agent and skill, and maps the trigger's refusal
+with `isForeignKeyViolationOn` (`shared/infra/kysely/sqlHelpers.ts`). The MCP
+connection's `usedByAgents` reads the same uses. Each module's
 repository port and record shape own kind-specific config validation, so future
 config-backed skill kinds should not add a table or migration unless they need
 genuinely relational state outside the shared skill definition.
@@ -575,7 +585,8 @@ consumed by both MCP and customer email.
 
 Public surfaces and key files:
 
-- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
+- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type, `AgentSkillTargetUses`)
+- `backend/src/shared/domain/skillTargetUses.ts` (target-in-use port and the shared `409` message)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
 - `backend/src/modules/externalSkills/public.ts` (MCP skill executor and routine resolver)
 - `backend/src/modules/webhookSkills/public.ts` (webhook skill executor and routine resolver)
@@ -586,6 +597,7 @@ Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
 
 - `cd backend && pnpm exec vitest run tests/integration/externalSkills/repositories.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/customerEmail/email-skill-definition-repository.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/skill-target-published-release-guard.integration.test.ts` (every target kind, draft and published release)
 
 ## Integration Connections
 

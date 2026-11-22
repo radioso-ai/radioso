@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Spinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { apiConnectionsApi, skillsBlockingDelete, type ApiConnection } from '@/lib/api-connections'
+import { apiConnectionsApi, type ApiConnection } from '@/lib/api-connections'
 import { ApiConnectionForm } from './ApiConnectionForm'
 import {
   buildConnectionInput,
@@ -22,16 +22,6 @@ import {
 
 // What the panel shows: the list, a new connection's form, or one connection's form.
 type View = { kind: 'list' } | { kind: 'new' } | { kind: 'edit'; connectionId: string }
-
-const deleteFailureMessage = (error: unknown): string => {
-  const skills = skillsBlockingDelete(error)
-  if (skills) {
-    return skills.length > 0
-      ? `Used by ${skills.join(', ')}. Delete or retarget those skills first.`
-      : 'Used by skills. Delete or retarget them first.'
-  }
-  return getApiErrorMessage(error, 'Failed to delete API connection.')
-}
 
 function ApiConnectionsSection({ onChanged }: { onChanged?: () => void }) {
   const [connections, setConnections] = useState<ApiConnection[]>([])
@@ -100,7 +90,7 @@ function ApiConnectionsSection({ onChanged }: { onChanged?: () => void }) {
       onChanged?.()
       setView({ kind: 'list' })
     } catch (deleteError) {
-      setError(deleteFailureMessage(deleteError))
+      setError(getApiErrorMessage(deleteError, 'Failed to delete API connection.'))
     } finally {
       setIsDeleting(false)
       setConfirmingDelete(false)

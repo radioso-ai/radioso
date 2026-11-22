@@ -92,6 +92,13 @@ export class InMemoryEmailSkillDefinitionRepository implements EmailSkillDefinit
     return true;
   }
 
+  /** The skills on one connection in a workspace, by agent and name. */
+  skillsOnConnection(workspaceId: string, connectionId: string): Array<{ agentId: string; skillName: string }> {
+    return [...this.rows.values()]
+      .filter((row) => row.workspaceId === workspaceId && row.connectionId === connectionId)
+      .map((row) => ({ agentId: row.agentId, skillName: row.skillName }));
+  }
+
   async countByConnection(workspaceId: string, connectionId: string): Promise<number> {
     return [...this.rows.values()].filter((row) =>
       row.connectionId === connectionId && (!workspaceId || row.workspaceId === workspaceId)

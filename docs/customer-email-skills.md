@@ -1,7 +1,7 @@
 ---
 title: "Customer Email Connections"
 description: "Setup of workspace-owned outbound email connections and unified agent email skills for draft and send modes."
-last_updated: 2026-11-16
+last_updated: 2026-11-22
 ---
 
 # Customer Email Connections
@@ -75,9 +75,11 @@ Customer email connections:
 - `POST /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check`
 - `DELETE /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}`
 
-Deleting a connection is blocked when an email skill references it. Disabling is
-allowed, so existing skill definitions can remain in place while runtime use is
-stopped.
+Deleting a connection is blocked while an email skill in an agent's draft or in
+its published release references it. The error names each agent and skill; when
+only the published release still uses the connection, change the skill and
+publish the agent before deleting. Disabling is allowed, so existing skill
+definitions can remain in place while runtime use is stopped.
 
 ## Skill Authoring
 

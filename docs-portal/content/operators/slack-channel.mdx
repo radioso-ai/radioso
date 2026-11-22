@@ -125,6 +125,7 @@ Slack sends Events API payloads to `/api/connectors/slack/events` and interactio
 - A channel binding has no effect — mentions there use the default agent and `Every message` never fires: the binding was saved with a `#name` instead of the channel ID. Copy the channel ID (starts with `C`) from the channel's details in Slack and bind that.
 - The agent pane shows no suggested prompts: the app is missing `assistant:write` or `app_home_opened`, and the backend logs `missing_scope` on each Messages-tab open. Update the app from the manifest and re-consent. Prompts also stay empty when the default agent's greeting is automatic or has no chips.
 - OAuth or inbound events fail on a split-host deployment: `CONNECTOR_PUBLIC_BASE_URL` is unset or points at a host Slack cannot reach over public HTTPS.
+- **Disconnect** is refused and names an agent and a skill: a Slack post skill in that agent's draft or published release still uses the installation. Delete the skill, publish the agent if the message says its published version uses it, then disconnect.
 
 ## Read next
 

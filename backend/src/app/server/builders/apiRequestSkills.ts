@@ -8,6 +8,7 @@ import {
 } from "../../../modules/apiRequestSkills/public.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
 import type { SkillExecutorRegistry } from "../../../modules/skills/public.js";
+import type { SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { sendPublicHttpRequest } from "../../../shared/infra/http/publicHttpRequest.js";
 import { assertPublicHttpTarget } from "../../../shared/infra/http/publicUrlFetch.js";
@@ -35,6 +36,7 @@ export const buildApiConnectionService = (input: {
   db: Db;
   env: ApiRequestEnv;
   auditService: Pick<AuditPort, "record">;
+  skillTargetUses: SkillTargetUseReader;
 }): ApiConnectionService => {
   const allowHttpLoopback = allowsHttpLoopback(input.env);
   const send: ApiRequestSender = (request, limits) => sendPublicHttpRequest(request, limits, { allowHttpLoopback });
@@ -45,6 +47,7 @@ export const buildApiConnectionService = (input: {
     assertPublicUrl: (url) => assertPublicHttpTarget(url),
     allowHttpLoopback,
     send,
+    skillTargetUses: input.skillTargetUses,
   });
 };
 

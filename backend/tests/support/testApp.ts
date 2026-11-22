@@ -403,6 +403,7 @@ import {
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 import { InMemoryApiConnectionRepository } from "./inMemoryApiConnections.js";
+import { InMemorySkillTargetUses } from "./skillTargetUses.js";
 import { ApiConnectionService, type ApiRequestSender } from "../../src/modules/apiRequestSkills/public.js";
 import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
 import { InMemoryMachineAccessRepository } from "./inMemoryMachineAccess.js";
@@ -1801,6 +1802,8 @@ export const createTestDependencies = (overrides: {
       getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
     },
     encryptionKey: connectorEncryptionKeys(env),
+    // The reader spans skill stores built further down; nothing disconnects before they exist.
+    skillTargetUses: { listSkillTargetUses: (target) => skillTargetUses.listSkillTargetUses(target) },
   });
   const slackProvider = buildSlackOauthProviderDefinition({
     clientId: "test-slack-client",
@@ -1890,9 +1893,17 @@ export const createTestDependencies = (overrides: {
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
   const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
   const agentSkillRepository = new InMemoryAgentSkillRepository();
-  customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
-    emailSkillDefinitionRepository.countByConnection("", connectionId),
-  );
+  // The per-kind skill routes keep their skills in their own stores here, so the uses span them.
+  const skillTargetUses = new InMemorySkillTargetUses({
+    skills: agentSkillRepository,
+    perKind: {
+      customer_email_connection: ({ workspaceId, targetId }) => emailSkillDefinitionRepository.skillsOnConnection(workspaceId, targetId),
+      mcp_connection: ({ workspaceId, targetId }) => externalSkillDefinitionRepository.skillsOnConnection(workspaceId, targetId),
+      webhook_destination: ({ workspaceId, targetId }) => webhookSkillDefinitionRepository.skillsOnDestination(workspaceId, targetId),
+      slack_installation: ({ workspaceId, targetId }) => slackSkillDefinitionRepository.skillsOnInstallation(workspaceId, targetId),
+    },
+    agentName: async (workspaceId, agentId) => (await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId))?.name ?? "",
+  });
   const customerEmailConnectionService = new CustomerEmailConnectionService({
     repository: customerEmailConnectionRepository,
     oauthConnections: oauthConnectionService,
@@ -1901,6 +1912,7 @@ export const createTestDependencies = (overrides: {
       new MockCustomerEmailProviderAdapter("microsoft_graph_mail"),
       new MockCustomerEmailProviderAdapter("test_mail"),
     ]),
+    skillTargetUses,
   });
   const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
   const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
@@ -1908,14 +1920,7 @@ export const createTestDependencies = (overrides: {
   mcpConnectionRepository.setReferenceChecker((connectionId) =>
     externalSkillDefinitionRepository.hasConnectionReference(connectionId),
   );
-  mcpConnectionRepository.setAgentUsageLookup((workspaceId, connectionId) =>
-    Promise.all(
-      externalSkillDefinitionRepository.connectionUsage(workspaceId, connectionId).map(async (usage) => ({
-        ...usage,
-        agentName: (await agentRepository.findByIdAndWorkspaceId(usage.agentId, workspaceId))?.name ?? "",
-      })),
-    ),
-  );
+  mcpConnectionRepository.setAgentUsageLookup((workspaceId) => externalSkillDefinitionRepository.connectionUsage(workspaceId));
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
@@ -1929,6 +1934,7 @@ export const createTestDependencies = (overrides: {
       status: 200,
       json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
     }),
+    skillTargetUses,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     externalSkillDefinitionRepository,
@@ -2027,22 +2033,19 @@ export const createTestDependencies = (overrides: {
     encryption: { key: connectorEncryptionKeys(env) },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
-    skillReferences: {
-      async listAgentSkillNamesReferencingDestination(workspaceId, destinationId) {
-        return webhookSkillDefinitionRepository.listSkillNamesByDestination(workspaceId, destinationId);
-      },
-    },
+    skillTargetUses,
   }));
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
   });
   const apiConnections = new ApiConnectionService({
-    repository: new InMemoryApiConnectionRepository(agentSkillRepository),
+    repository: new InMemoryApiConnectionRepository(skillTargetUses),
     auditService,
     encryption: { key: connectorEncryptionKeys(env) },
     assertPublicUrl: async () => undefined,
     send: overrides.apiRequestSender ?? (async () => ({ kind: "failed", reason: "unreachable", durationMs: 0 })),
+    skillTargetUses,
   });
   const slackSkillDefinitionService = new SlackSkillDefinitionService({
     repository: slackSkillDefinitionRepository,

@@ -38857,7 +38857,7 @@
             }
           },
           "409": {
-            "description": "Destination is referenced by enabled routines",
+            "description": "`webhook_destination_in_use`: the latest version of an enabled routine exports to the destination, or a skill in an agent's draft or published release uses it; the message names each routine, agent and skill",
             "content": {
               "application/json": {
                 "schema": {
@@ -40463,7 +40463,7 @@
             }
           },
           "409": {
-            "description": "An agent skill uses the connection",
+            "description": "`api_connection_in_use`: a skill in an agent's draft or published version uses the connection; the message names each agent and skill",
             "content": {
               "application/json": {
                 "schema": {
@@ -45207,7 +45207,8 @@
                                 "id",
                                 "name"
                               ]
-                            }
+                            },
+                            "description": "Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."
                           },
                           "createdAt": {
                             "type": "string"
@@ -45391,7 +45392,8 @@
                           "id",
                           "name"
                         ]
-                      }
+                      },
+                      "description": "Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."
                     },
                     "createdAt": {
                       "type": "string"
@@ -45624,7 +45626,7 @@
             }
           },
           "409": {
-            "description": "Connection is still referenced by a skill",
+            "description": "A skill in an agent's draft or published version uses the connection; the message names each agent and skill",
             "content": {
               "application/json": {
                 "schema": {
@@ -45708,7 +45710,8 @@
                           "id",
                           "name"
                         ]
-                      }
+                      },
+                      "description": "Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."
                     },
                     "createdAt": {
                       "type": "string"
@@ -45846,7 +45849,8 @@
                           "id",
                           "name"
                         ]
-                      }
+                      },
+                      "description": "Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."
                     },
                     "createdAt": {
                       "type": "string"
@@ -46795,7 +46799,8 @@
                           "id",
                           "name"
                         ]
-                      }
+                      },
+                      "description": "Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."
                     },
                     "createdAt": {
                       "type": "string"
@@ -48421,7 +48426,7 @@
             }
           },
           "409": {
-            "description": "Customer email connection is still referenced by an email skill",
+            "description": "A skill in an agent's draft or published version uses the connection; the message names each agent and skill",
             "content": {
               "application/json": {
                 "schema": {
@@ -50330,6 +50335,16 @@
           },
           "403": {
             "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`slack_installation_in_use`: a skill in an agent's draft or published version uses the installation; the message names each agent and skill",
             "content": {
               "application/json": {
                 "schema": {

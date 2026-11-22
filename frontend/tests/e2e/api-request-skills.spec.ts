@@ -195,7 +195,8 @@ test("an operator connects an API, sends a test request and declares an output f
   });
 });
 
-test("a connection a skill uses cannot be deleted, and the skills are named", async ({ page }) => {
+test("a connection a published skill uses cannot be deleted, and the refusal names the agent and skill", async ({ page }) => {
+  const refusal = 'API connection is in use. The published version of agent "Shop assistant" still uses skill "order_status". Publish agent "Shop assistant" first.';
   const connection: StoredConnection = {
     id: connectionId, name: "shop-api", baseUrl: "https://api.shop.example/v2", authScheme: "none",
     authHeaderName: null, credentialMask: null, defaultHeaders: {}, createdAt: stamp, updatedAt: stamp,
@@ -210,8 +211,8 @@ test("a connection a skill uses cannot be deleted, and the skills are named", as
       return fulfillJson(route, {
         error: {
           code: "api_connection_in_use",
-          message: "in use",
-          details: { connectionId, references: ["skill:order_status", "skill:order_refund"] },
+          message: refusal,
+          details: { connectionId, references: ["skill:order_status"] },
         },
       }, 409);
     }
@@ -224,7 +225,7 @@ test("a connection a skill uses cannot be deleted, and the skills are named", as
   await panel.getByRole("button", { name: "shop-api" }).click();
   await panel.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete connection" }).click();
-  await expect(panel.getByRole("alert")).toContainText("order_status, order_refund");
+  await expect(panel.getByRole("alert")).toContainText(refusal);
 });
 
 test("a variable set from a list output is only checked for presence", async ({ page }, testInfo) => {

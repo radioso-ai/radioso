@@ -10,7 +10,7 @@ Reference: `docs/api-request-skills.md`.
 - API connections (`connections/apiConnectionService.ts`): create, read, update
   and delete, the base URL rules, the credential (encrypted at rest, returned as
   `credentialMask`), default headers, and the refusal to delete a connection a
-  skill uses (`api_connection_in_use`).
+  skill in an agent's draft or published release uses (`api_connection_in_use`).
 - Parameter placement: path placeholders, query string, JSON body with dotted
   keys nesting.
 - Typed input resolution: each exposed value coerced to `text`, `number`,
@@ -39,6 +39,10 @@ Reference: `docs/api-request-skills.md`.
   `db/repositories/apiConnectionRepository.ts`.
 - `ApiConnectionAuditPort`: declared here so the module does not cycle through
   audit.
+- `SkillTargetUseReader` (`shared/domain/skillTargetUses.ts`): the agents and
+  skills that use a connection, in drafts and published releases, implemented
+  by `agentSkills` over the `agent_skill_target_uses` SQL function the delete
+  trigger also calls.
 - `ApiRequestSender`: the HTTP transport, injected by composition in
   `app/server/builders/apiRequestSkills.ts`.
 - `ApiRequestSkillSource`: the skill row the conversation runs, which its
@@ -63,4 +67,4 @@ A URL, header, credential, body or value is never recorded.
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/unit/release-pinned-skill-runtime.test.ts tests/contract/settings-api-connections.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts tests/integration/agent-revision-skill-draft.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts tests/integration/agent-revision-skill-draft.integration.test.ts tests/integration/skill-target-published-release-guard.integration.test.ts`

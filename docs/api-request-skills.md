@@ -1,7 +1,7 @@
 ---
 title: "API Request Skills"
 description: "Reference for API connections and api_request skills, which let a routine call a REST API and use the typed values the response returns."
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 # API Request Skills
@@ -63,8 +63,14 @@ scheme, host or port), the auth scheme or the auth header name must send a new
 `credential` in the same request, or it is refused with `400
 credential_required`.
 
-A connection that a skill uses cannot be deleted. The route answers `409
-api_connection_in_use` and names the skills.
+A connection that a skill uses cannot be deleted. That covers a skill in an
+agent's draft and a skill in the agent's published release, which visitors keep
+running until you publish again. The route answers `409 api_connection_in_use`
+with a message that names each agent and skill, for example:
+
+```text
+API connection is in use. The published version of agent "Shop assistant" still uses skill "order_status". Publish agent "Shop assistant" first.
+```
 
 ## 2. Define an API request skill
 

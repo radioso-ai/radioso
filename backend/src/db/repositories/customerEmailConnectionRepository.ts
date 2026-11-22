@@ -6,7 +6,6 @@ import {
   IntegrationConnectionRepository,
   type IntegrationConnectionRecord,
 } from "../../modules/integrationConnections/public.js";
-import { castText, tableExists } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface CustomerEmailConnectionRecord {
@@ -103,17 +102,14 @@ export interface CustomerEmailConnectionRepositoryPort {
     id: string,
     input: UpdateCustomerEmailConnectionInput,
   ): Promise<CustomerEmailConnectionRecord | null>;
-  countSkillReferences(workspaceId: string, id: string): Promise<number>;
   remove(workspaceId: string, id: string): Promise<boolean>;
 }
 
 export class CustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
   private readonly integrationConnections: IntegrationConnectionRepository;
-  private readonly db: Db;
 
   constructor(db: Db) {
     this.integrationConnections = new IntegrationConnectionRepository(db);
-    this.db = db;
   }
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
@@ -175,23 +171,6 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
       EMAIL_INTEGRATION_PROVIDERS,
     );
     return updated ? mapRecord(updated) : null;
-  }
-
-  async countSkillReferences(workspaceId: string, id: string): Promise<number> {
-    // Skill tables are absent in a few focused repository schemas, so keep this
-    // guard tolerant while enforcing references through the shared skill spine.
-    if (!(await tableExists(this.db, "agent_skills"))) {
-      return 0;
-    }
-    const row = await this.db
-      .selectFrom("agent_skills as s")
-      .select((eb) => castText(eb.fn.countAll()).as("count"))
-      .where("s.kind", "=", "customer_email")
-      .where("s.workspace_id", "=", workspaceId)
-      .where("s.target_type", "=", "customer_email_connection")
-      .where("s.target_id", "=", id)
-      .executeTakeFirst();
-    return Number(row?.count ?? 0);
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {

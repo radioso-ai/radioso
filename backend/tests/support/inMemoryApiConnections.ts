@@ -5,7 +5,7 @@ import type {
   ApiConnectionRepositoryPort,
   ApiConnectionWrite,
 } from "../../src/modules/apiRequestSkills/public.js";
-import type { AgentSkillRepositoryPort } from "../../src/modules/agentSkills/public.js";
+import type { SkillTargetUseReader } from "../../src/shared/domain/skillTargetUses.js";
 
 const duplicateName = (): Error =>
   Object.assign(new Error("duplicate key value violates unique constraint"), {
@@ -21,12 +21,12 @@ const inUse = (): Error =>
 
 /**
  * API connections in memory, with the Postgres table's name index and delete guard: deleting a
- * connection an `api_request` skill targets raises the same constraint the trigger raises.
+ * connection a skill uses raises the same constraint the trigger raises.
  */
 export class InMemoryApiConnectionRepository implements ApiConnectionRepositoryPort {
   readonly items = new Map<string, ApiConnectionRecord>();
 
-  constructor(private readonly skills: Pick<AgentSkillRepositoryPort, "listByWorkspace">) {}
+  constructor(private readonly skillTargetUses: SkillTargetUseReader) {}
 
   async create(input: ApiConnectionWrite & { workspaceId: string }): Promise<ApiConnectionRecord> {
     this.assertNameFree(input.workspaceId, input.name, null);
@@ -60,15 +60,9 @@ export class InMemoryApiConnectionRepository implements ApiConnectionRepositoryP
   async delete(id: string, workspaceId: string): Promise<boolean> {
     const existing = this.items.get(id);
     if (!existing || existing.workspaceId !== workspaceId) return false;
-    if ((await this.listSkillNamesReferencingConnection(workspaceId, id)).length > 0) throw inUse();
+    const uses = await this.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "api_connection", targetId: id });
+    if (uses.length > 0) throw inUse();
     return this.items.delete(id);
-  }
-
-  async listSkillNamesReferencingConnection(workspaceId: string, connectionId: string): Promise<string[]> {
-    const skills = await this.skills.listByWorkspace(workspaceId);
-    return [...new Set(skills
-      .filter((skill) => skill.kind === "api_request" && skill.targetType === "api_connection" && skill.targetId === connectionId)
-      .map((skill) => skill.skillName))].sort();
   }
 
   private assertNameFree(workspaceId: string, name: string, exceptId: string | null): void {

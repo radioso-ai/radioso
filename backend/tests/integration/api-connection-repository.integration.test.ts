@@ -107,7 +107,6 @@ describeIntegration("ApiConnectionRepository and the api_request skill target (P
     expect(pgErrorMeta(crossWorkspace)).toMatchObject({ code: "23503", constraint: "agent_skills_api_request_target_fk" });
 
     await createSkill("ticket_status", "api_connection", connection.id);
-    expect(await repository.listSkillNamesReferencingConnection(workspaceId, connection.id)).toEqual(["ticket_status"]);
 
     const blocked = await repository.delete(connection.id, workspaceId).catch((error: unknown) => error);
     expect(pgErrorMeta(blocked)).toMatchObject({ code: "23503", constraint: "agent_skills_api_request_target_fk" });

@@ -106,7 +106,6 @@ export interface WebhookSkillDefinitionRepositoryPort {
   ): Promise<WebhookSkillDefinitionRecord | null>;
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
   countByDestination(workspaceId: string, destinationId: string): Promise<number>;
-  listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
 const selectWebhookSkills = (db: Db) =>
@@ -221,18 +220,5 @@ export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionR
       .where("target_id", "=", destinationId)
       .executeTakeFirst();
     return Number(row?.count ?? 0);
-  }
-
-  async listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]> {
-    const rows = await this.db
-      .selectFrom("agent_skills")
-      .select("skill_name")
-      .where("kind", "=", "webhook")
-      .where("workspace_id", "=", workspaceId)
-      .where("target_type", "=", "webhook_destination")
-      .where("target_id", "=", destinationId)
-      .orderBy("skill_name", "asc")
-      .execute();
-    return rows.map((row) => row.skill_name);
   }
 }

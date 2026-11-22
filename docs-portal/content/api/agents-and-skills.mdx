@@ -51,6 +51,14 @@ reaches no running conversation before you publish. The MCP connections, API
 connections, webhook destinations, and mailboxes a skill uses are workspace
 settings and apply at once.
 
+Because visitors run the published release's skills, deleting one of those
+targets, or disconnecting the Slack installation a skill posts through, answers
+`409` while a skill in the agent's draft or in its published release uses it.
+The message names each agent and skill. When only the published release still
+uses the target, remove or retarget the skill in the draft, publish the agent,
+and delete again. Releases that only earlier conversations still run are not
+counted, so a skill in such a conversation can find its target gone.
+
 `GET .../revisions/{revisionId}` lists each skill the revision adds, removes, or
 changes against its base release under `scopedChanges.agentSkills`, by
 `skillName`. A skill's settings stay out of that list; `settingsChanged` says

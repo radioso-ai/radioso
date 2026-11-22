@@ -257,7 +257,7 @@ If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `5
 
 ## API connections
 
-API connections hold the base URL and credential an `api_request` skill calls. They are workspace-scoped and need a dashboard sign-in: reads require `workspace.settings.read`, writes require `workspace.settings.manage`, and machine credentials are refused. A read returns `credentialMask`, the last four characters behind asterisks (for `basic`, the username followed by `:****`), and never the credential. A `PATCH` that changes the base URL's origin, the auth scheme or the auth header name must send a new `credential` in the same request; otherwise it answers `400 credential_required`. A connection a skill uses cannot be deleted; the route answers `409 api_connection_in_use` and names the skills.
+API connections hold the base URL and credential an `api_request` skill calls. They are workspace-scoped and need a dashboard sign-in: reads require `workspace.settings.read`, writes require `workspace.settings.manage`, and machine credentials are refused. A read returns `credentialMask`, the last four characters behind asterisks (for `basic`, the username followed by `:****`), and never the credential. A `PATCH` that changes the base URL's origin, the auth scheme or the auth header name must send a new `credential` in the same request; otherwise it answers `400 credential_required`. A connection a skill uses cannot be deleted, whether the skill is in an agent's draft or only in its published release; the route answers `409 api_connection_in_use` and the message names each agent and skill.
 
 ```text
 GET /api/v1/settings/api-connections
@@ -314,8 +314,14 @@ secret. Rotation also returns the new plaintext secret once.
 Destination URLs must use HTTPS and must pass the same public-host SSRF policy used
 by outbound contact webhooks. Local HTTP endpoints are not accepted by default.
 
-Deleting a destination is blocked while a routine's completion export references
-it. The error names the routine so you can remove or change the reference first.
+Deleting a destination is blocked while the latest version of an enabled routine
+exports to it, or while a webhook skill in an agent's draft or published release
+posts to it. The route answers `409 webhook_destination_in_use`, and the message
+names each routine, agent and skill so you can remove or change the reference
+first. A skill that only the published release still uses clears once you
+publish the agent. The routine check reads each routine's latest version, so a
+conversation still running an earlier published version of a routine can find
+its export destination gone; that delivery is skipped.
 
 When a routine reaches a terminal included in its completion export trigger set,
 Radioso dispatches `webhook.send` and posts a JSON body to the destination URL

@@ -200,6 +200,9 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   propose_context_variable: {
     ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
   },
+  prepare_context_variable: {
+    ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
+  },
   propose_directive: {
     ...fields([
       "requiredCapabilities", "dependsOn", "surfaces",

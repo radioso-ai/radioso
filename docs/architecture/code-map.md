@@ -1165,6 +1165,7 @@ Public surfaces and key files:
 - `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
 - `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
 - `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
+- `backend/src/modules/operatorCopilot/tools/contextVariableReviewedPreparation.ts` (operator MCP's `prepare_context_variable`: `create`, `edit` and `set_enablement`, reviewed and applied through the same adapter, whose apply commits the execution's receipt in the owner's transaction; a definition is `live` and needs signed-in approval, an enablement is an `agent_draft`)
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 
 Focused checks:

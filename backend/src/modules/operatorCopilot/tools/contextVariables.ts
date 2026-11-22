@@ -52,10 +52,8 @@ const optionInputSchema = contextVariableOptionInputSchema.extend({
   archived: optionFields.archived.describe("Archive an option instead of removing it."),
 });
 
-const proposalInputSchema = z.object({
-  agentId: idSchema.optional(),
-  agentName: entityNameSchema.optional(),
-  variableId: idSchema.optional(),
+/** The definition fields a proposal or a reviewed preparation restates; every one optional. */
+export const contextVariableDefinitionInputShape = {
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
   valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional(),
@@ -64,15 +62,25 @@ const proposalInputSchema = z.object({
   trustTier: z.enum(contextVariableTrustTiers).optional(),
   sensitivity: z.enum(contextVariableSensitivities).optional(),
   defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
-  enablement: z.object({
-    source: z.enum(CONTEXT_VARIABLE_SOURCES)
-      .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent, and it never replaces a value the API or a teammate set. Use surfacing on_reference for classified."),
-    resolverSkillId: idSchema.nullable().optional(),
-    maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
-    resolverTimeoutMs: z.number().int().positive().nullable().optional(),
-    surfacing: z.enum(contextVariableSurfacings),
-    enabled: z.boolean().optional(),
-  }).strict().optional(),
+};
+
+/** One agent's use of a variable, as a proposal or a reviewed preparation states it. */
+export const contextVariableEnablementInputSchema = z.object({
+  source: z.enum(CONTEXT_VARIABLE_SOURCES)
+    .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent, and it never replaces a value the API or a teammate set. Use surfacing on_reference for classified."),
+  resolverSkillId: idSchema.nullable().optional(),
+  maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
+  resolverTimeoutMs: z.number().int().positive().nullable().optional(),
+  surfacing: z.enum(contextVariableSurfacings),
+  enabled: z.boolean().optional(),
+}).strict();
+
+const proposalInputSchema = z.object({
+  agentId: idSchema.optional(),
+  agentName: entityNameSchema.optional(),
+  variableId: idSchema.optional(),
+  ...contextVariableDefinitionInputShape,
+  enablement: contextVariableEnablementInputSchema.optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
   evidenceIds: citedEvidenceSchema,
 }).strict();

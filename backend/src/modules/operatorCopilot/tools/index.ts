@@ -33,6 +33,7 @@ import type { IngestionSettingsReviewedPreparationDependencies } from "./ingesti
 import { createAgentSettingsReviewedPreparationTool } from "./agentSettingsReviewedPreparation.js";
 import type { AgentSettingsReviewedPreparationDependencies } from "./agentSettingsReviewedPreparation.js";
 import { createDirectiveReviewedPreparationTool } from "./directiveReviewedPreparation.js";
+import { createContextVariableReviewedPreparationTool } from "./contextVariableReviewedPreparation.js";
 import type { DirectiveReviewedPreparationDependencies } from "./directiveReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createPrivacySettingProposalCopilotTools } from "./privacySettingProposals.js";
@@ -169,6 +170,7 @@ export const createCopilotToolDescriptors = (
   createIngestionSettingsReviewedPreparationTool(deps),
   createAgentSettingsReviewedPreparationTool(deps),
   createDirectiveReviewedPreparationTool(deps),
+  createContextVariableReviewedPreparationTool(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createPrivacySettingProposalCopilotTools(deps),
   ...createTimeZoneSettingProposalCopilotTools(deps),

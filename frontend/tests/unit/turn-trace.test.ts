@@ -12,6 +12,7 @@ import {
   spineStageLabel,
   spineStageTelemetry,
   stageLeafView,
+  testChatAttributesFromTrace,
   turnTraceRollup,
 } from '@/lib/turn-trace'
 import type { AnswerCoverageAssessment } from '@/lib/answer-coverage'
@@ -359,5 +360,29 @@ describe('resolveAnswerCoverage', () => {
   it('resolves to nothing when neither a record nor a trace verdict exists', () => {
     expect(resolveAnswerCoverage(undefined, spineEnvelope())).toEqual({ assessment: undefined, source: undefined })
     expect(resolveAnswerCoverage(undefined, undefined)).toEqual({ assessment: undefined, source: undefined })
+  })
+})
+
+describe('testChatAttributesFromTrace', () => {
+  const envelope = (attributes: unknown) => ({ version: 1, spine: { traceId: 't', startedAt: '2026-11-22T00:00:00.000Z', stages: [] }, attributes })
+
+  it('reads each classified attribute a Test Chat turn records, set or not', () => {
+    expect(testChatAttributesFromTrace(envelope({
+      outcome: 'written',
+      values: [
+        { name: 'topic', value: 'billing', label: 'Billing', writtenBy: 'classifier' },
+        { name: 'urgency', value: null, writtenBy: null },
+      ],
+    }))).toEqual([
+      { name: 'topic', value: 'billing', label: 'Billing', writtenBy: 'classifier' },
+      { name: 'urgency', value: null, writtenBy: null },
+    ])
+  })
+
+  it('is null for a trace that records none, and skips an entry it cannot read', () => {
+    expect(testChatAttributesFromTrace(undefined)).toBeNull()
+    expect(testChatAttributesFromTrace(envelope(undefined))).toBeNull()
+    expect(testChatAttributesFromTrace(envelope({ outcome: 'written', values: [{ name: 3 }, { name: 'topic', value: 'billing', writtenBy: 'someone' }] })))
+      .toEqual([{ name: 'topic', value: 'billing', writtenBy: null }])
   })
 })

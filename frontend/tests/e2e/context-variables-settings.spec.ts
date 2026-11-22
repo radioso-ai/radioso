@@ -4,6 +4,7 @@ import {
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
+  testExecutionFixtureId,
   type ContextVariableRequestFixture,
   workspaceKey,
 } from "./dashboard-fixtures";
@@ -174,6 +175,45 @@ test("an operator has the AI set a Choice attribute, which a Text or Private att
   await expect.poll(() =>
     contextVariableRequests.filter((request) => request.method === "PUT" && request.path.endsWith("88888888-8888-4888-8888-000000000001")).at(-1)?.body,
   ).toMatchObject({ source: "classified", surfacing: "on_reference" });
+
+  // In Test Chat, a turn's debug shows what the AI set: every attribute it sets, set or not.
+  const executionId = testExecutionFixtureId(1);
+  const reply = "I can help with that charge.";
+  await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/test-executions\/[^/]+\/messages$/, async (route) => {
+    const body = route.request().postDataJSON() as { turnId: string; attemptId: string };
+    const identity = { executionId, generation: 1, sideId: "side-1-0", turnId: body.turnId, attemptId: body.attemptId };
+    const turnTrace = {
+      version: 1,
+      spine: { traceId: "attribute-turn", startedAt: "2026-11-22T00:00:00.000Z", stages: [] },
+      attributes: {
+        outcome: "written",
+        values: [
+          { name: "topic", value: "billing", label: "Billing", writtenBy: "classifier" },
+          { name: "urgency", value: null, writtenBy: null },
+        ],
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: [
+        { type: "side_started", ...identity },
+        { type: "message_delta", ...identity, delta: reply },
+        { type: "side_completed", ...identity, messageId: "message-1", answer: reply, turnTrace },
+        { type: "execution_completed", executionId, generation: 1, turnId: body.turnId, attemptId: body.attemptId },
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    });
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
+  await page.getByPlaceholder("Ask a question...").fill("Why was I charged twice?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByText(reply, { exact: true }).click();
+
+  const attributes = page.getByRole("region", { name: "Attributes" });
+  await expect(attributes).toContainText("topic");
+  await expect(attributes).toContainText("Billing · set by the AI");
+  await expect(attributes).toContainText("urgency");
+  await expect(attributes).toContainText("Not set");
 });
 
 test("a refused save and an unusable option list explain themselves inside the edit dialog", async ({ page }) => {

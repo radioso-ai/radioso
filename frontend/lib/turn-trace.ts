@@ -344,3 +344,33 @@ export const resolveAnswerCoverage = (
   const traced = answerCoverageFromTurnTrace(turnTrace)
   return traced ? { assessment: traced, source: 'trace' } : { assessment: undefined, source: undefined }
 }
+
+/** One classified attribute after a Test Chat turn: its option key and label, and who set it. */
+export interface TestChatTurnAttribute {
+  name: string
+  value: string | null
+  label?: string
+  writtenBy: 'classifier' | 'operator' | null
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * The classified attributes a Test Chat turn's trace records (`attributes.values`), every one the
+ * revision has the AI set, or null for a trace that records none (a customer conversation's).
+ */
+export const testChatAttributesFromTrace = (envelope: unknown): TestChatTurnAttribute[] | null => {
+  const attributes = isRecord(envelope) && isRecord(envelope.attributes) ? envelope.attributes : null
+  if (!attributes || !Array.isArray(attributes.values)) return null
+  return attributes.values.flatMap((entry): TestChatTurnAttribute[] => {
+    if (!isRecord(entry) || typeof entry.name !== 'string') return []
+    const writtenBy = entry.writtenBy === 'classifier' || entry.writtenBy === 'operator' ? entry.writtenBy : null
+    return [{
+      name: entry.name,
+      value: typeof entry.value === 'string' ? entry.value : null,
+      ...(typeof entry.label === 'string' ? { label: entry.label } : {}),
+      writtenBy,
+    }]
+  })
+}

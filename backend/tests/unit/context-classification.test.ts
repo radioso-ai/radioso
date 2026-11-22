@@ -311,7 +311,7 @@ describe("ConversationClassificationService", () => {
     }), expect.any(String));
   });
 
-  it("classifies a transcript the caller holds, against the values it holds, for Test Chat", async () => {
+  it("classifies a transcript the caller holds, against the values it holds", async () => {
     const { service, values } = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: "shipping" }) });
 
     const result = await service.classifyTranscript({
@@ -336,7 +336,7 @@ describe("ConversationClassificationService", () => {
       workspaceId, conversationId, agentId: "agent-1", variables: [topic()], stored: new Map(),
       excerpt: excerpt(), values: run.values.writer, signal: deadline.signal,
     })).resolves.toMatchObject({ outcome: "skipped_timeout" });
-    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "test_chat", outcome: "skipped_timeout" } }));
+    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "caller_transcript", outcome: "skipped_timeout" } }));
   });
 });
 

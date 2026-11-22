@@ -1216,7 +1216,7 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/context-classification.test.ts tests/unit/context-variable-conversation-value-writer.test.ts tests/unit/context-classification-excerpt-reader.test.ts tests/unit/test-chat-classification.test.ts tests/unit/turn-background-jobs.test.ts tests/unit/eval-suite/context-classification-cases.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts tests/integration/context-classification-turn.integration.test.ts --no-file-parallelism`
 - `cd backend && pnpm run evals:classification` (live; one rewrite-tier call per case and sample)
 
 ## Visitors

@@ -83,12 +83,14 @@ Composition builds the service and registers `contextClassificationHandler` in
 
 The job (`context.classification`) is keyed by conversation with
 `onDuplicateKey: "rerun"`: a burst of turns folds into one waiting run, and a
-turn that lands mid-run causes one more. A value is visible from the next turn.
+turn that lands mid-run causes one more. A value is usually visible from the next
+turn, when the run finishes before the visitor replies.
 
 ## Observability
 
 - `radioso_context_classification_runs_total{trigger, outcome}`: trigger
-  `after_turn | test_chat`; outcome `written | unchanged | no_option |
+  `after_turn | caller_transcript` (a transcript a caller holds, Test Chat's);
+  outcome `written | unchanged | no_option |
   skipped_sensitive | skipped_override | skipped_empty | skipped_gone |
   skipped_over_budget | skipped_timeout | invalid | failed`.
 - `radioso_context_value_writes_total{writer, outcome}`, counted by the
@@ -103,4 +105,4 @@ None of them carries a value, an option key, a prompt or visitor text.
 ## Focused checks
 
 - `cd backend && pnpm exec vitest run tests/unit/context-classification.test.ts tests/unit/context-variable-conversation-value-writer.test.ts tests/unit/context-classification-excerpt-reader.test.ts tests/unit/test-chat-classification.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts tests/integration/context-classification-turn.integration.test.ts --no-file-parallelism`

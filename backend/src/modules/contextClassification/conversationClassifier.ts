@@ -31,8 +31,8 @@ import type { ClassificationInferenceFactory, ConversationExcerpt, ConversationE
 
 export const CONTEXT_CLASSIFICATION_RUNS_TOTAL = "radioso_context_classification_runs_total";
 
-/** What started a run: the job after a committed turn, or a Test Chat turn. */
-type ClassificationTrigger = "after_turn" | "test_chat";
+/** What started a run: the job after a committed turn, or a caller that holds the transcript itself. */
+type ClassificationTrigger = "after_turn" | "caller_transcript";
 
 /**
  * How a run ended. `skipped_override`: another writer holds every variable somewhere on the
@@ -181,7 +181,7 @@ export class ConversationClassificationService implements ConversationClassifier
           .map((message) => message.trim().slice(0, CLASSIFICATION_EXCERPT_MAX_MESSAGE_CHARS))
           .filter((message) => message.length > 0),
       }),
-      trigger: "test_chat",
+      trigger: "caller_transcript",
     });
   }
 

@@ -127,58 +127,6 @@ The create request sets `audience` to `mcp` and includes a `label`. `expiresAt` 
   Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.
 </Callout>
 
-## Have the AI fill an attribute
-
-Here is the whole loop for a Choice attribute the AI fills from the conversation, say a `topic` with the options Billing, Shipping and Returns, from an MCP client connected to Ray. The only stop outside the client is the approval link for the new definition and for publishing.
-
-<Steps>
-
-### Read what exists
-
-`context_variables` with the agent's id lists the workspace's attributes, each Choice attribute's options in full, and how this agent uses each one. An enablement with `source: "classified"` is one the AI fills.
-
-### Create the attribute
-
-`prepare_context_variable` with `kind: "create"` prepares the definition:
-
-```json
-{
-  "kind": "create",
-  "agentId": "5b0f6a3e-2c1d-4f7a-9e8b-0c4d2a1b3f60",
-  "name": "topic",
-  "description": "What the visitor needs help with.",
-  "valueType": "enum",
-  "options": [
-    { "key": "billing", "label": "Billing", "description": "Invoices, charges, refunds and payment methods." },
-    { "key": "shipping", "label": "Shipping", "description": "Delivery times, tracking and parcels that have not arrived." },
-    { "key": "returns", "label": "Returns", "description": "Sending a product back or exchanging it." }
-  ],
-  "trustTier": "unverified",
-  "sensitivity": "normal",
-  "defaultSurfacing": "on_reference"
-}
-```
-
-A definition is shared by every agent in the workspace, so the review marks it `lifecycle: "live"` with `publicationRequired: false`, and its `confirmation.approvalUrl` asks you to approve it signed in. Approve it, then call `execute_reviewed_proposal` with the `proposalId` and `reviewDigest`. Its `appliedRef` carries the new `variableId`.
-
-### Have the AI fill it on the agent
-
-`prepare_context_variable` again, with `kind: "set_enablement"`, the `variableId`, and `"enablement": { "source": "classified", "surfacing": "on_reference" }`. This change goes to the agent's draft (`lifecycle: "agent_draft"`, `publicationRequired: true`) and, like a directive change, is confirmed in the conversation before `execute_reviewed_proposal` applies it.
-
-The preparation fails with the reason when the AI can't fill the attribute: it is not a Choice attribute, it is Private (`sensitivity: sensitive`), it is treated as proof (`trustTier: signed`), or the agent already has 8 attributes the AI fills. Read it back with `context_variables`: the enablement says `source: "classified"`.
-
-### Try it in Test Chat
-
-`send_test_chat_message` with no `testExecutionId` runs on a fresh candidate of the saved draft. Send a message such as "Why was I charged twice?", then a second one in the same session. `test_chat_turn_trace` for a turn returns `turnTrace.attributes`: each attribute the AI fills, its value after that turn (an option key, or `null`), the option's label, and `writtenBy` — `classifier` when the AI set it, `operator` when a Test Chat sample did. The AI never replaces a sample. A value the AI set on one turn is what the next turn's rules and routine steps read.
-
-### Publish
-
-`prepare_agent_publication` prepares the candidate; approve its review, then `execute_reviewed_proposal` publishes it. From then on every new customer conversation is classified after each reply; a conversation that started on an earlier release keeps that release's attributes.
-
-</Steps>
-
-`kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`, each with `uses` set to `draft`, `published` or `both`, because customers on the published release see the change too. A type change on an attribute that already has values is refused. On a customer conversation the AI's value is stored in the `conversation` scope with `writtenBy.kind` `classifier`. Ray does not read a customer conversation's attribute values, because they belong to a visitor; Test Chat is your own test, so its trace shows them.
-
 ## Radioso documentation tools
 
 A client wired to this server is usually being used to build something against Radioso, so the questions it gets asked are as often "how does this work" as "what does my agent say". Two tools answer the first kind from Radioso's own manual:
@@ -217,6 +165,7 @@ An existing document's body, its upload, its reprocessing, and its removal stay 
 
 ## Read next
 
+- [Set up AI-filled attributes through MCP](/guides/attributes-through-mcp) — create a Choice attribute, have the AI fill it, check it in Test Chat and publish, from an MCP client.
 - [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, and calling an exposed routine as a typed tool.
 - [Publish and open an agent](/guides/publish-an-agent) — the agent's public id, its discovery documents, and credential-free access.
 - [Authentication](/guides/authentication) — sessions, personal tokens, service credentials, and public launch flows.

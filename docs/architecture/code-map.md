@@ -2041,14 +2041,26 @@ the `website-recrawl` periodic task. A crawl removes missing pages only when
 `crawlSawWholeSite` (`missingPages.ts`) says it saw the whole site: the last
 slice's provider reported `frontierExhausted` (`crawlSiteStream` in
 `packages/crawler/src/transport/crawler.ts` returns it), no slice dropped a link
-at a limit (the checkpoint's sticky `linksDroppedAtLimit`), no page failed, and
-the checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
+at a limit (the checkpoint's sticky `linksDroppedAtLimit`) or failed to read
+`robots.txt` or a sitemap (sticky `sitemapUnread`), no page failed, and the
+checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
 whether the job is still the source's newest
-(`WebsiteCrawlJobRepository.isNewestForSource`) and removes the pages it did not
-find, leaving the pages the operator kept, or, whatever started the crawl, holds them
-when they are more than a fifth of the source's pages other than kept ones
+(`WebsiteCrawlJobRepository.isNewestForSource`). The pages it did not find are
+the source's pages published under this site's external-id prefix
+(`websiteExternalDocumentIdPrefix` in `pageUrls.ts`) before the job started,
+less the ones the operator kept. Whatever started the crawl, it holds them when
+they are more than a fifth of the source's pages other than kept ones
 (`missingPageRemoval.ts`) in
-`website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`);
+`website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`).
+Otherwise it asks the site about each one first (`missingPageVerification.ts`:
+the `WebsitePageProbe` port, the pure `judgePageAnswer` and
+`decideVerifiedRemoval`, at most `MAX_VERIFIED_MISSING_PAGES` per crawl) and
+removes exactly the ones the site says are gone
+(`DocumentRepository.deleteMissingSourcePages`). The probe is
+`createRadiosoWebsitePageProbe` in `radiosoCrawlerProvider.ts` over
+`probePages` (`packages/crawler/src/transport/pageProbe.ts`), the crawler's own
+guarded fetch, wired into the crawl worker in
+`app/server/builders/documentsRetrieval.ts`;
 `heldPagesService.ts` removes the pages still held (`DocumentRepository.deleteHeldSourcePages`)
 or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
 is the catalog's `fastestRecrawlCadence`, read by the EE usage limit service's
@@ -2061,17 +2073,18 @@ Public surfaces and key files:
 - `backend/src/modules/websiteCrawler/public.ts`
 - `backend/src/modules/websiteCrawler/service.ts`
 - `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
-- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`)
+- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`, `createRadiosoWebsitePageProbe`)
 - `backend/src/modules/websiteCrawler/routes.ts`
-- `backend/src/modules/websiteCrawler/recrawlSchedule.ts`, `recrawlScheduleService.ts`, `recrawlSweep.ts`, `missingPages.ts`, `missingPageRemoval.ts`, `heldPagesService.ts`
+- `backend/src/modules/websiteCrawler/recrawlSchedule.ts`, `recrawlScheduleService.ts`, `recrawlSweep.ts`, `missingPages.ts`, `missingPageRemoval.ts`, `missingPageVerification.ts`, `heldPagesService.ts`
 - `backend/src/app/composition/websiteRecrawl.ts`
 - `packages/crawler/src/transport/htmlImageExtraction.ts`
+- `packages/crawler/src/transport/pageProbe.ts`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
-- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts tests/unit/crawlFrontier.test.ts`
+- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts tests/unit/crawlFrontier.test.ts tests/unit/pageProbe.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts tests/integration/website-recrawl-multi-slice.integration.test.ts`
 - `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 

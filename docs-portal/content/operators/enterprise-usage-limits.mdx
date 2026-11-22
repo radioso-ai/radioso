@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 # Enterprise usage limits
@@ -29,7 +29,7 @@ Recrawls update the existing indexed page rather than appending duplicate storag
 
 - A recrawl of the same workspace, source, and external document ID reserves only the positive byte delta against the storage cap. Pages that shrink reserve zero bytes and are accepted even if the account is currently at its cap.
 - A recrawl whose normalized content hash and page title both match the stored page is skipped entirely. No re-embedding happens and no monthly indexed-content usage is recorded for the unchanged page. A page with the same text but a different title is processed again so its stored title and its chunks' search text stay current. Because the content is the same, that reprocess adds nothing to the monthly indexed-content meter or to indexed storage.
-- After a crawl that completes cleanly, pages that were previously indexed for the source but were not found anywhere in the run are removed from the active corpus. A run that takes several slices, or was paused and resumed, counts every page all of its slices found.
+- After a crawl that completes cleanly, pages that were previously indexed for the source but were not found anywhere in the run are removed from the active corpus once the site answers that each one is gone (`404`, `410`, or a redirect to another page). A run that takes several slices, or was paused and resumed, counts every page all of its slices found.
 
 A recrawl that ended with failures or stopped at its page limit does not remove missing pages.
 

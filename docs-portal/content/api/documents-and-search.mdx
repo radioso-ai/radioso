@@ -1,7 +1,7 @@
 ---
 title: Documents and search
 description: Upload documents, requeue processing, inspect search behavior, and replay historical searches.
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -156,7 +156,9 @@ curl -sS -X PUT https://api.radioso.ai/api/v1/document/sources/source-id/recrawl
 
 How fast you can go depends on the plan. Each website source carries `fastestRecrawlCadence`: `daily` on a self-hosted deployment, `weekly` on Comet, and `daily` on Satellite and Planet. A faster cadence answers `403 recrawl_cadence_not_in_plan`. If a workspace moves to a plan with a slower ceiling, its sources keep the cadence you chose and recrawl at the plan's fastest.
 
-A recrawl removes a page only once it has seen the whole site: its last slice ran out of pages to fetch rather than out of page limit, it dropped no link for having discovered too many, no page failed, and no newer crawl of the source started meanwhile. A crawl that stopped at its page limit removes nothing, so give a source a limit that covers the site you scoped, or narrow the scope with `includeUrlPatterns` and `excludeUrlPatterns`.
+A recrawl removes a page only once it has seen the whole site: its last slice ran out of pages to fetch rather than out of page limit, it dropped no link for having discovered too many, it read the site's `robots.txt` and sitemaps, no page failed, and no newer crawl of the source started meanwhile. A crawl that stopped at its page limit removes nothing, so give a source a limit that covers the site you scoped, or narrow the scope with `includeUrlPatterns` and `excludeUrlPatterns`. Only pages a crawl of the site published can go missing; a document you imported into the source under your own id stays.
+
+Even then, a page missing from the crawl is removed only after the site answers that it is gone. The crawl requests each page it would remove, the way it fetches any page: a `404` or `410`, or a redirect to a different page, removes it; a page that still answers stays as it is; a server error, a refusal, or no answer leaves it for the next crawl to ask again. One crawl asks about up to 200 pages; when more would go, it removes none.
 
 No crawl removes a large share of a source on its own, whether you, the API, or the schedule started it. When more than a fifth of the source's pages are missing from the site, not counting pages you chose to keep, the crawl keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
 
@@ -165,7 +167,7 @@ curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/held-p
   -H "Authorization: Bearer $RADIOSO_API_TOKEN"
 ```
 
-`held-pages/remove` deletes the pages still held when it runs, so a page a crawl found again in the meantime stays; `held-pages/keep` keeps them, and later crawls leave kept pages alone. A fifth or less is removed without asking.
+`held-pages/remove` deletes the pages still held when it runs, without asking the site again, so a page a crawl found again in the meantime stays; `held-pages/keep` keeps them, and later crawls leave kept pages alone. A fifth or less goes to the site check above without waiting for you.
 
 A source runs one crawl at a time. Recrawling a source that is already crawling answers with the running crawl's `jobId` instead of starting a second one.
 

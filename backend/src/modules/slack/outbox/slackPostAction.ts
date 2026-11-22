@@ -170,7 +170,7 @@ export class SlackPostActionHandler implements ActionHandler {
 
 export class SlackPostActionCredentialResolver implements SlackPostCredentialResolver {
   private readonly installations: SlackInstallationRepository;
-  private readonly installationService: SlackInstallationService;
+  private readonly installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation">;
 
   constructor(input: {
     database: Database;
@@ -205,6 +205,12 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
       },
       workspaceAccounts: new PostgresWorkspaceAccountLookup(input.database.kysely),
       encryptionKey: input.encryptionKey,
+      // Posting never disconnects Slack, which is the one thing that reads skill uses.
+      skillTargetUses: {
+        async listSkillTargetUses() {
+          throw new Error("slack_disconnect_unavailable");
+        },
+      },
     });
   }
 

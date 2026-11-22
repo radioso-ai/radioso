@@ -22,7 +22,7 @@ import type {
 import { decryptOauthTokens } from "../../../src/modules/integrationOauth/public.js";
 import { slackBotScopes } from "../../../src/modules/slack/manifest/slackManifest.js";
 import type { SkillTargetUse } from "../../../src/shared/domain/skillTargetUses.js";
-import { fixedSkillTargetUses } from "../../support/skillTargetUses.js";
+import { fixedSkillTargetUses, noSkillTargetUses } from "../../support/skillTargetUses.js";
 
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
@@ -638,6 +638,7 @@ describe("SlackInstallationService", () => {
       bindings,
       workspaceAccounts: new InMemoryWorkspaceAccounts(),
       encryptionKey: undefined,
+      skillTargetUses: noSkillTargetUses,
     });
 
     await expect(service.saveInstallation({
@@ -715,10 +716,35 @@ describe("SlackInstallationService", () => {
     await expect(service.disconnect("workspace-1")).rejects.toMatchObject({
       statusCode: 409,
       code: "slack_installation_in_use",
-      message: 'The Slack installation is in use. The published version of agent "Support" still uses skill "post_update". Publish agent "Support" first.',
+      message: 'Slack installation is in use. The published version of agent "Support" still uses skill "post_update". Publish agent "Support" first.',
     });
     expect(await installations.findByWorkspaceId("workspace-1")).not.toBeNull();
     expect(bindings.rows.size).toBe(1);
+  });
+
+  it("refuses a disconnect from another workspace of the account without naming that workspace's agents or skills", async () => {
+    const { service, installations } = createService({
+      skillUses: [{ agentId: "agent-1", agentName: "Support", skillName: "post_update", inDraft: true, inPublishedRelease: true }],
+    });
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-1",
+    });
+
+    const refusal = await service.disconnect("workspace-2").catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({
+      statusCode: 409,
+      code: "slack_installation_in_use",
+      message: "Slack installation is in use. Skills in another workspace post through it.",
+    });
+    expect(JSON.stringify(refusal)).not.toMatch(/Support|post_update|agent-1/);
+    expect(await installations.findByWorkspaceId("workspace-1")).not.toBeNull();
   });
 
   it("disconnects when no skill uses the installation", async () => {

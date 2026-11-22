@@ -117,4 +117,42 @@ describe("Slack skills contract", () => {
       .set(headers);
     expect(removed.status).toBe(204);
   });
+
+  it("refuses to disconnect Slack while a skill posts through it, naming the agent and the skill", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "https://app.test.example.com",
+        SLACK_OAUTH_CLIENT_ID: "test-slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "test-slack-secret",
+        SLACK_SIGNING_SECRET: "test-signing-secret",
+      },
+    });
+    const session = await issueTestSession(app, "slack-disconnect@example.com");
+    const headers = adminSessionHeaders(session);
+    const agent = (await request(app).get("/api/v1/agents").set(headers)).body.agents[0] as { id: string; name: string };
+    const slackBase = `/api/v1/workspaces/${session.workspaceId}/slack`;
+    const started = await request(app).post(`${slackBase}/install/start`).set(headers).send({});
+    await request(app)
+      .get("/api/v1/oauth/callback/slack")
+      .query({ code: "slack-code", state: extractState(started.body.authorizationUrl as string) })
+      .expect(302);
+    const installationId = (await request(app).get(`${slackBase}/install/status`).set(headers)).body.installationId as string;
+    const skill = await request(app)
+      .post(`/api/v1/agents/${agent.id}/slack-skills`)
+      .set(headers)
+      .send({ skillName: "post_to_slack", installationId, boundInputs: { channelId: "CROUTINE" }, exposedInputs: { text: { slotBinding: "message" } } })
+      .expect(201);
+
+    const refused = await request(app).delete(`${slackBase}/installation`).set(headers);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "slack_installation_in_use",
+      message: `Slack installation is in use. Used by skill "post_to_slack" on agent "${agent.name}". Delete or retarget that skill first.`,
+    });
+
+    await request(app).delete(`/api/v1/agents/${agent.id}/slack-skills/${skill.body.skill.id}`).set(headers).expect(204);
+    await request(app).delete(`${slackBase}/installation`).set(headers).expect(204);
+    expect((await request(app).get(`${slackBase}/install/status`).set(headers)).body.status).toBe("not_configured");
+  });
 });

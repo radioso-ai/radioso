@@ -7,7 +7,7 @@ import {
   maskSecret,
   type FieldEncryptionKeyRing,
 } from "../../../shared/infra/crypto/fieldEncryption.js";
-import { isUniqueViolation, pgErrorMeta } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { isForeignKeyViolationOn, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
 import {
   API_REQUEST_LIMITS,
   apiConnectionCreateSchema,
@@ -133,8 +133,6 @@ const connectionInUse = (connectionId: string, uses: readonly SkillTargetUse[]):
     details: { connectionId, references: [...new Set(uses.map((use) => `skill:${use.skillName}`))] },
   });
 
-const isConstraint = (error: unknown, constraint: string): boolean => pgErrorMeta(error).constraint === constraint;
-
 /**
  * Owns workspace API connections: their validation, the encrypted credential, the delete guard,
  * and the runtime target a request is sent through. The credential is write-only: reads return
@@ -245,7 +243,7 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
       deleted = await this.options.repository.delete(id, workspaceId);
     } catch (error) {
       // A skill took the connection after the check above, and the database's guard refused.
-      if (isConstraint(error, IN_USE_CONSTRAINT)) throw connectionInUse(id, await this.skillUses(workspaceId, id));
+      if (isForeignKeyViolationOn(error, IN_USE_CONSTRAINT)) throw connectionInUse(id, await this.skillUses(workspaceId, id));
       throw error;
     }
     if (!deleted) throw notFound("API connection not found");

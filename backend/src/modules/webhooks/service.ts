@@ -8,6 +8,7 @@ import {
   type FieldEncryptionKeyRing,
 } from "../../shared/infra/crypto/fieldEncryption.js";
 import { normalizeWebhookTargetUrl, WebhookTargetUrlError } from "../../shared/infra/http/signedWebhook.js";
+import { isForeignKeyViolationOn } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import {
   toWebhookDestination,
@@ -64,8 +65,8 @@ export class EncryptionNotConfiguredError extends AppError {
 }
 
 /**
- * The refusal to delete a destination in use: by enabled routines' completion exports, or by skills
- * in an agent's draft or its published release.
+ * The refusal to delete a destination in use: by the completion export of an enabled routine's
+ * latest version, or by skills in an agent's draft or its published release.
  */
 const destinationInUse = (destinationId: string, routineNames: string[], skillUses: readonly SkillTargetUse[]): AppError =>
   skillTargetInUseError({
@@ -81,10 +82,7 @@ const destinationInUse = (destinationId: string, routineNames: string[], skillUs
     },
   });
 
-const isSkillReferenceError = (error: unknown): boolean => {
-  const record = error as { code?: unknown; constraint?: unknown } | null;
-  return record?.code === "23503" && record.constraint === "agent_skills_webhook_target_fk";
-};
+const SKILL_TARGET_CONSTRAINT = "agent_skills_webhook_target_fk";
 
 type WebhookDestinationUrlGuard = (url: string) => Promise<void>;
 
@@ -249,7 +247,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
       deleted = await this.options.repository.delete(id, workspaceId);
     } catch (error) {
       // A routine or skill took the destination after the check above, and the database refused.
-      if (isPublishedRoutineReferenceError(error) || isSkillReferenceError(error)) {
+      if (isPublishedRoutineReferenceError(error) || isForeignKeyViolationOn(error, SKILL_TARGET_CONSTRAINT)) {
         throw destinationInUse(id, ...await this.uses(workspaceId, id));
       }
       throw error;

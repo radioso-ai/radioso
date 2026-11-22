@@ -20,6 +20,7 @@ import type {
 import type { OauthConnectionService, OauthConnectionSummary } from "../../integrationOauth/public.js";
 import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
+import { isForeignKeyViolationOn } from "../../../shared/infra/kysely/sqlHelpers.js";
 
 interface CustomerEmailOauthStatusPort {
   get(workspaceId: string, connectionId: string): Promise<OauthConnectionSummary>;
@@ -41,10 +42,7 @@ interface CustomerEmailConnectionServiceOptions {
 const connectionInUse = (uses: readonly SkillTargetUse[]): AppError =>
   skillTargetInUseError({ code: "conflict", targetLabel: "Customer email connection", uses });
 
-const isSkillReferenceError = (error: unknown): boolean => {
-  const record = error as { code?: unknown; constraint?: unknown } | null;
-  return record?.code === "23503" && record.constraint === "agent_skills_customer_email_target_fk";
-};
+const SKILL_TARGET_CONSTRAINT = "agent_skills_customer_email_target_fk";
 
 const customerEmailProviderSet = new Set<string>(customerEmailOauthProviderIds);
 const customerEmailProviderList: string[] = [...customerEmailOauthProviderIds];
@@ -184,7 +182,9 @@ export class CustomerEmailConnectionService {
       removed = await this.options.repository.remove(workspaceId, connectionId);
     } catch (error) {
       // A skill took the connection after the check above, and the database's guard refused.
-      if (isSkillReferenceError(error)) throw connectionInUse(await this.skillUses(workspaceId, connectionId));
+      if (isForeignKeyViolationOn(error, SKILL_TARGET_CONSTRAINT)) {
+        throw connectionInUse(await this.skillUses(workspaceId, connectionId));
+      }
       throw error;
     }
     if (!removed) {

@@ -109,6 +109,15 @@ export const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error)
 export const isForeignKeyViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23503";
 
 /**
+ * A foreign key violation (`23503`) on one named constraint, including one a delete trigger
+ * raises under that name to refuse removing a row something still uses.
+ */
+export const isForeignKeyViolationOn = (error: unknown, constraint: string): boolean => {
+  const meta = pgErrorMeta(error);
+  return meta.code === "23503" && meta.constraint === constraint;
+};
+
+/**
  * Atomically consumes one abuse-control entry against a sliding window. The `ON CONFLICT`
  * update takes the row lock before it decides whether the window can accept another attempt,
  * so concurrent callers cannot each observe the same remaining slot.

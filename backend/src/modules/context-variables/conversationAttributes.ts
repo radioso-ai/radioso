@@ -113,8 +113,11 @@ const resolveAttributeFilter = (
   if (variable.valueType !== "enum") throw badRequest(`Only a Choice attribute filters conversations; ${variable.name} is not one`);
   if (variable.sensitivity === "sensitive") throw badRequest("A Private attribute does not filter conversations");
   if (filter.option === ATTRIBUTE_FILTER_NOT_SET) return { variableId: variable.id, key: null };
-  if (!variable.options?.some((option) => option.key === filter.option)) {
-    throw badRequest(`${variable.name} has no option ${filter.option}`);
+  const options = variable.options ?? [];
+  if (!options.some((option) => option.key === filter.option)) {
+    // Callers often pass the label they see in the Inbox; naming the keys lets them retry.
+    const keys = [...options.map((option) => option.key), ATTRIBUTE_FILTER_NOT_SET].join(", ");
+    throw badRequest(`${variable.name} has no option ${filter.option}; its option keys are ${keys}`);
   }
   return { variableId: variable.id, key: filter.option };
 };

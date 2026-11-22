@@ -209,7 +209,8 @@ describe("filtering conversations by an attribute", () => {
     ["a Private one", { name: "care_need", option: "dental" }, "A Private attribute does not filter conversations"],
     ["Not set on a Private one", { name: "care_need", option: ATTRIBUTE_FILTER_NOT_SET }, "A Private attribute does not filter conversations"],
     ["Not set on one that is not a Choice", { name: "plan", option: ATTRIBUTE_FILTER_NOT_SET }, "Only a Choice attribute filters conversations; plan is not one"],
-    ["an option the attribute does not have", { name: "topic", option: "returns" }, "topic has no option returns"],
+    ["an option the attribute does not have", { name: "topic", option: "returns" }, `topic has no option returns; its option keys are billing, shipping, ${ATTRIBUTE_FILTER_NOT_SET}`],
+    ["an option label instead of its key", { name: "topic", option: "Billing" }, `topic has no option Billing; its option keys are billing, shipping, ${ATTRIBUTE_FILTER_NOT_SET}`],
   ])("refuses %s with a 400", async (_case, filter, message) => {
     const service = serviceOver([], definitions);
 

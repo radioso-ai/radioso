@@ -111,6 +111,8 @@ export const AGENT_BUNDLE_PORTABILITY: Record<string, AgentConfigPortability> = 
 export type AgentBundleUnresolvedKind =
   /** The bundle names a context variable that does not exist in this workspace. */
   | "context_variable_missing"
+  /** A `classified` enablement whose variable the AI cannot fill here, or past the agent's cap; not written. */
+  | "context_variable_not_classifiable"
   /** The enablement's resolver skill did not survive import, so it stays unbound. */
   | "resolver_skill_missing"
   /** The skill's connection target is a credential-bearing workspace row. */

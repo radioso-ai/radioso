@@ -15,6 +15,7 @@ import {
   isClassifiedEnablement,
   isReservedContextVariableName,
   typeChangeWithValuesRefused,
+  type ClassificationFitRefusal,
   type ClassificationRefusal,
 } from "../domain.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -271,9 +272,28 @@ export class ContextVariableService {
   }
 
   /**
-   * A `classified` enablement needs a definition the classifier may fill, and an agent fills at most
-   * `maxClassifiedPerAgent`, since they all go in one model call. A disabled one is not counted.
+   * Why the agent cannot have the classifier fill this variable, or null when it can (or the
+   * enablement is not `classified`). It needs a definition the classifier may fill, and an agent
+   * fills at most `maxClassifiedPerAgent`, since they all go in one model call; a disabled one is not
+   * counted. `definition` defaults to the stored one.
    */
+  async classificationFitRefusal(
+    workspaceId: string,
+    agentId: string,
+    variableId: string | null,
+    enablement: Pick<AgentContextVariableEnablementRecord, "source" | "enabled">,
+    definition?: ClassifiableDefinition | null,
+  ): Promise<ClassificationFitRefusal | null> {
+    if (enablement.source !== "classified") return null;
+    const read = definition === undefined && variableId ? await this.repository.get(workspaceId, variableId) : definition ?? null;
+    const refusal = read ? classificationRefusal(read) : "not_choice";
+    if (refusal) return refusal;
+    if (enablement.enabled === false) return null;
+    const others = (await this.repository.listByAgent(workspaceId, agentId))
+      .filter((candidate) => isClassifiedEnablement(candidate) && candidate.variableId !== variableId);
+    return others.length >= CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent ? "too_many" : null;
+  }
+
   private async assertClassificationFits(
     workspaceId: string,
     agentId: string,
@@ -281,18 +301,14 @@ export class ContextVariableService {
     enablement: Pick<AgentContextVariableEnablementRecord, "source" | "enabled">,
     definition: ClassifiableDefinition | null,
   ): Promise<void> {
-    if (enablement.source !== "classified") return;
-    const refusal = definition ? classificationRefusal(definition) : "not_choice";
-    if (refusal) throw badRequest(classificationRefusalMessages[refusal], { code: "context_variable_not_classifiable", reason: refusal });
-    if (enablement.enabled === false) return;
-    const others = (await this.repository.listByAgent(workspaceId, agentId))
-      .filter((candidate) => isClassifiedEnablement(candidate) && candidate.variableId !== variableId);
-    if (others.length >= CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent) {
+    const refusal = await this.classificationFitRefusal(workspaceId, agentId, variableId, enablement, definition);
+    if (refusal === "too_many") {
       throw badRequest(
         `An agent can classify at most ${CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent} attributes (source "classified")`,
         { code: "too_many_classified_context_variables" },
       );
     }
+    if (refusal) throw badRequest(classificationRefusalMessages[refusal], { code: "context_variable_not_classifiable", reason: refusal });
   }
 
   /**

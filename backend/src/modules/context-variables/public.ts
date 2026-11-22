@@ -62,6 +62,7 @@ export { classificationTargetFrom } from "./classifiedVariables.js";
 export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {
   AgentContextVariableEnablement,
+  ClassificationFitRefusal,
   ContextScopeKeys,
   ContextValueWriter,
   ContextValueWriterKind,

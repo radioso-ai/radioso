@@ -300,6 +300,7 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
     "AgentBundleUnresolvedKind",
     z.enum([
       "context_variable_missing",
+      "context_variable_not_classifiable",
       "resolver_skill_missing",
       "skill_target_unbound",
       "skill_capability_unknown",
@@ -318,6 +319,7 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
         "rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that",
         "looks configured and answers wrong.",
         "- context_variable_missing: the bundle names a context variable that does not exist in this workspace.",
+        "- context_variable_not_classifiable: a classified enablement whose variable the AI cannot fill here (not a Choice, Private, or treated as proof), or past the agent's limit; not written.",
         "- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.",
         "- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.",
         "- skill_capability_unknown: no capability with this id is registered in this deployment.",

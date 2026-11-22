@@ -70,6 +70,9 @@ export const readsStoredValue = (source: ContextVariableSource): boolean =>
 /** Why a variable cannot be `classified`: the classifier picks an option, and only for a value it may hold. */
 export type ClassificationRefusal = "not_choice" | "private" | "proof";
 
+/** Why an agent cannot classify a variable: the variable's own refusal, or the agent's cap (`too_many`). */
+export type ClassificationFitRefusal = ClassificationRefusal | "too_many";
+
 /**
  * Null when the classifier may fill the variable. It fills Choice variables only. It never fills a
  * sensitive one, since an inferred value would be special-category data nobody declared, nor a

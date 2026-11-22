@@ -66,6 +66,17 @@ describe("the classified source", () => {
     expect(readsStoredValue("resolver")).toBe(false);
   });
 
+  it("says why an agent cannot classify a variable without throwing, for a caller that reports it", async () => {
+    const atCap = Array.from({ length: CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent }, (_, index) => enablement(`other-${index}`));
+    const full = serviceWith({ get: async () => choice(), listByAgent: async () => atCap });
+    await expect(full.classificationFitRefusal(workspaceId, agentId, variableId, { source: "classified", enabled: true })).resolves.toBe("too_many");
+    await expect(full.classificationFitRefusal(workspaceId, agentId, variableId, { source: "classified", enabled: false })).resolves.toBeNull();
+    await expect(full.classificationFitRefusal(workspaceId, agentId, variableId, { source: "pushed", enabled: true })).resolves.toBeNull();
+
+    const privateOne = serviceWith({ get: async () => choice({ sensitivity: "sensitive" }) });
+    await expect(privateOne.classificationFitRefusal(workspaceId, agentId, variableId, { source: "classified", enabled: true })).resolves.toBe("private");
+  });
+
   it("fits only a Choice attribute that is neither private nor treated as proof", () => {
     expect(classificationRefusal(choice())).toBeNull();
     expect(classificationRefusal(choice({ valueType: "string", options: null }))).toBe("not_choice");

@@ -8153,6 +8153,7 @@ export interface components {
          *     rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
          *     looks configured and answers wrong.
          *     - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+         *     - context_variable_not_classifiable: a classified enablement whose variable the AI cannot fill here (not a Choice, Private, or treated as proof), or past the agent's limit; not written.
          *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
          *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
          *     - skill_capability_unknown: no capability with this id is registered in this deployment.
@@ -8167,7 +8168,7 @@ export interface components {
          *     - chat_model_unavailable: the agent's chat model override is one this workspace cannot run; the agent imports without it.
          * @enum {string}
          */
-        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
+        AgentBundleUnresolvedKind: "context_variable_missing" | "context_variable_not_classifiable" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
         AgentBundleUnresolvedReference: {
             kind: components["schemas"]["AgentBundleUnresolvedKind"];
             /** @description The bundle element the caller must fix, named the way they authored it. */

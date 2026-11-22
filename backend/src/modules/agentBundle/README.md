@@ -103,7 +103,11 @@ agent. Cloud Run task deployments invoke the same sweep on a schedule.
   failures are expected: a capability that requires the bound target the export
   placeheld, and a capability whose config the export emptied because none of its
   settings are portable (`notify` holds only recipient emails and a webhook URL).
-  Both are reported and the import continues. Anything else — a duplicate name, an
+  Both are reported and the import continues. So is a context-variable enablement
+  the destination cannot take: a missing variable (`context_variable_missing`), and a
+  `classified` one whose variable the AI cannot fill there or past the agent's cap
+  (`context_variable_not_classifiable`, asked of the context-variable service's
+  `classificationFitRefusal` before the write). Anything else — a duplicate name, an
   unsupported invocation mode — is a bundle this deployment cannot build and is
   fatal. Only the agent create is unconditionally fatal, and a fatal failure deletes
   the agent it created.

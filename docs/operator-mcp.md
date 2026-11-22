@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-11-19
+last_updated: 2026-11-22
 ---
 
 # Operator MCP OAuth Access
@@ -51,7 +51,13 @@ When a routine or directive behaves differently in Test Chat than you expect, st
 
 A routine stage's captured slot values show on `test_chat_turn_trace`, since a Test Chat session is a private test run whose trace is never written to a durable audit record — this is where you catch a slot filled with the wrong value or a correction that never landed, before a customer conversation would. Each value is capped to 500 characters (a cut value carries `truncated: true`) and the slot count to 50 (`omittedSlotCount` reports the rest). `turn_trace`, reading the same stage on a real conversation, reports only which slots were filled (`filledSlotKeys`, `capturedSlotKeys`, `replacedSlotKeys`), never their values. Both tools also show, for each step the routine's selector judged, a `selection` record: whether the model chose an exit (`transition`), kept the step (`stay`), read the message as off-topic (`off_topic`), returned output that could not be parsed or that lacked its `claimsAuthority` flag (`unreadable`), or found text posing as a system notice and held the chat step, taking no exit and asking again (`authority_claim`), and which slot keys it returned a value for (`returnedSlotKeys`). On an `unreadable` step that collects slots, `slotFallback` says whether the selector's slot-only reading still got the values (`read`, with those keys in `returnedSlotKeys`), found text posing as a system notice (`authority_claim`, nothing kept and the step held), or came back unreadable too (`unreadable`, and the step was asked again with a reply that says the message could not be recorded). An empty `returnedSlotKeys` on a message that plainly stated a value means the model extracted nothing. A returned key in `capturedSlotKeys` filled an empty slot; one in `replacedSlotKeys` changed a value the slot already held, which is where a wrong hand-off value that overwrote a right one shows up; one in neither either restated the value the slot held, or failed the slot's declared type and landed in `rejectedSlots` instead. An `off_topic` outcome captures nothing that turn, so its `returnedSlotKeys` show only what the model read, never a capture. A turn the routine yields as off-topic carries a `routine_yield` stage in place of a routine stage: the routine, the step it stays on (`stepId`), and the step's required slot keys still unfilled (`missingSlotKeys`), which the answer's closing sentence asks the visitor for. When a turn ends on a hand-off terminal, `test_chat_turn_trace` also carries the message content (subject and body) the hand-off's operator notification would send, built from the same text the real notification uses, since Test Chat never actually delivers it — live delivery additionally appends the conversation link.
 
-## Confirmation and approval
+## Have the AI fill an attribute
+
+`propose_context_variable` can create a Choice attribute and enable it on an agent with `enablement.source: "classified"` in one proposal, so the AI picks one of its options from the conversation after each reply. The proposal is refused, with the reason, for an attribute that is not a Choice (`valueType` other than `enum`), is Private (`sensitivity: sensitive`) or treated as proof (`trustTier: signed`), and for a ninth classified attribute on one agent. Like every `propose_*` proposal, a person applies it in the dashboard. `context_variables` then shows the enablement's `source` as `classified`.
+
+To check it, send Test Chat messages with `send_test_chat_message` (on the saved draft, or on the published revision once `prepare_agent_publication` has published it) and read a turn with `test_chat_turn_trace`. Its `turnTrace.attributes` lists each classified attribute's value after the turn (an option key, or `null`), its label, and `writtenBy`: `classifier` for the AI, `operator` for a Test Chat sample, which the AI never replaces. Test Chat classifies in its own runner, beside the answer, because a Test Chat side is not a stored conversation; a customer conversation is classified by a background job after each committed turn, and its values are not readable over MCP.
+
+## Confirmation and approval## Confirmation and approval
 
 Draft, reversible changes use conversational confirmation in the MCP client. Changes that go live, cannot be undone, or use quota require approval in Radioso from the signed-in user who owns the MCP grant. The review link records approval against the exact digest and does not apply the change; call `execute_reviewed_proposal` afterwards.
 

@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 # Ray
@@ -63,8 +63,9 @@ without ever reading the address or URL you put there.
 
 Ray also reads the workspace's attribute definitions, the API's context
 variables, with a Choice attribute's options, and which of them an agent has
-enabled — the source (pushed, browser, or a resolver skill) and how the
-attribute surfaces to the model. It never reads an attribute's value for a
+enabled — the source (pushed, a resolver skill, or classified, where the AI
+picks a Choice attribute's option from the conversation) and how the attribute
+surfaces to the model. It never reads an attribute's value for a
 particular conversation, visitor session or customer, because that value
 belongs to a conversation Ray was not asked to inspect.
 

@@ -110,6 +110,8 @@ export interface ContextVariableRepositoryPort {
   deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean>;
   /** Whether any scope holds a value of the variable. */
   hasValues(variableId: string): Promise<boolean>;
+  /** The agents whose draft has the classifier fill the variable (an enabled `classified` enablement). */
+  classifiedEnablementAgentIds(variableId: string): Promise<string[]>;
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
   /**
    * Applies definition and enablement writes atomically with version predicates. A

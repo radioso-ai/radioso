@@ -5,6 +5,7 @@ import {
   CONTEXT_VALUE_WRITER_KINDS,
   keepsEveryOptionKey,
   mayOverwrite,
+  readsStoredValue,
   resolvedVariableInput,
   validateValue,
   type AgentContextVariableEnablement,
@@ -620,6 +621,18 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return row !== undefined;
   }
 
+  async classifiedEnablementAgentIds(variableId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("agent_context_variables")
+      .select("agent_id")
+      .where("variable_id", "=", variableId)
+      .where("source", "=", "classified")
+      .where("enabled", "=", true)
+      .orderBy("agent_id")
+      .execute();
+    return rows.map((row) => row.agent_id);
+  }
+
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
     return readContextVariableValue(this.db, variableId, scope);
   }
@@ -640,7 +653,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]> {
     const enablements = (await this.listByAgent(workspaceId, agentId))
-      .filter((enablement) => enablement.enabled && enablement.source === "pushed");
+      .filter((enablement) => enablement.enabled && readsStoredValue(enablement.source));
     const values = await this.readMostSpecificValues(enablements.map((enablement) => enablement.variableId), scopes);
     return enablements.flatMap((enablement) => {
       const value = values.get(enablement.variableId);

@@ -111,6 +111,9 @@ class FakeContextVariableRepository implements ContextVariableRepositoryPort {
   hasValues(_variableId: string): Promise<boolean> {
     throw new Error("not implemented");
   }
+  classifiedEnablementAgentIds(_variableId: string): Promise<string[]> {
+    throw new Error("not implemented");
+  }
   applyProposal(_input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
     throw new Error("not implemented");
   }
@@ -347,6 +350,23 @@ describe("ContextVariableResolverService", () => {
     expect(repository.readMostSpecificValues).toHaveBeenCalledTimes(1);
     expect(repository.readMostSpecificValues).toHaveBeenCalledWith([topic.id, plan.id], ladder);
     expect(repository.readValue).not.toHaveBeenCalled();
+  });
+
+  it("reads a classified variable of a pinned revision from the store, as it reads a pushed one", async () => {
+    const repository = new FakeContextVariableRepository();
+    const topic = variable({ name: "topic", valueType: "enum", trustTier: "unverified", sensitivity: "normal", options: [{ key: "billing", label: "Billing", description: null, archived: false }] });
+    repository.get = vi.fn(async () => topic);
+    repository.readMostSpecificValues.mockResolvedValue(new Map([
+      [topic.id, { ...value("billing", new Date(nowMs)), scope: conversationScope, writtenBy: { kind: "classifier", ref: "context-classification/1" } }],
+    ]));
+    const { service, resolver } = createService({ repository });
+    const ladder = [conversationScope, ...scopes];
+
+    await expect(service.resolveForEnablements(workspaceId, agentId, [
+      enablement({ source: "classified", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null }),
+    ], ladder)).resolves.toEqual([expect.objectContaining({ name: "topic", value: "billing", label: "Billing", surfacing: "on_reference" })]);
+    expect(repository.readMostSpecificValues).toHaveBeenCalledWith([topic.id], ladder);
+    expect(resolver.resolve).not.toHaveBeenCalled();
   });
 
   it("still reads a cached enum key whose option was archived after it was stored", async () => {

@@ -8122,7 +8122,7 @@ export interface components {
         AgentBundleContextVariable: {
             variableName: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             resolverSkillName: string | null;
             maxAgeSeconds: number | null;
             resolverTimeoutMs: number | null;
@@ -10959,7 +10959,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             /** Format: uuid */
             resolverSkillId: string | null;
             maxAgeSeconds: number | null;
@@ -10974,8 +10974,11 @@ export interface components {
             variable?: components["schemas"]["ContextVariable"];
         };
         AgentContextVariableEnablementRequest: {
-            /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            /**
+             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
+             * @enum {string}
+             */
+            source: "pushed" | "browser" | "resolver" | "classified";
             /** Format: uuid */
             resolverSkillId?: string | null;
             maxAgeSeconds?: number | null;

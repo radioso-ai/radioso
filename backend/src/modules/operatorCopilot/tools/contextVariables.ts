@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
@@ -42,7 +43,6 @@ const readerOutputSchema = z.object({
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 
 const optionFields = contextVariableOptionInputSchema.shape;
 const optionInputSchema = contextVariableOptionInputSchema.extend({
@@ -65,7 +65,8 @@ const proposalInputSchema = z.object({
   sensitivity: z.enum(contextVariableSensitivities).optional(),
   defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
   enablement: z.object({
-    source: z.enum(contextVariableSources),
+    source: z.enum(CONTEXT_VARIABLE_SOURCES)
+      .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent, and it never replaces a value the API or a teammate set. Use surfacing on_reference for classified."),
     resolverSkillId: idSchema.nullable().optional(),
     maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
     resolverTimeoutMs: z.number().int().positive().nullable().optional(),
@@ -150,7 +151,7 @@ const describeContextVariableAgent = (
 export const createContextVariablesCopilotTools = (
   deps: ContextVariablesCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source, resolver skill, and surfacing. A Choice attribute's options are listed in full, every key a proposal must restate. Never reads a variable's per-visitor runtime value.";
+  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source (classified: the AI fills it from the conversation), resolver skill, and surfacing. A Choice attribute's options are listed in full, every key a proposal must restate. Never reads a variable's per-visitor runtime value; read a Test Chat turn's attribute values with test_chat_turn_trace.";
   return [
     {
       name: "context_variables", shape: "read", verificationCost: () => 0, uiLabel: "Reading context variables", contributingModule: "contextVariables", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
@@ -197,7 +198,7 @@ const contextVariableProposalPayloadSchema = z.object({
     defaultSurfacing: z.enum(contextVariableSurfacings),
   }).strict().nullable(),
   enablement: z.object({
-    source: z.enum(contextVariableSources),
+    source: z.enum(CONTEXT_VARIABLE_SOURCES),
     resolverSkillId: z.string().uuid().nullable(),
     maxAgeSeconds: z.number().int().nonnegative().nullable(),
     resolverTimeoutMs: z.number().int().positive().nullable(),

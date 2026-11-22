@@ -4,6 +4,7 @@ import { notFound } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import {
+  readsStoredValue,
   resolvedVariableInput,
   type AgentContextVariableEnablement,
   type ContextValueWriter,
@@ -124,14 +125,14 @@ export class ContextVariableResolverService {
       if (!variable) throw notFound("A context variable selected by this revision no longer exists");
       selected.push({ enablement, variable });
     }
-    // One read covers the ladder of every pushed variable the revision selects.
+    // One read covers the ladder of every stored variable the revision selects.
     const stored = await this.repository.readMostSpecificValues(
-      selected.filter(({ enablement }) => enablement.source === "pushed").map(({ variable }) => variable.id),
+      selected.filter(({ enablement }) => readsStoredValue(enablement.source)).map(({ variable }) => variable.id),
       scopes,
     );
     const resolved: ResolvedVariableInput[] = [];
     for (const { enablement, variable } of selected) {
-      if (enablement.source === "pushed") {
+      if (readsStoredValue(enablement.source)) {
         const value = stored.get(variable.id);
         if (value) resolved.push(resolvedVariableInput(enablement, variable, value.data));
         continue;

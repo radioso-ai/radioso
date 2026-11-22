@@ -825,6 +825,12 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return [...this.values.values()].some((value) => value.variableId === variableId);
   }
 
+  async classifiedEnablementAgentIds(variableId: string): Promise<string[]> {
+    return [...this.enablements.values()]
+      .filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled)
+      .map((enablement) => enablement.agentId);
+  }
+
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
     return [];
   }

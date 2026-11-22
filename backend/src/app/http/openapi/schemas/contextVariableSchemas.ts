@@ -5,6 +5,7 @@ import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../../shared/domain/behaviorCo
 import {
   CONTEXT_VALUE_WRITER_KINDS,
   CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
@@ -15,12 +16,14 @@ const ContextVariableValueTypeSchema = z.enum(CONTEXT_VARIABLE_VALUE_TYPES);
 const ContextVariableTrustTierSchema = z.enum(["unverified", "signed"]);
 const ContextVariableSensitivitySchema = z.enum(["normal", "sensitive"]);
 const ContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
-const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
+const ContextVariableSourceSchema = z.enum(CONTEXT_VARIABLE_SOURCES);
 // The enable-variable request body never accepts "request": visitor_request (the only
 // request-sourced built-in) resolves unconditionally and has no operator-created
 // agent_context_variables row, so advertising it as an accepted request value here would
 // describe an operation the route always rejects (contextVariableRoutes.ts superRefine).
-const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver"]);
+const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver", "classified"]).openapi({
+  description: "Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.",
+});
 const ContextVariableScopeTypeSchema = z.enum(CONTEXT_VARIABLE_SCOPE_TYPES).openapi({
   description: "Where a value is kept. A `conversation` scope id is the conversation's id.",
 });

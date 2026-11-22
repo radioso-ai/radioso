@@ -75,6 +75,8 @@ export const CONTEXT_VARIABLES_BEHAVIOR = {
     maxLabelChars: 120,
     maxDescriptionChars: 300,
   },
+  // How many variables one agent may have the classifier fill. They all go in one model call.
+  maxClassifiedPerAgent: 8,
 } as const;
 
 export const CHAT_BEHAVIOR = {

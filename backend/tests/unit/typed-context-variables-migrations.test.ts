@@ -58,4 +58,11 @@ describe("typed context variable migrations", () => {
       "CREATE INDEX idx_context_variable_values_workspace_scope ON context_variable_values (workspace_id, scope_type, scope_id)",
     );
   });
+
+  it("widen in 273 the enablement source CHECK to classified, with the lock wait bounded", async () => {
+    const statements = await statementsOf("273_classified_context_variables.sql");
+
+    expect(statements[0]).toBe("SET LOCAL lock_timeout = '3s'");
+    expect(statements[1]).toContain("ADD CONSTRAINT agent_context_variables_source_check CHECK (source IN ('pushed', 'browser', 'resolver', 'request', 'classified'))");
+  });
 });

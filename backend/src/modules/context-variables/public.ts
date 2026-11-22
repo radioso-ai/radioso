@@ -31,10 +31,13 @@ export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
 export {
   CONTEXT_VALUE_WRITER_KINDS,
   CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
+  classificationRefusal,
   contextScopeLadder,
   frozenTestValueInput,
   mayOverwrite,
+  readsStoredValue,
   resolvedVariableInput,
   typeChangeWithValuesRefused,
 } from "./domain.js";
@@ -47,6 +50,7 @@ export {
 export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
 export type {
   AgentContextVariableEnablement,
+  ClassificationRefusal,
   ContextScopeKeys,
   ContextValueWriter,
   ContextValueWriterKind,

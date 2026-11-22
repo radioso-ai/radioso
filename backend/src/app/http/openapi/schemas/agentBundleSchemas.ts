@@ -8,13 +8,14 @@ import {
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import { routineDefinitionDraftInputSchema } from "../../../../modules/routines/public.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
+import { CONTEXT_VARIABLE_SOURCES } from "../../../../modules/context-variables/public.js";
 import { nullableComponent } from "../zodOpenApiExtension.js";
 
 // Bundle collections are name-keyed, not id-keyed: see `agentBundle/domain.ts`
 // for why. The enums below mirror the route-level validation in
 // `agentBundleRoutes.ts` rather than importing zod schemas cross-module.
 const AgentConfigPortabilityValueSchema = z.enum(["portable", "ref", "secret"]);
-const AgentBundleContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
+const AgentBundleContextVariableSourceSchema = z.enum(CONTEXT_VARIABLE_SOURCES);
 const AgentBundleContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
 const AgentBundleSkillInvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
 import {
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
@@ -19,7 +20,6 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 // includesDefinition/includesEnablement are optional so a targetRef persisted before this field
 // existed still parses; readCurrentVersionParts treats an absent flag as "true" (the old,
 // coarser behavior of always gating on both rows) rather than as "false". See the comment on
@@ -31,7 +31,7 @@ const contextVariableTargetRefSchema = z.object({
   includesEnablement: z.boolean().optional(),
 }).strict();
 const contextVariableEnablementInputSchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable().optional(),
   maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
   resolverTimeoutMs: z.number().int().positive().nullable().optional(),
@@ -63,7 +63,7 @@ const contextVariableDefinitionStoredSchema = z.object({
   defaultSurfacing: z.enum(contextVariableSurfacings),
 }).strict();
 const contextVariableEnablementStoredSchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable(),
   maxAgeSeconds: z.number().int().nonnegative().nullable(),
   resolverTimeoutMs: z.number().int().positive().nullable(),
@@ -166,7 +166,7 @@ const normalizeOptions = (
   options?.map(normalizeContextVariableOption) ?? null;
 
 export const createContextVariableCopilotProposalAdapter = (deps: {
-  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertEnablementReferences" | "applyProposal">;
+  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertDefinitionKeepsClassification" | "assertEnablementReferences" | "applyProposal">;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariables, workspaceId, agentId, variableId);
@@ -266,6 +266,12 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         defaultSurfacing,
       };
       await deps.contextVariables.assertDefinitionTypeFits(existing, definition);
+      if (existing) {
+        await deps.contextVariables.assertDefinitionKeepsClassification(existing, definition, {
+          agentId: targetRef.agentId,
+          source: payload.enablement?.source ?? null,
+        });
+      }
 
       // A create, or a rename, that would collide with another variable's workspace+name identity
       // (context_variables_workspace_id_name_key) can never apply - refusing it here, at draft
@@ -330,11 +336,14 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       // the raw payload here would reject a merge this function is meant to allow. Any way the
       // merge could still produce a contradictory/inert combination is caught by the
       // context-variable service here instead.
+      // Against the definition this proposal writes, when it writes one: a proposal can create a
+      // Choice attribute and have the agent classify it in one step.
       await deps.contextVariables.assertEnablementReferences(
         workspaceId,
         targetRef.agentId,
         targetRef.variableId,
         mergedEnablement,
+        definition,
       );
       enablement = mergedEnablement;
     }

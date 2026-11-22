@@ -62,6 +62,21 @@ export const turnTraceEnvelopeSchema = z.object({
     lines: z.array(z.string()),
     replyTo: z.string().optional(),
   }).optional(),
+  /**
+   * Only on a Test Chat turn whose revision classifies attributes: each one's value after the turn
+   * (an option key, or null when none is set), the option's label, and who set it — the classifier
+   * (the AI, from the conversation) or the operator through a Test Chat sample. `outcome` says how
+   * the classification run ended. Absent on a customer conversation's `turn_trace`.
+   */
+  attributes: z.object({
+    outcome: z.string(),
+    values: z.array(z.object({
+      name: z.string(),
+      value: z.string().nullable(),
+      label: z.string().optional(),
+      writtenBy: z.enum(["classifier", "operator"]).nullable(),
+    })),
+  }).optional(),
 });
 
 const MAX_MESSAGES = 20;

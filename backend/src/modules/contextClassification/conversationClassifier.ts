@@ -143,7 +143,14 @@ export class ConversationClassificationService implements ConversationClassifier
     return this.run({
       ...input,
       targets: variables.map((variable) => ({ variable, stored: input.stored.get(variable.id) ?? null })),
-      readExcerpt: async () => input.excerpt,
+      // The same bounds a stored conversation's excerpt is read with: the latest messages, each cut.
+      readExcerpt: async () => ({
+        ...input.excerpt,
+        messages: input.excerpt.messages
+          .slice(-CLASSIFICATION_EXCERPT_MAX_MESSAGES)
+          .map((message) => message.trim().slice(0, CLASSIFICATION_EXCERPT_MAX_MESSAGE_CHARS))
+          .filter((message) => message.length > 0),
+      }),
       trigger: "test_chat",
     });
   }

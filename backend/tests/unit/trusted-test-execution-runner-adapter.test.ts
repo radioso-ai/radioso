@@ -313,6 +313,61 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     expect(history.map((message) => message.metadata)).toEqual([undefined, stored]);
   });
 
+  it("classifies a turn beside its answer, shows the values on its trace, and reads them on the next turn", async () => {
+    const classifiedRevision: AgentRevision = {
+      ...revision,
+      snapshot: {
+        ...revision.snapshot,
+        contextVariableEnablements: [{ ...revision.snapshot.contextVariableEnablements[1]!, source: "classified" }],
+      },
+    };
+    const turnTrace = { version: 1, spine: { traceId: "trace-1", startedAt: "2026-11-22T00:00:00.000Z", stages: [] } };
+    const replay = {
+      stream: vi.fn(async function* () {
+        yield "answer";
+        return { answer: "answer", messageId: "reply-1", continuation, turnTrace };
+      }),
+    };
+    const topic = {
+      id: "variable-2", workspaceId: "ws-1", name: "topic", description: null, valueType: "enum" as const,
+      options: [{ key: "billing", label: "Billing", description: null, archived: false }],
+      trustTier: "unverified" as const, sensitivity: "normal" as const, defaultSurfacing: "on_reference" as const,
+      createdAt: new Date(0), updatedAt: new Date(0),
+    };
+    const classifier = {
+      classifyTranscript: vi.fn(async (input: Parameters<NonNullable<ConstructorParameters<typeof TrustedTestExecutionRunnerAdapter>[0]["classifier"]>["classifyTranscript"]>[0]) => {
+        const write = await input.values.write({ conversationId: input.conversationId, variable: topic, stored: null, data: "billing", writtenBy: { kind: "classifier", ref: "context-classification/1" } });
+        return { outcome: "written" as const, decisions: [{ variableId: topic.id, value: "billing", write }] };
+      }),
+    };
+    const adapter = new TrustedTestExecutionRunnerAdapter({
+      replay: replay as unknown as Pick<WorkbenchReplayRunner, "stream">,
+      liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
+      revisions: { findRevision: async () => classifiedRevision },
+      classifier,
+    });
+    const baseTurn = {
+      workspaceId: "ws-1", agentId: "agent-1", accountId: "account-42", candidateRevision: classifiedRevision,
+      conversationId: "private-side-1", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "allowed" as const,
+    };
+
+    const first = await collect(adapter.stream({ ...baseTurn, message: "I was charged twice", continuation }));
+
+    expect(classifier.classifyTranscript).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: "private-side-1", variableIds: ["variable-2"],
+      excerpt: { summary: null, messages: ["I was charged twice"], withheldCount: 0 },
+    }));
+    expect(first.result.turnTrace).toEqual({ ...turnTrace, attributes: { outcome: "written", values: [{ name: "topic", value: "billing", label: "Billing", writtenBy: "classifier" }] } });
+    const carried = first.result.continuation as { contextValues?: unknown[] };
+    expect(carried.contextValues).toEqual([expect.objectContaining({ contextVariableId: "variable-2", value: "billing", writtenBy: { kind: "classifier", ref: "context-classification/1" } })]);
+
+    await collect(adapter.stream({ ...baseTurn, message: "And when is it refunded?", continuation: first.result.continuation }));
+
+    expect(replay.stream).toHaveBeenLastCalledWith(expect.objectContaining({
+      preResolvedHostVariables: [{ name: "topic", description: null, value: "billing", label: "Billing", surfacing: "on_reference", sensitive: false, trust: "unverified" }],
+    }));
+  });
+
   it("rejects corrupt and version-mismatched continuations before replay", async () => {
     const replay = { stream: vi.fn() };
     const adapter = new TrustedTestExecutionRunnerAdapter({

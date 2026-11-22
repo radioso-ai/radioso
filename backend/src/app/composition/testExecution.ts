@@ -30,6 +30,8 @@ export const buildTestExecutionService = (deps: {
     /** Copies the pictures a test turn's cards show. */
     toolImagePreviews: RunnerOptions["toolImagePreviews"];
   };
+  /** Fills a test's classified attributes after each turn, as the worker does for a live conversation. */
+  classifier: RunnerOptions["classifier"];
   visitorImages: VisitorImageTurnInput;
   usageLimitPolicy: ServiceOptions["usageLimitPolicy"];
   audit: ServiceOptions["audit"];
@@ -48,6 +50,7 @@ export const buildTestExecutionService = (deps: {
       revisions: store,
       bootstrap: deps.chat.chatBootstrapService,
       toolImagePreviews: deps.chat.toolImagePreviews,
+      classifier: deps.classifier,
     }),
     seedSource: deps.chat.testExecutionSeedSource,
     photos: createTestChatPhotoTurns(deps.visitorImages),

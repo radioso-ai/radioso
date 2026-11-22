@@ -1,7 +1,9 @@
 import type { PendingClarification, RoutineState } from "@radioso/conversation-contract";
+import { z } from "zod";
 
 import type { DirectiveFiringState } from "../../directives/public.js";
 import { routineConsentSessionStateSchema, type RoutineConsentSessionState } from "./routines/sessionRoutineConsentStore.js";
+import { testChatAttributeValueSchema, type TestChatAttributeValue } from "./testChatClassification.js";
 import type { WorkbenchReplayRoutineStartState } from "./workbenchReplayRunner.js";
 
 export interface TestExecutionReplayContinuationV1 {
@@ -11,6 +13,8 @@ export interface TestExecutionReplayContinuationV1 {
   directiveState: DirectiveFiringState | null;
   /** The session's routine consents (#1544); absent when it holds none, as in a continuation stored before them. */
   consents?: RoutineConsentSessionState;
+  /** The attribute values the classifier wrote on earlier turns (#1884); absent when it wrote none. */
+  contextValues?: TestChatAttributeValue[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -88,6 +92,12 @@ const parseDirectiveState = (value: unknown): DirectiveFiringState | null => {
   return cloneDirectiveState(value as unknown as DirectiveFiringState);
 };
 
+const parseContextValues = (value: unknown): TestChatAttributeValue[] => {
+  if (value === undefined) return [];
+  const parsed = z.array(testChatAttributeValueSchema).safeParse(value);
+  return parsed.success ? parsed.data : invalid();
+};
+
 const parseConsents = (value: unknown): RoutineConsentSessionState | null => {
   if (value === undefined) return null;
   const parsed = routineConsentSessionStateSchema.safeParse(value);
@@ -115,8 +125,9 @@ export const importTestExecutionReplayContinuation = (
   pendingClarification: PendingClarification | null;
   directiveState: DirectiveFiringState | null;
   consents: RoutineConsentSessionState | null;
+  contextValues: TestChatAttributeValue[];
 } => {
-  if (value === null) return { routineState: null, pendingClarification: null, directiveState: null, consents: null };
+  if (value === null) return { routineState: null, pendingClarification: null, directiveState: null, consents: null, contextValues: [] };
   if (!isRecord(value) || value.version !== 1) return invalid();
   const routineState = parseRoutineState(value.routineState);
   const pendingClarification = parsePending(value.pendingClarification);
@@ -125,5 +136,6 @@ export const importTestExecutionReplayContinuation = (
     pendingClarification: pendingClarification ? { ...pendingClarification, sessionId } : null,
     directiveState: parseDirectiveState(value.directiveState),
     consents: parseConsents(value.consents),
+    contextValues: parseContextValues(value.contextValues),
   };
 };

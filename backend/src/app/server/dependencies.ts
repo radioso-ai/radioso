@@ -570,7 +570,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentRevisions: agentRevisionService,
     contextCatalog: contextVariableRepository,
     agentRepository: repositories.agentRepository,
-    chat,
+    chat, classifier: contextClassification.classifier,
     visitorImages: visitorImages.service,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     audit: infrastructure.auditService,

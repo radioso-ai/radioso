@@ -1,5 +1,4 @@
 import { request } from './api-client'
-import { getApiErrorCode, getApiErrorDetails } from './api-error'
 
 export type ApiConnectionAuthScheme = 'none' | 'bearer' | 'header' | 'basic'
 export type ApiRequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -106,16 +105,4 @@ export const apiConnectionsApi = {
       { withSession: true },
     )
   },
-}
-
-/** The skills that block a delete, when the error is the connection-in-use conflict; otherwise null. */
-export const skillsBlockingDelete = (error: unknown): string[] | null => {
-  if (getApiErrorCode(error) !== 'api_connection_in_use') return null
-  const details = getApiErrorDetails(error)
-  const references = details && typeof details === 'object' && 'references' in details && Array.isArray(details.references)
-    ? details.references
-    : []
-  return references
-    .filter((reference): reference is string => typeof reference === 'string')
-    .map((reference) => reference.replace(/^skill:/u, ''))
 }

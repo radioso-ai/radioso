@@ -10,6 +10,7 @@ import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
 import { asError } from "../../../shared/errors/asError.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
+import type { RecrawlCadence } from "../../../modules/websiteCrawler/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
@@ -280,7 +281,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { sourceId } = sourceParamsSchema.parse(req.params);
-      const { recrawlCadence } = req.body as { recrawlCadence: "off" | "daily" | "weekly" };
+      const { recrawlCadence } = req.body as { recrawlCadence: RecrawlCadence };
       const updated = await dependencies.websiteRecrawl.scheduleService.setRecrawlCadence({ workspaceId, sourceId, recrawlCadence });
       res.status(200).json(presentDocumentSource(updated, await documentCountOf(workspaceId, sourceId), await describeRecrawl(workspaceId, [updated])));
     } catch (error) {

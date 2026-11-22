@@ -23,7 +23,7 @@ export const recrawlPlanFromUsageLimits = (
   usageLimits: Pick<UsageLimitPolicy, "getFastestRecrawlCadence">,
 ): RecrawlPlanPort => ({
   fastestRecrawlCadence: async ({ workspaceId }) =>
-    (await usageLimits.getFastestRecrawlCadence?.({ workspaceId })) === "weekly" ? "weekly" : "daily",
+    (await usageLimits.getFastestRecrawlCadence?.({ workspaceId })) ?? "daily",
 });
 
 export const websiteRecrawlPeriodicTask = (

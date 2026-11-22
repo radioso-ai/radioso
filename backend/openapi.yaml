@@ -8894,8 +8894,9 @@ components:
           type: string
           enum:
             - off
-            - daily
+            - monthly
             - weekly
+            - daily
           description: Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.
         nextRecrawlAt:
           type:
@@ -19018,8 +19019,9 @@ components:
           type: string
           enum:
             - off
-            - daily
+            - monthly
             - weekly
+            - daily
           description: How often the source recrawls itself. `off` stops scheduled recrawls.
       required:
         - recrawlCadence

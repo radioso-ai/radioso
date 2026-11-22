@@ -30,6 +30,19 @@ const formatNextCheck = (value: string | null | undefined) => {
     : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+type ActiveCadence = Exclude<DocumentSourceRecrawlCadence, 'off'>
+const CADENCE_SPEED: Record<ActiveCadence, number> = { monthly: 1, weekly: 2, daily: 3 }
+const CADENCE_LABEL: Record<ActiveCadence, string> = { monthly: 'Monthly', weekly: 'Weekly', daily: 'Daily' }
+
+/** What the plan's ceiling means for this source: which options it lacks, and what a faster stored choice runs at. */
+function recrawlPlanHint(cadence: DocumentSourceRecrawlCadence, fastest: ActiveCadence): string | null {
+  if (fastest === 'daily') return null
+  if (cadence !== 'off' && CADENCE_SPEED[cadence] > CADENCE_SPEED[fastest]) {
+    return `${CADENCE_LABEL[cadence]} isn’t on your plan, so it checks ${fastest}.`
+  }
+  return fastest === 'monthly' ? 'Weekly and daily aren’t on your plan.' : 'Daily isn’t on your plan.'
+}
+
 /**
  * A website source's "Keep up to date" cadence, when it next checks, and the pages a crawl
  * held because too many went missing at once.
@@ -47,7 +60,10 @@ export function SourceRecrawlControls({
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cadence = source.recrawlCadence ?? 'off'
-  const dailyOnPlan = (source.fastestRecrawlCadence ?? 'daily') === 'daily'
+  const fastest = source.fastestRecrawlCadence ?? 'daily'
+  const onPlan = (option: DocumentSourceRecrawlCadence) =>
+    option === 'off' || CADENCE_SPEED[option] <= CADENCE_SPEED[fastest]
+  const planHint = recrawlPlanHint(cadence, fastest)
   const heldPageCount = source.heldPageCount ?? 0
   const nextCheck = cadence === 'off' ? null : formatNextCheck(source.nextRecrawlAt)
 
@@ -104,17 +120,14 @@ export function SourceRecrawlControls({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="off">Off</SelectItem>
-            <SelectItem value="daily" disabled={!dailyOnPlan}>Daily</SelectItem>
-            <SelectItem value="weekly">Weekly</SelectItem>
+            <SelectItem value="monthly">Monthly</SelectItem>
+            <SelectItem value="weekly" disabled={!onPlan('weekly')}>Weekly</SelectItem>
+            <SelectItem value="daily" disabled={!onPlan('daily')}>Daily</SelectItem>
           </SelectContent>
         </Select>
         {pendingAction === 'cadence' ? <Spinner className="h-3.5 w-3.5" /> : null}
         {nextCheck ? <span className="text-xs text-muted-foreground">Next check {nextCheck}</span> : null}
-        {dailyOnPlan ? null : (
-          <span className="text-xs text-muted-foreground">
-            {cadence === 'daily' ? 'Daily isn’t on your plan, so it checks weekly.' : 'Daily isn’t on your plan.'}
-          </span>
-        )}
+        {planHint ? <span className="text-xs text-muted-foreground">{planHint}</span> : null}
       </div>
       {heldPageCount > 0 ? (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/40 px-3 py-2 text-xs">

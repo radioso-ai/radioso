@@ -7,7 +7,7 @@ export type PlanModels = "managed" | "byok";
 export type PlanSupport = "community" | "email" | "priority";
 
 /** How often a website source may recrawl itself on its own, at fastest. */
-export type PlanRecrawlCadence = "daily" | "weekly";
+export type PlanRecrawlCadence = "daily" | "weekly" | "monthly";
 
 /**
  * How the app finds a plan in Stripe. Prices are looked up by `lookup_key` at checkout time, so a

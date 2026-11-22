@@ -714,7 +714,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     const service = new EnterpriseUsageLimitService(database);
 
     await service.assignProfile(accountId, "comet");
-    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("weekly");
+    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("monthly");
     await service.assignProfile(accountId, "satellite");
     await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("daily");
   });

@@ -239,7 +239,7 @@ PUT /api/v1/document/sources/{sourceId}/recrawl-cadence
 { "recrawlCadence": "weekly" }
 ```
 
-`recrawlCadence` is `off`, `daily`, or `weekly`. Every source starts at `off`. Turning a cadence on, or changing it, schedules the next recrawl one interval after the source's last crawl, or now when that is already past, plus up to an hour of jitter so sources set together do not all crawl at once. Sending the cadence the source already has keeps the time already scheduled; `off` clears it. The response is the source, as `GET /api/v1/document/sources` lists it.
+`recrawlCadence` is `off`, `monthly` (every 30 days), `weekly`, or `daily`. Every source starts at `off`. Turning a cadence on, or changing it, schedules the next recrawl one interval after the source's last crawl, or now when that is already past, plus up to an hour of jitter so sources set together do not all crawl at once. Sending the cadence the source already has keeps the time already scheduled; `off` clears it. The response is the source, as `GET /api/v1/document/sources` lists it.
 
 Every website source in the source list carries four fields about this:
 
@@ -247,7 +247,7 @@ Every website source in the source list carries four fields about this:
 |-------|---------|
 | `recrawlCadence` | The cadence the operator chose. |
 | `nextRecrawlAt` | When the next scheduled recrawl is queued, or `null` while the cadence is `off`. |
-| `fastestRecrawlCadence` | The fastest cadence the workspace's plan allows: `daily` on self-hosted deployments, and on Radioso Cloud `weekly` on Comet and `daily` on Satellite and Planet. |
+| `fastestRecrawlCadence` | The fastest cadence the workspace's plan allows: `daily` on self-hosted deployments, and on Radioso Cloud `monthly` on Comet and `daily` on Satellite and Planet. |
 | `heldPageCount` | Pages a crawl no longer found and held for review. |
 
 Asking for a cadence faster than `fastestRecrawlCadence` answers `403` with code `recrawl_cadence_not_in_plan` and `details.fastestRecrawlCadence`. A workspace that moves to a plan with a slower ceiling keeps its sources' chosen cadence; they recrawl at the plan's fastest.

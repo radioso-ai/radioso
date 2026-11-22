@@ -2,7 +2,7 @@
  * How often a website source recrawls itself, and the arithmetic of when it next does. Pure: the
  * sweep, the cadence setting, and the plan ceiling all read these rules, and none of them owns them.
  */
-export const recrawlCadences = ["off", "daily", "weekly"] as const;
+export const recrawlCadences = ["off", "monthly", "weekly", "daily"] as const;
 export type RecrawlCadence = (typeof recrawlCadences)[number];
 /** A cadence that runs. A plan's fastest cadence is always one of these. */
 export type ActiveRecrawlCadence = Exclude<RecrawlCadence, "off">;
@@ -15,6 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1_000;
 const CADENCE_INTERVAL_MS: Readonly<Record<ActiveRecrawlCadence, number>> = {
   daily: DAY_MS,
   weekly: 7 * DAY_MS,
+  monthly: 30 * DAY_MS,
 };
 
 /** Spreads sources that share a cadence across an hour, so a sweep never queues them all at once. */

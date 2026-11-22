@@ -76,7 +76,7 @@ export interface UsageLimitPolicy {
   getFastestRecrawlCadence?(input: {
     accountId?: string | null;
     workspaceId: string;
-  }): Promise<"daily" | "weekly" | null>;
+  }): Promise<"daily" | "weekly" | "monthly" | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;

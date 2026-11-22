@@ -42,37 +42,48 @@ export interface SkillTargetUseReader {
 
 const quoted = (value: string): string => `"${value}"`;
 
+const quotedList = (values: readonly string[]): string => values.map(quoted).join(", ");
+
+/** The draft skills on the target, and after them the agents to publish once they are gone. */
+const describeDraftUses = (inDraft: readonly SkillTargetUse[]): string | null => {
+  if (inDraft.length === 0) return null;
+  const skills = inDraft.map((use) => `skill ${quoted(use.skillName)} on agent ${quoted(use.agentName)}`);
+  const toPublish = [...new Set(inDraft.filter((use) => use.inPublishedRelease).map((use) => use.agentName))];
+  const thenPublish = toPublish.length === 0
+    ? " first"
+    : `, then publish ${toPublish.length === 1 ? "agent" : "agents"} ${quotedList(toPublish)}`;
+  return `Used by ${skills.join(", ")}. Delete or retarget ${inDraft.length === 1 ? "that skill" : "those skills"}${thenPublish}.`;
+};
+
 /**
  * Why a target in use cannot be deleted yet, for the operator: the draft skills to delete or
  * retarget, and the agents whose published version still runs a skill on it and needs publishing.
+ * An agent the draft sentence already says to publish is not told to again.
  */
 export const describeSkillTargetUses = (uses: readonly SkillTargetUse[]): string => {
-  const sentences: string[] = [];
   const inDraft = uses.filter((use) => use.inDraft);
-  if (inDraft.length > 0) {
-    const skills = inDraft.map((use) => `skill ${quoted(use.skillName)} on agent ${quoted(use.agentName)}`);
-    sentences.push(`Used by ${skills.join(", ")}. Delete or retarget ${inDraft.length === 1 ? "that skill" : "those skills"} first.`);
-  }
-  const releasedByAgent = new Map<string, { agentName: string; skillNames: string[] }>();
+  const sentences = [describeDraftUses(inDraft)].filter((sentence) => sentence !== null);
+  const publishedAfterDraft = new Set(inDraft.filter((use) => use.inPublishedRelease).map((use) => use.agentId));
+  const releasedByAgent = new Map<string, { agentId: string; agentName: string; skillNames: string[] }>();
   for (const use of uses) {
     if (use.inDraft || !use.inPublishedRelease) continue;
-    const agent = releasedByAgent.get(use.agentId) ?? { agentName: use.agentName, skillNames: [] };
+    const agent = releasedByAgent.get(use.agentId) ?? { agentId: use.agentId, agentName: use.agentName, skillNames: [] };
     agent.skillNames.push(use.skillName);
     releasedByAgent.set(use.agentId, agent);
   }
-  for (const { agentName, skillNames } of releasedByAgent.values()) {
-    sentences.push(
-      `The published version of agent ${quoted(agentName)} still uses ${skillNames.length === 1 ? "skill" : "skills"} ` +
-        `${skillNames.map(quoted).join(", ")}. Publish agent ${quoted(agentName)} first.`,
-    );
+  for (const { agentId, agentName, skillNames } of releasedByAgent.values()) {
+    const skills = `${skillNames.length === 1 ? "skill" : "skills"} ${quotedList(skillNames)}`;
+    sentences.push(publishedAfterDraft.has(agentId)
+      ? `The published version of agent ${quoted(agentName)} also still uses ${skills}.`
+      : `The published version of agent ${quoted(agentName)} still uses ${skills}. Publish agent ${quoted(agentName)} first.`);
   }
   return sentences.join(" ");
 };
 
 /**
  * The 409 a target's delete answers while skills use it, under the kind's own error code: the
- * message names the skills and what frees the target, and `details.skillUses` carries them.
- * `otherUses` is a sentence naming anything else that holds the target, such as routines.
+ * message names the skills and what frees the target. `otherUses` is a sentence naming anything
+ * else that holds the target, such as routines, or standing in for uses the caller may not see.
  */
 export const skillTargetInUseError = (input: {
   code: string;
@@ -87,5 +98,5 @@ export const skillTargetInUseError = (input: {
     [`${input.targetLabel} is in use.`, input.otherUses, describeSkillTargetUses(input.uses)]
       .filter((sentence) => sentence !== undefined && sentence.length > 0)
       .join(" "),
-    { ...input.details, skillUses: input.uses },
+    input.details,
   );

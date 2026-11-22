@@ -203,7 +203,7 @@ describe("CustomerEmailConnectionService", () => {
     await expect(service.remove("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 409,
       code: "conflict",
-      message: 'Customer email connection is in use. Used by skill "reply_by_email" on agent "Support". Delete or retarget that skill first.',
+      message: 'Customer email connection is in use. Used by skill "reply_by_email" on agent "Support". Delete or retarget that skill, then publish agent "Support".',
     });
     expect(repository.records.has(created.id)).toBe(true);
 

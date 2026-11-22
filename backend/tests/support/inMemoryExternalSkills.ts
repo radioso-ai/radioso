@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type {
   CreateMcpConnectionInput,
-  McpConnectionAgentUsage,
   McpConnectionRecord,
   McpConnectionRepositoryPort,
   UpdateMcpConnectionInput,
@@ -17,22 +16,25 @@ import type { ToolServiceFactory } from "../../src/modules/externalSkills/execut
 import { SdkMcpToolService } from "../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import { connectMockMcpServer, type MockTool } from "./mockMcpServer.js";
 
+/** One agent skill bound to a connection, as the skill store reports it. */
+interface AgentConnectionUse {
+  connectionId: string;
+  agentId: string;
+}
+
 export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryPort {
   private readonly rows = new Map<string, McpConnectionRecord>();
   private referenceChecker?: (connectionId: string) => boolean;
-  private agentUsageLookup?: (workspaceId: string, connectionId?: string) => Promise<McpConnectionAgentUsage[]>;
+  private agentUsageLookup?: (workspaceId: string) => AgentConnectionUse[];
 
   /** Model the real ON DELETE RESTRICT: throw 23503 if a skill references it. */
   setReferenceChecker(checker: (connectionId: string) => boolean): void {
     this.referenceChecker = checker;
   }
 
-  setAgentUsageLookup(lookup: (workspaceId: string, connectionId?: string) => Promise<McpConnectionAgentUsage[]>): void {
+  /** Where `listUsedByAgent` reads which agents' skills sit on which connection. */
+  setAgentUsageLookup(lookup: (workspaceId: string) => AgentConnectionUse[]): void {
     this.agentUsageLookup = lookup;
-  }
-
-  async listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]> {
-    return (await this.agentUsageLookup?.(workspaceId, connectionId)) ?? [];
   }
 
   async create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord> {
@@ -64,7 +66,7 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
   }
 
   async listUsedByAgent(workspaceId: string, agentId: string): Promise<McpConnectionRecord[]> {
-    const usage = await this.listAgentUsage(workspaceId);
+    const usage = this.agentUsageLookup?.(workspaceId) ?? [];
     const used = new Set(usage.filter((row) => row.agentId === agentId).map((row) => row.connectionId));
     return [...this.rows.values()].filter((row) => used.has(row.id)).map((row) => ({ ...row }));
   }
@@ -123,7 +125,7 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
       return false;
     }
     if (this.referenceChecker?.(id)) {
-      throw Object.assign(new Error("connection is still referenced"), { code: "23503" });
+      throw Object.assign(new Error("connection is still referenced"), { code: "23503", constraint: "agent_skills_external_mcp_target_fk" });
     }
     this.rows.delete(id);
     return true;

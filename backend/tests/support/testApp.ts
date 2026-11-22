@@ -1771,6 +1771,8 @@ export const createTestDependencies = (overrides: {
       getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
     },
     encryptionKey: connectorEncryptionKeys(env),
+    // The reader spans skill stores built further down; nothing disconnects before they exist.
+    skillTargetUses: { listSkillTargetUses: (target) => skillTargetUses.listSkillTargetUses(target) },
   });
   const slackProvider = buildSlackOauthProviderDefinition({
     clientId: "test-slack-client",
@@ -1887,14 +1889,7 @@ export const createTestDependencies = (overrides: {
   mcpConnectionRepository.setReferenceChecker((connectionId) =>
     externalSkillDefinitionRepository.hasConnectionReference(connectionId),
   );
-  mcpConnectionRepository.setAgentUsageLookup((workspaceId, connectionId) =>
-    Promise.all(
-      externalSkillDefinitionRepository.connectionUsage(workspaceId, connectionId).map(async (usage) => ({
-        ...usage,
-        agentName: (await agentRepository.findByIdAndWorkspaceId(usage.agentId, workspaceId))?.name ?? "",
-      })),
-    ),
-  );
+  mcpConnectionRepository.setAgentUsageLookup((workspaceId) => externalSkillDefinitionRepository.connectionUsage(workspaceId));
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),

@@ -335,3 +335,23 @@ describe("McpConnectionService.remove", () => {
     expect(await repository.findById("workspace-1", created.id)).not.toBeNull();
   });
 });
+
+describe("McpConnectionService usedByAgents", () => {
+  it("names each agent whose draft or published release uses the connection, once", async () => {
+    const service = new McpConnectionService({
+      repository: new InMemoryMcpConnectionRepository(),
+      toolServiceFactory: createMockToolServiceFactory(),
+      encryptionKey: { current: encryptionKey, previous: [] },
+      skillTargetUses: fixedSkillTargetUses([
+        { agentId: "agent-sales", agentName: "Sales", skillName: "check_stock", inDraft: false, inPublishedRelease: true },
+        { agentId: "agent-sales", agentName: "Sales", skillName: "reserve_item", inDraft: true, inPublishedRelease: true },
+        { agentId: "agent-support", agentName: "", skillName: "post_message", inDraft: true, inPublishedRelease: false },
+      ]),
+    });
+    const created = await service.create("workspace-1", baseInput);
+    const usedByAgents = [{ id: "agent-sales", name: "Sales" }, { id: "agent-support", name: "Unnamed agent" }];
+
+    expect((await service.get("workspace-1", created.id)).usedByAgents).toEqual(usedByAgents);
+    expect((await service.list("workspace-1")).map((connection) => connection.usedByAgents)).toEqual([usedByAgents]);
+  });
+});

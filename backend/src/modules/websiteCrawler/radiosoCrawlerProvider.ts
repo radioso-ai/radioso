@@ -2,11 +2,14 @@ import type { CrawledPageResult } from "@radioso/crawler";
 
 import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import { resolveWebsiteCrawlerConfig } from "./config.js";
+import type { WebsitePageAnswer, WebsitePageProbe } from "./missingPageVerification.js";
 import type { WebsiteCrawlPage, WebsiteCrawlRequest, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 
 const PROVIDER_NAME = "radioso-crawler";
 const DEFAULT_PAGE_CONCURRENCY = 1;
+/** How many pages one crawl asks a site about at once when it checks that missing pages are gone. */
+const PAGE_PROBE_CONCURRENCY = 4;
 
 export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
   readonly name = PROVIDER_NAME;
@@ -189,6 +192,25 @@ const createCrawlSliceSignal = (
     },
   };
 };
+
+/**
+ * Asks a site whether pages are still there through the crawl's own fetch: the same public-network
+ * guard on every redirect hop, the same connection-bound fetch, the same user agent and robots.txt.
+ */
+export const createRadiosoWebsitePageProbe = (): WebsitePageProbe => ({
+  async probePages(urls, options) {
+    const { probePages } = await import("@radioso/crawler");
+    const answers = await probePages(urls, {
+      concurrency: PAGE_PROBE_CONCURRENCY,
+      userAgent: resolveWebsiteCrawlerConfig().userAgent,
+      validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+      fetchImpl: fetchPublicUrl,
+      signal: options.signal,
+    });
+    return answers.map((answer): WebsitePageAnswer =>
+      answer.kind === "answered" ? { kind: "answered", status: answer.status, url: answer.url } : { kind: "unreachable" });
+  },
+});
 
 export const createRadiosoCrawlerUtilityProvider = () => ({
   async fetchPageWithScreenshot(url: string, options?: {

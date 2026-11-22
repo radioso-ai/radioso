@@ -71,7 +71,7 @@ import type { EmbeddingModelId } from "../../../modules/settings/contracts/inges
 import { TimeZoneSettingsService, type TimeZoneSettingsStore } from "../../../modules/settings/public.js";
 import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobService.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
-import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { createRadiosoWebsitePageProbe, RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
 import { createWebsiteCrawlerIngestionPort } from "../../composition/websiteCrawlerIngestionPort.js";
 import { createWebsiteRecrawlComposition } from "../../composition/websiteRecrawl.js";
@@ -316,6 +316,7 @@ export const buildDocumentServices = (input: {
     documentIngestionService: websiteCrawlerIngestionPort,
     auditService,
     missingPages: repositories.websiteMissingPageRepository,
+    pageProbe: createRadiosoWebsitePageProbe(),
     errorReporter: input.errorReporter,
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,

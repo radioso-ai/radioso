@@ -14,6 +14,7 @@ import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import type { WebsiteMissingPageStore } from "./missingPages.js";
+import type { WebsitePageProbe } from "./missingPageVerification.js";
 import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type WebsiteCrawlerAuditPort } from "./service.js";
 import {
   classifyWebsiteCrawlerFailure,
@@ -43,6 +44,7 @@ export class WebsiteCrawlWorker {
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
     missingPages?: WebsiteMissingPageStore;
+    pageProbe?: WebsitePageProbe;
     errorReporter?: Pick<ErrorReporter, "report">;
     logger: AppLogger;
     pollIntervalMs?: number;
@@ -251,6 +253,7 @@ export class WebsiteCrawlWorker {
         documentIngestionService: this.dependencies.documentIngestionService,
         auditService: this.dependencies.auditService,
         missingPages: this.dependencies.missingPages,
+        pageProbe: this.dependencies.pageProbe,
         logger: this.dependencies.logger,
       });
       const result = await service.crawlAndPublish({

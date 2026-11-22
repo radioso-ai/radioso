@@ -3483,7 +3483,7 @@ export interface paths {
         put?: never;
         /**
          * Remove the pages a crawl held
-         * @description Deletes the source's held pages the way a recrawl removes missing pages. A source with no held pages answers with a count of 0.
+         * @description Deletes the source's pages still held for review, without asking the site again. A held page a crawl found again before this runs stays. A source with no held pages answers with a count of 0.
          */
         post: operations["removeDocumentSourceHeldPages"];
         delete?: never;

@@ -67,6 +67,8 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
       reapMissingPages: (input) => documents.deleteMissingSourcePages(input),
     },
     missingPages,
+    // The site answers 404 for every page it is asked about.
+    pageProbe: { probePages: async (urls) => urls.map((url) => ({ kind: "answered", status: 404, url })) },
     auditService: audit,
     assertCrawlUrlAllowed: async () => undefined,
   });
@@ -127,9 +129,9 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
   const seedPages = async (paths: string[]) => {
     for (const path of paths) {
       await database.query(
-        `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'body', 'body', 'ready', '2026-11-01T00:00:00Z')`,
-        [randomUUID(), workspaceId, sourceId, externalId(path), path],
+        `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at, metadata)
+         VALUES ($1, $2, $3, $4, $5, 'body', 'body', 'ready', '2026-11-01T00:00:00Z', jsonb_build_object('sourceUrl', $6::text, 'canonicalUrl', $6::text))`,
+        [randomUUID(), workspaceId, sourceId, externalId(path), path, `${site}/${path}`],
       );
     }
   };

@@ -1,5 +1,11 @@
 import { decideMissingPageRemoval } from "./missingPageRemoval.js";
 import {
+  decideVerifiedRemoval,
+  MAX_VERIFIED_MISSING_PAGES,
+  verifyMissingPages,
+  type WebsitePageProbe,
+} from "./missingPageVerification.js";
+import {
   buildWebsiteExternalDocumentId,
   normalizePageUrl,
   redactWebsiteCrawlerUrl,
@@ -11,8 +17,29 @@ import type { WebsiteCrawlerAuditPort, WebsiteCrawlerDocumentIngestionPort } fro
 export interface MissingPage {
   documentId: string;
   externalDocumentId: string;
+  /** The address the page was published under, as ingestion stored it; null when it has none. */
+  pageUrl: string | null;
   kept: boolean;
 }
+
+/** What one reconciliation did with the missing pages it was not told to keep. Counts only, safe to log. */
+export interface MissingPageCounts {
+  candidates: number;
+  held: number;
+  gone: number;
+  alive: number;
+  unknown: number;
+  removed: number;
+  /** More were missing than one crawl verifies, so it asked about and removed none. */
+  overVerificationBound: boolean;
+}
+
+type MissingPageReconciliation =
+  | { status: "reconciled"; counts: MissingPageCounts }
+  /** Nothing to measure a removal against, so nothing was reviewed. */
+  | { status: "skipped" }
+  /** A newer crawl of the source exists; what this one saw is older than what it publishes. */
+  | { status: "superseded" };
 
 export interface MissingPageReview {
   /**
@@ -101,31 +128,36 @@ export const pagesSeenByCrawl = (input: {
 /**
  * Removes the pages a complete crawl no longer found, or holds them for the operator, whatever
  * started the crawl. It leaves pages the operator kept, and holds the rest instead of removing
- * them when they are too large a share of the source ({@link decideMissingPageRemoval}). A crawl that a newer crawl of the source superseded does
- * neither: what it saw is older than what the newer crawl publishes.
+ * them when they are too large a share of the source ({@link decideMissingPageRemoval}). Before it
+ * removes a page it asks the site, and removes only the pages the site says are gone. A crawl that
+ * a newer crawl of the source superseded does neither.
  */
 export const reconcileMissingPages = async (
   dependencies: MissingPageReconciliationDependencies,
   input: CompleteCrawl & {
     /** Whether the crawl is still the newest of the source's crawls, asked before anything is removed or held. */
     isNewestCrawlOfSource?: () => Promise<boolean>;
+    /** Stops asking the site when the crawl is cancelled. */
+    signal?: AbortSignal;
   },
-): Promise<"reconciled" | "superseded"> => {
+): Promise<MissingPageReconciliation> => {
   const { isNewestCrawlOfSource, ...crawl } = input;
-  if (!dependencies.ingestion.reapMissingPages) {
-    return "reconciled";
+  // Without a store a crawl cannot tell how much it would remove, so it removes nothing.
+  if (!dependencies.ingestion.reapMissingPages || !dependencies.store) {
+    return { status: "skipped" };
   }
   if (isNewestCrawlOfSource && !(await isNewestCrawlOfSource())) {
-    return "superseded";
+    return { status: "superseded" };
   }
-  await removeOrHoldMissingPages(dependencies, crawl);
-  return "reconciled";
+  return { status: "reconciled", counts: await removeOrHoldMissingPages({ ...dependencies, store: dependencies.store }, crawl) };
 };
 
 interface MissingPageReconciliationDependencies {
   store?: WebsiteMissingPageStore;
   ingestion: Pick<WebsiteCrawlerDocumentIngestionPort, "reapMissingPages">;
   audit?: WebsiteCrawlerAuditPort;
+  /** Asks the site whether a page is gone. Without one no page is confirmed gone, so none is removed. */
+  probe?: WebsitePageProbe;
 }
 
 /** A crawl that saw the whole site ({@link crawlSawWholeSite}), and every page it saw. */
@@ -139,11 +171,10 @@ interface CompleteCrawl {
   crawlStartedAt: Date;
 }
 
-const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationDependencies, input: CompleteCrawl): Promise<void> => {
-  if (!dependencies.store) {
-    // Without a store a crawl cannot tell how much it would remove, so it removes nothing.
-    return;
-  }
+const removeOrHoldMissingPages = async (
+  dependencies: MissingPageReconciliationDependencies & { store: WebsiteMissingPageStore },
+  input: CompleteCrawl & { signal?: AbortSignal },
+): Promise<MissingPageCounts> => {
   const review = await dependencies.store.reviewMissingPages({
     workspaceId: input.workspaceId,
     sourceId: input.sourceId,
@@ -152,20 +183,18 @@ const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationD
     crawlStartedAt: input.crawlStartedAt,
   });
   const candidates = review.missingPages.filter((page) => !page.kept);
+  const counts: MissingPageCounts = {
+    candidates: candidates.length, held: 0, gone: 0, alive: 0, unknown: 0, removed: 0, overVerificationBound: false,
+  };
   if (candidates.length === 0) {
-    return;
+    return counts;
   }
   const decision = decideMissingPageRemoval({
     missingPageCount: candidates.length,
     livePageCountBeforeCrawl: review.livePageCountBeforeCrawl,
   });
   if (decision === "remove") {
-    await dependencies.ingestion.reapMissingPages?.({
-      workspaceId: input.workspaceId,
-      sourceId: input.sourceId,
-      documentIds: candidates.map((page) => page.documentId),
-    });
-    return;
+    return removeVerifiedGonePages(dependencies, input, candidates, counts);
   }
   const newlyHeldPageCount = await dependencies.store.holdMissingPages({
     workspaceId: input.workspaceId,
@@ -184,4 +213,32 @@ const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationD
       livePageCountBeforeCrawl: review.livePageCountBeforeCrawl,
     },
   });
+  return { ...counts, held: candidates.length };
+};
+
+/** Asks the site about each page and removes the ones it says are gone; past the bound, asks about and removes none. */
+const removeVerifiedGonePages = async (
+  dependencies: MissingPageReconciliationDependencies,
+  input: CompleteCrawl & { signal?: AbortSignal },
+  candidates: MissingPage[],
+  counts: MissingPageCounts,
+): Promise<MissingPageCounts> => {
+  if (candidates.length > MAX_VERIFIED_MISSING_PAGES) {
+    return { ...counts, unknown: candidates.length, overVerificationBound: true };
+  }
+  const verdicts = await verifyMissingPages(dependencies.probe, {
+    websiteBaseUrl: input.websiteBaseUrl,
+    pages: candidates,
+    signal: input.signal,
+  });
+  const { removeDocumentIds, ...verified } = decideVerifiedRemoval(verdicts);
+  if (removeDocumentIds.length === 0) {
+    return { ...counts, ...verified };
+  }
+  const removal = await dependencies.ingestion.reapMissingPages?.({
+    workspaceId: input.workspaceId,
+    sourceId: input.sourceId,
+    documentIds: removeDocumentIds,
+  });
+  return { ...counts, ...verified, removed: removal?.deletedCount ?? 0 };
 };

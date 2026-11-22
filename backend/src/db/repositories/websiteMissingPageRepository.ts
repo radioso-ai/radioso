@@ -40,11 +40,14 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
         .selectFrom("documents as d")
         .leftJoin("website_source_missing_pages as m", "m.document_id", "d.id")
         .select(["d.id", "d.external_document_id", "m.decision"])
+        // The address the page was published under, as ingestion wrote it into the document's metadata.
+        .select(sql<string | null>`coalesce(d.metadata->>'canonicalUrl', d.metadata->>'sourceUrl')`.as("page_url"))
         .where("d.workspace_id", "=", input.workspaceId)
         .where("d.source_id", "=", input.sourceId)
         .where(publishedByThisSite)
         .where("d.created_at", "<", input.crawlStartedAt)
         .where(sql<boolean>`d.external_document_id <> ALL(${sql.val(seen)}::text[])`)
+        .orderBy("d.external_document_id")
         .execute();
       // Kept pages stay out of the count: they never leave, so they would make every removal look smaller.
       const live = await trx
@@ -64,6 +67,7 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
         missingPages: missing.map((row) => ({
           documentId: row.id,
           externalDocumentId: row.external_document_id ?? "",
+          pageUrl: row.page_url,
           kept: row.decision === "kept",
         })),
       };

@@ -3477,8 +3477,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Remove the pages a scheduled recrawl held
-         * @description Deletes the source's held pages the way a recrawl removes missing pages. A source with no held pages answers with a count of 0.
+         * Remove the pages a crawl held
+         * @description Deletes the source's pages still held for review, without asking the site again. A held page a crawl found again before this runs stays. A source with no held pages answers with a count of 0.
          */
         post: operations["removeDocumentSourceHeldPages"];
         delete?: never;
@@ -3497,8 +3497,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Keep the pages a scheduled recrawl held
-         * @description Keeps the source's held pages. Later scheduled recrawls neither hold nor remove a kept page; a page that appears on the site again stops being kept. A manual recrawl still removes pages it does not find.
+         * Keep the pages a crawl held
+         * @description Keeps the source's held pages. Later crawls neither hold nor remove a kept page; a page that appears on the site again stops being kept.
          */
         post: operations["keepDocumentSourceHeldPages"];
         delete?: never;
@@ -8469,7 +8469,7 @@ export interface components {
              * @enum {string}
              */
             fastestRecrawlCadence?: "daily" | "weekly";
-            /** @description Website sources only. Pages a scheduled recrawl no longer found and held for review instead of removing, because they were more than a fifth of the source. */
+            /** @description Website sources only. Pages a crawl no longer found and held for review instead of removing, because they were more than a fifth of the source. */
             heldPageCount?: number;
             /** Format: date-time */
             createdAt: string;

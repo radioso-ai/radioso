@@ -27,7 +27,14 @@ import {
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
-import { crawlSawWholeSite, pagesSeenByCrawl, reconcileMissingPages, type WebsiteMissingPageStore } from "./missingPages.js";
+import {
+  crawlSawWholeSite,
+  pagesSeenByCrawl,
+  reconcileMissingPages,
+  type MissingPageCounts,
+  type WebsiteMissingPageStore,
+} from "./missingPages.js";
+import type { WebsitePageProbe } from "./missingPageVerification.js";
 import type { CrawlTrigger } from "./recrawlSchedule.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
 import { usageLimitExceeded } from "../../shared/domain/errors.js";
@@ -108,6 +115,8 @@ export class WebsiteCrawlerService {
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
     missingPages?: WebsiteMissingPageStore;
+    /** Asks the site whether a missing page is gone before it is removed. Without one, none is removed. */
+    pageProbe?: WebsitePageProbe;
     logger?: Pick<AppLogger, "info" | "warn">;
     assertCrawlUrlAllowed?: (url: string) => Promise<void>;
   }) {}
@@ -577,7 +586,7 @@ export class WebsiteCrawlerService {
       return result;
     }
 
-    await this.auditResult(input, result);
+    let missingPageCounts: MissingPageCounts | null = null;
     if (documentSource) {
       await this.safeUpdateSourceSyncState({
         workspaceId: input.workspaceId,
@@ -604,6 +613,7 @@ export class WebsiteCrawlerService {
             store: this.dependencies.missingPages,
             ingestion: this.dependencies.documentIngestionService,
             audit: this.dependencies.auditService,
+            probe: this.dependencies.pageProbe,
           }, {
             accountId: input.accountId,
             workspaceId: input.workspaceId,
@@ -615,12 +625,19 @@ export class WebsiteCrawlerService {
               publishedExternalDocumentIds: result.documents.map((document) => document.externalDocumentId),
             }),
             crawlStartedAt,
+            signal: input.signal,
             ...(isNewestCrawlOfSource ? { isNewestCrawlOfSource: () => isNewestCrawlOfSource(sourceId) } : {}),
           });
-          if (reconciliation === "superseded") {
+          if (reconciliation.status === "superseded") {
             this.dependencies.logger?.info(
               { role: "website-crawler", workspaceId: input.workspaceId, sourceId },
               "Skipped missing-page removal: a newer crawl of the source exists",
+            );
+          } else if (reconciliation.status === "reconciled") {
+            missingPageCounts = reconciliation.counts;
+            this.dependencies.logger?.info(
+              { role: "website-crawler", workspaceId: input.workspaceId, sourceId, missingPages: reconciliation.counts },
+              "Reconciled missing website pages",
             );
           }
         } catch (error) {
@@ -638,6 +655,7 @@ export class WebsiteCrawlerService {
         }
       }
     }
+    await this.auditResult(input, result, missingPageCounts);
     return result;
   }
 
@@ -745,6 +763,7 @@ export class WebsiteCrawlerService {
   private async auditResult(
     input: { accountId?: string | null; workspaceId: string; trigger?: CrawlTrigger },
     result: WebsiteCrawlPublicationResult,
+    missingPages: MissingPageCounts | null,
   ): Promise<void> {
     if (!this.dependencies.auditService) {
       return;
@@ -762,6 +781,7 @@ export class WebsiteCrawlerService {
         accepted: result.accepted,
         skipped: result.skipped,
         failed: result.failed,
+        ...(missingPages ? { missingPages } : {}),
       },
     });
   }

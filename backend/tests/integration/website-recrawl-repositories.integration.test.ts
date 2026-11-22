@@ -30,12 +30,17 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
     );
   };
 
-  const insertPage = async (sourceId: string, externalDocumentId: string, createdAt = new Date("2026-11-01T00:00:00.000Z")) => {
+  const insertPage = async (
+    sourceId: string,
+    externalDocumentId: string,
+    createdAt = new Date("2026-11-01T00:00:00.000Z"),
+    metadata: Record<string, unknown> = {},
+  ) => {
     const id = randomUUID();
     await database.query(
-      `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at)
-       VALUES ($1, $2, $3, $4, $4, 'body', 'body', 'ready', $5)`,
-      [id, workspaceId, sourceId, externalDocumentId, createdAt],
+      `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at, metadata)
+       VALUES ($1, $2, $3, $4, $4, 'body', 'body', 'ready', $5, $6::jsonb)`,
+      [id, workspaceId, sourceId, externalDocumentId, createdAt, JSON.stringify(metadata)],
     );
     return id;
   };
@@ -137,8 +142,9 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
   it("reviews the pages a crawl did not see, clearing the ones it saw from the held list", async () => {
     const page = (path: string) => `${crawledPrefix}https://docs.example/${path}`;
     const seen = await insertPage(siteId, page("seen"));
-    const gone = await insertPage(siteId, page("gone"));
-    const kept = await insertPage(siteId, page("kept"));
+    // Ingestion stores the address a page was published under; a canonical address wins over the fetched one.
+    const gone = await insertPage(siteId, page("gone"), undefined, { sourceUrl: "https://docs.example/gone?ref=nav", canonicalUrl: "https://docs.example/gone" });
+    const kept = await insertPage(siteId, page("kept"), undefined, { sourceUrl: "https://docs.example/kept" });
     const reappeared = await insertPage(siteId, page("back"));
     await database.query(
       `INSERT INTO website_source_missing_pages (document_id, workspace_id, source_id, decision)
@@ -161,8 +167,8 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
     // The pages the crawl measures a removal against: not the new page, and not the one the operator kept.
     expect(review.livePageCountBeforeCrawl).toBe(3);
     expect(review.missingPages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ documentId: gone, externalDocumentId: page("gone"), kept: false }),
-      expect.objectContaining({ documentId: kept, externalDocumentId: page("kept"), kept: true }),
+      { documentId: gone, externalDocumentId: page("gone"), pageUrl: "https://docs.example/gone", kept: false },
+      { documentId: kept, externalDocumentId: page("kept"), pageUrl: "https://docs.example/kept", kept: true },
     ]));
     expect(review.missingPages).toHaveLength(2);
     const rows = await database.query<{ document_id: string }>(

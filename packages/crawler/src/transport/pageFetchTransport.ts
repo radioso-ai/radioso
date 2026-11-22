@@ -13,7 +13,7 @@ import { buildFetchedHtmlPage } from "./htmlContentExtraction.js";
 import { decodeEntities } from "./htmlProcessing.js";
 import { canonicalizeUrlIdentity } from "./url.js";
 
-export const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
+const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
 const MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
 const MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 
@@ -216,6 +216,49 @@ export const parseSitemapUrls = (content: string, contentType: string | null): s
     .filter(Boolean);
 };
 
+/**
+ * Requests a URL and follows up to ten redirects by hand, so every address it requests passes the
+ * navigation guard, and `beforeRequest` when the caller checks more (robots.txt). Returns the last
+ * response and the address that answered it.
+ */
+export const fetchFollowingRedirects = async (
+  url: string,
+  options: {
+    signal: AbortSignal;
+    userAgent?: string;
+    validateNavigationUrl?: ValidateNavigationUrl;
+    beforeRequest?: (url: string) => Promise<void>;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ response: Response; url: string }> => {
+  let currentUrl = new URL(url).toString();
+  let answered: { response: Response; url: string } | null = null;
+  for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
+    await options.validateNavigationUrl?.(currentUrl);
+    await options.beforeRequest?.(currentUrl);
+    const fetched = await fetchWithCertificateHostnameFallback(currentUrl, {
+      redirect: "manual",
+      signal: options.signal,
+      ...(options.userAgent ? { headers: { "User-Agent": options.userAgent } } : {}),
+    }, options.validateNavigationUrl, options.fetchImpl);
+    currentUrl = fetched.requestUrl;
+    answered = { response: fetched.response, url: fetched.requestUrl };
+    if (fetched.response.status < 300 || fetched.response.status >= 400) {
+      break;
+    }
+    const location = fetched.response.headers.get("location");
+    if (!location) {
+      break;
+    }
+    currentUrl = new URL(location, currentUrl).toString();
+    await options.validateNavigationUrl?.(currentUrl);
+  }
+  if (!answered) {
+    throw new Error("Fetch produced no response");
+  }
+  return answered;
+};
+
 export const fetchText = async (
   url: string,
   options?: {
@@ -227,30 +270,12 @@ export const fetchText = async (
 ): Promise<{ ok: boolean; status: number; contentType: string | null; body: string }> => {
   const timeoutSignal = AbortSignal.timeout(15_000);
   const fetchSignal = options?.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-  let currentUrl = new URL(url).toString();
-  let response: Response | null = null;
-  for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
-    await options?.validateNavigationUrl?.(currentUrl);
-    const fetched = await fetchWithCertificateHostnameFallback(currentUrl, {
-      redirect: "manual",
-      signal: fetchSignal,
-      ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {}),
-    }, options?.validateNavigationUrl, options?.fetchImpl);
-    currentUrl = fetched.requestUrl;
-    response = fetched.response;
-    if (response.status < 300 || response.status >= 400) {
-      break;
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      break;
-    }
-    currentUrl = new URL(location, currentUrl).toString();
-    await options?.validateNavigationUrl?.(currentUrl);
-  }
-  if (!response) {
-    throw new Error("Text fetch produced no response");
-  }
+  const { response } = await fetchFollowingRedirects(url, {
+    signal: fetchSignal,
+    userAgent: options?.userAgent,
+    validateNavigationUrl: options?.validateNavigationUrl,
+    fetchImpl: options?.fetchImpl,
+  });
   const bytes = await readResponseBytes(response);
   return {
     ok: response.ok,

@@ -44,9 +44,14 @@ const createCheckpointFlushTestService = (
 const smallLossStore = () => ({
   reviewMissingPages: vi.fn().mockResolvedValue({
     livePageCountBeforeCrawl: 10,
-    missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", kept: false }],
+    missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", pageUrl: "https://example.com/gone", kept: false }],
   }),
   holdMissingPages: vi.fn(),
+});
+
+/** A site that answers 404 for every page it is asked about. */
+const goneSite = () => ({
+  probePages: vi.fn(async (urls: readonly string[]) => urls.map((url) => ({ kind: "answered" as const, status: 404, url }))),
 });
 
 describe("website crawler service", () => {
@@ -579,6 +584,7 @@ describe("website crawler service", () => {
     });
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
     const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const missingPages = smallLossStore();
     const service = new WebsiteCrawlerService({
       provider: createProvider([{
         sourceUrl: "https://example.com/a",
@@ -589,7 +595,7 @@ describe("website crawler service", () => {
         images: [{ sourceUrl: "https://cdn.example.com/a.jpg", role: "primary" }],
       }]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
-      missingPages: smallLossStore(),
+      missingPages,
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -608,7 +614,7 @@ describe("website crawler service", () => {
       images: [{ sourceUrl: "https://cdn.example.com/a.jpg", role: "primary" }],
     }));
     expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
-    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
   });
 
   it.each([
@@ -1489,6 +1495,7 @@ describe("website crawler service", () => {
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
       missingPages: smallLossStore(),
+      pageProbe: goneSite(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1526,6 +1533,7 @@ describe("website crawler service", () => {
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
       missingPages: smallLossStore(),
+      pageProbe: goneSite(),
       auditService: { record: vi.fn() },
       logger,
       assertCrawlUrlAllowed: async () => undefined,
@@ -1551,7 +1559,7 @@ describe("website crawler service", () => {
 
   const reapingService = (
     provider: WebsiteCrawlerProvider,
-    extra: Partial<Pick<ConstructorParameters<typeof WebsiteCrawlerService>[0], "missingPages" | "logger">> = {},
+    extra: Partial<Pick<ConstructorParameters<typeof WebsiteCrawlerService>[0], "missingPages" | "logger" | "pageProbe" | "auditService">> = {},
   ) => {
     const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
     const service = new WebsiteCrawlerService({
@@ -1563,6 +1571,7 @@ describe("website crawler service", () => {
         reapMissingPages,
       },
       missingPages: smallLossStore(),
+      pageProbe: goneSite(),
       ...extra,
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1683,6 +1692,38 @@ describe("website crawler service", () => {
     expect(reapMissingPages).not.toHaveBeenCalled();
   });
 
+  it("logs what it did with the missing pages in counts, and records them on the crawl's audit event", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const record = vi.fn().mockResolvedValue(undefined);
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }), {
+      logger,
+      auditService: { record },
+    });
+    reapMissingPages.mockResolvedValueOnce({ deletedCount: 1, deletedContentBytes: 5 });
+    const counts = { candidates: 1, held: 0, gone: 1, alive: 0, unknown: 0, removed: 1, overVerificationBound: false };
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5 });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { role: "website-crawler", workspaceId: "workspace-1", sourceId: "source-1", missingPages: counts },
+      "Reconciled missing website pages",
+    );
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      metadata: expect.objectContaining({ missingPages: counts }),
+    }));
+  });
+
+  it("removes no missing page when it has no way to ask the site", async () => {
+    const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }), {
+      pageProbe: undefined,
+    });
+
+    await service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5 });
+
+    expect(reapMissingPages).not.toHaveBeenCalled();
+  });
+
   it("does not reconcile a crawl a newer crawl of its source superseded", async () => {
     const reviewMissingPages = vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] });
     const logger = { info: vi.fn(), warn: vi.fn() };
@@ -1710,7 +1751,7 @@ describe("website crawler service", () => {
     const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
     const reviewMissingPages = vi.fn().mockResolvedValue({
       livePageCountBeforeCrawl: 10,
-      missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", kept: false }],
+      missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", pageUrl: "https://example.com/gone", kept: false }],
     });
     const jobStartedAt = new Date("2026-11-21T09:00:00.000Z");
 
@@ -1726,6 +1767,7 @@ describe("website crawler service", () => {
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
       missingPages: { reviewMissingPages, holdMissingPages: vi.fn() },
+      pageProbe: goneSite(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1850,6 +1892,7 @@ describe("website crawler service", () => {
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
       missingPages: smallLossStore(),
+      pageProbe: goneSite(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1874,6 +1917,7 @@ describe("website crawler service", () => {
         reapMissingPages,
       },
       missingPages: smallLossStore(),
+      pageProbe: goneSite(),
       assertCrawlUrlAllowed: async () => undefined,
     });
 
@@ -1906,8 +1950,8 @@ describe("website crawler service", () => {
       reviewMissingPages: vi.fn().mockResolvedValue({
         livePageCountBeforeCrawl: 4,
         missingPages: [
-          { documentId: "doc-b", externalDocumentId: "website:https://example.com:https://example.com/b", kept: false },
-          { documentId: "doc-c", externalDocumentId: "website:https://example.com:https://example.com/c", kept: false },
+          { documentId: "doc-b", externalDocumentId: "website:https://example.com:https://example.com/b", pageUrl: "https://example.com/b", kept: false },
+          { documentId: "doc-c", externalDocumentId: "website:https://example.com:https://example.com/c", pageUrl: "https://example.com/c", kept: false },
         ],
       }),
       holdMissingPages: vi.fn().mockResolvedValue(2),

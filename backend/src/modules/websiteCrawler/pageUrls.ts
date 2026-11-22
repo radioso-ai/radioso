@@ -38,6 +38,9 @@ export const redactWebsiteCrawlerUrl = (value: string): string => {
   return normalizePageUrl(url.toString());
 };
 
+/** Whether {@link redactWebsiteCrawlerUrl} replaced part of this address, so it is no longer the page's real one. */
+export const wasRedacted = (url: string): boolean => url.includes("[redacted]") || url.toLowerCase().includes("%5bredacted%5d");
+
 const isSensitiveQueryParam = (key: string): boolean =>
   SENSITIVE_QUERY_PARAM_PATTERNS.some((pattern) => pattern.test(key));
 

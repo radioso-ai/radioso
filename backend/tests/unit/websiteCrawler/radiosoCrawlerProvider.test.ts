@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createRadiosoCrawlerUtilityProvider,
+  createRadiosoWebsitePageProbe,
   RadiosoCrawlerProvider,
 } from "../../../src/modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { fetchPublicUrl } from "../../../src/shared/infra/http/publicUrlFetch.js";
 
 const mocks = vi.hoisted(() => ({
   crawlSite: vi.fn(),
   crawlSiteStream: vi.fn(),
   fetchPageWithScreenshot: vi.fn(),
   isPlaywrightAvailable: vi.fn(),
+  probePages: vi.fn(),
 }));
 
 vi.mock("@radioso/crawler", () => ({
@@ -17,6 +20,7 @@ vi.mock("@radioso/crawler", () => ({
   crawlSiteStream: mocks.crawlSiteStream,
   fetchPageWithScreenshot: mocks.fetchPageWithScreenshot,
   isPlaywrightAvailable: mocks.isPlaywrightAvailable,
+  probePages: mocks.probePages,
 }));
 
 describe("RadiosoCrawlerProvider", () => {
@@ -323,6 +327,34 @@ describe("RadiosoCrawlerProvider", () => {
     await new RadiosoCrawlerProvider().crawlStream({ url: "https://example.com", limit: 3, onCheckpointEvent }, async () => {});
 
     expect(onCheckpointEvent.mock.calls).toEqual([[{ type: "sitemap_unread" }]]);
+  });
+
+  it("asks a site about pages through the crawler's guarded fetch, a few at a time", async () => {
+    process.env.WEBSITE_CRAWLER_USER_AGENT = "RadiosoBot/1.0";
+    mocks.probePages.mockResolvedValue([
+      { kind: "answered", status: 404, url: "https://example.com/gone" },
+      { kind: "unreachable" },
+    ]);
+    const signal = new AbortController().signal;
+
+    const answers = await createRadiosoWebsitePageProbe().probePages(["https://example.com/gone", "https://example.com/down"], { signal });
+
+    expect(answers).toEqual([
+      { kind: "answered", status: 404, url: "https://example.com/gone" },
+      { kind: "unreachable" },
+    ]);
+    const [urls, options] = mocks.probePages.mock.calls[0] as [string[], {
+      validateNavigationUrl: (url: string) => Promise<void>;
+      fetchImpl: typeof fetch;
+      userAgent: string;
+      concurrency: number;
+      signal: AbortSignal;
+    }];
+    expect(urls).toEqual(["https://example.com/gone", "https://example.com/down"]);
+    expect(options).toMatchObject({ fetchImpl: fetchPublicUrl, userAgent: "RadiosoBot/1.0", signal });
+    expect(options.concurrency).toBeGreaterThan(1);
+    expect(options.concurrency).toBeLessThanOrEqual(8);
+    await expect(options.validateNavigationUrl("http://127.0.0.1/admin")).rejects.toThrow();
   });
 
   it("does not turn caller cancellation into a yielded slice", async () => {

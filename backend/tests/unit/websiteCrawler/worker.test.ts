@@ -1035,15 +1035,18 @@ describe("website crawl worker", () => {
     expect(publisher.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  const scheduledJobWorker = (isNewestForSource: ReturnType<typeof vi.fn>) => {
+  const scheduledJobWorker = (isNewestForSource: ReturnType<typeof vi.fn>, missingPage?: { documentId: string; externalDocumentId: string; pageUrl: string; kept: boolean }) => {
     const sourceId = "44444444-4444-4444-8444-444444444444";
     const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10, createdAt: new Date("2026-11-21T09:00:00.000Z") };
     const record = vi.fn().mockResolvedValue(undefined);
     const missingPages = {
-      reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 1, missingPages: [] }),
+      reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 10, missingPages: missingPage ? [missingPage] : [] }),
       holdMissingPages: vi.fn(),
     };
     const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const pageProbe = {
+      probePages: vi.fn(async (urls: readonly string[]) => urls.map((url) => ({ kind: "answered" as const, status: 410, url }))),
+    };
     const markCompleted = vi.fn().mockResolvedValue(true);
     const worker = new WebsiteCrawlWorker({
       repository: {
@@ -1073,10 +1076,26 @@ describe("website crawl worker", () => {
       },
       auditService: { record },
       missingPages,
+      pageProbe,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
-    return { worker, job, sourceId, record, missingPages, reapMissingPages, markCompleted };
+    return { worker, job, sourceId, record, missingPages, reapMissingPages, pageProbe, markCompleted };
   };
+
+  it("asks the site through the probe it was given before it removes a missing page", async () => {
+    const gone = {
+      documentId: "doc-gone",
+      externalDocumentId: "website:https://example.com:https://example.com/gone",
+      pageUrl: "https://example.com/gone",
+      kept: false,
+    };
+    const { worker, sourceId, pageProbe, reapMissingPages } = scheduledJobWorker(vi.fn().mockResolvedValue(true), gone);
+
+    await worker.runOnce();
+
+    expect(pageProbe.probePages).toHaveBeenCalledWith([gone.pageUrl], expect.anything());
+    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId, documentIds: ["doc-gone"] }));
+  });
 
   it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
     const isNewestForSource = vi.fn().mockResolvedValue(true);

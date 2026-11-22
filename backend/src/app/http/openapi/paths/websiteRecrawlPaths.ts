@@ -65,7 +65,7 @@ export const registerWebsiteRecrawlPaths = (
     path: "/api/v1/document/sources/{sourceId}/held-pages/remove",
     tags: TAGS,
     summary: "Remove the pages a crawl held",
-    description: "Deletes the source's held pages the way a recrawl removes missing pages. A source with no held pages answers with a count of 0.",
+    description: "Deletes the source's pages still held for review, without asking the site again. A held page a crawl found again before this runs stays. A source with no held pages answers with a count of 0.",
     operationId: "removeDocumentSourceHeldPages",
     security: sec,
     request: { params: schemas.sourceParamsSchema },

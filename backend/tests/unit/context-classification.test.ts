@@ -1,5 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
+/** Every attribute a run's span was given, at its start and from its result. */
+const spanAttributes = vi.hoisted((): unknown[] => []);
+vi.mock("../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/shared/observability/tracing/operations.js")>();
+  return {
+    ...actual,
+    traceOperation: async <T>(input: Parameters<typeof actual.traceOperation<T>>[0]) => {
+      spanAttributes.push(input.attributes);
+      const result = await input.run();
+      spanAttributes.push(input.resultAttributes?.(result));
+      return result;
+    },
+  };
+});
+
 import {
   CONTEXT_CLASSIFICATION_PROMPT_VERSION,
   CONTEXT_CLASSIFICATION_RUNS_TOTAL,
@@ -56,6 +71,10 @@ const urgency = topic({
   ],
 });
 
+/** A model's answer: each field's key, after a line of evidence and whether an option applies. */
+const answer = (keys: Record<string, string | null>, evidence = "The visitor says what they need."): string =>
+  JSON.stringify(Object.fromEntries(Object.entries(keys).map(([field, key]) => [field, { evidence, option_applies: key !== null, key }])));
+
 const excerpt = (overrides: Partial<ConversationExcerpt> = {}): ConversationExcerpt => ({
   summary: null,
   messages: ["Ciao, non ho ancora ricevuto la fattura di ottobre."],
@@ -64,8 +83,18 @@ const excerpt = (overrides: Partial<ConversationExcerpt> = {}): ConversationExce
 });
 
 describe("classification prompt and schema", () => {
-  it("asks for one field per variable, each an enum of its active keys or null", () => {
+  it("asks for one field per variable: the evidence, whether an option applies, then a key from its active options or null", () => {
     const format = classificationResponseFormat([topic(), urgency]);
+    const field = (keys: Array<string | null>) => ({
+      type: "object",
+      additionalProperties: false,
+      required: ["evidence", "option_applies", "key"],
+      properties: {
+        evidence: { type: "string" },
+        option_applies: { type: "boolean" },
+        key: { type: ["string", "null"], enum: keys },
+      },
+    });
 
     expect(format).toMatchObject({ type: "json_schema", strict: true });
     expect(format.schema).toEqual({
@@ -73,10 +102,12 @@ describe("classification prompt and schema", () => {
       additionalProperties: false,
       required: ["attribute_1", "attribute_2"],
       properties: {
-        attribute_1: { type: ["string", "null"], enum: ["billing", "shipping", null] },
-        attribute_2: { type: ["string", "null"], enum: ["urgent", "normal", null] },
+        attribute_1: field(["billing", "shipping", null]),
+        attribute_2: field(["urgent", "normal", null]),
       },
     });
+    // The model writes in schema order, so the key is chosen after the evidence and the none-applies call.
+    expect(Object.keys((format.schema.properties as Record<string, { properties: object }>).attribute_1.properties)).toEqual(["evidence", "option_applies", "key"]);
   });
 
   it("frames the conversation as untrusted and lists each active option as key — label — description", () => {
@@ -92,11 +123,24 @@ describe("classification prompt and schema", () => {
   });
 
   it("parses keys and null, and rejects a key outside the schema or a missing field", () => {
-    expect(parseClassificationOutput([topic(), urgency], JSON.stringify({ attribute_1: "billing", attribute_2: null })))
+    expect(parseClassificationOutput([topic(), urgency], answer({ attribute_1: "billing", attribute_2: null })))
       .toEqual(["billing", null]);
-    expect(() => parseClassificationOutput([topic()], JSON.stringify({ attribute_1: "legacy" }))).toThrow(ClassificationOutputError);
-    expect(() => parseClassificationOutput([topic()], JSON.stringify({ attribute_1: "Fatturazione" }))).toThrow(ClassificationOutputError);
-    expect(() => parseClassificationOutput([topic(), urgency], JSON.stringify({ attribute_1: "billing" }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic()], answer({ attribute_1: "legacy" }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic()], answer({ attribute_1: "Fatturazione" }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic(), urgency], answer({ attribute_1: "billing" }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic()], JSON.stringify({ attribute_1: "billing" }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic()], JSON.stringify({ attribute_1: { evidence: "Asks about an invoice.", option_applies: true } }))).toThrow(ClassificationOutputError);
+    expect(() => parseClassificationOutput([topic()], JSON.stringify({ attribute_1: { evidence: "Asks about an invoice.", key: "billing" } }))).toThrow(ClassificationOutputError);
+  });
+
+  it("reads a field that says no option applies as null, whatever key it names", () => {
+    const field = (optionApplies: boolean, key: string | null) => JSON.stringify({ attribute_1: { evidence: "Asks when a shop opens.", option_applies: optionApplies, key } });
+
+    expect(parseClassificationOutput([topic()], field(false, "shipping"))).toEqual([null]);
+    expect(parseClassificationOutput([topic()], field(true, null))).toEqual([null]);
+    expect(parseClassificationOutput([topic()], field(true, "shipping"))).toEqual(["shipping"]);
+    // A key outside the schema fails the run even when the field says no option applies.
+    expect(() => parseClassificationOutput([topic()], field(false, "legacy"))).toThrow(ClassificationOutputError);
     expect(() => parseClassificationOutput([topic()], "not json")).toThrow(ClassificationOutputError);
   });
 });
@@ -180,7 +224,7 @@ describe("ConversationClassificationService", () => {
   it("writes the chosen option as the classifier with the prompt version, metered as a rewrite-tier call", async () => {
     const { service, values, complete, inferenceCreate, metrics } = serviceFor({
       targets: [{ variable: topic(), stored: null, held: false }],
-      completion: JSON.stringify({ attribute_1: "billing" }),
+      completion: answer({ attribute_1: "billing" }),
     });
 
     const result = await service.classifyNow({ workspaceId, conversationId });
@@ -206,7 +250,7 @@ describe("ConversationClassificationService", () => {
 
     const mixed = serviceFor({
       targets: [{ variable: topic(), stored: operatorSet, held: true }, { variable: urgency, stored: null, held: false }],
-      completion: JSON.stringify({ attribute_1: "urgent" }),
+      completion: answer({ attribute_1: "urgent" }),
     });
     await mixed.service.classifyNow({ workspaceId, conversationId });
     const prompt = (mixed.complete.mock.calls[0] as unknown as [{ prompt: string }])[0].prompt;
@@ -220,7 +264,7 @@ describe("ConversationClassificationService", () => {
     // The host set the customer's topic; the conversation still holds what the classifier chose before.
     const shadowing = serviceFor({
       targets: [{ variable: topic(), stored: own, held: true }],
-      completion: JSON.stringify({ attribute_1: "shipping" }),
+      completion: answer({ attribute_1: "shipping" }),
     });
 
     await expect(shadowing.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({
@@ -244,20 +288,58 @@ describe("ConversationClassificationService", () => {
   it("clears its own value on null, writes nothing when unchanged, and reports no option when none applies", async () => {
     const own = { data: "billing", writtenBy: { kind: "classifier" as const, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION } };
 
-    const cleared = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: JSON.stringify({ attribute_1: null }) });
+    const cleared = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: answer({ attribute_1: null }) });
     await expect(cleared.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "written" });
     expect(cleared.values.writes).toEqual([{ variableId: "variable-topic", data: null, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION }]);
 
-    const unchanged = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: JSON.stringify({ attribute_1: "billing" }) });
+    const unchanged = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: answer({ attribute_1: "billing" }) });
     await expect(unchanged.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "unchanged" });
     expect(unchanged.values.writes).toEqual([]);
 
-    const none = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: null }) });
+    const none = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: answer({ attribute_1: null }) });
     await expect(none.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "no_option" });
   });
 
+  it("discards the evidence once parsed: no result, write, log, metric, span or error carries it", async () => {
+    // Model output derived from what the visitor wrote: it stays inside the parse.
+    const evidence = "SENTINEL-EVIDENCE: the visitor says the October invoice never arrived";
+    spanAttributes.length = 0;
+    const both = () => [{ variable: topic(), stored: null, held: false }, { variable: urgency, stored: null, held: false }];
+    const written = serviceFor({ targets: both(), completion: answer({ attribute_1: "billing", attribute_2: null }, evidence) });
+    const invalid = serviceFor({ targets: both(), completion: answer({ attribute_1: "urgent", attribute_2: null }, evidence) });
+    const failedWrite = serviceFor({
+      targets: both(),
+      completion: answer({ attribute_1: "billing", attribute_2: "urgent" }, evidence),
+      writeOf: { "variable-topic": conflict("The context variable's type or options changed while the value was written") },
+    });
+
+    const result = await written.service.classifyNow({ workspaceId, conversationId });
+    const transcript = await written.service.classifyTranscript({
+      workspaceId, conversationId, agentId: "agent-1", variables: [topic(), urgency], stored: new Map(), excerpt: excerpt(), values: written.values.writer,
+    });
+    const errors = await Promise.all([invalid, failedWrite].map((run) => run.service.classifyNow({ workspaceId, conversationId }).then(() => null, (error: unknown) => error)));
+
+    expect(result.decisions.map((decision) => decision.value)).toEqual(["billing", null]);
+    expect(errors[0]).toBeInstanceOf(ClassificationOutputError);
+    expect(errors[1]).toBeInstanceOf(Error);
+    expect(spanAttributes.length).toBeGreaterThan(0);
+    const everythingThatLeft = JSON.stringify([
+      result,
+      transcript,
+      ...[written, invalid, failedWrite].flatMap((run) => [
+        vi.mocked(run.values.writer.write).mock.calls,
+        run.logger.warn.mock.calls,
+        run.metrics.incrementCounter.mock.calls,
+      ]),
+      errors.map((error) => (error instanceof Error ? [error.message, error.stack] : error)),
+      spanAttributes,
+    ]);
+    expect(everythingThatLeft).not.toContain("SENTINEL");
+    expect(everythingThatLeft).not.toContain("October");
+  });
+
   it("fails the run on a key outside the schema or a failed call, counting it", async () => {
-    const invalid = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: "urgent" }) });
+    const invalid = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: answer({ attribute_1: "urgent" }) });
     await expect(invalid.service.classifyNow({ workspaceId, conversationId })).rejects.toBeInstanceOf(ClassificationOutputError);
     expect(invalid.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "invalid" } }));
     expect(invalid.values.writes).toEqual([]);
@@ -270,7 +352,7 @@ describe("ConversationClassificationService", () => {
   it("writes every other variable when one write fails, counts and logs the run as failed without a value, and fails the job", async () => {
     const run = serviceFor({
       targets: [{ variable: topic(), stored: null, held: false }, { variable: urgency, stored: null, held: false }],
-      completion: JSON.stringify({ attribute_1: "billing", attribute_2: "urgent" }),
+      completion: answer({ attribute_1: "billing", attribute_2: "urgent" }),
       writeOf: { "variable-topic": conflict("The context variable's type or options changed while the value was written") },
     });
 
@@ -287,7 +369,7 @@ describe("ConversationClassificationService", () => {
   it("ends a run whose conversation was erased mid-run as a skip, so the job is not retried", async () => {
     const run = serviceFor({
       targets: [{ variable: topic(), stored: null, held: false }, { variable: urgency, stored: null, held: false }],
-      completion: JSON.stringify({ attribute_1: "billing", attribute_2: "urgent" }),
+      completion: answer({ attribute_1: "billing", attribute_2: "urgent" }),
       writeOf: { "variable-topic": "gone" },
     });
 
@@ -312,7 +394,7 @@ describe("ConversationClassificationService", () => {
   });
 
   it("classifies a transcript the caller holds, against the values it holds", async () => {
-    const { service, values } = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: "shipping" }) });
+    const { service, values } = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: answer({ attribute_1: "shipping" }) });
 
     const result = await service.classifyTranscript({
       workspaceId,

@@ -27,7 +27,7 @@ describeIntegration("context classification over a stored conversation (Postgres
   const prompts: string[] = [];
   const complete = vi.fn(async (request: { prompt: string }) => {
     prompts.push(request.prompt);
-    return { text: JSON.stringify({ attribute_1: "billing" }) };
+    return { text: JSON.stringify({ attribute_1: { evidence: "The visitor asks about an invoice.", option_applies: true, key: "billing" } }) };
   });
   // The rewrite-tier model is stubbed; the reads, the excerpt and the writes are the real ones.
   const classifier = new ConversationClassificationService({

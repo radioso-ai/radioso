@@ -23,7 +23,8 @@ const CLASSIFICATION_SUMMARY_MAX_CHARS = 4_000;
  * a typical agent sends a few thousand. `context-classification.test.ts` builds the worst case.
  */
 export const CLASSIFICATION_MAX_INPUT_TOKENS = 320_000;
-export const CLASSIFICATION_MAX_OUTPUT_TOKENS = 400;
+/** Eight fields, each a sentence of evidence and a key of up to 120 characters, with room to spare. */
+export const CLASSIFICATION_MAX_OUTPUT_TOKENS = 1_200;
 
 /** The variable's options the classifier may pick; an archived option is never offered. */
 export const activeOptionKeys = (variable: Pick<ContextVariable, "options">): string[] =>
@@ -32,7 +33,25 @@ export const activeOptionKeys = (variable: Pick<ContextVariable, "options">): st
 /** Fields are positional, so a variable's name never has to be a valid schema property. */
 const fieldFor = (index: number): string => `attribute_${index + 1}`;
 
-/** A strict schema: one field per variable, each an enum of its active keys or null. */
+/**
+ * One variable's answer, which the model writes in this order: `evidence`, what the visitor stated
+ * that bears on the variable; `option_applies`, whether an option's description covers it, the
+ * explicit path for "none of these"; then `key`. The key has to follow from the two before it. The
+ * evidence is model output derived from what the visitor wrote: the parse discards it, so it is
+ * never stored, logged, traced or exported.
+ */
+const answerField = (variable: ContextVariable) => ({
+  type: "object",
+  additionalProperties: false,
+  required: ["evidence", "option_applies", "key"],
+  properties: {
+    evidence: { type: "string" },
+    option_applies: { type: "boolean" },
+    key: { type: ["string", "null"], enum: [...activeOptionKeys(variable), null] },
+  },
+});
+
+/** A strict schema: one field per variable, each its evidence, whether an option applies, and a key from its active options or null. */
 export const classificationResponseFormat = (variables: readonly ContextVariable[]): JsonSchemaResponseFormat => ({
   type: "json_schema",
   name: "context_classification",
@@ -41,10 +60,7 @@ export const classificationResponseFormat = (variables: readonly ContextVariable
     type: "object",
     additionalProperties: false,
     required: variables.map((_, index) => fieldFor(index)),
-    properties: Object.fromEntries(variables.map((variable, index) => [
-      fieldFor(index),
-      { type: ["string", "null"], enum: [...activeOptionKeys(variable), null] },
-    ])),
+    properties: Object.fromEntries(variables.map((variable, index) => [fieldFor(index), answerField(variable)])),
   },
 });
 
@@ -82,7 +98,10 @@ export class ClassificationOutputError extends Error {}
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Each variable's chosen key, or null, in the order the variables were given. */
+/**
+ * Each variable's chosen key, or null, in the order the variables were given. A field that says no
+ * option applies is null whatever key it names. The evidence is dropped here.
+ */
 export const parseClassificationOutput = (variables: readonly ContextVariable[], text: string): Array<string | null> => {
   let parsed: unknown;
   try {
@@ -92,13 +111,15 @@ export const parseClassificationOutput = (variables: readonly ContextVariable[],
   }
   if (!isRecord(parsed)) throw new ClassificationOutputError("Context classification response was not an object");
   return variables.map((variable, index) => {
-    const field = fieldFor(index);
-    if (!(field in parsed)) throw new ClassificationOutputError("Context classification response left out a field");
-    const value = parsed[field];
+    const field = parsed[fieldFor(index)];
+    if (!isRecord(field) || !("key" in field) || typeof field.option_applies !== "boolean") {
+      throw new ClassificationOutputError("Context classification response left out a field");
+    }
+    const value = field.key;
     if (value === null) return null;
     if (typeof value !== "string" || !activeOptionKeys(variable).includes(value)) {
       throw new ClassificationOutputError("Context classification response named a key outside the schema");
     }
-    return value;
+    return field.option_applies ? value : null;
   });
 };

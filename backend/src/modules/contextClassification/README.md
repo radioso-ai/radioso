@@ -69,7 +69,14 @@ Composition builds the service and registers `contextClassificationHandler` in
 2. Read the excerpt. When every recent visitor message was withheld as sensitive
    and there is no summary, no call is made (`skipped_sensitive`).
 3. One call, with positional fields (`attribute_1`…) so a variable's name never has
-   to be a schema property. Each field is an enum of the active keys or null.
+   to be a schema property. The prompt carries the definitions and the excerpt,
+   never a value the conversation holds. Each field is written in order:
+   `evidence`, a sentence on what the visitor stated that bears on the variable;
+   `option_applies`, the explicit "none of these" path; then `key`, an enum of the
+   active keys or null. A field whose `option_applies` is false parses as null
+   whatever key it names. The evidence is model output derived from visitor
+   text: the parse drops it, so it never reaches a result, a write, a log, a
+   metric, a span or an error.
 4. A key outside the schema fails the run (`invalid`); a failed call fails it
    (`failed`). Either fails the job, which retries and dead-letters under the
    shared runtime. The input budget (`CLASSIFICATION_MAX_INPUT_TOKENS`) holds the

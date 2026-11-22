@@ -189,7 +189,8 @@ One `rewrite`-tier call per coalesced run, for agents with a classified variable
 
 - the role and the untrusted-content rule;
 - per variable: name, description, and each active option as `key — description`. Descriptions are in whatever language the operator writes. Keys are identifiers and are never matched against visitor text;
-- output: a strict JSON schema, one property per variable, each an enum of that variable's active keys or `null`.
+- output: a strict JSON schema, one property per variable, each written in order: `evidence`, one sentence in the model's own words on what the visitor stated that bears on the variable; `option_applies`, the explicit "none of these" path; and `key`, an enum of that variable's active keys or `null`. A field whose `option_applies` is false is read as `null`. The evidence makes the key follow from stated facts; it is model output derived from visitor text, so the parse discards it and it is never stored, logged, traced or exported;
+- no value the conversation holds: the classifier judges the conversation, not its earlier answer.
 
 `null` means "none of these": leave the value unset, or clear a previous classifier value. There is no built-in "unknown" option. An absent value is the unknown state and is filterable as **Not set**. An operator who wants "Other" authors it as an option.
 
@@ -444,6 +445,7 @@ Playwright covers the journeys.
 | Destination | What may go there |
 |---|---|
 | Classifier prompt | Conversation text the answer model already receives, minus turns whose routine held a sensitive slot; option keys and descriptions. No values of other variables |
+| Classifier output | Keys only. The per-variable `evidence` the model writes is discarded at parse |
 | Directive matcher and planner | Non-sensitive values, bounded; sensitive as `[redacted]` (`matchContextProjection.ts:85-89`) |
 | Answer prompt | Per surfacing; classified defaults to `on_reference` |
 | Logs, metrics, spans | Variable ids, value types, writer kinds, counts, outcome enums, prompt version. Never a value, including an enum key, and never a `wa_id` |

@@ -103,7 +103,7 @@ describeIntegration("classified attributes (Postgres)", () => {
     const conversationId = await createConversationOn([enablementSnapshot(urgency.id, "classified")], { sessionId, customerId });
     // The host pushed the customer's value through the API before the conversation's first run.
     await repository.upsertValue(urgency.id, { type: "customer", id: customerId }, "billing", { kind: "api", ref: "credential-1" });
-    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: "shipping" }) }));
+    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: { evidence: "The parcel has not arrived.", option_applies: true, key: "shipping" } }) }));
     const classification = new ConversationClassificationService({
       targets: reads,
       excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },
@@ -128,7 +128,7 @@ describeIntegration("classified attributes (Postgres)", () => {
     const conversationId = await createConversationOn([enablement]);
     await repository.upsertValue(topic.id, { type: "workspace", id: workspaceId }, "billing", { kind: "api", ref: "credential-1" });
     let answer: string | null = "shipping";
-    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: answer }) }));
+    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: { evidence: "What the visitor stated.", option_applies: answer !== null, key: answer } }) }));
     const classification = new ConversationClassificationService({
       targets: reads,
       excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },

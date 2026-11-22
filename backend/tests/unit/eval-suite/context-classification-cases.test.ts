@@ -42,7 +42,8 @@ const labelledModel = () => {
     return {
       text: JSON.stringify(Object.fromEntries(classificationEvalAttributes.flatMap((attribute) => {
         const field = fieldOf(request.prompt, attribute.name);
-        return field ? [[field, evalCase.expected[attribute.name as ClassificationEvalAttributeName]?.[0] ?? null]] : [];
+        const key = evalCase.expected[attribute.name as ClassificationEvalAttributeName]?.[0] ?? null;
+        return field ? [[field, { evidence: "What the visitor stated about this attribute.", option_applies: key !== null, key }]] : [];
       }))),
     };
   });

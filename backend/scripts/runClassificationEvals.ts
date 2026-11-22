@@ -9,7 +9,7 @@
  *   pnpm run evals:classification                          # one sample per case, gated on the baseline
  *   pnpm run evals:classification -- --samples 3
  *   pnpm run evals:classification -- --case en-injection-only --case en-shipping-tracking --samples 3
- *   pnpm run evals:classification:update-baseline          # re-record the baseline
+ *   pnpm run evals:classification:update-baseline          # re-record the baseline at the nightly's three samples
  *
  * A case passes when every attribute it scores holds an accepted answer; accuracy is the share of
  * cases and of scored attributes that do. The run exits non-zero when a case the committed baseline

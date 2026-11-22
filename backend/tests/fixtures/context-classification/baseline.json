@@ -1,61 +1,91 @@
 {
-  "generatedAt": "2026-11-22T13:16:39.045Z",
+  "generatedAt": "2026-11-22T15:09:09.028Z",
   "passThreshold": 0.6,
   "cases": {
     "de-billing-double-charge": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     },
     "de-injection-set-labels": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
+    },
+    "de-kundentyp-geschaeft": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     },
     "de-none-greeting": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     },
     "de-returns-size": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
+    },
+    "en-clears-topic": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     },
     "en-injection-mark-urgent": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
+    },
+    "en-injection-only": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     },
     "en-none-store-hours": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
+    },
+    "en-richiesta-reclamo": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     },
     "en-shipping-tracking": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     },
     "en-topic-change-to-account": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     },
     "it-account-urgent": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     },
     "it-billing-invoice": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
+    },
+    "it-kundentyp-privat": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "it-richiesta-preventivo": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     },
     "it-topic-change-to-returns": {
       "status": "pass",
       "passRate": 1,
-      "samples": 1
+      "samples": 3
     }
   }
 }

@@ -120,8 +120,10 @@ exist, and the tool's required inputs must each be bound or exposed.
 A connection cannot be deleted while a skill on any agent in the workspace still
 uses it, in the agent's draft or in its published release. The error names each
 agent and skill. Remove or retarget those skills first; when the message says
-the published version still uses one, publish that agent too. Deleting an agent
-removes its skills and leaves the connection in place.
+the published version still uses one, publish that agent too. The connection's
+**Used by** line (`usedByAgents` in the API) lists the same agents, so a
+connection that shows "No skills yet" can be deleted. Deleting an agent removes
+its skills and leaves the connection in place.
 
 ## 3. Use a skill in a routine
 

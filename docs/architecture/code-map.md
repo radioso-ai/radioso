@@ -573,7 +573,9 @@ rows (the draft) and from each agent's published release snapshot. The per-kind
 each target's service reads it through `SkillTargetUseReader`
 (`backend/src/shared/domain/skillTargetUses.ts`, implemented by
 `agentSkills/targetUses.ts`, wired in `app/server/builders/integrations.ts`) to
-answer a `409` that names each agent and skill. Each module's
+answer a `409` that names each agent and skill, and maps the trigger's refusal
+with `isForeignKeyViolationOn` (`shared/infra/kysely/sqlHelpers.ts`). The MCP
+connection's `usedByAgents` reads the same uses. Each module's
 repository port and record shape own kind-specific config validation, so future
 config-backed skill kinds should not add a table or migration unless they need
 genuinely relational state outside the shared skill definition.

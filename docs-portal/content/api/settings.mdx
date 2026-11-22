@@ -314,12 +314,14 @@ secret. Rotation also returns the new plaintext secret once.
 Destination URLs must use HTTPS and must pass the same public-host SSRF policy used
 by outbound contact webhooks. Local HTTP endpoints are not accepted by default.
 
-Deleting a destination is blocked while a routine's completion export references
-it, or while a webhook skill in an agent's draft or published release posts to
-it. The route answers `409 webhook_destination_in_use`, and the message names
-each routine, agent and skill so you can remove or change the reference first.
-A skill that only the published release still uses clears once you publish the
-agent.
+Deleting a destination is blocked while the latest version of an enabled routine
+exports to it, or while a webhook skill in an agent's draft or published release
+posts to it. The route answers `409 webhook_destination_in_use`, and the message
+names each routine, agent and skill so you can remove or change the reference
+first. A skill that only the published release still uses clears once you
+publish the agent. The routine check reads each routine's latest version, so a
+conversation still running an earlier published version of a routine can find
+its export destination gone; that delivery is skipped.
 
 When a routine reaches a terminal included in its completion export trigger set,
 Radioso dispatches `webhook.send` and posts a JSON body to the destination URL

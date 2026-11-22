@@ -69,7 +69,10 @@ Disconnecting Slack (`DELETE /api/v1/workspaces/{workspaceId}/slack/installation
 answers `409 slack_installation_in_use` while a Slack skill in an agent's draft
 or published release posts through the installation. The message names each
 agent and skill; delete those skills, publish the agents whose published
-version still uses one, then disconnect.
+version still uses one, then disconnect. The installation belongs to the
+account, so another workspace of that account can ask to disconnect it; that
+request gets the same `409` with "Skills in another workspace post through it."
+in place of the names.
 
 ## 3. Use the skill in a routine
 

@@ -9,6 +9,12 @@ import {
   type ConversationActivityTimelineReader,
 } from "../../conversationActivity/contracts/index.js";
 import type { TeammateLabelReaderPort } from "../../auth/contracts/index.js";
+import type {
+  ConversationAttribute,
+  ConversationAttributeFilter,
+  ConversationAttributeReader,
+} from "../../context-variables/public.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 import type { ConversationOwnershipRecord } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { VisitorRecord } from "../../../db/repositories/visitorRepository.js";
 
@@ -55,5 +61,15 @@ export class NoopTeammateLabelReader implements TeammateLabelReaderPort {
 export class NoopConversationActivityReader implements ConversationActivityTimelineReader {
   async readTimeline(): Promise<ConversationActivityTimeline> {
     return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
+  }
+}
+
+/** No attributes to read, and no attribute to filter by. */
+export class NoopConversationAttributeReader implements ConversationAttributeReader {
+  async read(): Promise<ConversationAttribute[]> {
+    return [];
+  }
+  async resolveFilter(): Promise<ConversationAttributeFilter> {
+    throw badRequest("Attributes do not filter conversations here");
   }
 }

@@ -35,6 +35,7 @@ export {
   CONTEXT_VARIABLE_VALUE_TYPES,
   classificationRefusal,
   contextScopeLadder,
+  CONVERSATION_SCOPE_TYPES,
   frozenTestValueInput,
   isClassifiedEnablement,
   mayOverwrite,
@@ -58,7 +59,7 @@ export type {
   ConversationValueWriter,
   StoredConversationValue,
 } from "./conversationValueWriter.js";
-export { ConversationAttributeService } from "./conversationAttributes.js";
+export { ATTRIBUTE_FILTER_NOT_SET, ConversationAttributeService } from "./conversationAttributes.js";
 export type {
   ConversationAttribute,
   ConversationAttributeFilter,
@@ -73,6 +74,7 @@ export type {
   AgentContextVariableEnablement,
   ClassificationFitRefusal,
   ContextScopeKeys,
+  ConversationScope,
   ContextValueWriter,
   ContextValueWriterKind,
   ContextVariable,

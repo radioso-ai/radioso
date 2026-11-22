@@ -1,7 +1,11 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
-import type { ConversationAttributeFilter } from "../../context-variables/public.js";
+import type {
+  ConversationAttribute,
+  ConversationAttributeFilterInput,
+  ConversationAttributeReader,
+} from "../../context-variables/public.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ReplyImageUrls } from "../contracts/replyBlocks.js";
 import type {
@@ -48,6 +52,7 @@ import { RETRIEVAL_TRACE_LEAF, capabilitySubTrace } from "./chatTraceLeaves.js";
 import {
   NO_TEAMMATE_LABELS,
   NoopConversationActivityReader,
+  NoopConversationAttributeReader,
   NoopConversationOwnershipReader,
   NoopTeammateLabelReader,
   NoopVisitorProfileReader,
@@ -324,6 +329,8 @@ export interface ChatConversationDetail {
   ownership?: ChatConversationOwnership;
   /** See {@link ChatConversationTail.activity}: on operator reads only. */
   activity?: ConversationActivityEntry[];
+  /** The conversation's attributes, on an operator read of the first page only: they don't change with the page. */
+  attributes?: ConversationAttribute[];
 }
 
 /**
@@ -686,6 +693,7 @@ export class ChatHistoryService {
     private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
     private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
     private readonly replyImageUrls: ReplyImageUrls | null = null,
+    private readonly attributes: ConversationAttributeReader = new NoopConversationAttributeReader(),
   ) {}
 
   async listConversations(
@@ -698,12 +706,12 @@ export class ChatHistoryService {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
-      attribute?: ConversationAttributeFilter;
+      attribute?: ConversationAttributeFilterInput;
     } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
       workspaceId,
-      { ...input, sourceScope: input.sourceScope ?? "end_user" },
+      { ...input, sourceScope: input.sourceScope ?? "end_user", attribute: await this.resolveAttributeFilter(workspaceId, input.attribute) },
     );
     return this.buildConversationPage(workspaceId, { conversations, total, nextCursor, hasMore });
   }
@@ -760,7 +768,8 @@ export class ChatHistoryService {
 
   async listItems(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } & HistoryItemsFilters = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; attribute?: ConversationAttributeFilterInput }
+      & Omit<HistoryItemsFilters, "attribute"> = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
@@ -783,7 +792,7 @@ export class ChatHistoryService {
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
         callerKind: input.callerKind,
-        attribute: input.attribute,
+        attribute: await this.resolveAttributeFilter(workspaceId, input.attribute),
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })
@@ -920,6 +929,8 @@ export class ChatHistoryService {
       // OFF (absent) by default: the conversation's activity names teammates by label, which can
       // be an email, so only operator reads set it — with the kinds the caller may see.
       activity?: ConversationActivityReadScope;
+      // OFF by default: an operator read. Read on the first page only; an older page leaves them out.
+      includeAttributes?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -928,7 +939,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity] =
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity, attributes] =
       await Promise.all([
         this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
         this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
@@ -943,6 +954,9 @@ export class ChatHistoryService {
           ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
           : Promise.resolve(null),
         this.loadActivity(workspaceId, conversation.id, options.activity),
+        options.includeAttributes && !input.cursor && !input.offset ? this.attributes.read(workspaceId, {
+          conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId, verifiedCustomerId: conversation.verifiedCustomerId,
+        }) : Promise.resolve(null),
       ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -1041,7 +1055,13 @@ export class ChatHistoryService {
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
+      ...(attributes ? { attributes } : {}),
     };
+  }
+
+  /** A caller's attribute filter, resolved to the stored value it matches; refuses one no conversation can satisfy. */
+  private async resolveAttributeFilter(workspaceId: string, filter: ConversationAttributeFilterInput | undefined) {
+    return filter ? this.attributes.resolveFilter(workspaceId, filter) : undefined;
   }
 
   async getConversationTurn(

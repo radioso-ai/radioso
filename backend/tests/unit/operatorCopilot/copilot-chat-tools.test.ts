@@ -103,6 +103,7 @@ describe("copilot chat readers", () => {
       includeLatency: true,
       includeOperatorLabel: true,
       activity: { includeFeedback: true },
+      includeAttributes: true,
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",
@@ -328,7 +329,7 @@ describe("copilot chat readers", () => {
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
 
-  it("reads the conversation's attributes, with who set each one, and a Private one redacted", async () => {
+  it("reads the conversation's attributes from the history read, with who set each one, and a Private one redacted", async () => {
     const ports = dependencies();
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
     const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -342,47 +343,74 @@ describe("copilot chat readers", () => {
       updatedAt: "2026-11-20T10:00:05.000Z",
       messageCount: 0,
       messages: [],
+      attributes: [
+        {
+          name: "care_need", valueType: "enum", value: null, redacted: true, scope: "conversation",
+          writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: new Date("2026-11-20T10:00:03.000Z"),
+        },
+        {
+          name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
+          scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
+        },
+      ],
     });
-    ports.readAttributes.mockResolvedValue([
-      {
-        name: "care_need", valueType: "enum", value: null, redacted: true, scope: "conversation",
-        writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: new Date("2026-11-20T10:00:03.000Z"),
-      },
-      {
-        name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
-        scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
-      },
-    ]);
 
     const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as { transcript: { attributes: unknown } };
 
-    expect(ports.readAttributes).toHaveBeenCalledWith("workspace-1", conversationId);
+    expect(ports.getConversation).toHaveBeenCalledWith("workspace-1", conversationId, { limit: 100 }, expect.objectContaining({ includeAttributes: true }));
     expect(result.transcript.attributes).toEqual([
       {
-        name: "care_need", valueType: "enum", value: null, option: null, redacted: true, scope: "conversation",
+        name: "care_need", valueType: "enum", value: null, option: null, redacted: true, truncated: false, scope: "conversation",
         writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: "2026-11-20T10:00:03.000Z",
       },
       {
-        name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
+        name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false, truncated: false,
         scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: "2026-11-20T10:00:04.000Z",
       },
     ]);
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
 
-  it("lists only the conversations whose own value of a Choice attribute is an option, resolving the filter first", async () => {
+  it("cuts a long Text or JSON attribute value to its first 500 characters, as text, and says so", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const cart = { items: Array.from({ length: 80 }, (_, index) => ({ sku: `sku-${index}`, quantity: 1 })) };
+    const attribute = (name: string, valueType: "string" | "json", value: unknown) => ({
+      name, valueType, value, redacted: false, scope: "session" as const,
+      writtenBy: { kind: "api" as const, ref: null }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
+    });
+    ports.getConversation.mockResolvedValue({
+      conversationId, agentId: null, agentName: null, sourceChannel: "website_embed", callerKind: "human" as const,
+      createdAt: "2026-11-20T10:00:00.000Z", updatedAt: "2026-11-20T10:00:05.000Z", messageCount: 0, messages: [],
+      attributes: [attribute("cart", "json", cart), attribute("note", "string", "x".repeat(600)), attribute("plan", "string", "Pro")],
+    });
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as {
+      transcript: { attributes: Array<{ name: string; value: unknown; truncated: boolean }> };
+    };
+
+    const byName = new Map(result.transcript.attributes.map((entry) => [entry.name, entry]));
+    expect(byName.get("cart")).toMatchObject({ value: JSON.stringify(cart).slice(0, 500), truncated: true });
+    expect(byName.get("note")).toMatchObject({ value: "x".repeat(500), truncated: true });
+    expect(byName.get("plan")).toMatchObject({ value: "Pro", truncated: false });
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("lists only the conversations whose own value of a Choice attribute is an option, or that hold none", async () => {
     const ports = dependencies();
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_history_search")!;
     ports.listConversations.mockResolvedValue({ conversations: [{ id: "conversation-1" }], total: 1 });
 
     expect(tool.inputSchema.safeParse({ attribute: { name: "topic" } }).success).toBe(false);
     const result = await tool.createTool(context(null)).invoke({ limit: 5, attribute: { name: "topic", option: "billing" } }, {} as never);
+    await tool.createTool(context(null)).invoke({ attribute: { name: " topic", option: "_not_set" } }, {} as never);
     await tool.createTool(context(null)).invoke({}, {} as never);
 
-    expect(ports.resolveAttributeFilter).toHaveBeenCalledTimes(1);
-    expect(ports.resolveAttributeFilter).toHaveBeenCalledWith("workspace-1", { name: "topic", option: "billing" });
-    expect(ports.listConversations).toHaveBeenNthCalledWith(1, "workspace-1", { limit: 5, attribute: { variableId: "topic-id", key: "billing" } });
-    expect(ports.listConversations).toHaveBeenNthCalledWith(2, "workspace-1", { limit: 20 });
+    expect(ports.listConversations).toHaveBeenNthCalledWith(1, "workspace-1", { limit: 5, attribute: { name: "topic", option: "billing" } });
+    // The name is passed as written: the history read matches it exactly, as the REST filter does.
+    expect(ports.listConversations).toHaveBeenNthCalledWith(2, "workspace-1", { limit: 20, attribute: { name: " topic", option: "_not_set" } });
+    expect(ports.listConversations).toHaveBeenNthCalledWith(3, "workspace-1", { limit: 20 });
     expect(result).toEqual({ conversations: [{ id: "conversation-1" }] });
   });
 

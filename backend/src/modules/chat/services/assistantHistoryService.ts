@@ -1,6 +1,6 @@
 import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationActivityReadScope } from "../../conversationActivity/contracts/index.js";
-import type { ConversationAttributeFilterInput, ConversationAttributeReader } from "../../context-variables/public.js";
+import type { ConversationAttributeFilterInput } from "../../context-variables/public.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { HistoryItemsFilters } from "../../../db/repositories/historyItemsRepository.js";
 import type { ChatHistoryService } from "./chatHistoryService.js";
@@ -15,18 +15,12 @@ const dashboardConversationDetailOptions = (activity: ConversationActivityReadSc
   activity,
 });
 
-/** A history list's input as a caller names an attribute filter: by the attribute's name and an option key. */
-type WithAttributeFilterInput<Input> = Omit<Input, "attribute"> & { attribute?: ConversationAttributeFilterInput };
-
 export class AssistantHistoryService {
-  constructor(
-    private readonly chatHistoryService: ChatHistoryService,
-    private readonly attributes: ConversationAttributeReader,
-  ) {}
+  constructor(private readonly chatHistoryService: ChatHistoryService) {}
 
-  async listConversations(
+  listConversations(
     workspaceId: string,
-    input: WithAttributeFilterInput<{
+    input: {
       limit: number;
       offset?: number;
       cursor?: string;
@@ -34,22 +28,18 @@ export class AssistantHistoryService {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
-    }>,
+      attribute?: ConversationAttributeFilterInput;
+    },
   ) {
-    return this.chatHistoryService.listConversations(workspaceId, await this.withResolvedAttribute(workspaceId, input));
+    return this.chatHistoryService.listConversations(workspaceId, input);
   }
 
-  async listItems(
+  listItems(
     workspaceId: string,
-    input: WithAttributeFilterInput<{ limit: number; offset?: number; sourceScope?: ConversationSourceScope } & HistoryItemsFilters>,
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; attribute?: ConversationAttributeFilterInput }
+      & Omit<HistoryItemsFilters, "attribute">,
   ) {
-    return this.chatHistoryService.listItems(workspaceId, await this.withResolvedAttribute(workspaceId, input));
-  }
-
-  /** Resolves an attribute filter to the stored value it matches, refusing one no conversation can satisfy. */
-  private async withResolvedAttribute<Input extends { attribute?: ConversationAttributeFilterInput }>(workspaceId: string, input: Input) {
-    const { attribute, ...rest } = input;
-    return attribute ? { ...rest, attribute: await this.attributes.resolveFilter(workspaceId, attribute) } : rest;
+    return this.chatHistoryService.listItems(workspaceId, input);
   }
 
   listContacts(
@@ -67,7 +57,7 @@ export class AssistantHistoryService {
     return this.chatHistoryService.listVisitorConversations(workspaceId, visitorId, input);
   }
 
-  async getConversation(
+  getConversation(
     workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
@@ -76,11 +66,10 @@ export class AssistantHistoryService {
     // Dashboard surface: include operator-only ownership and agent details, and the conversation's
     // attributes. The public visitor path calls chatHistoryService.getConversation directly and
     // never sets these.
-    const [conversation, attributes] = await Promise.all([
-      this.chatHistoryService.getConversation(workspaceId, conversationId, input, dashboardConversationDetailOptions(activity)),
-      this.attributes.read(workspaceId, conversationId),
-    ]);
-    return { ...conversation, attributes };
+    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, {
+      ...dashboardConversationDetailOptions(activity),
+      includeAttributes: true,
+    });
   }
 
   tailConversation(

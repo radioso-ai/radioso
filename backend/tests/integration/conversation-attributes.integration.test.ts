@@ -10,6 +10,7 @@ import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRe
 import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 import { ConversationAttributeService } from "../../src/modules/context-variables/conversationAttributes.js";
 import type { ContextVariableOption } from "../../src/modules/context-variables/domain.js";
+import { ATTRIBUTE_FILTER_NOT_SET, type ConversationAttributeFilter } from "../../src/modules/context-variables/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -83,7 +84,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     await variables.upsertValue(region.id, { type: "workspace", id: workspaceId }, "eu", api);
     await variables.upsertValue(region.id, { type: "agent", id: agentId }, "us", api);
 
-    const read = await attributes.read(workspaceId, conversationId);
+    const read = await attributes.read(workspaceId, { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId });
 
     expect(read.map(({ name, value, scope, writtenBy }) => ({ name, value, scope, writtenBy }))).toEqual(
       [
@@ -92,7 +93,23 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
       ].sort((left, right) => left.name.localeCompare(right.name)),
     );
     expect(read.find((attribute) => attribute.name === topic.name)?.option).toEqual({ label: "Billing", archived: false });
-    await expect(attributes.read(randomUUID(), conversationId)).resolves.toEqual([]);
+    await expect(attributes.read(randomUUID(), { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId })).resolves.toEqual([]);
+  });
+
+  it("redacts a Private value read from Postgres, and keeps who set it", async () => {
+    const careNeed = await variables.create({
+      workspaceId, name: uniqueName("care_need"), valueType: "enum", options: [option("dental")],
+      trustTier: "unverified", sensitivity: "sensitive", defaultSurfacing: "on_reference",
+    });
+    const conversationId = await createConversation();
+    await variables.upsertValue(careNeed.id, { type: "conversation", id: conversationId }, "dental", api);
+
+    const [attribute] = await attributes.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null });
+
+    expect(attribute).toEqual({
+      name: careNeed.name, valueType: "enum", value: null, redacted: true, scope: "conversation", writtenBy: api, updatedAt: expect.any(Date),
+    });
+    expect(JSON.stringify(attribute)).not.toContain("dental");
   });
 
   it("narrows both history lists to the conversations holding an option, and refuses a filter it cannot serve", async () => {
@@ -116,41 +133,61 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     expect(items.total).toBe(1);
     expect(conversations.conversations.map((conversation) => conversation.id)).toEqual([billing]);
     expect(conversations.total).toBe(1);
+
+    // Not set: every conversation without a value of its own, the one whose visitor holds one included.
+    const notSet = await attributes.resolveFilter(workspaceId, { name: topic.name, option: ATTRIBUTE_FILTER_NOT_SET });
+    const workspaceConversations = (await database.query<{ id: string }>("SELECT id FROM conversations WHERE workspace_id = $1", [workspaceId]))
+      .map((row) => row.id);
+    const unset = workspaceConversations.filter((id) => id !== billing && id !== shipping);
+    const unsetItems = await new HistoryItemsRepository(database.kysely).listPageByWorkspaceId(workspaceId, { limit: 100, attribute: notSet });
+    const unsetConversations = await new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder)
+      .listPageByWorkspaceId(workspaceId, { limit: 100, attribute: notSet });
+    expect(unsetItems.items.map((item) => item.id).sort()).toEqual([...unset].sort());
+    expect(unsetItems.total).toBe(unset.length);
+    expect(unsetConversations.conversations.map((conversation) => conversation.id).sort()).toEqual([...unset].sort());
+    expect(unsetConversations.total).toBe(unset.length);
     await expect(attributes.resolveFilter(workspaceId, { name: topic.name, option: "returns" })).rejects.toMatchObject({ statusCode: 400 });
     await expect(attributes.resolveFilter(randomUUID(), { name: topic.name, option: "billing" })).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it("serves the Inbox's attribute filter from the filter index", async () => {
-    const topic = await createChoice();
-    // Enough conversations that reading each one's value costs more than the filter index's lookup.
-    await database.query(
-      `INSERT INTO conversations (id, workspace_id, agent_id)
-       SELECT gen_random_uuid(), $1, $2 FROM generate_series(1, 400)`,
-      [workspaceId, agentId],
-    );
-    await database.query(
-      `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data, written_by_kind, written_by_ref)
-       SELECT $1, $2, 'conversation', c.id::text, CASE WHEN random() < 0.05 THEN '"billing"'::jsonb ELSE '"shipping"'::jsonb END, 'classifier', 'context-classification/1'
-         FROM conversations c WHERE c.workspace_id = $1`,
-      [workspaceId, topic.id],
-    );
-    await database.query("ANALYZE context_variable_values");
-    await database.query("ANALYZE conversations");
-    const attribute = await attributes.resolveFilter(workspaceId, { name: topic.name, option: "billing" });
+  /** The SQL a list read sends for an attribute filter, captured on a logging Kysely that shares the pool. */
+  const capturedFilterQuery = async (read: (db: Kysely<DB>) => Promise<unknown>): Promise<CompiledQuery> => {
     const statements: CompiledQuery[] = [];
     // Shares the pool, so it is never destroyed: that would end the pool `database` owns.
     const logged = new Kysely<DB>({
       dialect: new PostgresDialect({ pool: database.pool }),
       log: (event) => { statements.push(event.query); },
     });
+    await read(logged);
+    const query = statements.find((statement) => statement.sql.includes("context_variable_values"));
+    if (!query) throw new Error("The list read sent no attribute filter");
+    return query;
+  };
 
-    await new HistoryItemsRepository(logged).listPageByWorkspaceId(workspaceId, { limit: 50, attribute });
-
-    const [listQuery] = statements;
+  const planWithoutSequentialScans = async (query: CompiledQuery): Promise<string> => {
     const plan = await database.kysely.transaction().execute(async (trx) => {
       await sql`SET LOCAL enable_seqscan = off`.execute(trx);
-      return trx.executeQuery({ ...listQuery, sql: `EXPLAIN (FORMAT JSON) ${listQuery.sql}` });
+      return trx.executeQuery({ ...query, sql: `EXPLAIN (FORMAT JSON) ${query.sql}` });
     });
-    expect(JSON.stringify(plan.rows)).toContain("idx_context_variable_values_variable_scope_data");
+    return JSON.stringify(plan.rows);
+  };
+
+  // What these prove: each list's filter query implies the partial index's predicate, so the
+  // index is usable. With sequential scans off the planner names a partial index only when the
+  // query's WHERE implies its predicate; drop `filterIndexPredicate` and both fail.
+  it.each([
+    ["the merged history list (/history, /history/query)", (db: Kysely<DB>, attribute: ConversationAttributeFilter) =>
+      new HistoryItemsRepository(db).listPageByWorkspaceId(workspaceId, { limit: 50, attribute })],
+    ["the chat list (/history/chat, Ray's conversation_history_search)", (db: Kysely<DB>, attribute: ConversationAttributeFilter) =>
+      new ConversationRepository(db, postgresWorkspaceEventRecorder).listPageByWorkspaceId(workspaceId, { limit: 50, attribute })],
+  ])("can serve %s's attribute filter from the filter index", async (_list, read) => {
+    const topic = await createChoice();
+    const conversationId = await createConversation();
+    await variables.upsertValue(topic.id, { type: "conversation", id: conversationId }, "billing", classifier);
+    const attribute = await attributes.resolveFilter(workspaceId, { name: topic.name, option: "billing" });
+
+    const query = await capturedFilterQuery((db) => read(db, attribute));
+
+    expect(await planWithoutSequentialScans(query)).toContain("idx_context_variable_values_variable_scope_data");
   });
 });

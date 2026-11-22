@@ -46,9 +46,10 @@ export const collectionPageQuerySchema = z.object({
  * The history lists' attribute filter: a Choice attribute's name and one of its option keys,
  * which a caller sends together. Parsed into the one `attribute` the history service resolves.
  */
+// Matched exactly as stored, untrimmed, the same as Ray's filter: an attribute's name is the identifier it was created with.
 const attributeFilterFields = {
-  attribute: z.string().trim().min(1).max(120).optional(),
-  attributeOption: z.string().trim().min(1).max(120).optional(),
+  attribute: z.string().min(1).max(120).optional(),
+  attributeOption: z.string().min(1).max(120).optional(),
 };
 
 const withAttributeFilter = <Query extends { attribute?: string; attributeOption?: string }>(

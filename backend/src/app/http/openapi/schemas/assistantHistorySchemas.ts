@@ -827,7 +827,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
           + "it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`.",
       }),
       attributes: z.array(ConversationAttributeSchema).optional().openapi({
-        description: "On `getHistoryConversation` and `getLegacyHistoryConversation`: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set.",
+        description: "On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out.",
       }),
     }),
   );

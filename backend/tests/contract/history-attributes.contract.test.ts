@@ -133,12 +133,44 @@ describe("conversation attributes on the history routes", () => {
     expect(searched.body.items).toEqual([]);
   });
 
+  it("narrows both lists to the conversations with no value of their own when the option is Not set", async () => {
+    const { app, authorization, conversations } = await seedWorkspace("history-attributes-not-set@example.com");
+
+    const items = await request(app)
+      .get("/api/v1/history")
+      .query({ attribute: "topic", attributeOption: "_not_set" })
+      .set("Authorization", authorization)
+      .expect(200);
+    const chats = await request(app)
+      .get("/api/v1/history/chat")
+      .query({ attribute: "topic", attributeOption: "_not_set" })
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(items.body.items.map((item: { id: string }) => item.id)).toEqual([conversations.unlabelled]);
+    expect(chats.body.conversations.map((conversation: { id: string }) => conversation.id)).toEqual([conversations.unlabelled]);
+  });
+
+  it("matches the attribute's name exactly, as written", async () => {
+    const { app, authorization } = await seedWorkspace("history-attributes-exact-name@example.com");
+
+    const refused = await request(app)
+      .get("/api/v1/history/chat")
+      .query({ attribute: " topic", attributeOption: "billing" })
+      .set("Authorization", authorization)
+      .expect(400);
+
+    expect(refused.body.error.message).toBe("No attribute is named  topic");
+  });
+
   it.each([
     ["an attribute without an option", { attribute: "topic" }],
     ["an option without an attribute", { attributeOption: "billing" }],
     ["an attribute nobody defined", { attribute: "urgency", attributeOption: "high" }],
     ["one that is not a Choice", { attribute: "plan", attributeOption: "pro" }],
     ["a Private one, whose values a filter would reveal", { attribute: "care_need", attributeOption: "dental" }],
+    ["a Private one, even for Not set", { attribute: "care_need", attributeOption: "_not_set" }],
+    ["Not set on one that is not a Choice", { attribute: "plan", attributeOption: "_not_set" }],
     ["an option the attribute does not have", { attribute: "topic", attributeOption: "returns" }],
   ])("refuses a filter on %s", async (_case, query) => {
     const { app, authorization } = await seedWorkspace(`history-attributes-refused-${Object.keys(query).join("-")}@example.com`);

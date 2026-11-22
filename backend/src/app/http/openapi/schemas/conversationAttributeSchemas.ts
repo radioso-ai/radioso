@@ -1,7 +1,18 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
-import { CONTEXT_VALUE_WRITER_KINDS, CONTEXT_VARIABLE_VALUE_TYPES } from "../../../../modules/context-variables/public.js";
+import {
+  CONTEXT_VALUE_WRITER_KINDS,
+  CONTEXT_VARIABLE_VALUE_TYPES,
+  CONVERSATION_SCOPE_TYPES,
+  type ConversationAttribute,
+} from "../../../../modules/context-variables/public.js";
+import type { SameType } from "../../../../shared/types/sameType.js";
+
+const scopeSchema = z.enum(CONVERSATION_SCOPE_TYPES);
+// The documented rungs are the ones a conversation's attributes come from; a rung added there fails tsc here.
+const documentedScopesMatch: SameType<z.infer<typeof scopeSchema>, ConversationAttribute["scope"]> = true;
+void documentedScopesMatch;
 
 /**
  * A conversation's attribute as the operator history read returns it. Registered in the assistant
@@ -21,7 +32,7 @@ export const registerConversationAttributeSchema = (registry: OpenAPIRegistry) =
     redacted: z.boolean().openapi({
       description: "True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain.",
     }),
-    scope: z.enum(["conversation", "session", "customer"]).openapi({
+    scope: scopeSchema.openapi({
       description: "Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed.",
     }),
     writtenBy: z.object({

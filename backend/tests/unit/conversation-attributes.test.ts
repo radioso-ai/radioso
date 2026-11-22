@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ATTRIBUTE_FILTER_NOT_SET,
   ConversationAttributeService,
   type ConversationAttributeReadPort,
   type StoredConversationAttributeValue,
 } from "../../src/modules/context-variables/conversationAttributes.js";
-import type {
-  ContextValueWriter,
-  ContextVariable,
-  ContextVariableScope,
+import {
+  CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
+} from "../../src/modules/context-variables/optionSchema.js";
+import {
+  contextScopeLadder,
+  type ContextValueWriter,
+  type ContextVariable,
+  type ConversationScope,
 } from "../../src/modules/context-variables/domain.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
+const keys = { conversationId, chatSessionId: "session-1", verifiedCustomerId: "customer-1" };
 
 const variable = (overrides: Partial<ContextVariable> & Pick<ContextVariable, "id" | "name">): ContextVariable => ({
   workspaceId,
@@ -48,7 +54,7 @@ const cart = variable({ id: "cart-id", name: "cart", valueType: "json" });
 
 const stored = (
   definition: ContextVariable,
-  scope: ContextVariableScope,
+  scope: ConversationScope,
   data: unknown,
   writtenBy: ContextValueWriter = { kind: "api", ref: "credential-1" },
   lastModified = new Date("2026-11-20T10:00:00.000Z"),
@@ -57,28 +63,49 @@ const stored = (
   value: { id: `${definition.id}-${scope.type}`, workspaceId, variableId: definition.id, scope, data, lastModified, writtenBy },
 });
 
+/** The read port over `values`, which it hands back as each variable's most specific value; records the rungs it was asked for. */
 const serviceOver = (
   values: StoredConversationAttributeValue[],
   definitions: ContextVariable[] = [],
-): ConversationAttributeService => {
+) => {
+  const asked: Array<readonly ConversationScope[]> = [];
   const reads: ConversationAttributeReadPort = {
-    readConversationValues: async (input) => (input.workspaceId === workspaceId && input.conversationId === conversationId ? values : []),
+    readMostSpecificValues: async (workspace, scopes) => {
+      asked.push(scopes);
+      return workspace === workspaceId ? values : [];
+    },
     findByName: async (workspace, name) =>
       definitions.find((definition) => definition.workspaceId === workspace && definition.name === name) ?? null,
   };
-  return new ConversationAttributeService(reads);
+  return Object.assign(new ConversationAttributeService(reads), { asked });
 };
 
 describe("a conversation's attributes", () => {
-  it("shows each attribute's most specific value — the conversation's, then the visitor's session, then the customer — in name order", async () => {
+  it("reads the conversation's own rungs of the ladder the agent resolves by, most specific first, and leaves its defaults out", async () => {
+    const service = serviceOver([]);
+
+    await service.read(workspaceId, keys);
+
+    expect(service.asked).toEqual([
+      contextScopeLadder({ ...keys, agentId: "agent-1", workspaceId }).filter((scope) => scope.type !== "agent" && scope.type !== "workspace"),
+    ]);
+  });
+
+  it("reads only the rungs the conversation has: no session or customer rung without their keys", async () => {
+    const service = serviceOver([]);
+
+    await service.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null });
+
+    expect(service.asked).toEqual([[{ type: "conversation", id: conversationId }]]);
+  });
+
+  it("shows each attribute's value, where it is kept and who set it, in name order", async () => {
     const service = serviceOver([
-      stored(topic, { type: "customer", id: "customer-1" }, "shipping"),
       stored(topic, { type: "conversation", id: conversationId }, "billing", { kind: "classifier", ref: "context-classification/1" }),
-      stored(plan, { type: "customer", id: "customer-1" }, "pro"),
       stored(plan, { type: "session", id: "session-1" }, "basic", { kind: "operator", ref: "user-1" }),
     ]);
 
-    await expect(service.read(workspaceId, conversationId)).resolves.toEqual([
+    await expect(service.read(workspaceId, keys)).resolves.toEqual([
       {
         name: "plan",
         valueType: "string",
@@ -108,7 +135,7 @@ describe("a conversation's attributes", () => {
       stored(orphan, { type: "conversation", id: conversationId }, "returns"),
     ]);
 
-    const attributes = await service.read(workspaceId, conversationId);
+    const attributes = await service.read(workspaceId, keys);
 
     expect(attributes.find((attribute) => attribute.name === "topic")).toMatchObject({
       value: "shipping",
@@ -124,7 +151,7 @@ describe("a conversation's attributes", () => {
       stored(careNeed, { type: "conversation", id: conversationId }, "dental", { kind: "operator", ref: "user-1" }),
     ]);
 
-    const [attribute] = await service.read(workspaceId, conversationId);
+    const [attribute] = await service.read(workspaceId, keys);
 
     expect(attribute).toEqual({
       name: "care_need",
@@ -140,11 +167,11 @@ describe("a conversation's attributes", () => {
   it("shows a JSON value as stored", async () => {
     const service = serviceOver([stored(cart, { type: "session", id: "session-1" }, { items: 2 })]);
 
-    await expect(service.read(workspaceId, conversationId)).resolves.toMatchObject([{ name: "cart", value: { items: 2 } }]);
+    await expect(service.read(workspaceId, keys)).resolves.toMatchObject([{ name: "cart", value: { items: 2 } }]);
   });
 
   it("has none for a conversation with no stored values", async () => {
-    await expect(serviceOver([]).read(workspaceId, conversationId)).resolves.toEqual([]);
+    await expect(serviceOver([]).read(workspaceId, keys)).resolves.toEqual([]);
   });
 });
 
@@ -158,10 +185,30 @@ describe("filtering conversations by an attribute", () => {
     await expect(service.resolveFilter(workspaceId, { name: "topic", option: "shipping" })).resolves.toEqual({ variableId: "topic-id", key: "shipping" });
   });
 
+  it("resolves Not set to the attribute with no key, for conversations that hold no value of it", async () => {
+    const service = serviceOver([], definitions);
+
+    await expect(service.resolveFilter(workspaceId, { name: "topic", option: ATTRIBUTE_FILTER_NOT_SET }))
+      .resolves.toEqual({ variableId: "topic-id", key: null });
+  });
+
+  it("names Not set by a word no option key can be", () => {
+    expect(CONTEXT_VARIABLE_OPTION_KEY_PATTERN.test(ATTRIBUTE_FILTER_NOT_SET)).toBe(false);
+  });
+
+  it("matches the attribute's name exactly, as it is stored", async () => {
+    const service = serviceOver([], definitions);
+
+    await expect(service.resolveFilter(workspaceId, { name: " topic", option: "billing" }))
+      .rejects.toMatchObject({ statusCode: 400, message: "No attribute is named  topic" });
+  });
+
   it.each([
     ["an attribute nobody defined", { name: "urgency", option: "high" }, "No attribute is named urgency"],
     ["one that is not a Choice", { name: "plan", option: "pro" }, "Only a Choice attribute filters conversations; plan is not one"],
     ["a Private one", { name: "care_need", option: "dental" }, "A Private attribute does not filter conversations"],
+    ["Not set on a Private one", { name: "care_need", option: ATTRIBUTE_FILTER_NOT_SET }, "A Private attribute does not filter conversations"],
+    ["Not set on one that is not a Choice", { name: "plan", option: ATTRIBUTE_FILTER_NOT_SET }, "Only a Choice attribute filters conversations; plan is not one"],
     ["an option the attribute does not have", { name: "topic", option: "returns" }, "topic has no option returns"],
   ])("refuses %s with a 400", async (_case, filter, message) => {
     const service = serviceOver([], definitions);

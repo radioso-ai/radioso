@@ -1,19 +1,22 @@
 import { badRequest } from "../../shared/domain/errors.js";
-import type {
-  ContextValueWriter,
-  ContextVariable,
-  ContextVariableScopeType,
-  ContextVariableValue,
-  ContextVariableValueType,
+import {
+  CONVERSATION_SCOPE_TYPES,
+  conversationScopeLadder,
+  type ContextValueWriter,
+  type ContextVariable,
+  type ContextVariableScopeType,
+  type ContextVariableValue,
+  type ContextVariableValueType,
+  type ConversationScope,
+  type ConversationScopeKeys,
+  type ConversationScopeType,
 } from "./domain.js";
 
 /**
- * The rungs of a conversation's ladder that hold facts about it: its own, its chat session's and
- * its verified customer's, most specific first. An agent or workspace value is a default every
- * conversation of the agent or workspace shares, so a conversation's attributes leave it out.
+ * The option a filter names to find the conversations that hold no value of the attribute. No
+ * option key can be it: a key starts with a letter.
  */
-const CONVERSATION_ATTRIBUTE_SCOPES = ["conversation", "session", "customer"] as const satisfies readonly ContextVariableScopeType[];
-type ConversationAttributeScope = typeof CONVERSATION_ATTRIBUTE_SCOPES[number];
+export const ATTRIBUTE_FILTER_NOT_SET = "_not_set";
 
 /**
  * One attribute of a conversation as a teammate reads it: the value it resolves to from the
@@ -28,7 +31,8 @@ export interface ConversationAttribute {
   /** The option an enum value names, archived or not. Absent for other types, a redacted value, and a key no option has. */
   readonly option?: { readonly label: string; readonly archived: boolean };
   readonly redacted: boolean;
-  readonly scope: ConversationAttributeScope;
+  /** The rung the value is kept on: the conversation's own, the visitor's chat session's or the verified customer's. */
+  readonly scope: ConversationScopeType;
   readonly writtenBy: ContextValueWriter;
   readonly updatedAt: Date;
 }
@@ -39,38 +43,43 @@ export interface StoredConversationAttributeValue {
   readonly value: ContextVariableValue;
 }
 
-/** A filter on a conversation-scope Choice value, as a caller names it. */
+/**
+ * A filter on a conversation-scope Choice value, as a caller names it: the attribute's name as it is
+ * stored, and an option key or {@link ATTRIBUTE_FILTER_NOT_SET}.
+ */
 export interface ConversationAttributeFilterInput {
   readonly name: string;
   readonly option: string;
 }
 
-/** A filter on a conversation-scope Choice value, resolved to the stored value it matches. */
+/**
+ * A filter on a conversation-scope Choice value, resolved: the conversations whose own value of the
+ * variable is `key`, or, when `key` is null, the conversations that hold none.
+ */
 export interface ConversationAttributeFilter {
   readonly variableId: string;
-  readonly key: string;
+  readonly key: string | null;
 }
 
 /** The reads a conversation's attributes and an attribute filter need. */
 export interface ConversationAttributeReadPort {
-  /**
-   * Every value stored for the conversation, its chat session or its verified customer, each with
-   * its definition. None when the workspace has no such conversation.
-   */
-  readConversationValues(input: { workspaceId: string; conversationId: string }): Promise<StoredConversationAttributeValue[]>;
+  /** Each variable's most specific value on these rungs of one conversation's ladder, with its definition. */
+  readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]>;
+  /** The variable whose stored name is exactly `name`. */
   findByName(workspaceId: string, name: string): Promise<ContextVariable | null>;
 }
 
 /** What an operator surface reads of a conversation's attributes, and how it resolves a filter on one. */
 export interface ConversationAttributeReader {
-  read(workspaceId: string, conversationId: string): Promise<ConversationAttribute[]>;
+  /** The attributes of the conversation these keys name: the conversation's id, its chat session's and its verified customer's. */
+  read(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationAttribute[]>;
   resolveFilter(workspaceId: string, filter: ConversationAttributeFilterInput): Promise<ConversationAttributeFilter>;
 }
 
-const isAttributeScope = (scope: ContextVariableScopeType): scope is ConversationAttributeScope =>
-  (CONVERSATION_ATTRIBUTE_SCOPES as readonly ContextVariableScopeType[]).includes(scope);
+const isConversationScope = (scope: ContextVariableScopeType): scope is ConversationScopeType =>
+  (CONVERSATION_SCOPE_TYPES as readonly ContextVariableScopeType[]).includes(scope);
 
-const presentValue = ({ variable, value }: StoredConversationAttributeValue, scope: ConversationAttributeScope): ConversationAttribute => {
+const presentValue = ({ variable, value }: StoredConversationAttributeValue, scope: ConversationScopeType): ConversationAttribute => {
   const facts = { name: variable.name, valueType: variable.valueType, scope, writtenBy: value.writtenBy, updatedAt: value.lastModified };
   if (variable.sensitivity === "sensitive") return { ...facts, value: null, redacted: true };
   const option = variable.valueType === "enum" ? variable.options?.find((candidate) => candidate.key === value.data) : undefined;
@@ -82,25 +91,19 @@ const presentValue = ({ variable, value }: StoredConversationAttributeValue, sco
   };
 };
 
-/** Each attribute's most specific value among the conversation's own rungs, in name order. */
-const presentConversationAttributes = (stored: readonly StoredConversationAttributeValue[]): ConversationAttribute[] => {
-  const mostSpecific = new Map<string, { entry: StoredConversationAttributeValue; scope: ConversationAttributeScope }>();
-  for (const entry of stored) {
-    const scope = entry.value.scope.type;
-    if (!isAttributeScope(scope)) continue;
-    const held = mostSpecific.get(entry.variable.id);
-    if (!held || CONVERSATION_ATTRIBUTE_SCOPES.indexOf(scope) < CONVERSATION_ATTRIBUTE_SCOPES.indexOf(held.scope)) {
-      mostSpecific.set(entry.variable.id, { entry, scope });
-    }
-  }
-  return [...mostSpecific.values()]
-    .map(({ entry, scope }) => presentValue(entry, scope))
+/** Each attribute's most specific value, as the read port hands it, in name order. */
+const presentConversationAttributes = (stored: readonly StoredConversationAttributeValue[]): ConversationAttribute[] =>
+  stored
+    .flatMap((entry) => {
+      const scope = entry.value.scope.type;
+      return isConversationScope(scope) ? [presentValue(entry, scope)] : [];
+    })
     .sort((left, right) => left.name.localeCompare(right.name));
-};
 
 /**
  * A filter matches the conversation-scope values of a Choice attribute that is not Private, so it
- * never reveals a Private value. An archived option still names the values stored under it.
+ * never reveals a Private value. An archived option still names the values stored under it, and Not
+ * set names the conversations that hold no value of the attribute.
  */
 const resolveAttributeFilter = (
   variable: ContextVariable | null,
@@ -109,6 +112,7 @@ const resolveAttributeFilter = (
   if (!variable) throw badRequest(`No attribute is named ${filter.name}`);
   if (variable.valueType !== "enum") throw badRequest(`Only a Choice attribute filters conversations; ${variable.name} is not one`);
   if (variable.sensitivity === "sensitive") throw badRequest("A Private attribute does not filter conversations");
+  if (filter.option === ATTRIBUTE_FILTER_NOT_SET) return { variableId: variable.id, key: null };
   if (!variable.options?.some((option) => option.key === filter.option)) {
     throw badRequest(`${variable.name} has no option ${filter.option}`);
   }
@@ -118,8 +122,9 @@ const resolveAttributeFilter = (
 export class ConversationAttributeService implements ConversationAttributeReader {
   constructor(private readonly reads: ConversationAttributeReadPort) {}
 
-  async read(workspaceId: string, conversationId: string): Promise<ConversationAttribute[]> {
-    return presentConversationAttributes(await this.reads.readConversationValues({ workspaceId, conversationId }));
+  async read(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationAttribute[]> {
+    const scopes = conversationScopeLadder(keys);
+    return scopes.length === 0 ? [] : presentConversationAttributes(await this.reads.readMostSpecificValues(workspaceId, scopes));
   }
 
   async resolveFilter(workspaceId: string, filter: ConversationAttributeFilterInput): Promise<ConversationAttributeFilter> {

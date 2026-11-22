@@ -108,6 +108,7 @@ export interface ConversationRepositoryPort {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
+      attribute?: ConversationAttributeFilter;
     },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   countByWorkspaceId(workspaceId: string): Promise<number>;

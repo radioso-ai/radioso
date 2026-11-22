@@ -19062,7 +19062,7 @@
             "items": {
               "$ref": "#/components/schemas/ConversationAttribute"
             },
-            "description": "On `getHistoryConversation` and `getLegacyHistoryConversation`: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set."
+            "description": "On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out."
           }
         },
         "required": [
@@ -58438,10 +58438,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 120,
-              "description": "The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only."
+              "description": "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only."
             },
             "required": false,
-            "description": "The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.",
+            "description": "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.",
             "name": "attribute",
             "in": "query"
           },
@@ -58450,10 +58450,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 120,
-              "description": "An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
+              "description": "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
             },
             "required": false,
-            "description": "An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.",
+            "description": "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.",
             "name": "attributeOption",
             "in": "query"
           }
@@ -58562,13 +58562,13 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 120,
-                    "description": "The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only."
+                    "description": "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only."
                   },
                   "attributeOption": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 120,
-                    "description": "An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
+                    "description": "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
                   },
                   "q": {
                     "type": "string",
@@ -58709,10 +58709,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 120,
-              "description": "The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only."
+              "description": "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither."
             },
             "required": false,
-            "description": "The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.",
+            "description": "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither.",
             "name": "attribute",
             "in": "query"
           },
@@ -58721,10 +58721,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 120,
-              "description": "An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
+              "description": "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400."
             },
             "required": false,
-            "description": "An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.",
+            "description": "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.",
             "name": "attributeOption",
             "in": "query"
           }

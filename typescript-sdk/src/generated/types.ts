@@ -10262,7 +10262,7 @@ export interface components {
             recording?: {
                 available: boolean;
             };
-            /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. */
+            /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
             attributes?: components["schemas"]["ConversationAttribute"][];
         };
         ChatConversationTail: {
@@ -29491,9 +29491,9 @@ export interface operations {
                 outcome?: "in_progress" | "completed" | "handed_off";
                 /** @description Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller. */
                 callerKind?: "human" | "agent";
-                /** @description The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
                 attribute?: string;
-                /** @description An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
                 attributeOption?: string;
             };
             header?: never;
@@ -29565,9 +29565,9 @@ export interface operations {
                      * @enum {string}
                      */
                     callerKind?: "human" | "agent";
-                    /** @description The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                    /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
                     attribute?: string;
-                    /** @description An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                    /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
                     attributeOption?: string;
                     /** @description Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither). */
                     q?: string;
@@ -29616,9 +29616,9 @@ export interface operations {
                 ownership?: "human_owned";
                 agentId?: string;
                 channel?: string;
-                /** @description The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. */
                 attribute?: string;
-                /** @description An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
                 attributeOption?: string;
             };
             header?: never;

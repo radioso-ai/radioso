@@ -304,7 +304,7 @@ import type {
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
 import { ContextVariableService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
-import type { ConversationAttributeReadPort, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
+import type { ConversationAttributeReadPort, ConversationScope, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -675,21 +675,20 @@ class InMemoryDirectiveStateStore implements DirectiveStateStore {
   }
 }
 
-/** A conversation's attributes from the in-memory stores: the values kept for it, its session and its verified customer. */
+/** A conversation's attributes from the in-memory context-variable store: each variable's most specific value on the rungs. */
 class InMemoryConversationAttributeReads implements ConversationAttributeReadPort {
-  constructor(
-    private readonly conversations: Pick<InMemoryConversationRepository, "findByIdAndWorkspaceId">,
-    private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">,
-  ) {}
+  constructor(private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">) {}
 
-  async readConversationValues(input: { workspaceId: string; conversationId: string }): Promise<StoredConversationAttributeValue[]> {
-    const conversation = await this.conversations.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
-    if (!conversation) return [];
-    const rungs = new Map([["conversation", conversation.id], ["session", conversation.anonymousSessionId], ["customer", conversation.verifiedCustomerId]]);
-    return [...this.variables.values.values()].flatMap((value) => {
+  async readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]> {
+    const rungOf = (value: ContextVariableValue) => scopes.findIndex((scope) => scope.type === value.scope.type && scope.id === value.scope.id);
+    const mostSpecific = new Map<string, ContextVariableValue>();
+    for (const value of this.variables.values.values()) {
+      const held = mostSpecific.get(value.variableId);
+      if (value.workspaceId === workspaceId && rungOf(value) >= 0 && (!held || rungOf(value) < rungOf(held))) mostSpecific.set(value.variableId, value);
+    }
+    return [...mostSpecific.values()].flatMap((value) => {
       const variable = this.variables.variables.get(value.variableId);
-      const onRung = rungs.get(value.scope.type) === value.scope.id;
-      return variable && variable.workspaceId === input.workspaceId && onRung ? [{ variable, value }] : [];
+      return variable ? [{ variable, value }] : [];
     });
   }
 
@@ -697,10 +696,12 @@ class InMemoryConversationAttributeReads implements ConversationAttributeReadPor
     return [...this.variables.variables.values()].find((variable) => variable.workspaceId === workspaceId && variable.name === name) ?? null;
   }
 
-  /** The history lists' attribute filter: whether the conversation's own value is the filter's key. */
-  readonly holdsValue: ConversationValueMatcher = (filter, conversationId) =>
-    [...this.variables.values.values()].some((value) =>
-      value.variableId === filter.variableId && value.scope.type === "conversation" && value.scope.id === conversationId && value.data === filter.key);
+  /** The history lists' attribute filter: whether the conversation's own value is the filter's key, or, for Not set, whether it has none. */
+  readonly holdsValue: ConversationValueMatcher = (filter, conversationId) => {
+    const own = [...this.variables.values.values()].find((value) =>
+      value.variableId === filter.variableId && value.scope.type === "conversation" && value.scope.id === conversationId);
+    return filter.key === null ? own === undefined : own?.data === filter.key;
+  };
 }
 
 class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
@@ -2271,9 +2272,8 @@ export const createTestDependencies = (overrides: {
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
-  const conversationAttributeReads = new InMemoryConversationAttributeReads(conversationRepository, contextVariableRepository);
+  const conversationAttributeReads = new InMemoryConversationAttributeReads(contextVariableRepository);
   conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
-  const conversationAttributes = new ConversationAttributeService(conversationAttributeReads);
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -2287,6 +2287,7 @@ export const createTestDependencies = (overrides: {
     teammateLabels,
     conversationActivityReads,
     replyBlocks.imageUrls,
+    new ConversationAttributeService(conversationAttributeReads),
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -2568,7 +2569,7 @@ export const createTestDependencies = (overrides: {
     run: async () => undefined,
     logger,
   });
-  const assistantHistoryService = new AssistantHistoryService(chatHistoryService, conversationAttributes);
+  const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = overrides.publicConversationEventBus ?? new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
     auditService,
@@ -2846,7 +2847,6 @@ export const createTestDependencies = (overrides: {
     },
     chatHistoryService,
     voiceRecordings: voiceRecordings.recordings,
-    conversationAttributes,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
     testChat: testChatService,

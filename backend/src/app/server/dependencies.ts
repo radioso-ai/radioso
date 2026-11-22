@@ -996,7 +996,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
       advisoryCatalog: routineDefinitionService.advisoryCatalog.bind(routineDefinitionService),
     },
-    chatHistoryService: chat.chatHistoryService, conversationAttributes: chat.conversationAttributes,
+    chatHistoryService: chat.chatHistoryService,
     voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService: retrieval.documentSearchService,

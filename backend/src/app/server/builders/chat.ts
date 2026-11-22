@@ -861,7 +861,6 @@ export const buildChatServices = (input: {
     agentRevisionRuntimeResolver,
   );
   // A conversation's attributes as the operator surfaces read them, and the filter the history lists take.
-  const conversationAttributes = new ConversationAttributeService(new ConversationAttributeReads(input.database.kysely));
   const chatHistoryService = new ChatHistoryService(
     input.conversationRepository,
     input.messageRepository,
@@ -875,6 +874,7 @@ export const buildChatServices = (input: {
     input.teammateLabels,
     input.conversationActivity.reads,
     replyBlocks.imageUrls,
+    new ConversationAttributeService(new ConversationAttributeReads(input.database.kysely)),
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.
@@ -966,8 +966,7 @@ export const buildChatServices = (input: {
         logger: input.logger,
       }),
     }),
-    assistantHistoryService: new AssistantHistoryService(chatHistoryService, conversationAttributes),
-    conversationAttributes,
+    assistantHistoryService: new AssistantHistoryService(chatHistoryService),
     publicChatActionAdvertiser,
     chatBootstrapService,
     agentStarterPromptReader,

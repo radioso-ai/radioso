@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { MessageRecord } from "../../../../db/repositories/messageRepository.js";
+import type { ToolImageMiss } from "../../../toolImages/contracts/index.js";
 import { storedReplyBlockSchema } from "../../contracts/replyBlocks.js";
 
 const storedBlocksSchema = z.array(storedReplyBlockSchema).min(1);
@@ -8,10 +9,16 @@ const storedBlocksSchema = z.array(storedReplyBlockSchema).min(1);
 /** How often a picture still being copied is asked for again. */
 const DEFAULT_POLL_MS = 250;
 
-/** The served copy of a reply's picture, by its id; asking for one that is still waiting copies it. */
+/**
+ * The served copy of a reply's picture, by its id; asking for one that is still waiting copies it.
+ * A miss says whether a later request may find one.
+ */
 interface ReplyPictureLookup {
-  findServable(input: { imageId: string; width: number }): Promise<unknown>;
+  find(input: { imageId: string; width: number }): Promise<{ readonly kind: "found" } | Pick<ToolImageMiss, "kind" | "retryable">>;
 }
+
+/** A lookup that threw is asked again, like a picture still being copied. */
+const LOOKUP_FAILED = { kind: "miss", retryable: true } as const;
 
 interface ReplyPictureReadinessDependencies {
   messages: { findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> };
@@ -28,8 +35,8 @@ interface ReplyPictureReadinessDependencies {
  * picture by its address when the cards are sent (WhatsApp). A picture from a skill's result is
  * copied after the reply is written, so each is asked for at once, through the lookup the image
  * route serves by, which copies a waiting picture on demand; one still being copied is asked for
- * again until the time given runs out. It reads the pictures from the reply's stored blocks, never
- * from what a channel sends.
+ * again until the time given runs out, and one that can never be copied ends the wait at once. It
+ * reads the pictures from the reply's stored blocks, never from what a channel sends.
  */
 export class ReplyPictureReadiness {
   private readonly now: () => number;
@@ -64,8 +71,11 @@ export class ReplyPictureReadiness {
     const pollMs = this.deps.pollMs ?? DEFAULT_POLL_MS;
     for (;;) {
       const found = await Promise.all(waiting.map((imageId) =>
-        this.deps.pictures.findServable({ imageId, width: this.deps.width }).catch(() => null)));
-      waiting = waiting.filter((_imageId, index) => !found[index]);
+        this.deps.pictures.find({ imageId, width: this.deps.width }).catch(() => LOOKUP_FAILED)));
+      if (found.some((result) => result.kind === "miss" && !result.retryable)) {
+        return false;
+      }
+      waiting = waiting.filter((_imageId, index) => found[index]?.kind !== "found");
       if (waiting.length === 0) {
         return true;
       }

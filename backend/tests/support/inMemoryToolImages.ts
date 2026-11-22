@@ -4,6 +4,7 @@ import type {
   ToolImageClaim,
   ToolImageObject,
   ToolImageRendition,
+  ToolImageState,
   ToolImageStore,
 } from "../../src/modules/toolImages/domain.js";
 
@@ -30,16 +31,21 @@ export class InMemoryToolImageStore implements ToolImageStore {
     this.rows.set(imageId, { workspaceId, url, status: "pending", claimedAt: null, reason: null, renditions: [], stored: null });
   }
 
-  async claim(imageId: string, now: Date): Promise<ToolImageClaim> {
+  async peek(imageId: string, now: Date): Promise<ToolImageState> {
     const row = this.rows.get(imageId);
-    if (!row) return { kind: "missing" };
-    if (row.status === "stored") return { kind: "stored" };
-    if (row.status === "failed") return { kind: "failed" };
+    if (!row) return "missing";
+    if (row.status === "stored" || row.status === "failed") return row.status;
     const stale = row.status === "capturing" && row.claimedAt !== null && row.claimedAt.getTime() < now.getTime() - 30_000;
-    if (row.status === "capturing" && !stale) return { kind: "held" };
+    return row.status === "capturing" && !stale ? "held" : "waiting";
+  }
+
+  async claim(imageId: string, now: Date): Promise<ToolImageClaim> {
+    const state = await this.peek(imageId, now);
+    if (state !== "waiting") return { kind: state };
+    const row = this.rows.get(imageId)!;
     row.status = "capturing";
     row.claimedAt = now;
-    return { kind: "claimed", image: { id: imageId, workspaceId: row.workspaceId, url: row.url ?? "", claimedAt: now } };
+    return { kind: "claimed", image: { id: imageId, workspaceId: row.workspaceId, url: row.url, claimedAt: now } };
   }
 
   private holds(image: ClaimedToolImage): MemoryToolImageRow | null {

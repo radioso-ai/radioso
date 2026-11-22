@@ -1,5 +1,6 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { ToolImageMiss, ToolImageMissReason } from "../contracts/index.js";
 import { TOOL_IMAGE_LIMITS, type ToolImageRendition, type ToolImageStore } from "../domain.js";
 import type { ToolImageCaptureResult, ToolImageCaptureTrigger } from "./toolImageCapture.js";
 
@@ -8,21 +9,16 @@ const HELD_POLL_MS = 250;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Why the route had no copy to serve. Bounded, since it is a metric label: no capture turn came
- * free in time, the capture or another one holding the picture outlived the request's budget, the
- * network or storage failed, the picture failed for good, or no waiting picture has the id.
- */
-type ToolImageMissReason = "busy" | "timeout" | "unreachable" | "failed" | "not_found";
-
 const missReasonOf = (result: ToolImageCaptureResult): ToolImageMissReason => {
   switch (result) {
     case "busy":
+    case "decoder_busy":
+      return "busy";
     case "timeout":
-    case "unreachable":
-      return result;
     case "held":
       return "timeout";
+    case "unreachable":
+      return "unreachable";
     case "missing":
     case "stored":
       return "not_found";
@@ -32,15 +28,18 @@ const missReasonOf = (result: ToolImageCaptureResult): ToolImageMissReason => {
 };
 
 /** Misses a later request may get past; the others are the picture's own. */
-const TRANSIENT_MISSES: ReadonlySet<ToolImageMissReason> = new Set(["busy", "timeout", "unreachable"]);
+const RETRYABLE_MISSES: ReadonlySet<ToolImageMissReason> = new Set(["busy", "timeout", "unreachable"]);
+
+/** What a lookup found: the stored copy at the asked width, or why there is none. */
+export type ToolImageFindResult = { readonly kind: "found"; readonly object: ToolImageRendition } | ToolImageMiss;
 
 /**
  * Finds the stored copy the image route serves for a tool image, and copies a picture that is
  * still waiting on demand, while the browser asks for it: the reply is shown as soon as it is
  * written, usually before the job has run. A picture is captured once at a time in this process,
- * and a request that finds another capture holding it waits for that one, within one budget; a
- * request that finds every capture turn taken waits for one within the same budget. Every miss is
- * counted and logged with its reason and the image id, never the picture's address.
+ * and a request that finds another capture holding it waits for that one, within one budget. A
+ * miss says why and whether a later request may succeed; a caller that answers a request asks for
+ * it to be counted and logged with the image id, never the picture's address.
  */
 export class ToolImageLookup {
   private readonly inFlight = new Map<string, Promise<ToolImageCaptureResult>>();
@@ -51,17 +50,20 @@ export class ToolImageLookup {
       capture: { capture(imageId: string, trigger: ToolImageCaptureTrigger, options: { deadlineMs: number }): Promise<ToolImageCaptureResult> };
       budgetMs?: number;
       metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
-      logger?: Pick<AppLogger, "info" | "warn">;
+      logger?: Pick<AppLogger, "info" | "warn" | "debug">;
     },
   ) {}
 
-  async findServable(input: { imageId: string; width: number }): Promise<ToolImageRendition | null> {
+  async find(input: { imageId: string; width: number }, options: { readonly recordMiss?: boolean } = {}): Promise<ToolImageFindResult> {
     const stored = await this.deps.store.findRendition(input);
-    if (stored) return stored;
+    if (stored) return { kind: "found", object: stored };
     const result = await this.captureOnce(input.imageId);
-    const captured = await this.deps.store.findRendition(input);
-    if (!captured) this.recordMiss(input.imageId, result);
-    return captured;
+    // Only a capture that stored the picture, or another one that held it, can have left a copy.
+    const captured = result === "stored" || result === "held" ? await this.deps.store.findRendition(input) : null;
+    if (captured) return { kind: "found", object: captured };
+    const reason = missReasonOf(result);
+    if (options.recordMiss) this.recordMiss(input.imageId, reason, result);
+    return { kind: "miss", reason, retryable: RETRYABLE_MISSES.has(reason) };
   }
 
   private captureOnce(imageId: string): Promise<ToolImageCaptureResult> {
@@ -83,14 +85,14 @@ export class ToolImageLookup {
     }
   }
 
-  private recordMiss(imageId: string, outcome: ToolImageCaptureResult): void {
-    const reason = missReasonOf(outcome);
+  private recordMiss(imageId: string, reason: ToolImageMissReason, outcome: ToolImageCaptureResult): void {
     this.deps.metrics?.incrementCounter("tool_image_miss_total", {
       help: "Reply image requests that found no tool image copy to serve, by why",
       labels: { reason },
     });
     const fields = { imageId, reason, outcome };
-    if (TRANSIENT_MISSES.has(reason)) this.deps.logger?.warn(fields, "tool_image_miss");
-    else this.deps.logger?.info(fields, "tool_image_miss");
+    if (RETRYABLE_MISSES.has(reason)) this.deps.logger?.warn(fields, "tool_image_miss");
+    else if (reason === "failed") this.deps.logger?.info(fields, "tool_image_miss");
+    else this.deps.logger?.debug(fields, "tool_image_miss");
   }
 }

@@ -6,6 +6,7 @@ import { ToolImageCapture } from "../../../src/modules/toolImages/services/toolI
 import { toolImageCaptureHandler } from "../../../src/modules/toolImages/services/toolImageJobs.js";
 import { ToolImageLookup } from "../../../src/modules/toolImages/services/toolImageLookup.js";
 import type { PublicBytesFetchResult, PublicBytesLimits } from "../../../src/shared/infra/http/publicBytesFetch.js";
+import { NormalizationSlots } from "../../../src/shared/infra/images/normalizationSlots.js";
 import { InMemoryToolImageStore } from "../../support/inMemoryToolImages.js";
 
 const IMAGE_ID = "11111111-1111-4111-8111-111111111111";
@@ -40,7 +41,7 @@ const fetched = (bytes: Buffer): PublicBytesFetchResult => ({ kind: "fetched", b
 
 type Fetch = (url: string, limits: PublicBytesLimits) => PublicBytesFetchResult | Promise<PublicBytesFetchResult>;
 
-const harness = (fetchResult: Fetch, options: { concurrentCaptures?: number; now?: () => Date } = {}) => {
+const harness = (fetchResult: Fetch, options: { concurrentCaptures?: number; now?: () => Date; decodeSlots?: NormalizationSlots } = {}) => {
   const store = new InMemoryToolImageStore();
   store.add(IMAGE_ID, WORKSPACE_ID, SIGNED_URL);
   const row = store.rows.get(IMAGE_ID)!;
@@ -58,6 +59,7 @@ const harness = (fetchResult: Fetch, options: { concurrentCaptures?: number; now
     logger,
     concurrentCaptures: options.concurrentCaptures,
     now: options.now,
+    decodeSlots: options.decodeSlots,
     newCaptureTag: () => `${String(++tags).padStart(12, "0")}`,
   });
   return { store, row, objects, metrics, logger, fetchBytes, capture };
@@ -138,6 +140,46 @@ describe("tool image capture", () => {
 
     expect(failed.fetchBytes).toHaveBeenCalledTimes(1);
     expect(failed.metrics.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it("does not count asking for a picture already stored as a capture", async () => {
+    const { capture, metrics, fetchBytes } = harness(() => fetched(photo));
+    await capture.capture(IMAGE_ID, "job");
+    metrics.incrementCounter.mockClear();
+
+    expect(await capture.capture(IMAGE_ID, "on_demand")).toBe("stored");
+
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it("fails a claimed picture that has no address for good, counted and logged like any other failure", async () => {
+    const { row, capture, metrics, logger, fetchBytes } = harness(() => fetched(photo));
+    row.url = null;
+
+    expect(await capture.capture(IMAGE_ID, "job")).toBe("source_missing");
+
+    expect(row.status).toBe("failed");
+    expect(row.reason).toBe("source_missing");
+    expect(fetchBytes).not.toHaveBeenCalled();
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_capture_total", expect.objectContaining({ labels: { trigger: "job", outcome: "source_missing" } }));
+    expect(logger.info).toHaveBeenCalledWith({ imageId: IMAGE_ID, workspaceId: WORKSPACE_ID, trigger: "job", outcome: "source_missing" }, "tool_image_capture_failed");
+  });
+
+  it("hands a picture back as decoder_busy when the decoder stays full, distinct from a capture that found no turn", async () => {
+    const decodeSlots = new NormalizationSlots(1, 50);
+    let release: () => void = () => {};
+    void decodeSlots.run(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const { row, capture, metrics } = harness(() => fetched(photo), { decodeSlots });
+
+    expect(await capture.capture(IMAGE_ID, "job")).toBe("decoder_busy");
+
+    expect(row.status).toBe("pending");
+    expect(row.reason).toBe("decoder_busy");
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_capture_total", expect.objectContaining({ labels: { trigger: "job", outcome: "decoder_busy" } }));
+    release();
   });
 
   it("tells a second capture another one holds the picture", async () => {
@@ -246,6 +288,27 @@ describe("a capture that outlives its claim", () => {
   });
 });
 
+
+/** A capture of another picture that holds the process's only turn until `release` is called. */
+const holdOnlyTurn = (setup: ReturnType<typeof harness>) => {
+  const OTHER = "33333333-3333-4333-8333-333333333333";
+  setup.store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
+  return { holding: setup.capture.capture(OTHER, "job") };
+};
+
+/** A fetch that waits for `release` on the picture whose address names "other", and answers the rest at once. */
+const gatedOnOther = () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fetch: Fetch = async (url) => {
+    if (url.includes("other")) await gate;
+    return fetched(photo);
+  };
+  return { fetch, release: () => release() };
+};
+
 describe("bounded captures", () => {
   it("ends a capture at its deadline, whatever is still running, and hands the picture back", async () => {
     const { row, capture } = harness(async (_url, limits) => new Promise<PublicBytesFetchResult>((resolve) => {
@@ -253,53 +316,91 @@ describe("bounded captures", () => {
     }));
     const started = Date.now();
 
-    expect(await capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 150 })).toBe("timeout");
+    expect(await capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 1_300 })).toBe("timeout");
 
-    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(Date.now() - started).toBeLessThan(3_000);
     expect(row.status).toBe("pending");
   });
 
   it("waits on demand for a capture turn to come free, and copies the picture within its deadline", async () => {
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { store, capture } = harness(async (url) => {
-      if (url.includes("other")) await gate;
-      return fetched(photo);
-    }, { concurrentCaptures: 1 });
-    const OTHER = "33333333-3333-4333-8333-333333333333";
-    store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
+    const gated = gatedOnOther();
+    const setup = harness(gated.fetch, { concurrentCaptures: 1 });
+    const { holding } = holdOnlyTurn(setup);
 
-    const first = capture.capture(OTHER, "job");
-    const waiting = capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 2_000 });
-    setTimeout(release, 100);
+    const waiting = setup.capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 2_000 });
+    setTimeout(gated.release, 100);
 
     expect(await waiting).toBe("stored");
-    expect(await first).toBe("stored");
+    expect(await holding).toBe("stored");
   });
 
-  it("answers busy on demand when no capture turn comes free before its deadline, without touching the picture", async () => {
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { store, capture, metrics } = harness(async () => {
-      await gate;
-      return fetched(photo);
-    }, { concurrentCaptures: 1 });
-    const OTHER = "33333333-3333-4333-8333-333333333333";
-    store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
-
-    const first = capture.capture(OTHER, "job");
+  it("answers busy on demand when no capture turn comes free while a second of its deadline is still left, without touching the picture", async () => {
+    const gated = gatedOnOther();
+    const setup = harness(gated.fetch, { concurrentCaptures: 1 });
+    const { holding } = holdOnlyTurn(setup);
     const started = Date.now();
-    expect(await capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 200 })).toBe("busy");
-    expect(Date.now() - started).toBeGreaterThanOrEqual(150);
-    expect(store.rows.get(IMAGE_ID)?.status).toBe("pending");
-    expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_capture_total", expect.objectContaining({ labels: { trigger: "on_demand", outcome: "busy" } }));
 
-    release();
-    expect(await first).toBe("stored");
+    expect(await setup.capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 1_400 })).toBe("busy");
+
+    const waited = Date.now() - started;
+    expect(waited).toBeGreaterThanOrEqual(300);
+    expect(waited).toBeLessThan(1_000);
+    expect(setup.row).toMatchObject({ status: "pending", reason: null });
+    expect(setup.metrics.incrementCounter).toHaveBeenCalledWith("tool_image_capture_total", expect.objectContaining({ labels: { trigger: "on_demand", outcome: "busy" } }));
+    gated.release();
+    await holding;
+  });
+
+  it("answers busy without claiming the picture when less than a second of its deadline is left", async () => {
+    const { row, capture, fetchBytes } = harness(() => fetched(photo));
+
+    expect(await capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 900 })).toBe("busy");
+
+    expect(fetchBytes).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ status: "pending", reason: null, claimedAt: null });
+  });
+
+  it("answers from the picture's state without queueing behind busy turns when there is nothing to copy", async () => {
+    const gated = gatedOnOther();
+    const setup = harness(gated.fetch, { concurrentCaptures: 1 });
+    const { holding } = holdOnlyTurn(setup);
+    const [FAILED, HELD, STORED] = ["77777771-7777-4777-8777-777777777777", "77777772-7777-4777-8777-777777777777", "77777773-7777-4777-8777-777777777777"];
+    for (const imageId of [FAILED, HELD, STORED]) setup.store.add(imageId, WORKSPACE_ID, "https://img.homes.example/x.jpg");
+    Object.assign(setup.store.rows.get(FAILED)!, { status: "failed", url: null, reason: "http_error" });
+    Object.assign(setup.store.rows.get(HELD)!, { status: "capturing", claimedAt: new Date() });
+    Object.assign(setup.store.rows.get(STORED)!, { status: "stored", url: null });
+    const started = Date.now();
+
+    const results = await Promise.all([
+      setup.capture.capture(FAILED, "on_demand"),
+      setup.capture.capture(HELD, "on_demand"),
+      setup.capture.capture(STORED, "on_demand"),
+      setup.capture.capture("44444444-4444-4444-8444-444444444444", "on_demand"),
+    ]);
+
+    expect(results).toEqual(["failed", "held", "stored", "missing"]);
+    expect(Date.now() - started).toBeLessThan(200);
+    gated.release();
+    await holding;
+  });
+
+  it("answers busy at once on demand past a few waiting requests per capture turn, and copies the ones that queued", async () => {
+    const gated = gatedOnOther();
+    const setup = harness(gated.fetch, { concurrentCaptures: 1 });
+    const { holding } = holdOnlyTurn(setup);
+    const queued = Array.from({ length: 4 }, (_, index) => `8888888${index}-8888-4888-8888-888888888888`);
+    for (const imageId of [...queued, IMAGE_ID]) setup.store.add(imageId, WORKSPACE_ID, `https://img.homes.example/${imageId}.jpg`);
+    const waiting = queued.map((imageId) => setup.capture.capture(imageId, "on_demand", { deadlineMs: 5_000 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const started = Date.now();
+
+    expect(await setup.capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 5_000 })).toBe("busy");
+
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(setup.row.status).toBe("pending");
+    gated.release();
+    expect(await Promise.all(waiting)).toEqual(queued.map(() => "stored"));
+    await holding;
   });
 
   it("stops a job run whose own signal aborted, leaving the rest for the next run", async () => {
@@ -313,6 +414,8 @@ describe("bounded captures", () => {
   });
 });
 
+const missLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() });
+
 describe("tool image lookup", () => {
   it("captures a waiting picture once, however many widths are asked for at the same time", async () => {
     let release: () => void = () => {};
@@ -325,24 +428,25 @@ describe("tool image lookup", () => {
     });
     const lookup = new ToolImageLookup({ store, capture });
 
-    const both = Promise.all([lookup.findServable({ imageId: IMAGE_ID, width: 320 }), lookup.findServable({ imageId: IMAGE_ID, width: 640 })]);
+    const both = Promise.all([lookup.find({ imageId: IMAGE_ID, width: 320 }), lookup.find({ imageId: IMAGE_ID, width: 640 })]);
     release();
     const [small, large] = await both;
 
     expect(fetchBytes).toHaveBeenCalledTimes(1);
-    expect(small?.objectPath).toContain(`${IMAGE_ID}-w320-`);
-    expect(large).toMatchObject({ bucket: "local", objectPath: expect.stringContaining(`${IMAGE_ID}-w640-`) });
+    expect(small).toMatchObject({ kind: "found", object: { objectPath: expect.stringContaining(`${IMAGE_ID}-w320-`) } });
+    expect(large).toMatchObject({ kind: "found", object: { bucket: "local", objectPath: expect.stringContaining(`${IMAGE_ID}-w640-`) } });
   });
 
-  it("serves a stored picture without capturing, and misses a failed one", async () => {
+  it("serves a stored picture without capturing, and misses a failed one for good", async () => {
     const stored = harness(() => fetched(photo));
     await stored.capture.capture(IMAGE_ID, "job");
     const spy = vi.spyOn(stored.capture, "capture");
-    expect(await new ToolImageLookup({ store: stored.store, capture: stored.capture }).findServable({ imageId: IMAGE_ID, width: 640 })).not.toBeNull();
+    expect(await new ToolImageLookup({ store: stored.store, capture: stored.capture }).find({ imageId: IMAGE_ID, width: 640 })).toMatchObject({ kind: "found" });
     expect(spy).not.toHaveBeenCalled();
 
     const failed = harness(() => ({ kind: "failed", reason: "blocked" }));
-    expect(await new ToolImageLookup({ store: failed.store, capture: failed.capture }).findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
+    expect(await new ToolImageLookup({ store: failed.store, capture: failed.capture }).find({ imageId: IMAGE_ID, width: 640 }))
+      .toEqual({ kind: "miss", reason: "failed", retryable: false });
   });
 
   it("waits within its budget for a capture another request holds", async () => {
@@ -354,9 +458,9 @@ describe("tool image lookup", () => {
       void store.markStored({ image: claim, width: 900, height: 600, sha256: "0".repeat(64), renditions: [{ bucket: "local", objectPath: "p", generation: null, width: 640, height: 427, sizeBytes: 10 }] });
     }, 300);
 
-    const served = await new ToolImageLookup({ store, capture, budgetMs: 2_000 }).findServable({ imageId: IMAGE_ID, width: 640 });
+    const served = await new ToolImageLookup({ store, capture, budgetMs: 2_000 }).find({ imageId: IMAGE_ID, width: 640 });
 
-    expect(served?.objectPath).toBe("p");
+    expect(served).toMatchObject({ kind: "found", object: { objectPath: "p" } });
   });
 
   it("serves every picture of a carousel asked for at once, more than the process captures at a time", async () => {
@@ -370,35 +474,26 @@ describe("tool image lookup", () => {
     for (const imageId of cards) store.add(imageId, WORKSPACE_ID, `https://img.homes.example/photos/${imageId}.jpg`);
     const lookup = new ToolImageLookup({ store, capture });
 
-    const served = await Promise.all(cards.map((imageId) => lookup.findServable({ imageId, width: 320 })));
+    const served = await Promise.all(cards.map((imageId) => lookup.find({ imageId, width: 320 })));
 
-    expect(served.map((rendition) => rendition?.objectPath ?? null)).toEqual(cards.map((imageId) => expect.stringContaining(`${imageId}-w320-`)));
+    expect(served).toEqual(cards.map((imageId) => expect.objectContaining({ kind: "found", object: expect.objectContaining({ objectPath: expect.stringContaining(`${imageId}-w320-`) }) })));
   });
 
-  it("counts and logs every miss with its reason and the image id only", async () => {
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { store, capture } = harness(async (url) => {
-      if (url.includes("expired")) return { kind: "failed", reason: "http_status", status: 410 };
-      await gate;
-      return fetched(photo);
-    }, { concurrentCaptures: 1 });
-    const OTHER = "33333333-3333-4333-8333-333333333333";
+  it("records each miss of a route request with its reason and the image id only, and an unknown id at debug only", async () => {
+    const gated = gatedOnOther();
+    const setup = harness(async (url, limits) => (url.includes("expired") ? { kind: "failed", reason: "http_status", status: 410 } : gated.fetch(url, limits)), { concurrentCaptures: 1 });
     const EXPIRED = "66666666-6666-4666-8666-666666666666";
-    store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
-    store.add(EXPIRED, WORKSPACE_ID, "https://img.homes.example/expired.jpg?signature=secret");
+    setup.store.add(EXPIRED, WORKSPACE_ID, "https://img.homes.example/expired.jpg?signature=secret");
     const metrics = { incrementCounter: vi.fn() };
-    const logger = { info: vi.fn(), warn: vi.fn() };
-    const lookup = new ToolImageLookup({ store, capture, budgetMs: 200, metrics, logger });
+    const logger = missLogger();
+    const lookup = new ToolImageLookup({ store: setup.store, capture: setup.capture, budgetMs: 1_300, metrics, logger });
 
-    expect(await lookup.findServable({ imageId: EXPIRED, width: 640 })).toBeNull();
-    expect(await lookup.findServable({ imageId: "44444444-4444-4444-8444-444444444444", width: 640 })).toBeNull();
-    // The only capture turn is taken past this request's budget.
-    const holding = capture.capture(OTHER, "job");
-    expect(await lookup.findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
-    release();
+    expect(await lookup.find({ imageId: EXPIRED, width: 640 }, { recordMiss: true })).toEqual({ kind: "miss", reason: "failed", retryable: false });
+    expect(await lookup.find({ imageId: "44444444-4444-4444-8444-444444444444", width: 640 }, { recordMiss: true }))
+      .toEqual({ kind: "miss", reason: "not_found", retryable: false });
+    const { holding } = holdOnlyTurn(setup);
+    expect(await lookup.find({ imageId: IMAGE_ID, width: 640 }, { recordMiss: true })).toEqual({ kind: "miss", reason: "busy", retryable: true });
+    gated.release();
     await holding;
 
     expect(metrics.incrementCounter.mock.calls.map(([name, options]) => [name, options.labels])).toEqual([
@@ -406,20 +501,32 @@ describe("tool image lookup", () => {
       ["tool_image_miss_total", { reason: "not_found" }],
       ["tool_image_miss_total", { reason: "busy" }],
     ]);
-    expect(logger.info).toHaveBeenCalledWith({ imageId: EXPIRED, reason: "failed", outcome: "http_error" }, "tool_image_miss");
-    expect(logger.info).toHaveBeenCalledWith({ imageId: "44444444-4444-4444-8444-444444444444", reason: "not_found", outcome: "missing" }, "tool_image_miss");
-    expect(logger.warn).toHaveBeenCalledWith({ imageId: IMAGE_ID, reason: "busy", outcome: "busy" }, "tool_image_miss");
-    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("homes.example");
+    expect(logger.info.mock.calls).toEqual([[{ imageId: EXPIRED, reason: "failed", outcome: "http_error" }, "tool_image_miss"]]);
+    expect(logger.debug.mock.calls).toEqual([[{ imageId: "44444444-4444-4444-8444-444444444444", reason: "not_found", outcome: "missing" }, "tool_image_miss"]]);
+    expect(logger.warn.mock.calls).toEqual([[{ imageId: IMAGE_ID, reason: "busy", outcome: "busy" }, "tool_image_miss"]]);
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls, logger.debug.mock.calls])).not.toContain("homes.example");
   });
 
-  it("misses a picture whose capture outlives the request's budget as a timeout", async () => {
+  it("records nothing for a caller that does not ask, such as a check before cards are sent", async () => {
+    const { store, capture } = harness(() => ({ kind: "failed", reason: "blocked" }));
+    const metrics = { incrementCounter: vi.fn() };
+    const logger = missLogger();
+
+    expect(await new ToolImageLookup({ store, capture, metrics, logger }).find({ imageId: IMAGE_ID, width: 640 })).toMatchObject({ kind: "miss", reason: "failed" });
+
+    expect(metrics.incrementCounter).not.toHaveBeenCalled();
+    expect([...logger.info.mock.calls, ...logger.warn.mock.calls, ...logger.debug.mock.calls]).toEqual([]);
+  });
+
+  it("misses a picture whose capture outlives the request's budget as a timeout a later request may get past", async () => {
     const { store, capture } = harness(async (_url, limits) => new Promise<PublicBytesFetchResult>((resolve) => {
       limits.signal?.addEventListener("abort", () => resolve({ kind: "failed", reason: "timeout" }), { once: true });
     }));
     const metrics = { incrementCounter: vi.fn() };
-    const logger = { info: vi.fn(), warn: vi.fn() };
+    const logger = missLogger();
 
-    expect(await new ToolImageLookup({ store, capture, budgetMs: 150, metrics, logger }).findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
+    expect(await new ToolImageLookup({ store, capture, budgetMs: 1_300, metrics, logger }).find({ imageId: IMAGE_ID, width: 640 }, { recordMiss: true }))
+      .toEqual({ kind: "miss", reason: "timeout", retryable: true });
 
     expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_miss_total", expect.objectContaining({ labels: { reason: "timeout" } }));
     expect(logger.warn).toHaveBeenCalledWith({ imageId: IMAGE_ID, reason: "timeout", outcome: "timeout" }, "tool_image_miss");

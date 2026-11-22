@@ -30,16 +30,17 @@ export const createReplyImageRoutes = (
   router.get("/:imageId/:width", rateLimit, async (req, res, next) => {
     try {
       const params = replyImageParamsSchema.safeParse(req.params);
-      const stored = params.success
-        ? await dependencies.replyImageObjectLookup.findServable({
-            imageId: params.data.imageId,
-            width: Number(params.data.width),
-          })
+      const found = params.success
+        ? await dependencies.replyImageObjectLookup.find(
+            { imageId: params.data.imageId, width: Number(params.data.width) },
+            { recordMiss: true },
+          )
         : null;
-      if (!stored) {
+      if (found?.kind !== "found") {
         next(notFound("Not found"));
         return;
       }
+      const stored = found.object;
       const buffer = await dependencies.documentStorage.read({
         bucket: stored.bucket,
         objectPath: stored.objectPath,

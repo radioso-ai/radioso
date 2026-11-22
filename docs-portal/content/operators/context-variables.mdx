@@ -559,10 +559,51 @@ subject export lists them with the kind of writer that set each one.
 
 ## Inbox
 
-Open a conversation in the Inbox and inspect the assistant turn. When
-attributes were resolved for that turn, the debug panel shows a read-only
-**Visitor context** block. Sensitive values are already redacted by the backend
-before they reach the dashboard.
+Open a conversation from the Inbox's **All** list, then **Open in debug view**.
+The **Attributes** block lists what the conversation holds: each attribute's
+value, who set it and when, for example "Billing", "Set by the AI". A value kept
+for the visitor's chat session or verified customer reads "for this visitor".
+When the same attribute has values at several of those levels, the most
+specific one is shown, the way the agent reads it. Agent-wide and
+workspace-wide values are defaults and stay off the list. A Private attribute
+shows "Private data" instead of its value, and an option archived since the
+value was stored keeps its label, marked "(archived)". A conversation without
+attributes shows no block.
+
+To find the conversations about one thing, pick an option from the **Attribute**
+filter on the All list. It offers every Choice attribute that is not Private,
+archived options included, and matches values set for the conversation itself:
+the AI's choices, and values your API set with `conversation` scope.
+
+Inspect an assistant turn to see what that turn read: when attributes were
+resolved for it, the debug panel shows a read-only **Visitor context** block.
+Sensitive values are redacted by the backend before they reach the dashboard.
+
+The same reads are in the API. `GET /api/v1/history/chat/{conversationId}`
+returns `attributes`:
+
+```json
+{
+  "attributes": [
+    {
+      "name": "topic",
+      "valueType": "enum",
+      "value": "billing",
+      "option": { "label": "Billing", "archived": false },
+      "redacted": false,
+      "scope": "conversation",
+      "writtenBy": { "kind": "classifier", "ref": "context-classification/1" },
+      "updatedAt": "2026-11-22T09:30:00.000Z"
+    }
+  ]
+}
+```
+
+`GET /api/v1/history`, `POST /api/v1/history/query` and
+`GET /api/v1/history/chat` take `attribute` and `attributeOption` together,
+for example `?attribute=topic&attributeOption=billing`. An unknown attribute or
+option, or an attribute that is not a Choice or is Private, returns `400` with
+the reason.
 
 ## Read next
 

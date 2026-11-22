@@ -390,7 +390,8 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 
 - `contextVariables.definition.propose` (`copilotPrimitiveRegistry.ts:2`) learns `valueType`, `options` and the `classified` source, so Ray can propose an attribute and its classification as one draft diff.
 - Routine proposals pick up `saveTo` through the shared schema.
-- Reading values is a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- The per-scope value routes stay a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- A conversation's attributes are read the way the Inbox reads them (slice 1c): `conversation_transcript` returns them, Private values redacted, and `conversation_history_search` filters by a Choice option. Both map to the history routes already covered (`getHistoryConversation`, `listHistory`).
 - Tool descriptions stay under the 2,048-character cap.
 
 ### Zapier and n8n (slice 6)

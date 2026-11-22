@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
-import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, isForeignKeyViolationOn } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
-import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, conflict, notFound, type AppError } from "../../../shared/domain/errors.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import type {
   CreateOauthConnectionInput,
   OauthConnectionRecord,
@@ -111,7 +112,30 @@ interface SlackInstallationServiceOptions {
   bindings: SlackBindingRepositoryPort;
   workspaceAccounts: WorkspaceAccountLookup;
   encryptionKey?: FieldEncryptionKeyRing;
+  /** The skills that use an installation, which keep Slack from being disconnected. */
+  skillTargetUses: SkillTargetUseReader;
 }
+
+const SKILL_TARGET_CONSTRAINT = "agent_skills_slack_target_fk";
+
+/**
+ * The refusal to disconnect Slack while skills post through it, in a draft or a published release.
+ * The installation belongs to the account, so another of its workspaces can ask to disconnect it:
+ * that workspace hears the installation is in use, not which agents and skills hold it.
+ */
+const installationInUse = (
+  requestingWorkspaceId: string,
+  installation: SlackInstallationRecord,
+  uses: readonly SkillTargetUse[],
+): AppError =>
+  installation.workspaceId === requestingWorkspaceId
+    ? skillTargetInUseError({ code: "slack_installation_in_use", targetLabel: "Slack installation", uses })
+    : skillTargetInUseError({
+      code: "slack_installation_in_use",
+      targetLabel: "Slack installation",
+      uses: [],
+      otherUses: "Skills in another workspace post through it.",
+    });
 
 export interface WorkspaceAccountLookup {
   getAccountId(workspaceId: string): Promise<string | null>;
@@ -308,10 +332,31 @@ export class SlackInstallationService {
     if (!installation) {
       return false;
     }
+    const uses = await this.skillUses(installation);
+    if (uses.length > 0) {
+      throw installationInUse(workspaceId, installation, uses);
+    }
+    try {
+      await this.options.installations.removeByWorkspaceId(installation.workspaceId);
+    } catch (error) {
+      // A skill took the installation after the check above, and the database's guard refused
+      // before anything was removed.
+      if (isForeignKeyViolationOn(error, SKILL_TARGET_CONSTRAINT)) {
+        throw installationInUse(workspaceId, installation, await this.skillUses(installation));
+      }
+      throw error;
+    }
     await this.options.bindings.removeByInstallationId(installation.id);
-    await this.options.installations.removeByWorkspaceId(installation.workspaceId);
     await this.options.integrationConnections.remove(installation.workspaceId, installation.connectionId, ["slack"]);
     return true;
+  }
+
+  private skillUses(installation: SlackInstallationRecord): Promise<SkillTargetUse[]> {
+    return this.options.skillTargetUses.listSkillTargetUses({
+      workspaceId: installation.workspaceId,
+      targetType: "slack_installation",
+      targetId: installation.id,
+    });
   }
 
   async resolveBotTokenForInstallation(installation: SlackInstallationRecord): Promise<string | null> {

@@ -3,16 +3,18 @@ import { describe, expect, it } from "vitest";
 import { ApiConnectionService } from "../../../src/modules/apiRequestSkills/public.js";
 import { assertPublicHttpTarget } from "../../../src/shared/infra/http/publicUrlFetch.js";
 import { InMemoryApiConnectionRepository } from "../../support/inMemoryApiConnections.js";
+import { noSkillTargetUses } from "../../support/skillTargetUses.js";
 
 type Lookup = (host: string) => Promise<{ address: string; family: number }[]>;
 
 const serviceWith = (assertPublicUrl: (url: string) => Promise<void>) =>
   new ApiConnectionService({
-    repository: new InMemoryApiConnectionRepository({ listByWorkspace: async () => [] }),
+    repository: new InMemoryApiConnectionRepository(noSkillTargetUses),
     auditService: { record: async () => undefined },
     encryption: { key: undefined },
     assertPublicUrl,
     send: async () => ({ kind: "failed", reason: "unreachable", durationMs: 0 }),
+    skillTargetUses: noSkillTargetUses,
   });
 
 /** The guard the app composes for API connections is the shared public-network one; its refusal must name the base URL. */

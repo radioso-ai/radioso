@@ -1,12 +1,13 @@
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { isLocalDevelopmentHttpUrl, PublicHostUnresolvedError, PublicNetworkPolicyError } from "../../../shared/domain/publicNetwork.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import {
   decryptField,
   encryptField,
   maskSecret,
   type FieldEncryptionKeyRing,
 } from "../../../shared/infra/crypto/fieldEncryption.js";
-import { isUniqueViolation, pgErrorMeta } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { isForeignKeyViolationOn, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
 import {
   API_REQUEST_LIMITS,
   apiConnectionCreateSchema,
@@ -45,8 +46,6 @@ export interface ApiConnectionRepositoryPort {
   findByIdAndWorkspace(id: string, workspaceId: string): Promise<ApiConnectionRecord | null>;
   update(id: string, workspaceId: string, input: ApiConnectionWrite): Promise<ApiConnectionRecord | null>;
   delete(id: string, workspaceId: string): Promise<boolean>;
-  /** Names of the agent skills that target the connection, across the workspace's agents. */
-  listSkillNamesReferencingConnection(workspaceId: string, connectionId: string): Promise<string[]>;
 }
 
 interface ApiConnectionActor {
@@ -125,17 +124,14 @@ const retargetsCredential = (
   || next.authScheme !== existing.authScheme
   || (next.authHeaderName ?? "").toLowerCase() !== (existing.authHeaderName ?? "").toLowerCase();
 
-class ApiConnectionInUseError extends AppError {
-  constructor(connectionId: string, skillNames: string[]) {
-    const summary = skillNames.length > 0 ? `: ${skillNames.map((name) => `skill:${name}`).join(", ")}` : "";
-    super(409, "api_connection_in_use", `API connection ${connectionId} is used by agent skills${summary}`, {
-      connectionId,
-      references: skillNames.map((name) => `skill:${name}`),
-    });
-  }
-}
-
-const isConstraint = (error: unknown, constraint: string): boolean => pgErrorMeta(error).constraint === constraint;
+/** The refusal to delete a connection skills use, in an agent's draft or its published release. */
+const connectionInUse = (connectionId: string, uses: readonly SkillTargetUse[]): AppError =>
+  skillTargetInUseError({
+    code: "api_connection_in_use",
+    targetLabel: "API connection",
+    uses,
+    details: { connectionId, references: [...new Set(uses.map((use) => `skill:${use.skillName}`))] },
+  });
 
 /**
  * Owns workspace API connections: their validation, the encrypted credential, the delete guard,
@@ -165,6 +161,8 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
     /** Plain http to this machine as a base URL: local development and e2e only. */
     allowHttpLoopback?: boolean;
     send: ApiRequestSender;
+    /** The skills that use a connection, which keep it from being deleted. */
+    skillTargetUses: SkillTargetUseReader;
   }) {}
 
   async list(workspaceId: string): Promise<ApiConnection[]> {
@@ -238,15 +236,14 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
 
   async delete(workspaceId: string, id: string, actor: ApiConnectionActor): Promise<void> {
     const existing = await this.requireRecord(workspaceId, id);
-    const skillNames = await this.options.repository.listSkillNamesReferencingConnection(workspaceId, id);
-    if (skillNames.length > 0) throw new ApiConnectionInUseError(id, skillNames);
+    const uses = await this.skillUses(workspaceId, id);
+    if (uses.length > 0) throw connectionInUse(id, uses);
     let deleted: boolean;
     try {
       deleted = await this.options.repository.delete(id, workspaceId);
     } catch (error) {
-      if (isConstraint(error, IN_USE_CONSTRAINT)) {
-        throw new ApiConnectionInUseError(id, await this.options.repository.listSkillNamesReferencingConnection(workspaceId, id));
-      }
+      // A skill took the connection after the check above, and the database's guard refused.
+      if (isForeignKeyViolationOn(error, IN_USE_CONSTRAINT)) throw connectionInUse(id, await this.skillUses(workspaceId, id));
       throw error;
     }
     if (!deleted) throw notFound("API connection not found");
@@ -310,6 +307,10 @@ export class ApiConnectionService implements ApiConnectionTargetResolver {
       body: preview.body,
       bodyTruncated: preview.truncated,
     };
+  }
+
+  private skillUses(workspaceId: string, connectionId: string): Promise<SkillTargetUse[]> {
+    return this.options.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "api_connection", targetId: connectionId });
   }
 
   private async requireRecord(workspaceId: string, id: string): Promise<ApiConnectionRecord> {

@@ -14,6 +14,7 @@ import {
 import { CustomerEmailConnectionService } from "../../src/modules/customerEmail/services/customerEmailConnectionService.js";
 import { WorkspaceService } from "../../src/modules/workspace/public.js";
 import { createTestEnv } from "../support/testApp.js";
+import { noSkillTargetUses } from "../support/skillTargetUses.js";
 import {
   createAuditService,
   InMemoryAccountMembershipRepository,
@@ -188,7 +189,6 @@ describe("PasswordResetService", () => {
         findById: async () => null,
         listByWorkspace: async () => [],
         update: async () => null,
-        countSkillReferences: async () => 0,
         remove: async () => false,
       },
       oauthConnections: {
@@ -208,6 +208,7 @@ describe("PasswordResetService", () => {
           },
         }),
       },
+      skillTargetUses: noSkillTargetUses,
     });
 
     expect(customerEmailService).toBeInstanceOf(CustomerEmailConnectionService);

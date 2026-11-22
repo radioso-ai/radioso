@@ -20,13 +20,6 @@ export interface McpConnectionRecord {
   updatedAt: Date;
 }
 
-/** One agent whose skills use a connection, labelled the way the dashboard labels that agent. */
-export interface McpConnectionAgentUsage {
-  connectionId: string;
-  agentId: string;
-  agentName: string;
-}
-
 export interface CreateMcpConnectionInput {
   workspaceId: string;
   displayName: string;
@@ -91,8 +84,6 @@ export interface McpConnectionRepositoryPort {
   listByWorkspace(workspaceId: string): Promise<McpConnectionRecord[]>;
   /** The connections one agent's skills are bound to, for projecting that agent's configuration. */
   listUsedByAgent(workspaceId: string, agentId: string): Promise<McpConnectionRecord[]>;
-  /** Which agents use the workspace's connections, or one connection when an id is given. */
-  listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]>;
   updateStatus(workspaceId: string, id: string, status: McpConnectionStatus): Promise<McpConnectionRecord | null>;
   update(workspaceId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null>;
   setOauthFlow(workspaceId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null>;
@@ -202,26 +193,6 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
     return rows.map((row) => mapRecord(row as McpConnectionRow));
   }
 
-  async listAgentUsage(workspaceId: string, connectionId?: string): Promise<McpConnectionAgentUsage[]> {
-    const usage = this.db
-      .selectFrom("agent_skills as skill")
-      .innerJoin("agents as agent", "agent.id", "skill.agent_id")
-      .select([
-        "skill.target_id as connectionId",
-        "agent.id as agentId",
-        sql<string>`COALESCE(NULLIF(agent.internal_name, ''), agent.name)`.as("agentName"),
-      ])
-      .distinct()
-      .where("skill.workspace_id", "=", workspaceId)
-      .where("skill.kind", "=", "external_mcp")
-      .where("skill.target_type", "=", "mcp_connection")
-      .where("skill.target_id", "is not", null)
-      .orderBy("agentName")
-      .orderBy("agentId");
-    const rows = await (connectionId === undefined ? usage : usage.where("skill.target_id", "=", connectionId)).execute();
-    return rows.map((row) => ({ connectionId: row.connectionId ?? "", agentId: row.agentId, agentName: row.agentName }));
-  }
-
   async updateStatus(
     workspaceId: string,
     id: string,
@@ -270,9 +241,11 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
         .where("target_id", "=", id)
         .executeTakeFirst();
       if (Number(reference?.count ?? 0) > 0) {
-        const error = new Error("MCP connection is still referenced by skills") as Error & { code?: string };
-        error.code = "23503";
-        throw error;
+        // Raised the way the delete trigger raises it, so callers map both refusals alike.
+        throw Object.assign(new Error("MCP connection is still referenced by skills"), {
+          code: "23503",
+          constraint: "agent_skills_external_mcp_target_fk",
+        });
       }
     }
 

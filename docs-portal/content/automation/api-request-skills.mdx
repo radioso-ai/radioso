@@ -144,7 +144,7 @@ In the agent's test chat and in eval replays, `GET` requests run for real becaus
 - **`response_mismatch`.** A required output was absent. Run a test request and compare its `body` with the output `path`.
 - **`non_json_response`.** The API answered with something other than JSON while outputs were declared.
 - **`unverified`.** The value came from a slot or an unverified context variable. Sign the context variable on your site.
-- **The connection cannot be deleted.** A skill uses it. The error names the skills.
+- **The connection cannot be deleted.** A skill in an agent's draft or published release uses it, and the error names the agent and skill. If it says the published version still uses the skill, change the skill, publish the agent, then delete.
 - **A `POST` did nothing in the test chat.** Non-`GET` requests are suppressed there.
 
 ## Read next

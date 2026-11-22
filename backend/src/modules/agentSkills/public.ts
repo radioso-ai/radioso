@@ -17,6 +17,7 @@ export {
 } from "./repository.js";
 export { mergeSkillConfig } from "./configMerge.js";
 export { ConversationSkills, countLiveSkillFallbacks } from "./conversationSkills.js";
+export { AgentSkillTargetUses } from "./targetUses.js";
 export {
   AgentRetrievalAuthoringService,
   type AgentRetrievalAuthoringPort,

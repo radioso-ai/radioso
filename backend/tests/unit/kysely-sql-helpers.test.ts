@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
 import { pgVectorCosineDistance, pgVectorText, serializePgVector, toPgVector } from "../../src/shared/infra/kysely/pgVectorSql.js";
-import { anyOf, castText, clockTimestamp, containsAnyValueText, finishedBefore, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, logRowAfter, optionalTimestampMatch, setLocal, snapshotHorizon, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, containsAnyValueText, finishedBefore, isForeignKeyViolationOn, jsonbStringContainsAnyValueText, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, logRowAfter, optionalTimestampMatch, setLocal, snapshotHorizon, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -210,5 +210,15 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toContain("date_trunc('milliseconds', \"updated_at\") = date_trunc('milliseconds'");
     expect(compiled.parameters).toContain(expected);
+  });
+
+  it("isForeignKeyViolationOn matches a foreign key violation on the named constraint only", () => {
+    const violation = { code: "23503", constraint: "agent_skills_slack_target_fk" };
+
+    expect(isForeignKeyViolationOn(violation, "agent_skills_slack_target_fk")).toBe(true);
+    expect(isForeignKeyViolationOn(violation, "agent_skills_webhook_target_fk")).toBe(false);
+    expect(isForeignKeyViolationOn({ code: "23505", constraint: "agent_skills_slack_target_fk" }, "agent_skills_slack_target_fk")).toBe(false);
+    expect(isForeignKeyViolationOn(new Error("boom"), "agent_skills_slack_target_fk")).toBe(false);
+    expect(isForeignKeyViolationOn(null, "agent_skills_slack_target_fk")).toBe(false);
   });
 });

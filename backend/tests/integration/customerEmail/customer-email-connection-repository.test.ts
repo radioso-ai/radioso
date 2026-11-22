@@ -160,7 +160,6 @@ describeIfDatabase("customer email connection repository (postgres)", () => {
       senderEmail: "delete@example.com",
     });
 
-    expect(await repository.countSkillReferences(workspaceId, created.id)).toBe(0);
     expect(await repository.remove(otherWorkspaceId, created.id)).toBe(false);
     expect(await repository.remove(workspaceId, created.id)).toBe(true);
     expect(await repository.findById(workspaceId, created.id)).toBeNull();

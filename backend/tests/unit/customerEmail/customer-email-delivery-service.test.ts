@@ -42,7 +42,6 @@ const buildService = (provider: CustomerEmailProviderAdapter, record = connectio
         updates.push(input);
         return { ...record, ...input };
       },
-      countSkillReferences: async () => 0,
       remove: async () => true,
     },
     oauthCredentials: {

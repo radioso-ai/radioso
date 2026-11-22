@@ -44,7 +44,9 @@ const ConnectionSummarySchema = z.object({
   authMethod: z.string(),
   status: z.string(),
   hasCredential: z.boolean(),
-  usedByAgents: z.array(z.object({ id: z.string(), name: z.string() })),
+  usedByAgents: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .describe("Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -175,7 +177,7 @@ export const registerExternalSkillsPaths = (
       204: { description: "Connection deleted" },
       401: errorResponse("Authentication required"),
       404: errorResponse("Connection not found"),
-      409: errorResponse("Connection is still referenced by a skill"),
+      409: errorResponse("A skill in an agent's draft or published version uses the connection; the message names each agent and skill"),
     },
   });
 

@@ -9,7 +9,7 @@ import {
 } from "./domain.js";
 import type { SlackSkillDefinitionRepositoryPort } from "./repository.js";
 
-export interface SlackSkillDefinitionServiceOptions {
+interface SlackSkillDefinitionServiceOptions {
   repository: SlackSkillDefinitionRepositoryPort;
   installations: Pick<SlackInstallationRepositoryPort, "findById">;
 }
@@ -41,7 +41,9 @@ export class SlackSkillDefinitionService {
       return toSummary(await this.options.repository.create({
         workspaceId,
         agentId,
-        installationId: input.installationId,
+        // The installation's own id, not the request's spelling of it: the lookup matches a UUID
+        // in any letter case, and the skill must point at the row the delete guard compares.
+        installationId: installation.id,
         skillName: input.skillName,
         boundInputs: input.boundInputs,
         exposedInputs: input.exposedInputs,

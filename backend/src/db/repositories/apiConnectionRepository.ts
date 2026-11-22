@@ -120,18 +120,4 @@ export class ApiConnectionRepository implements ApiConnectionRepositoryPort {
       .executeTakeFirst();
     return Number(result.numDeletedRows) > 0;
   }
-
-  async listSkillNamesReferencingConnection(workspaceId: string, connectionId: string): Promise<string[]> {
-    if (!isUuid(connectionId)) return [];
-    const rows = await this.db
-      .selectFrom("agent_skills")
-      .select("skill_name")
-      .where("workspace_id", "=", workspaceId)
-      .where("kind", "=", "api_request")
-      .where("target_type", "=", "api_connection")
-      .where("target_id", "=", connectionId)
-      .orderBy("skill_name", "asc")
-      .execute();
-    return [...new Set(rows.map((row) => row.skill_name))];
-  }
 }

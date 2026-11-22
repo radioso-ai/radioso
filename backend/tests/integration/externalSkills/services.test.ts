@@ -15,6 +15,7 @@ import type { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { connectMockMcpServer } from "../../support/mockMcpServer.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
+import { noSkillTargetUses } from "../../support/skillTargetUses.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -111,6 +112,8 @@ describeIfDatabase("external skills services (postgres)", () => {
       repository: new McpConnectionRepository(database.kysely),
       toolServiceFactory: mockToolServiceFactory,
       encryptionKey: { current: encryptionKey, previous: [] },
+      // This schema has the delete triggers but not the published releases; the trigger refuses.
+      skillTargetUses: noSkillTargetUses,
     });
     skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database.kysely), connections);
   });

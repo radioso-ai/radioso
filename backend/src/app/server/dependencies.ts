@@ -132,6 +132,7 @@ import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
 import { backgroundJobHandlers } from "../composition/backgroundJobHandlers.js";
+import { buildContextClassification } from "../composition/contextClassification.js";
 import { lateBoundReviewedProposalPorts } from "../composition/lateBoundReviewedProposals.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
@@ -518,6 +519,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     registry: connectorRegistry,
   });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
+  const contextClassification = buildContextClassification({ infrastructure, repositories, contextVariableRepository, resolver: llmCapabilityResolver, logger });
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,
     agentReader: { get: agentService.get.bind(agentService) },
@@ -1172,10 +1174,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
   const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
-  const conversationLinks = buildConversationLinkResolver({
-    database: infrastructure.database,
-    appBaseUrl: env.APP_BASE_URL,
-  });
+  const conversationLinks = buildConversationLinkResolver({ database: infrastructure.database, appBaseUrl: env.APP_BASE_URL });
   // Built here (not only inside the API-only `SlackPlugin`) so the worker can dispatch
   // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
   const slackInboundJobs = buildSlackInboundJobComposition({
@@ -1193,7 +1192,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const backgroundJobRuntime = backgroundJobs.createRuntime(backgroundJobHandlers({
     chat: chat.backgroundJobHandlers,
-    slackInbound: slackInboundJobs.backgroundJobHandlers,
+    slackInbound: slackInboundJobs.backgroundJobHandlers, contextClassification: contextClassification.jobHandler,
     voiceRecordingErasure: voiceRecordings.erasureJobHandler,
     visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
     workspaceEventDelivery: workspaceEventDelivery.jobHandler,

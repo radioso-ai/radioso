@@ -996,6 +996,19 @@ imports from `services/`.
   `PreparedSession.conversationSummary` instead of loading the store. The applied summary
   is also echoed on `WorkbenchReplayResolvedConfig`/`EvalRunResolvedConfig.conversationSummary`
   for live-vs-replay comparison. Replay is hermetic — it never regenerates or persists the summary.
+- Attribute classification (#1884): beside the summary refresh, `services/turnBackgroundJobs.ts`
+  writes a `context.classification` job (owned by `modules/contextClassification`) in the turn's
+  commit when the conversation's revision has an enabled `classified` enablement and the turn is a
+  visitor's message on an end-user channel that answered no sensitive slot. The job reads the
+  conversation through `services/contextClassificationExcerptReader.ts`, chat's implementation of
+  the classifier's `ConversationExcerptReader`: the rolling summary and the visitor's latest
+  messages, never one marked as holding a sensitive routine value, nor a teammate's. Test Chat
+  sides are not stored conversations, so the trusted runner classifies a test turn itself
+  (`services/testChatClassification.ts`): over the side's own transcript, against the values the
+  test holds (its samples count as the operator's), with the same classifier and overwrite rule.
+  The values ride the test's continuation into its next turn, where they resolve as the
+  conversation's, and the turn's trace carries them as `attributes` (value, label and writer),
+  the way `handoffPreview` rides a Test Chat trace.
 - Draft a reply without becoming a turn: `services/replyDraftRunner.ts` composes what
   the agent would say next in a live conversation by running the workbench replay over
   that conversation's own transcript, with the last customer message as the query. It is

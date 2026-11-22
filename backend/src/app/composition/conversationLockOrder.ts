@@ -69,7 +69,7 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   unit and two sweeps claim disjoint sets; then their ownership rows in id order, and the rest as
  *   an erasure.
  * - A conversation-scope attribute value write (`ContextVariableRepository.upsertValue`, its locks in
- *   `contextVariableRowLocks.ts`): the attribute's variable row `FOR KEY SHARE`, then the
+ *   `contextVariableRowLocks.ts`), whether the API or the classifier writes it: the attribute's variable row `FOR KEY SHARE`, then the
  *   conversation `FOR SHARE`, then the value row. An erasure holding the conversation runs its
  *   erasers first, and the write then finds the conversation gone. The variable row comes before
  *   step 1, which is safe because no unit that

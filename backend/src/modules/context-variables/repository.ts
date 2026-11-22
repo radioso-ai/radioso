@@ -2,6 +2,7 @@ import type { ConversationSkillSet } from "../../shared/domain/conversationSkill
 import type {
   AgentContextVariableEnablement,
   ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
   ContextVariableOption,
   ContextVariableScope,
@@ -108,6 +109,8 @@ export interface ContextVariableRepositoryPort {
   upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null>;
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
   deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean>;
+  /** Deletes the value only when one of `writerKinds` wrote it, decided in the delete itself; whether a row went. */
+  deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean>;
   /** Whether any scope holds a value of the variable. */
   hasValues(variableId: string): Promise<boolean>;
   /** The agents whose draft has the classifier fill the variable (an enabled `classified` enablement). */

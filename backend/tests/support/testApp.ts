@@ -290,6 +290,7 @@ import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSo
 import type {
   AgentContextVariableEnablement,
   ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
   ContextVariableScope,
   ContextVariableValue,
@@ -819,6 +820,11 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
   async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
     return this.values.delete(this.valueKey(variableId, scope));
+  }
+
+  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+    const stored = this.values.get(this.valueKey(variableId, scope));
+    return stored && writerKinds.includes(stored.writtenBy.kind) ? this.values.delete(this.valueKey(variableId, scope)) : false;
   }
 
   async hasValues(variableId: string): Promise<boolean> {

@@ -114,6 +114,9 @@ class FakeContextVariableRepository implements ContextVariableRepositoryPort {
   classifiedEnablementAgentIds(_variableId: string): Promise<string[]> {
     throw new Error("not implemented");
   }
+  deleteValueWrittenBy(): Promise<boolean> {
+    throw new Error("not implemented");
+  }
   applyProposal(_input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
     throw new Error("not implemented");
   }

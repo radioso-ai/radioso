@@ -56,7 +56,7 @@ import {
   storedScopeId,
 } from "./contextVariableValueReads.js";
 
-interface ContextVariableRow {
+export interface ContextVariableRow {
   id: string;
   workspace_id: string;
   name: string;
@@ -97,7 +97,7 @@ interface AgentContextVariableWithVariableRow extends AgentContextVariableRow {
   variable_updated_at: Date | string;
 }
 
-const contextVariableColumns = [
+export const contextVariableColumns = [
   "id",
   "workspace_id",
   "name",
@@ -136,7 +136,7 @@ const optionsToRow = (options: readonly ContextVariableOption[] | null | undefin
 const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
   CONTEXT_VALUE_WRITER_KINDS.filter((existing) => mayOverwrite({ kind: existing, ref: null }, incoming));
 
-const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
+export const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
   id: row.id,
   workspaceId: row.workspace_id,
   name: row.name,
@@ -643,6 +643,18 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .where("variable_id", "=", variableId)
       .where("scope_type", "=", scope.type)
       .where("scope_id", "=", storedScopeId(scope))
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
+  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+    if (writerKinds.length === 0) return false;
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("variable_id", "=", variableId)
+      .where("scope_type", "=", scope.type)
+      .where("scope_id", "=", storedScopeId(scope))
+      .where("written_by_kind", "in", [...writerKinds])
       .executeTakeFirst();
     return (result?.numDeletedRows ?? 0n) > 0n;
   }

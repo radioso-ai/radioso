@@ -999,10 +999,14 @@ imports from `services/`.
 - Attribute classification (#1884): beside the summary refresh, `services/turnBackgroundJobs.ts`
   writes a `context.classification` job (owned by `modules/contextClassification`) in the turn's
   commit when the conversation's revision has an enabled `classified` enablement and the turn is a
-  visitor's message on an end-user channel that answered no sensitive slot. The job reads the
-  conversation through `services/contextClassificationExcerptReader.ts`, chat's implementation of
-  the classifier's `ConversationExcerptReader`: the rolling summary and the visitor's latest
-  messages, never one marked as holding a sensitive routine value, nor a teammate's. Test Chat
+  visitor's message on an end-user channel. A turn that held a sensitive slot writes it too: its
+  commit marks its messages, so that run recomputes, without them, a value an earlier run read
+  from them. The job reads the conversation through
+  `services/contextClassificationExcerptReader.ts`, chat's implementation of the classifier's
+  `ConversationExcerptReader`: the rolling summary and the visitor's latest messages of committed
+  turns (`answeredOnly`: none newer than the latest assistant message, so a turn still running is
+  not read before it is marked), never one marked as holding a sensitive routine value, nor a
+  teammate's. Test Chat
   sides are not stored conversations, so the trusted runner classifies a test turn itself
   (`services/testChatClassification.ts`): over the side's own transcript, against the values the
   test holds (its samples count as the operator's), with the same classifier and overwrite rule.

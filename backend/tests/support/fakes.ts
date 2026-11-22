@@ -5046,10 +5046,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     workspaceId: string,
     conversationId: string,
     limit: number,
-    options: { roles?: readonly MessageRecord["role"][] } = {},
+    options: { roles?: readonly MessageRecord["role"][]; answeredOnly?: boolean } = {},
   ): Promise<MessageRecord[]> {
-    return [...(this.items.get(conversationId) ?? [])]
-      .filter((message) => message.workspaceId === workspaceId && (!options.roles || options.roles.includes(message.role)))
+    const messages = (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId);
+    const answeredUntil = Math.max(...messages.filter((message) => message.role === "assistant").map((message) => message.createdAt.getTime()));
+    return [...messages]
+      .filter((message) => !options.roles || options.roles.includes(message.role))
+      .filter((message) => !options.answeredOnly || message.createdAt.getTime() <= answeredUntil)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .slice(-limit);
   }

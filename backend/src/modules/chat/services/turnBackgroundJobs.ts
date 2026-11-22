@@ -9,15 +9,12 @@ import { conversationSummaryRefreshRequest } from "./summary/conversationSummary
 /**
  * Whether the turn's conversation has its attributes classified after it: its revision has the
  * classifier fill one, and the turn is a visitor's message on an end-user channel, the population
- * facets read. A turn that answered a sensitive slot adds nothing a run may read, so it starts none;
- * operator tests classify in Test Chat's own runner.
+ * facets read. A turn that answered a sensitive slot classifies too: its commit marks its messages,
+ * and earlier ones it read a covered value from, so the run reads without them and recomputes a
+ * value an earlier run took from them. Operator tests classify in Test Chat's own runner.
  */
-const classifiesAfterTurn = (input: {
-  session: TurnBackgroundJobSession;
-  sensitiveSlotKeys: readonly string[];
-}): boolean =>
-  input.sensitiveSlotKeys.length === 0
-  && (input.session.revisionContextVariableEnablements ?? []).some(isClassifiedEnablement)
+const classifiesAfterTurn = (input: { session: TurnBackgroundJobSession }): boolean =>
+  (input.session.revisionContextVariableEnablements ?? []).some(isClassifiedEnablement)
   && isEligibleForFacetExtraction({
     role: input.session.userMessage.role,
     source: input.session.userMessage.source,
@@ -39,7 +36,6 @@ export const turnBackgroundJobs = (input: {
   workspaceId: string;
   accountId?: string;
   session: TurnBackgroundJobSession;
-  sensitiveSlotKeys: readonly string[];
 }): BackgroundJobRequest[] => [
   conversationSummaryRefreshRequest({
     workspaceId: input.workspaceId,

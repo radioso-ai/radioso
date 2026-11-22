@@ -22,7 +22,6 @@ const turn = (overrides: {
   enablements?: AgentContextVariableEnablement[];
   sourceChannel?: string | null;
   source?: "customer" | "human_agent";
-  sensitiveSlotKeys?: string[];
 } = {}) => turnBackgroundJobs({
   workspaceId: "workspace-1",
   accountId: "account-1",
@@ -31,7 +30,6 @@ const turn = (overrides: {
     userMessage: { role: "user", source: overrides.source ?? "customer" },
     ...(overrides.enablements ? { revisionContextVariableEnablements: overrides.enablements } : {}),
   },
-  sensitiveSlotKeys: overrides.sensitiveSlotKeys ?? [],
 });
 
 const kinds = (jobs: ReturnType<typeof turnBackgroundJobs>) => jobs.map((job) => job.kind);
@@ -47,9 +45,8 @@ describe("turnBackgroundJobs", () => {
     expect(jobs[1]).toMatchObject({ idempotencyKey: "conversation-1", payload: { workspaceId: "workspace-1", conversationId: "conversation-1" } });
   });
 
-  it("does not classify after a turn that answered a sensitive slot, a teammate's message or an operator test", () => {
+  it("does not classify after a teammate's message or an operator test", () => {
     const classified = [enablement()];
-    expect(kinds(turn({ enablements: classified, sensitiveSlotKeys: ["condition"] }))).toEqual(["conversation.summary_refresh"]);
     expect(kinds(turn({ enablements: classified, source: "human_agent" }))).toEqual(["conversation.summary_refresh"]);
     expect(kinds(turn({ enablements: classified, sourceChannel: "workbench_replay" }))).toEqual(["conversation.summary_refresh"]);
   });

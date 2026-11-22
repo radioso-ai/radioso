@@ -31,8 +31,9 @@ Consumed:
   value, and an unchanged answer writes nothing.
 - `ConversationExcerptReader`, defined here and implemented by chat
   (`chat/services/contextClassificationExcerptReader.ts`): the rolling summary and
-  the visitor's latest messages, never a message of a turn whose routine held a
-  sensitive slot.
+  the visitor's latest messages of committed turns, never a message of a turn
+  whose routine held a sensitive slot. Such a turn still enqueues a run, so a
+  value an earlier run read from it is recomputed without it.
 - `ClassificationInferenceFactory`: the workspace's `rewrite` model, metered
   through the usage events every model call records (`surface:
   context_classification`).

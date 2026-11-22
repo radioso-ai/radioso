@@ -8,8 +8,8 @@ import { loadConversationSummaryText, type ConversationSummaryStore } from "../c
 
 /**
  * The classifier's view of a conversation: its rolling summary, which already reads a withheld
- * message as withheld, and the visitor's latest messages. A message a teammate sent is not the
- * visitor's. A message of a turn whose routine held a sensitive slot (#1543) is never sent: it is
+ * message as withheld, and the visitor's latest messages of turns that have committed. A message a
+ * teammate sent is not the visitor's. A message of a turn whose routine held a sensitive slot (#1543) is never sent: it is
  * counted, so a run whose every recent message was withheld can say so.
  */
 export class ContextClassificationExcerptReader implements ConversationExcerptReader {
@@ -30,7 +30,9 @@ export class ContextClassificationExcerptReader implements ConversationExcerptRe
     if (!conversation) return null;
     const [summary, recent] = await Promise.all([
       loadConversationSummaryText(this.deps.summaries, input.conversationId, this.deps.logger),
-      this.deps.messages.listRecentByConversationId(input.workspaceId, input.conversationId, input.maxMessages, { roles: ["user"] }),
+      // Committed turns only: a turn still running may yet turn out to hold a sensitive slot, and
+      // its commit marks the message and enqueues a run that reads it then.
+      this.deps.messages.listRecentByConversationId(input.workspaceId, input.conversationId, input.maxMessages, { roles: ["user"], answeredOnly: true }),
     ]);
     const visitors = recent.filter((message) => isAudiencePulseCustomerSource(message.source ?? null));
     const sendable = visitors.filter((message) => !carriesSensitiveValue(message.metadata));

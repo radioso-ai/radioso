@@ -59,11 +59,14 @@ describeIntegration("context classification over a stored conversation (Postgres
     return conversationId;
   };
 
-  const addMessage = (conversationId: string, role: string, content: string, metadata: object = {}) =>
-    database.query(
+  const addMessage = async (conversationId: string, role: string, content: string, metadata: object = {}): Promise<string> => {
+    const id = randomUUID();
+    await database.query(
       "INSERT INTO messages (id, workspace_id, conversation_id, role, content, metadata_json, source, created_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, clock_timestamp())",
-      [randomUUID(), workspaceId, conversationId, role, content, JSON.stringify(metadata), role === "user" ? "customer" : "ai_agent"],
+      [id, workspaceId, conversationId, role, content, JSON.stringify(metadata), role === "user" ? "customer" : "ai_agent"],
     );
+    return id;
+  };
 
   beforeAll(async () => {
     await database.query("INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)", [accountId, "Classify Co", `classify-${accountId}@example.com`, "hash"]);
@@ -83,6 +86,7 @@ describeIntegration("context classification over a stored conversation (Postgres
     await addMessage(conversationId, "user", "My date of birth is 1 May 1980", sensitiveTurnMetadata(["date_of_birth"]));
     await addMessage(conversationId, "assistant", "Thanks, noted.");
     await addMessage(conversationId, "user", "Why was I charged twice this month?");
+    await addMessage(conversationId, "assistant", "Let me check the charges.");
 
     const result = await classifier.classifyNow({ workspaceId, conversationId });
 
@@ -94,6 +98,29 @@ describeIntegration("context classification over a stored conversation (Postgres
       data: "billing",
       writtenBy: { kind: "classifier", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION },
     });
+  });
+
+  it("reads only committed turns, and a sensitive turn's commit recomputes the value without its message", async () => {
+    const topic = await createTopic();
+    const conversationId = await createConversationClassifying(topic.id);
+    await addMessage(conversationId, "user", "Why was I charged twice this month?");
+    await addMessage(conversationId, "assistant", "Let me check the charges.");
+    // The next turn is in flight: its message is stored, unmarked, and its reply is not.
+    const inFlight = await addMessage(conversationId, "user", "Also my parcel never came, my card ends 4242");
+
+    await classifier.classifyNow({ workspaceId, conversationId });
+    expect(prompts.at(-1)).toContain("Why was I charged twice this month?");
+    expect(prompts.at(-1)).not.toContain("4242");
+
+    // The turn commits holding a Private slot: its messages are marked, and its commit enqueues a rerun.
+    await database.query("UPDATE messages SET metadata_json = $2::jsonb WHERE id = $1", [inFlight, JSON.stringify(sensitiveTurnMetadata(["card_number"]))]);
+    await addMessage(conversationId, "assistant", "Thanks, noted.", sensitiveTurnMetadata(["card_number"]));
+    const calls = complete.mock.calls.length;
+
+    await classifier.classifyNow({ workspaceId, conversationId });
+    expect(complete.mock.calls.length).toBe(calls + 1);
+    expect(prompts.at(-1)).toContain("Why was I charged twice this month?");
+    expect(prompts.at(-1)).not.toContain("4242");
   });
 
   it("makes no call and keeps the value when the host set it", async () => {

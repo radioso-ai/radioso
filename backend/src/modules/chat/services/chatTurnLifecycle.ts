@@ -725,7 +725,7 @@ export class ChatTurnLifecycle {
     const sensitiveSlotKeys = sensitiveSlotKeysForTurn(input);
     // The rolling summary and the attribute classification run in the worker: the turn only writes their jobs.
     const backgroundJobs: readonly BackgroundJobRequest[] = this.backgroundJobs && recordsBookkeeping
-      ? turnBackgroundJobs({ workspaceId: input.workspaceId, accountId: input.accountId, session: input.session, sensitiveSlotKeys })
+      ? turnBackgroundJobs({ workspaceId: input.workspaceId, accountId: input.accountId, session: input.session })
       : [];
     const presentation = withSensitiveTurnMarker(buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,

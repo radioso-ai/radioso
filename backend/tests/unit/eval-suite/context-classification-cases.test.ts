@@ -83,7 +83,6 @@ describe("context classification labelled cases (deterministic)", () => {
         userMessage: { role: "user", source: "customer" },
         revisionContextVariableEnablements: [enablement],
       },
-      sensitiveSlotKeys: [],
     });
     const job = jobs.find((candidate) => candidate.kind === "context.classification");
     expect(job).toBeDefined();

@@ -39,7 +39,7 @@ describe("ContextClassificationExcerptReader", () => {
       messages: ["Hallo", "Wo ist meine"],
       withheldCount: 0,
     });
-    expect(listRecentByConversationId).toHaveBeenCalledWith(workspaceId, conversationId, 6, { roles: ["user"] });
+    expect(listRecentByConversationId).toHaveBeenCalledWith(workspaceId, conversationId, 6, { roles: ["user"], answeredOnly: true });
   });
 
   it("leaves out a message of a turn whose routine held a sensitive slot, and a teammate's message", async () => {

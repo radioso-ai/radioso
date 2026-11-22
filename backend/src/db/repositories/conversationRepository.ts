@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "kysely";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -13,6 +14,8 @@ import {
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { WorkspaceEventDraft, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { ConversationOwnershipScope } from "../../modules/handoff/ownershipState.js";
+import type { ConversationAttributeFilter } from "../../modules/context-variables/public.js";
+import { conversationHoldsValue } from "./contextVariableValueReads.js";
 import {
   currentTimestamp,
   toJsonb,
@@ -433,6 +436,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
+      attribute?: ConversationAttributeFilter;
     },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
@@ -461,6 +465,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           )
           .$if(input.agentId !== undefined, (qb) => qb.where("c.agent_id", "=", input.agentId!))
           .$if(input.channel !== undefined, (qb) => qb.where("c.source_channel", "=", input.channel!))
+          .$if(input.attribute !== undefined, (qb) => qb.where(conversationHoldsValue(input.attribute!, sql.ref("c.id"))))
           .executeTakeFirst())?.count ?? "0");
     const query = this.db
       .selectFrom("conversations as c")
@@ -478,6 +483,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
       )
       .$if(input.agentId !== undefined, (qb) => qb.where("c.agent_id", "=", input.agentId!))
       .$if(input.channel !== undefined, (qb) => qb.where("c.source_channel", "=", input.channel!))
+      .$if(input.attribute !== undefined, (qb) => qb.where(conversationHoldsValue(input.attribute!, sql.ref("c.id"))))
       .$if(scope === "end_user", (qb) =>
         qb.where((eb) =>
           eb.or([

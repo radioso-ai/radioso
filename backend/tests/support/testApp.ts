@@ -303,7 +303,8 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import { ContextVariableService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import type { ConversationAttributeReadPort, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -379,6 +380,7 @@ import {
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
+  type ConversationValueMatcher,
   InMemoryMessageRepository,
   InMemoryActionOutbox,
   InMemoryConversationActivityStore,
@@ -671,6 +673,34 @@ class InMemoryDirectiveStateStore implements DirectiveStateStore {
   async save({ sessionId, state }: { sessionId: string; state: DirectiveFiringState }): Promise<void> {
     this.states.set(sessionId, { turnSeq: state.turnSeq, firings: { ...state.firings } });
   }
+}
+
+/** A conversation's attributes from the in-memory stores: the values kept for it, its session and its verified customer. */
+class InMemoryConversationAttributeReads implements ConversationAttributeReadPort {
+  constructor(
+    private readonly conversations: Pick<InMemoryConversationRepository, "findByIdAndWorkspaceId">,
+    private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">,
+  ) {}
+
+  async readConversationValues(input: { workspaceId: string; conversationId: string }): Promise<StoredConversationAttributeValue[]> {
+    const conversation = await this.conversations.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
+    if (!conversation) return [];
+    const rungs = new Map([["conversation", conversation.id], ["session", conversation.anonymousSessionId], ["customer", conversation.verifiedCustomerId]]);
+    return [...this.variables.values.values()].flatMap((value) => {
+      const variable = this.variables.variables.get(value.variableId);
+      const onRung = rungs.get(value.scope.type) === value.scope.id;
+      return variable && variable.workspaceId === input.workspaceId && onRung ? [{ variable, value }] : [];
+    });
+  }
+
+  async findByName(workspaceId: string, name: string): Promise<ContextVariable | null> {
+    return [...this.variables.variables.values()].find((variable) => variable.workspaceId === workspaceId && variable.name === name) ?? null;
+  }
+
+  /** The history lists' attribute filter: whether the conversation's own value is the filter's key. */
+  readonly holdsValue: ConversationValueMatcher = (filter, conversationId) =>
+    [...this.variables.values.values()].some((value) =>
+      value.variableId === filter.variableId && value.scope.type === "conversation" && value.scope.id === conversationId && value.data === filter.key);
 }
 
 class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
@@ -2241,11 +2271,13 @@ export const createTestDependencies = (overrides: {
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
+  const conversationAttributeReads = new InMemoryConversationAttributeReads(conversationRepository, contextVariableRepository);
+  conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
     auditEventRepository,
-    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
+    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository, conversationAttributeReads.holdsValue),
     overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
@@ -2535,7 +2567,7 @@ export const createTestDependencies = (overrides: {
     run: async () => undefined,
     logger,
   });
-  const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const assistantHistoryService = new AssistantHistoryService(chatHistoryService, new ConversationAttributeService(conversationAttributeReads));
   const publicConversationEventBus = overrides.publicConversationEventBus ?? new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
     auditService,

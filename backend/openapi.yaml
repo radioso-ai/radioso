@@ -13374,6 +13374,70 @@ components:
       required:
         - message
         - ownership
+    ConversationAttribute:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The attribute's name, as in `{{context.<name>}}`.
+        valueType:
+          type: string
+          enum:
+            - string
+            - json
+            - enum
+        value:
+          description: "The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`."
+        option:
+          type: object
+          properties:
+            label:
+              type: string
+            archived:
+              type: boolean
+          required:
+            - label
+            - archived
+          description: The option an `enum` value names, archived or not. Absent for other types, for a redacted value, and for a key no option has.
+        redacted:
+          type: boolean
+          description: "True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain."
+        scope:
+          type: string
+          enum:
+            - conversation
+            - session
+            - customer
+          description: "Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed."
+        writtenBy:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - api
+                - operator
+                - routine
+                - classifier
+            ref:
+              type:
+                - string
+                - "null"
+              description: "What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`."
+          required:
+            - kind
+            - ref
+          description: The value's last writer.
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - name
+        - valueType
+        - redacted
+        - scope
+        - writtenBy
+        - updatedAt
     ChatConversationDetail:
       type: object
       properties:
@@ -13494,6 +13558,11 @@ components:
           required:
             - available
           description: "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. `available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`."
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationAttribute"
+          description: "On `getHistoryConversation` and `getLegacyHistoryConversation`: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set."
       required:
         - conversationId
         - workspaceId
@@ -39183,6 +39252,24 @@ paths:
           description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
           name: callerKind
           in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.
+          required: false
+          description: The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.
+          name: attribute
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.
+          required: false
+          description: An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.
+          name: attributeOption
+          in: query
       responses:
         "200":
           description: Merged history items
@@ -39254,6 +39341,16 @@ paths:
                     - human
                     - agent
                   description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+                attribute:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  description: The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.
+                attributeOption:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  description: An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.
                 q:
                   type: string
                   minLength: 1
@@ -39340,6 +39437,24 @@ paths:
           required: false
           name: channel
           in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.
+          required: false
+          description: The name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only.
+          name: attribute
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+            description: An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.
+          required: false
+          description: An option key of `attribute`, archived or not. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.
+          name: attributeOption
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -39347,6 +39462,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatHistoryListResponse"
+        "400":
+          description: Invalid query, including an attribute filter no conversation can match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
           content:

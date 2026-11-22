@@ -5,7 +5,7 @@
   "backend/src/db/repositories/documentRepository.ts": 1236,
   "backend/src/db/repositories/vectorIndexWorkRepository.ts": 1168,
   "backend/src/modules/auth/services/authService.ts": 1413,
-  "backend/src/modules/chat/services/chatHistoryService.ts": 1533,
+  "backend/src/modules/chat/services/chatHistoryService.ts": 1525,
   "backend/src/modules/chat/services/chatService.ts": 2150,
   "backend/src/modules/chat/services/chatSessionPreparer.ts": 1276,
   "backend/src/modules/chat/services/chatTurnAssembly.ts": 1456,

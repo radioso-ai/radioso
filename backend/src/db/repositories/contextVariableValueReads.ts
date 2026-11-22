@@ -8,9 +8,9 @@ import type {
   ContextVariableScope,
   ContextVariableValue,
 } from "../../modules/context-variables/public.js";
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
 
-import { anyOf } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface ContextVariableValueRow {
@@ -45,6 +45,19 @@ export const contextVariableValueColumns = [
  * of at most `maxKeyChars` (120) ASCII characters.
  */
 export const filterIndexPredicate = sql<boolean>`jsonb_typeof(data) = 'string' and octet_length(data #>> '{}') <= 120`;
+
+/**
+ * Whether the conversation whose id `conversationId` reads holds `key` as its own value of the
+ * variable: the attribute filter of the history lists. The subquery reads no column of the outer
+ * query, so Postgres finds the matching conversations once, from the filter index.
+ */
+export const conversationHoldsValue = (
+  filter: { variableId: string; key: string },
+  conversationId: RawBuilder<unknown>,
+): RawBuilder<boolean> => sql<boolean>`${conversationId}::text in (
+  select scope_id from context_variable_values
+  where variable_id = ${filter.variableId} and scope_type = 'conversation' and data = ${toJsonb(filter.key)} and ${filterIndexPredicate}
+)`;
 
 /**
  * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in

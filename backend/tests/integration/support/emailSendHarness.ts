@@ -24,6 +24,7 @@ import type { AppDependencies } from "../../../src/app/server/types.js";
 import { AnswerCoverageRepository } from "../../../src/db/repositories/answerCoverageRepository.js";
 import { AuditEventRepository } from "../../../src/db/repositories/auditEventRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
+import { ConversationAttributeReads } from "../../../src/db/repositories/conversationAttributeReads.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../../src/db/repositories/heldReplyRepository.js";
@@ -32,6 +33,7 @@ import { MessageRepository } from "../../../src/db/repositories/messageRepositor
 import { UserRepository } from "../../../src/db/repositories/userRepository.js";
 import type { AuditEventInput } from "../../../src/modules/audit/contracts/index.js";
 import { AssistantHistoryService, ChatHistoryService } from "../../../src/modules/chat/composition.js";
+import { ConversationAttributeService } from "../../../src/modules/context-variables/public.js";
 import { ReviewTurnAuditReader } from "../../../src/modules/chat/contracts/index.js";
 import type { PublicConversationEvent } from "../../../src/modules/chat/services/publicConversationEventBus.js";
 import { CustomerReplyDeliveryDispatcher, DeliveryFailureDecisions } from "../../../src/modules/customerReplyDelivery/public.js";
@@ -258,7 +260,7 @@ export const createApiNode = (
   }));
   app.use("/api/v1/history", createHistoryRoutes({
     ...sessionDependencies(sessions),
-    assistantHistoryService: new AssistantHistoryService(history),
+    assistantHistoryService: new AssistantHistoryService(history, new ConversationAttributeService(new ConversationAttributeReads(db))),
     // Document-search history is not read through this node, and nothing here erases a conversation
     // or withdraws a consent.
     documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],

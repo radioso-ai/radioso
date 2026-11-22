@@ -1,6 +1,7 @@
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { createActionOutboxQueueStateReporter } from "./chatActionOutboxTelemetry.js";
 import { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
+import { ConversationAttributeReads } from "../../../db/repositories/conversationAttributeReads.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
 import { DirectiveStateRepository } from "../../../db/repositories/directiveStateRepository.js";
@@ -144,7 +145,7 @@ import { TextGenerationClientCache } from "../../../shared/infra/llm/textClientF
 import { ModelCallGovernor, turnCallAdmissionLimits } from "../../../shared/infra/llm/modelCallGovernance.js";
 import { LLM_DEFAULTS } from "../../../shared/domain/behaviorConfig.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
-import { ContextVariableResolverService } from "../../../modules/context-variables/public.js";
+import { ContextVariableResolverService, ConversationAttributeService } from "../../../modules/context-variables/public.js";
 import { SkillBackedContextResolver } from "../../composition/builtIn/contextResolverModule.js";
 import { RepositoryAgentSkillTurnSkillProvider } from "../../composition/builtIn/agentSkillTurnSkillProvider.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
@@ -859,6 +860,8 @@ export const buildChatServices = (input: {
     input.agentService,
     agentRevisionRuntimeResolver,
   );
+  // A conversation's attributes as the operator surfaces read them, and the filter the history lists take.
+  const conversationAttributes = new ConversationAttributeService(new ConversationAttributeReads(input.database.kysely));
   const chatHistoryService = new ChatHistoryService(
     input.conversationRepository,
     input.messageRepository,
@@ -963,7 +966,8 @@ export const buildChatServices = (input: {
         logger: input.logger,
       }),
     }),
-    assistantHistoryService: new AssistantHistoryService(chatHistoryService),
+    assistantHistoryService: new AssistantHistoryService(chatHistoryService, conversationAttributes),
+    conversationAttributes,
     publicChatActionAdvertiser,
     chatBootstrapService,
     agentStarterPromptReader,

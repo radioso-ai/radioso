@@ -58,6 +58,15 @@ export type {
   ConversationValueWriter,
   StoredConversationValue,
 } from "./conversationValueWriter.js";
+export { ConversationAttributeService } from "./conversationAttributes.js";
+export type {
+  ConversationAttribute,
+  ConversationAttributeFilter,
+  ConversationAttributeFilterInput,
+  ConversationAttributeReadPort,
+  ConversationAttributeReader,
+  StoredConversationAttributeValue,
+} from "./conversationAttributes.js";
 export { classificationTargetFrom } from "./classifiedVariables.js";
 export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {

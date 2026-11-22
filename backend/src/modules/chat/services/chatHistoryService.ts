@@ -1,7 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
-import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
+import type { ConversationAttributeFilter } from "../../context-variables/public.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ReplyImageUrls } from "../contracts/replyBlocks.js";
 import {
@@ -24,7 +24,7 @@ import type {
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
 import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
-import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
+import type { HistoryItemsFilters, HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
 import type { VisitorRecord } from "../../../db/repositories/visitorRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
@@ -841,6 +841,7 @@ export class ChatHistoryService {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
+      attribute?: ConversationAttributeFilter;
     } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
@@ -902,17 +903,7 @@ export class ChatHistoryService {
 
   async listItems(
     workspaceId: string,
-    input: {
-      limit: number;
-      offset?: number;
-      sourceScope?: ConversationSourceScope;
-      /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
-      q?: string;
-      agentId?: string;
-      sourceOrigin?: string;
-      outcome?: ConversationOutcomeFilter;
-      callerKind?: CallerKind;
-    } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } & HistoryItemsFilters = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
@@ -924,7 +915,7 @@ export class ChatHistoryService {
     // Only `agent` is chat-only. A contact request is submitted by a person, so asking for human
     // callers should still return them; asking for agent callers cannot, because no agent fills in
     // a contact form.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent");
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent" || input.attribute);
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
@@ -935,6 +926,7 @@ export class ChatHistoryService {
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
         callerKind: input.callerKind,
+        attribute: input.attribute,
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })

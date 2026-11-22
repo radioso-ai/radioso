@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { installDashboardApiMocks, nowIso, seedDashboardStorage, workspaceKey } from "./dashboard-fixtures";
 
 // Scheduled recrawl: an operator on a plan that recrawls weekly at most sets a website source to
-// keep itself up to date, then decides on the pages scheduled checks held because too many went
+// keep itself up to date, then decides on the pages checks held because too many went
 // missing at once: removes them on one source, keeps them on another.
 
 const docsSourceId = "51515151-5151-4515-8515-515151515151";
@@ -74,12 +74,17 @@ const installRecrawlMocks = async (page: Page) => {
   return requests;
 };
 
-test("an operator keeps a website source up to date and decides on the pages a scheduled check held", async ({ page }) => {
+test("an operator keeps a website source up to date and decides on the pages a check held", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
   const requests = await installRecrawlMocks(page);
 
   await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
+
+  // Held pages show on the collapsed rows, before any row is opened.
+  await expect(page.getByText("12 pages held")).toBeVisible();
+  await expect(page.getByText("1 page held")).toBeVisible();
+
   await page.getByRole("button", { name: /docs\.example/ }).first().click();
 
   // The plan recrawls weekly at most, so Daily is offered but not selectable.
@@ -96,6 +101,7 @@ test("an operator keeps a website source up to date and decides on the pages a s
   await expect(confirm).toContainText("Remove 12 pages?");
   await confirm.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(page.getByText("12 pages are no longer on the site")).toBeHidden();
+  await expect(page.getByText("12 pages held")).toBeHidden();
   expect(requests).toContainEqual({ method: "POST", path: `${docsSourceId}/held-pages/remove`, body: null });
 
   // On the other source, the operator keeps the one page a check held.
@@ -103,5 +109,6 @@ test("an operator keeps a website source up to date and decides on the pages a s
   await expect(page.getByText("1 page is no longer on the site")).toBeVisible();
   await page.getByRole("button", { name: "Keep", exact: true }).click();
   await expect(page.getByText("1 page is no longer on the site")).toBeHidden();
+  await expect(page.getByText("1 page held")).toBeHidden();
   expect(requests).toContainEqual({ method: "POST", path: `${helpSourceId}/held-pages/keep`, body: null });
 });

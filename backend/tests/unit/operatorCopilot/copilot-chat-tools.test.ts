@@ -328,6 +328,64 @@ describe("copilot chat readers", () => {
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
 
+  it("reads the conversation's attributes, with who set each one, and a Private one redacted", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-11-20T10:00:00.000Z",
+      updatedAt: "2026-11-20T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+    });
+    ports.readAttributes.mockResolvedValue([
+      {
+        name: "care_need", valueType: "enum", value: null, redacted: true, scope: "conversation",
+        writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: new Date("2026-11-20T10:00:03.000Z"),
+      },
+      {
+        name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
+        scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
+      },
+    ]);
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as { transcript: { attributes: unknown } };
+
+    expect(ports.readAttributes).toHaveBeenCalledWith("workspace-1", conversationId);
+    expect(result.transcript.attributes).toEqual([
+      {
+        name: "care_need", valueType: "enum", value: null, option: null, redacted: true, scope: "conversation",
+        writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: "2026-11-20T10:00:03.000Z",
+      },
+      {
+        name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
+        scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: "2026-11-20T10:00:04.000Z",
+      },
+    ]);
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("lists only the conversations whose own value of a Choice attribute is an option, resolving the filter first", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_history_search")!;
+    ports.listConversations.mockResolvedValue({ conversations: [{ id: "conversation-1" }], total: 1 });
+
+    expect(tool.inputSchema.safeParse({ attribute: { name: "topic" } }).success).toBe(false);
+    const result = await tool.createTool(context(null)).invoke({ limit: 5, attribute: { name: "topic", option: "billing" } }, {} as never);
+    await tool.createTool(context(null)).invoke({}, {} as never);
+
+    expect(ports.resolveAttributeFilter).toHaveBeenCalledTimes(1);
+    expect(ports.resolveAttributeFilter).toHaveBeenCalledWith("workspace-1", { name: "topic", option: "billing" });
+    expect(ports.listConversations).toHaveBeenNthCalledWith(1, "workspace-1", { limit: 5, attribute: { variableId: "topic-id", key: "billing" } });
+    expect(ports.listConversations).toHaveBeenNthCalledWith(2, "workspace-1", { limit: 20 });
+    expect(result).toEqual({ conversations: [{ id: "conversation-1" }] });
+  });
+
   it("says whether a voice conversation's call has a recording, and says nothing of one for any other channel", async () => {
     const ports = dependencies();
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;

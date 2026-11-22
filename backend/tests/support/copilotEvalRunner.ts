@@ -404,6 +404,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       advisoryCatalog: async () => ({}),
     },
     voiceRecordings: { availability: async () => null },
+    conversationAttributes: { read: async () => [], resolveFilter: async () => { throw new Error("no attribute filter in this test"); } },
     chatHistoryService: {
       getConversation: async () => ({
         conversationId: COPILOT_EVAL_CONVERSATION_ID,

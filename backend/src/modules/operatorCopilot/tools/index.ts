@@ -190,7 +190,7 @@ export type { CopilotNotificationDeliveriesPort } from "./notificationDeliveries
 export type { CopilotEventSubscriptionsPort } from "./eventSubscriptions.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
-export type { CopilotConversationHistoryPort } from "./chat.js";
+export type { CopilotConversationAttributesPort, CopilotConversationHistoryPort } from "./chat.js";
 export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";

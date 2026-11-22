@@ -7,6 +7,7 @@ import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/too
 import { createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
+import type { ConversationAttribute } from "../../../src/modules/context-variables/public.js";
 
 const pageContext = (agentId: string | null) => ({
   view: "agent" as const,
@@ -134,6 +135,8 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
   const getConversationTurn = vi.fn();
   const listConversations = vi.fn();
   const recordingAvailability = vi.fn(async (): Promise<boolean | null> => null);
+  const readAttributes = vi.fn(async (): Promise<ConversationAttribute[]> => []);
+  const resolveAttributeFilter = vi.fn(async (_workspaceId: string, filter: { name: string; option: string }) => ({ variableId: `${filter.name}-id`, key: filter.option }));
   return {
     listAgents,
     resolveAgent,
@@ -144,6 +147,8 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
     getConversationTurn,
     listConversations,
     recordingAvailability,
+    readAttributes,
+    resolveAttributeFilter,
     descriptors: [
       ...createAgentConfigurationCopilotTools({ agentService: { listExisting: listAgents, resolve: resolveAgent } }),
       ...createRoutineDefinitionCopilotTools({
@@ -158,6 +163,7 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
       ...createChatCopilotTools({
         chatHistoryService: { getConversation, getConversationTurn, listConversations },
         voiceRecordings: { availability: recordingAvailability },
+        conversationAttributes: { read: readAttributes, resolveFilter: resolveAttributeFilter },
       }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ],

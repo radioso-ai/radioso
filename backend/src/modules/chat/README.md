@@ -772,6 +772,11 @@ imports from `services/`.
   and the operator tail) — the public routes call
   `chatHistoryService.getConversation` directly and never set them. Ray's
   `conversation_transcript` and `turn_trace` read with the same flags.
+  `AssistantHistoryService` also adds the conversation's `attributes`, read
+  through context-variables' `ConversationAttributeReader`, and resolves the
+  history lists' `attribute` filter there before either list reads; Ray's
+  `conversation_transcript` and `conversation_history_search` take the same
+  reader from composition (`chat.conversationAttributes`).
   A human-agent reply's `operatorDisplayName` follows one rule on every surface
   that reads it (visitor chat and embed, dashboard, Ray, API), applied in
   `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows, trimmed,

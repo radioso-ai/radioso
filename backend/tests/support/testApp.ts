@@ -2273,6 +2273,7 @@ export const createTestDependencies = (overrides: {
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
   const conversationAttributeReads = new InMemoryConversationAttributeReads(conversationRepository, contextVariableRepository);
   conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
+  const conversationAttributes = new ConversationAttributeService(conversationAttributeReads);
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -2567,7 +2568,7 @@ export const createTestDependencies = (overrides: {
     run: async () => undefined,
     logger,
   });
-  const assistantHistoryService = new AssistantHistoryService(chatHistoryService, new ConversationAttributeService(conversationAttributeReads));
+  const assistantHistoryService = new AssistantHistoryService(chatHistoryService, conversationAttributes);
   const publicConversationEventBus = overrides.publicConversationEventBus ?? new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
     auditService,
@@ -2845,6 +2846,7 @@ export const createTestDependencies = (overrides: {
     },
     chatHistoryService,
     voiceRecordings: voiceRecordings.recordings,
+    conversationAttributes,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
     testChat: testChatService,

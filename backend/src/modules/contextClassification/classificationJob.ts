@@ -24,7 +24,7 @@ const classificationPayload = z.object({
  * and one that commits while a run is going makes it run once more, because that run may have read
  * the conversation before the turn's message existed.
  */
-export const CONTEXT_CLASSIFICATION_JOB = defineBackgroundJob({
+const CONTEXT_CLASSIFICATION_JOB = defineBackgroundJob({
   kind: "context.classification",
   payload: classificationPayload,
   onDuplicateKey: "rerun",

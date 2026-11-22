@@ -72,11 +72,11 @@ describe("context classification labelled cases (deterministic)", () => {
     const [topic] = classificationEvalAttributes;
     const evalCase = classificationEvalCases.find((candidate) => candidate.id === "it-billing-invoice")!;
     const enablement = {
-      id: "enablement-topic", agentId: "agent-1", variableId: topic!.id, source: "classified" as const, resolverSkillId: null,
+      id: "enablement-topic", agentId: "agent-1", variableId: topic.id, source: "classified" as const, resolverSkillId: null,
       maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference" as const, enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
     };
     const jobs = turnBackgroundJobs({
-      workspaceId: topic!.workspaceId,
+      workspaceId: topic.workspaceId,
       session: {
         conversation: { id: "conversation-1", sourceChannel: "embed" },
         userMessage: { role: "user", source: "customer" },
@@ -99,8 +99,8 @@ describe("context classification labelled cases (deterministic)", () => {
     const model = labelledModel();
     const classifier = new ConversationClassificationService({
       targets: {
-        readConversationTargets: async () => ({ agentId: "agent-1", targets: [{ variable: topic!, stored: store.get(topic!.id) ?? null }] }),
-        readDefinitions: async () => [topic!],
+        readConversationTargets: async () => ({ agentId: "agent-1", targets: [{ variable: topic, stored: store.get(topic.id) ?? null }] }),
+        readDefinitions: async () => [topic],
       },
       excerpts: { readExcerpt: async () => ({ summary: null, messages: evalCase.messages, withheldCount: 0 }) },
       values: writer,
@@ -109,15 +109,15 @@ describe("context classification labelled cases (deterministic)", () => {
     const handler = contextClassificationHandler(classifier);
 
     await handler.run(job!.payload, { signal: new AbortController().signal } as never);
-    expect(store.get(topic!.id)).toEqual({ data: "billing", writtenBy: { kind: "classifier", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION } });
+    expect(store.get(topic.id)).toEqual({ data: "billing", writtenBy: { kind: "classifier", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION } });
 
     for (const kind of ["operator", "api"] as const) {
       const set: ContextValueWriter = { kind, ref: `${kind}-1` };
-      store.set(topic!.id, { data: "shipping", writtenBy: set });
+      store.set(topic.id, { data: "shipping", writtenBy: set });
       const calls = model.complete.mock.calls.length;
       await expect(handler.run(job!.payload, { signal: new AbortController().signal } as never)).resolves.toEqual({ skipped: "skipped_override" });
       expect(model.complete.mock.calls.length).toBe(calls);
-      expect(store.get(topic!.id)).toEqual({ data: "shipping", writtenBy: set });
+      expect(store.get(topic.id)).toEqual({ data: "shipping", writtenBy: set });
     }
   });
 });

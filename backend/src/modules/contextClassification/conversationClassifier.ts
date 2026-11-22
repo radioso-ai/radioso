@@ -30,7 +30,7 @@ import type { ClassificationInferenceFactory, ConversationExcerpt, ConversationE
 export const CONTEXT_CLASSIFICATION_RUNS_TOTAL = "radioso_context_classification_runs_total";
 
 /** What started a run: the job after a committed turn, or a Test Chat turn. */
-export type ClassificationTrigger = "after_turn" | "test_chat";
+type ClassificationTrigger = "after_turn" | "test_chat";
 
 /**
  * How a run ended. `skipped_override`: every variable holds a value another writer set, so no call
@@ -48,7 +48,7 @@ export type ClassificationRunOutcome =
   | "failed";
 
 /** One variable's answer and what writing it did. Carries a key: it never goes to logs, metrics or spans. */
-export interface ClassificationDecision {
+interface ClassificationDecision {
   readonly variableId: string;
   readonly value: string | null;
   readonly write: ConversationValueWriteOutcome;

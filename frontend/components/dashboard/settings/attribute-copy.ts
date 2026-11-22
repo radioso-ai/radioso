@@ -21,7 +21,7 @@ export const sourceLabels: Record<SourceOption, string> = {
 }
 
 /** How many attributes one agent can have the AI set; the backend holds the same limit. */
-export const MAX_CLASSIFIED_PER_AGENT = 8
+const MAX_CLASSIFIED_PER_AGENT = 8
 
 /** Why the AI can't set this attribute on this agent, or null when it can. */
 export const classifiedUnavailableReason = (

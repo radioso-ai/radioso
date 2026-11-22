@@ -36,7 +36,7 @@ export const classifyEvalCase = async (
     write: async (input) => planConversationWrite({ variable: input.variable, stored: input.stored, data: input.data, writer: input.writtenBy.kind }).outcome,
   };
   const result = await classifier.classifyTranscript({
-    workspaceId: classificationEvalAttributes[0]!.workspaceId,
+    workspaceId: classificationEvalAttributes[0].workspaceId,
     conversationId: evalCase.id,
     agentId: "classification-eval-agent",
     variableIds: classificationEvalAttributes.map((attribute) => attribute.id),

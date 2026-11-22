@@ -124,7 +124,7 @@ describe("ConversationClassificationService", () => {
       },
       excerpts: { readExcerpt: vi.fn(async () => (input.excerpt === undefined ? excerpt() : input.excerpt)) },
       values: values.writer,
-      inference: { create: inferenceCreate as never },
+      inference: { create: inferenceCreate },
       metrics,
     });
     return { service, values, complete, inferenceCreate, metrics };

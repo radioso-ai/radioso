@@ -37,7 +37,7 @@ describeIntegration("context classification over a stored conversation (Postgres
       summaries: new ConversationSummaryRepository(database.kysely),
     }),
     values: new ConversationValueWriterService({ repository: contextVariableRepository }),
-    inference: { create: async () => ({ complete }) as never },
+    inference: { create: async () => ({ complete }) },
   });
 
   const createTopic = () => contextVariableRepository.create({

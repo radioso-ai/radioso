@@ -32,7 +32,7 @@ export interface StoredConversationValue {
   readonly writtenBy: ContextValueWriter;
 }
 
-export type PlannedConversationWrite =
+type PlannedConversationWrite =
   | { action: "store"; outcome: "written" }
   | { action: "clear"; outcome: "cleared" }
   | { action: "none"; outcome: Exclude<ConversationValueWriteOutcome, "written" | "cleared"> };

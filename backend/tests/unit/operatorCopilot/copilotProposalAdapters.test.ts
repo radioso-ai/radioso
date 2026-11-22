@@ -208,7 +208,7 @@ describe("createContextVariableCopilotProposalAdapter classified attributes", ()
       await contextVariableRepository.upsertEnablement({ agentId, variableId: variable.id, source: "classified", surfacing: "on_reference", enabled: true });
     }
 
-    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: seeded[8]!.id }, { enablement: { source: "classified", surfacing: "on_reference" } }))
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: seeded[8].id }, { enablement: { source: "classified", surfacing: "on_reference" } }))
       .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 8/u) });
   });
 

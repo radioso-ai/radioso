@@ -27,7 +27,7 @@ const enablement = (variableId: string, source: "classified" | "pushed") => ({
   resolverTimeoutMs: null, surfacing: "on_reference" as const, enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
 });
 
-const revision = (sources: Array<"classified" | "pushed">): AgentRevision => ({
+const revision = (sources: Array<"classified" | "pushed">): AgentRevision => (({
   id: "revision-1",
   snapshot: {
     customInstruction: null, directives: [], routines: [],
@@ -38,7 +38,7 @@ const revision = (sources: Array<"classified" | "pushed">): AgentRevision => ({
   createdAt: new Date(0),
   publishedAt: null,
   publishedVersion: null,
-} as unknown as AgentRevision);
+}));
 
 /** The real classifier's Test Chat entry, with its model answering `answer` and the values it is handed. */
 const classifierAnswering = (answer: string | null) => {
@@ -122,6 +122,6 @@ describe("testChatAttributeInputs", () => {
     expect(testChatAttributeInputs(previous, [], revision(["classified"]))).toEqual([
       { name: "topic", description: null, value: "billing", label: "Billing", surfacing: "on_reference", sensitive: false, trust: "unverified" },
     ]);
-    expect(testChatAttributeInputs(previous, [{ ...previous[0]!, value: "shipping" }], revision(["classified"]))).toEqual([]);
+    expect(testChatAttributeInputs(previous, [{ ...previous[0], value: "shipping" }], revision(["classified"]))).toEqual([]);
   });
 });

@@ -318,7 +318,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       ...revision,
       snapshot: {
         ...revision.snapshot,
-        contextVariableEnablements: [{ ...revision.snapshot.contextVariableEnablements[1]!, source: "classified" }],
+        contextVariableEnablements: [{ ...revision.snapshot.contextVariableEnablements[1], source: "classified" }],
       },
     };
     const turnTrace = { version: 1, spine: { traceId: "trace-1", startedAt: "2026-11-22T00:00:00.000Z", stages: [] } };

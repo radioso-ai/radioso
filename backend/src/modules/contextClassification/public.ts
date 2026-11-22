@@ -13,15 +13,8 @@ export {
   CONTEXT_CLASSIFICATION_RUNS_TOTAL,
   ConversationClassificationService,
 } from "./conversationClassifier.js";
-export type {
-  ClassificationDecision,
-  ClassificationRunOutcome,
-  ClassificationRunResult,
-  ClassificationTrigger,
-  ConversationClassifier,
-} from "./conversationClassifier.js";
+export type { ClassificationRunOutcome } from "./conversationClassifier.js";
 export {
-  CONTEXT_CLASSIFICATION_JOB,
   contextClassificationHandler,
   contextClassificationRequest,
 } from "./classificationJob.js";

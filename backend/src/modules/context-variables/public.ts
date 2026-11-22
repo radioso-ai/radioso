@@ -49,7 +49,6 @@ export {
 } from "./optionSchema.js";
 export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
 export {
-  CONTEXT_VALUE_WRITES_TOTAL,
   ConversationValueWriterService,
   planConversationWrite,
 } from "./conversationValueWriter.js";
@@ -61,7 +60,6 @@ export type {
 export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {
   AgentContextVariableEnablement,
-  ClassificationRefusal,
   ContextScopeKeys,
   ContextValueWriter,
   ContextValueWriterKind,

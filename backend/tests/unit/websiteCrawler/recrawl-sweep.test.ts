@@ -103,7 +103,7 @@ describe("website recrawl sweep", () => {
     expect(logger.warn).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(
       { role: "website-recrawl-sweep", workspaceId: "unreadable-workspace" },
-      "Website recrawl plan could not be read; the workspace's sources recrawl weekly this time",
+      "Website recrawl plan could not be read; the workspace's sources recrawl monthly this time",
     );
   });
 

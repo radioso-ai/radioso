@@ -18,9 +18,10 @@ import type {
   CustomerEmailProviderRegistryPort,
 } from "../providers/customerEmailProvider.js";
 import type { OauthConnectionService, OauthConnectionSummary } from "../../integrationOauth/public.js";
-import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 
-export interface CustomerEmailOauthStatusPort {
+interface CustomerEmailOauthStatusPort {
   get(workspaceId: string, connectionId: string): Promise<OauthConnectionSummary>;
   list(
     workspaceId: string,
@@ -28,11 +29,22 @@ export interface CustomerEmailOauthStatusPort {
   ): Promise<OauthConnectionSummary[]>;
 }
 
-export interface CustomerEmailConnectionServiceOptions {
+interface CustomerEmailConnectionServiceOptions {
   repository: CustomerEmailConnectionRepositoryPort;
   oauthConnections: CustomerEmailOauthStatusPort | Pick<OauthConnectionService, "get" | "list">;
   providers: CustomerEmailProviderRegistryPort;
+  /** The skills that use a connection, which keep it from being deleted. */
+  skillTargetUses: SkillTargetUseReader;
 }
+
+/** The refusal to delete a connection email skills use, in an agent's draft or its published release. */
+const connectionInUse = (uses: readonly SkillTargetUse[]): AppError =>
+  skillTargetInUseError({ code: "conflict", targetLabel: "Customer email connection", uses });
+
+const isSkillReferenceError = (error: unknown): boolean => {
+  const record = error as { code?: unknown; constraint?: unknown } | null;
+  return record?.code === "23503" && record.constraint === "agent_skills_customer_email_target_fk";
+};
 
 const customerEmailProviderSet = new Set<string>(customerEmailOauthProviderIds);
 const customerEmailProviderList: string[] = [...customerEmailOauthProviderIds];
@@ -163,14 +175,29 @@ export class CustomerEmailConnectionService {
 
   async remove(workspaceId: string, connectionId: string): Promise<void> {
     await this.requireConnection(workspaceId, connectionId);
-    const references = await this.options.repository.countSkillReferences(workspaceId, connectionId);
-    if (references > 0) {
-      throw conflict("Customer email connection is still referenced by an email skill");
+    const uses = await this.skillUses(workspaceId, connectionId);
+    if (uses.length > 0) {
+      throw connectionInUse(uses);
     }
-    const removed = await this.options.repository.remove(workspaceId, connectionId);
+    let removed: boolean;
+    try {
+      removed = await this.options.repository.remove(workspaceId, connectionId);
+    } catch (error) {
+      // A skill took the connection after the check above, and the database's guard refused.
+      if (isSkillReferenceError(error)) throw connectionInUse(await this.skillUses(workspaceId, connectionId));
+      throw error;
+    }
     if (!removed) {
       throw notFound("Customer email connection not found");
     }
+  }
+
+  private skillUses(workspaceId: string, connectionId: string): Promise<SkillTargetUse[]> {
+    return this.options.skillTargetUses.listSkillTargetUses({
+      workspaceId,
+      targetType: "customer_email_connection",
+      targetId: connectionId,
+    });
   }
 
   private async requireUsableOauthConnection(

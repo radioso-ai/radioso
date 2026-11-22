@@ -12,6 +12,8 @@ import type { CustomerEmailConnectionStatus } from "../../../src/modules/custome
 import { CustomerEmailConnectionService } from "../../../src/modules/customerEmail/services/customerEmailConnectionService.js";
 import type { CustomerEmailProviderAdapter } from "../../../src/modules/customerEmail/providers/customerEmailProvider.js";
 import type { OauthConnectionSummary } from "../../../src/modules/integrationOauth/public.js";
+import type { SkillTargetUse } from "../../../src/shared/domain/skillTargetUses.js";
+import { fixedSkillTargetUses } from "../../support/skillTargetUses.js";
 
 const now = new Date("2026-06-15T12:00:00.000Z");
 
@@ -24,7 +26,6 @@ const clone = (record: CustomerEmailConnectionRecord): CustomerEmailConnectionRe
 
 class InMemoryCustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
   readonly records = new Map<string, CustomerEmailConnectionRecord>();
-  referenceCount = 0;
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
     const record: CustomerEmailConnectionRecord = {
@@ -77,11 +78,6 @@ class InMemoryCustomerEmailConnectionRepository implements CustomerEmailConnecti
     return clone(record);
   }
 
-  async countSkillReferences(workspaceId: string, id: string): Promise<number> {
-    const record = this.records.get(id);
-    return record && record.workspaceId === workspaceId ? this.referenceCount : 0;
-  }
-
   async remove(workspaceId: string, id: string): Promise<boolean> {
     const record = this.records.get(id);
     if (!record || record.workspaceId !== workspaceId) {
@@ -110,6 +106,7 @@ const createService = (options: {
   oauthList?: OauthConnectionSummary[];
   repository?: InMemoryCustomerEmailConnectionRepository;
   health?: Awaited<ReturnType<CustomerEmailProviderAdapter["checkHealth"]>>;
+  skillUses?: SkillTargetUse[];
 } = {}) => {
   const repository = options.repository ?? new InMemoryCustomerEmailConnectionRepository();
   const oauth = options.oauth ?? oauthSummary();
@@ -132,6 +129,7 @@ const createService = (options: {
             }
           : null,
     },
+    skillTargetUses: fixedSkillTargetUses(options.skillUses ?? []),
   });
   return { service, repository, oauth };
 };
@@ -190,7 +188,9 @@ describe("CustomerEmailConnectionService", () => {
   });
 
   it("disables and re-enables without deleting referenced connections", async () => {
-    const { service, repository, oauth } = createService();
+    const { service, repository, oauth } = createService({
+      skillUses: [{ agentId: "agent-1", agentName: "Support", skillName: "reply_by_email", inDraft: true, inPublishedRelease: true }],
+    });
     const created = await service.create("workspace-1", {
       oauthConnectionId: oauth.id,
       displayName: "Support",
@@ -200,11 +200,12 @@ describe("CustomerEmailConnectionService", () => {
     const disabled = await service.update("workspace-1", created.id, { disabled: true });
     expect(disabled.status).toBe("disabled");
 
-    repository.referenceCount = 2;
     await expect(service.remove("workspace-1", created.id)).rejects.toMatchObject({
       statusCode: 409,
       code: "conflict",
+      message: 'Customer email connection is in use. Used by skill "reply_by_email" on agent "Support". Delete or retarget that skill first.',
     });
+    expect(repository.records.has(created.id)).toBe(true);
 
     const reenabled = await service.update("workspace-1", created.id, { disabled: false });
     expect(reenabled.status).toBe<CustomerEmailConnectionStatus>("authorized");

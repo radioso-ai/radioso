@@ -165,8 +165,6 @@
   "types|backend/src/modules/customerEmail/oauthMailProviders.ts|CustomerEmailCapability",
   "types|backend/src/modules/customerEmail/oauthMailProviders.ts|CustomerEmailOauthProviderCredentialConfig",
   "types|backend/src/modules/customerEmail/oauthMailProviders.ts|CustomerEmailProviderMetadata",
-  "types|backend/src/modules/customerEmail/services/customerEmailConnectionService.ts|CustomerEmailConnectionServiceOptions",
-  "types|backend/src/modules/customerEmail/services/customerEmailConnectionService.ts|CustomerEmailOauthStatusPort",
   "types|backend/src/modules/customerEmail/services/customerEmailOAuthService.ts|CustomerEmailOAuthPort",
   "types|backend/src/modules/customerEmail/services/emailSkillActivityPresenter.ts|EmailSkillActivityBuildInput",
   "types|backend/src/modules/customerEmail/services/emailSkillDefinitionService.ts|EmailSkillDefinitionServiceOptions",

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../shared/domain/skillTargetUses.js";
 import {
   decryptField,
   encryptField,
@@ -40,10 +41,6 @@ export interface WebhookDestinationRoutineReferencePort {
   listRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
-interface WebhookDestinationSkillReferencePort {
-  listAgentSkillNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
-}
-
 export interface WebhookDestinationExistencePort {
   existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
 }
@@ -66,19 +63,28 @@ export class EncryptionNotConfiguredError extends AppError {
   }
 }
 
-class WebhookDestinationInUseError extends AppError {
-  constructor(destinationId: string, references: string[]) {
-    const referenceSummary = references.length > 0
-      ? `: ${references.join(", ")}`
-      : "";
-    super(
-      409,
-      "webhook_destination_in_use",
-      `Webhook destination ${destinationId} is referenced${referenceSummary}`,
-      { destinationId, references },
-    );
-  }
-}
+/**
+ * The refusal to delete a destination in use: by enabled routines' completion exports, or by skills
+ * in an agent's draft or its published release.
+ */
+const destinationInUse = (destinationId: string, routineNames: string[], skillUses: readonly SkillTargetUse[]): AppError =>
+  skillTargetInUseError({
+    code: "webhook_destination_in_use",
+    targetLabel: "Webhook destination",
+    uses: skillUses,
+    ...(routineNames.length > 0
+      ? { otherUses: `Used by ${routineNames.length === 1 ? "routine" : "routines"} ${routineNames.map((name) => `"${name}"`).join(", ")}.` }
+      : {}),
+    details: {
+      destinationId,
+      references: [...routineNames, ...new Set(skillUses.map((use) => `skill:${use.skillName}`))],
+    },
+  });
+
+const isSkillReferenceError = (error: unknown): boolean => {
+  const record = error as { code?: unknown; constraint?: unknown } | null;
+  return record?.code === "23503" && record.constraint === "agent_skills_webhook_target_fk";
+};
 
 type WebhookDestinationUrlGuard = (url: string) => Promise<void>;
 
@@ -115,7 +121,8 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     assertPublicUrl: WebhookDestinationUrlGuard;
     allowHttpLoopback?: boolean;
     routineReferences?: WebhookDestinationRoutineReferencePort;
-    skillReferences?: WebhookDestinationSkillReferencePort;
+    /** The skills that use a destination, which keep it from being deleted. */
+    skillTargetUses: SkillTargetUseReader;
   }) {}
 
   isEncryptionConfigured(): boolean {
@@ -232,26 +239,18 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
   }
 
   async delete(workspaceId: string, id: string, actor: WebhookDestinationActor): Promise<void> {
-    const routineReferences = await this.options.routineReferences
-      ?.listRoutineNamesReferencingDestination(workspaceId, id) ?? [];
-    const skillReferences = await this.options.skillReferences
-      ?.listAgentSkillNamesReferencingDestination(workspaceId, id) ?? [];
-    const references = [
-      ...routineReferences,
-      ...skillReferences.map((name) => `skill:${name}`),
-    ];
-    if (references.length > 0) {
-      throw new WebhookDestinationInUseError(id, references);
+    const [routineNames, skillUses] = await this.uses(workspaceId, id);
+    if (routineNames.length > 0 || skillUses.length > 0) {
+      throw destinationInUse(id, routineNames, skillUses);
     }
     const existing = await this.requireRecord(workspaceId, id);
     let deleted: boolean;
     try {
       deleted = await this.options.repository.delete(id, workspaceId);
     } catch (error) {
-      if (isPublishedRoutineReferenceError(error)) {
-        const latestReferences = await this.options.routineReferences
-          ?.listRoutineNamesReferencingDestination(workspaceId, id) ?? [];
-        throw new WebhookDestinationInUseError(id, latestReferences);
+      // A routine or skill took the destination after the check above, and the database refused.
+      if (isPublishedRoutineReferenceError(error) || isSkillReferenceError(error)) {
+        throw destinationInUse(id, ...await this.uses(workspaceId, id));
       }
       throw error;
     }
@@ -263,6 +262,13 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
       actor,
       destination: existing,
     });
+  }
+
+  private async uses(workspaceId: string, destinationId: string): Promise<[string[], SkillTargetUse[]]> {
+    return Promise.all([
+      this.options.routineReferences?.listRoutineNamesReferencingDestination(workspaceId, destinationId) ?? Promise.resolve([]),
+      this.options.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "webhook_destination", targetId: destinationId }),
+    ]);
   }
 
   async existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean> {

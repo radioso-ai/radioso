@@ -11,6 +11,7 @@ import {
   InMemoryMcpConnectionRepository,
   createMockToolServiceFactory,
 } from "../../support/inMemoryExternalSkills.js";
+import { fixedSkillTargetUses, noSkillTargetUses } from "../../support/skillTargetUses.js";
 
 const encryptionKey = Buffer.alloc(32, 3).toString("base64");
 
@@ -37,6 +38,7 @@ describe("McpConnectionService (unit)", () => {
   it("rejects a connection whose URL fails the SSRF guard", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       encryptionKey: { current: encryptionKey, previous: [] },
       assertPublicUrl: (url) => {
@@ -54,6 +56,7 @@ describe("McpConnectionService (unit)", () => {
   it("fails with a 503 AppError when encryption is not configured", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       // no encryptionKey
     });
@@ -73,6 +76,7 @@ describe("McpConnectionService (unit)", () => {
     );
     const service = new McpConnectionService({
       repository,
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -97,6 +101,7 @@ describe("McpConnectionService (unit)", () => {
   it("rejects an OAuth callback whose state does not match", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -113,6 +118,7 @@ describe("McpConnectionService (unit)", () => {
   it("rejects access-token rotation on OAuth connections", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -147,6 +153,7 @@ describe("McpConnectionService (unit)", () => {
     };
     const service = new McpConnectionService({
       repository,
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory,
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -184,6 +191,7 @@ describe("McpConnectionService (unit)", () => {
     };
     const service = new McpConnectionService({
       repository,
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory,
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -224,6 +232,7 @@ describe("McpConnectionService (unit)", () => {
     };
     const service = new McpConnectionService({
       repository,
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory,
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -247,6 +256,7 @@ describe("McpConnectionService (unit)", () => {
   it("flags an access-token connection for re-auth and answers 409 when the MCP server rejects its token", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: {
         create: () => ({
           listTools: () => Promise.reject(new McpCredentialsRejectedError(401)),
@@ -272,6 +282,7 @@ describe("McpConnectionService (unit)", () => {
   it("answers 502 (not a 500) when the MCP server fails discovery, and leaves the connection authorized", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: {
         create: () => ({
           listTools: () => Promise.reject(new McpServerUnavailableError()),
@@ -291,6 +302,7 @@ describe("McpConnectionService (unit)", () => {
   it("never returns OAuth secrets in the connection summary", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
+      skillTargetUses: noSkillTargetUses,
       toolServiceFactory: createMockToolServiceFactory(),
       encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
@@ -299,5 +311,27 @@ describe("McpConnectionService (unit)", () => {
     const summary = JSON.stringify(created);
     expect(summary).not.toContain("shh");
     expect(summary).not.toContain("client-123");
+  });
+});
+
+describe("McpConnectionService.remove", () => {
+  it("refuses a connection an agent's published release still uses, and leaves it in place", async () => {
+    const repository = new InMemoryMcpConnectionRepository();
+    const service = new McpConnectionService({
+      repository,
+      toolServiceFactory: createMockToolServiceFactory(),
+      encryptionKey: { current: encryptionKey, previous: [] },
+      skillTargetUses: fixedSkillTargetUses([
+        { agentId: "agent-1", agentName: "Support", skillName: "post_message", inDraft: false, inPublishedRelease: true },
+      ]),
+    });
+    const created = await service.create("workspace-1", baseInput);
+
+    await expect(service.remove("workspace-1", created.id)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: 'MCP connection is in use. The published version of agent "Support" still uses skill "post_message". Publish agent "Support" first.',
+    });
+    expect(await repository.findById("workspace-1", created.id)).not.toBeNull();
   });
 });

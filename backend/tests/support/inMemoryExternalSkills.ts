@@ -137,6 +137,13 @@ export class InMemoryExternalSkillDefinitionRepository implements ExternalSkillD
     return [...this.rows.values()].some((row) => row.connectionId === connectionId);
   }
 
+  /** The skills on one connection in a workspace, by agent and name. */
+  skillsOnConnection(workspaceId: string, connectionId: string): Array<{ agentId: string; skillName: string }> {
+    return [...this.rows.values()]
+      .filter((row) => row.workspaceId === workspaceId && row.connectionId === connectionId)
+      .map((row) => ({ agentId: row.agentId, skillName: row.skillName }));
+  }
+
   /** Each agent and connection pair in the workspace, once, however many skills join them. */
   connectionUsage(workspaceId: string, connectionId?: string): Array<{ connectionId: string; agentId: string }> {
     const pairs = [...this.rows.values()]

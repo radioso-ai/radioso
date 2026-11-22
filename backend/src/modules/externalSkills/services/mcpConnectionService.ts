@@ -1,4 +1,5 @@
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import {
   encryptField,
   decryptField,
@@ -101,7 +102,13 @@ interface McpConnectionServiceOptions {
   fetchImpl?: FetchLike;
   /** Optional logger for status-transition signals (identity-only, no secrets). */
   logger?: AppLogger;
+  /** The skills that use a connection, which keep it from being deleted. */
+  skillTargetUses: SkillTargetUseReader;
 }
+
+/** The refusal to delete a connection skills use, in an agent's draft or its published release. */
+const connectionInUse = (uses: readonly SkillTargetUse[]): AppError =>
+  skillTargetInUseError({ code: "conflict", targetLabel: "MCP connection", uses });
 
 /** Adapt Node's global fetch to the narrow {@link FetchLike} the OAuth client expects. */
 const globalFetchAdapter: FetchLike = async (url, init) => {
@@ -225,23 +232,25 @@ export class McpConnectionService {
   }
 
   async remove(workspaceId: string, id: string): Promise<void> {
+    const uses = await this.skillUses(workspaceId, id);
+    if (uses.length > 0) throw connectionInUse(uses);
     let removed: boolean;
     try {
       removed = await this.options.repository.remove(workspaceId, id);
     } catch (error) {
+      // A skill took the connection after the check above, and the database's guard refused.
       if (error && typeof error === "object" && "code" in error && error.code === "23503") {
-        const usage = await this.options.repository.listAgentUsage(workspaceId, id);
-        throw conflict(
-          usage.length > 0
-            ? `Connection is still used by a skill on ${usage.map(agentLabel).join(", ")}`
-            : "Connection is still used by a skill on an agent in this workspace",
-        );
+        throw connectionInUse(await this.skillUses(workspaceId, id));
       }
       throw error;
     }
     if (!removed) {
       throw notFound("MCP connection not found");
     }
+  }
+
+  private skillUses(workspaceId: string, connectionId: string): Promise<SkillTargetUse[]> {
+    return this.options.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "mcp_connection", targetId: connectionId });
   }
 
   /** Live `tools/list` for the skill builder; requires a usable credential. */

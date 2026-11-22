@@ -13,7 +13,11 @@ import {
   ConversationClassificationService,
   contextClassificationHandler,
 } from "../../../src/modules/contextClassification/public.js";
-import { classificationEvalAttributes, classificationEvalCases } from "../../fixtures/context-classification/cases.js";
+import {
+  classificationEvalAttributes,
+  classificationEvalCases,
+  type ClassificationEvalAttributeName,
+} from "../../fixtures/context-classification/cases.js";
 import { classificationEvalService, classifyEvalCase, scoreEvalCase } from "../../support/contextClassificationEval.js";
 
 /**
@@ -38,7 +42,7 @@ const labelledModel = () => {
     return {
       text: JSON.stringify(Object.fromEntries(classificationEvalAttributes.flatMap((attribute) => {
         const field = fieldOf(request.prompt, attribute.name);
-        return field ? [[field, evalCase.expected[attribute.name as "topic" | "urgency"]?.[0] ?? null]] : [];
+        return field ? [[field, evalCase.expected[attribute.name as ClassificationEvalAttributeName]?.[0] ?? null]] : [];
       }))),
     };
   });
@@ -57,7 +61,18 @@ describe("context classification labelled cases (deterministic)", () => {
       }
     }
     expect(new Set(classificationEvalCases.map((evalCase) => evalCase.language))).toEqual(new Set(["it", "de", "en"]));
-    expect(new Set(classificationEvalCases.flatMap((evalCase) => evalCase.tags))).toEqual(new Set(["none_applies", "topic_change", "injection"]));
+    expect(new Set(classificationEvalCases.flatMap((evalCase) => evalCase.tags))).toEqual(new Set(["none_applies", "topic_change", "injection", "clears"]));
+    // Operators define attributes in their own language: an Italian and a German definition are scored.
+    const scored = new Set(classificationEvalCases.flatMap((evalCase) => Object.keys(evalCase.expected)));
+    expect(scored).toEqual(new Set(["topic", "urgency", "richiesta", "kundentyp"]));
+  });
+
+  it("counts a value the classifier set earlier as right only once the run cleared it", () => {
+    const evalCase = classificationEvalCases.find((candidate) => candidate.id === "en-clears-topic")!;
+
+    expect(scoreEvalCase(evalCase, { values: { topic: null }, writes: { topic: "cleared" } }).passed).toBe(true);
+    expect(scoreEvalCase(evalCase, { values: { topic: null }, writes: {} }).passed).toBe(false);
+    expect(scoreEvalCase(evalCase, { values: { topic: "shipping" }, writes: { topic: "unchanged" } }).passed).toBe(false);
   });
 
   it.each(classificationEvalCases.map((evalCase) => [evalCase.id, evalCase] as const))("%s goes through the strict schema and parses to its labels", async (_id, evalCase) => {

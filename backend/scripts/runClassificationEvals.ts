@@ -1,8 +1,10 @@
 /**
  * Live labelled set for attribute classification (#1884): the classifier's prompt, strict schema and
  * parse, against the workspace-default `rewrite`-tier model, over the conversations in
- * `tests/fixtures/context-classification/cases.ts` (Italian, German and English; cases where no
- * option applies, a topic change, and an instruction injected into the visitor's message).
+ * `tests/fixtures/context-classification/cases.ts` (Italian, German and English, against attributes
+ * defined in each; cases where no option applies, a topic change, a value the classifier cleared
+ * when it stopped fitting, and instructions injected into the visitor's message, one with no real
+ * question). Each case and the run print the tokens the provider reported.
  *
  *   pnpm run evals:classification                          # one sample per case, gated on the baseline
  *   pnpm run evals:classification -- --samples 3
@@ -35,7 +37,13 @@ import {
 } from "../src/modules/eval/suite/index.js";
 import { createLogger } from "../src/shared/observability/logger.js";
 import { classificationEvalCases } from "../tests/fixtures/context-classification/cases.js";
-import { classificationEvalService, classifyEvalCase, scoreEvalCase } from "../tests/support/contextClassificationEval.js";
+import {
+  classificationEvalService,
+  classifyEvalCase,
+  meteredInference,
+  scoreEvalCase,
+  type ClassificationEvalTokenUsage,
+} from "../tests/support/contextClassificationEval.js";
 
 const BASELINE_PATH = fileURLToPath(new URL("../tests/fixtures/context-classification/baseline.json", import.meta.url));
 const PASS_THRESHOLD = 0.6;
@@ -58,7 +66,8 @@ const main = async (): Promise<void> => {
   if (model !== flagValue("allow-model") && !MINI_CLASS_MODEL.test(model)) {
     throw new Error(`Refusing to run on rewrite model "${model}": live runs use a mini-class model; pass --allow-model ${model} to override.`);
   }
-  const classifier = classificationEvalService({ create: async () => pipeline });
+  const usage: ClassificationEvalTokenUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+  const classifier = classificationEvalService(meteredInference(pipeline, usage));
 
   const outcomes: CaseOutcome[] = [];
   let fieldsScored = 0;
@@ -68,13 +77,15 @@ const main = async (): Promise<void> => {
     let errored = false;
     for (let sample = 0; sample < samples; sample += 1) {
       try {
+        const before = { ...usage };
         const score = scoreEvalCase(evalCase, await classifyEvalCase(classifier, evalCase));
+        const tokens = `${usage.inputTokens - before.inputTokens} in / ${usage.outputTokens - before.outputTokens} out`;
         passes += score.passed ? 1 : 0;
         fieldsScored += score.fields.length;
         fieldsCorrect += score.fields.filter((field) => field.correct).length;
         const misses = score.fields.filter((field) => !field.correct)
           .map((field) => `${field.name}: expected ${JSON.stringify(field.expected)}, got ${JSON.stringify(field.observed)}`);
-        process.stderr.write(`${score.passed ? "PASS" : "FAIL"} ${evalCase.id} [${evalCase.language}${evalCase.tags.length ? ` ${evalCase.tags.join(",")}` : ""}]${misses.length ? ` — ${misses.join("; ")}` : ""}\n`);
+        process.stderr.write(`${score.passed ? "PASS" : "FAIL"} ${evalCase.id} [${evalCase.language}${evalCase.tags.length ? ` ${evalCase.tags.join(",")}` : ""}] (${tokens} tokens)${misses.length ? ` — ${misses.join("; ")}` : ""}\n`);
       } catch (error) {
         errored = true;
         process.stderr.write(`ERROR ${evalCase.id}: ${error instanceof Error ? error.name : "error"}\n`);
@@ -93,7 +104,9 @@ const main = async (): Promise<void> => {
   const casesPassed = outcomes.filter((outcome) => outcome.status === "pass").length;
   process.stderr.write(
     `\nModel ${model}, ${samples} sample(s): ${casesPassed}/${outcomes.length} cases pass; `
-    + `${fieldsCorrect}/${fieldsScored} scored attributes right (${fieldsScored ? Math.round((fieldsCorrect / fieldsScored) * 100) : 0}%).\n`,
+    + `${fieldsCorrect}/${fieldsScored} scored attributes right (${fieldsScored ? Math.round((fieldsCorrect / fieldsScored) * 100) : 0}%).\n`
+    + `Tokens: ${usage.inputTokens} in, ${usage.outputTokens} out over ${usage.calls} call(s)`
+    + ` (${usage.calls ? Math.round(usage.inputTokens / usage.calls) : 0} in per call on average).\n`,
   );
 
   if (updateBaseline) {

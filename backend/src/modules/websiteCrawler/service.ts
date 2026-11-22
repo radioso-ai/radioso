@@ -62,10 +62,11 @@ export interface WebsiteCrawlerDocumentIngestionPort {
     status: string;
     syncedAt?: Date | null;
   }): Promise<void>;
+  /** Removes exactly the given pages of the source, which a complete crawl found gone. */
   reapMissingPages?(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 
@@ -607,6 +608,7 @@ export class WebsiteCrawlerService {
             accountId: input.accountId,
             workspaceId: input.workspaceId,
             sourceId,
+            websiteBaseUrl: safeWebsiteBaseUrl,
             seenExternalDocumentIds: pagesSeenByCrawl({
               websiteBaseUrl: safeWebsiteBaseUrl,
               processedCanonicalUrls: checkpointSets.processed,

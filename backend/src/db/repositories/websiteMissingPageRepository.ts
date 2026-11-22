@@ -18,9 +18,12 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
   async reviewMissingPages(input: {
     workspaceId: string;
     sourceId: string;
+    externalDocumentIdPrefix: string;
     seenExternalDocumentIds: readonly string[];
     crawlStartedAt: Date;
   }): Promise<MissingPageReview> {
+    // starts_with, not LIKE: a site's address is full of `_`, which LIKE reads as a wildcard.
+    const publishedByThisSite = sql<boolean>`starts_with(d.external_document_id, ${input.externalDocumentIdPrefix})`;
     const seen = [...new Set(input.seenExternalDocumentIds.filter((id) => id.length > 0))];
     return this.db.transaction().execute(async (trx) => {
       if (seen.length > 0) {
@@ -39,7 +42,8 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
         .select(["d.id", "d.external_document_id", "m.decision"])
         .where("d.workspace_id", "=", input.workspaceId)
         .where("d.source_id", "=", input.sourceId)
-        .where("d.external_document_id", "is not", null)
+        .where(publishedByThisSite)
+        .where("d.created_at", "<", input.crawlStartedAt)
         .where(sql<boolean>`d.external_document_id <> ALL(${sql.val(seen)}::text[])`)
         .execute();
       // Kept pages stay out of the count: they never leave, so they would make every removal look smaller.
@@ -48,7 +52,7 @@ export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, We
         .select((eb) => eb.fn.countAll<string>().as("count"))
         .where("d.workspace_id", "=", input.workspaceId)
         .where("d.source_id", "=", input.sourceId)
-        .where("d.external_document_id", "is not", null)
+        .where(publishedByThisSite)
         .where("d.created_at", "<", input.crawlStartedAt)
         .where((eb) => eb.not(eb.exists(
           eb.selectFrom("website_source_missing_pages as k").select("k.document_id")

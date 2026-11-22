@@ -8,7 +8,11 @@ import { WebsiteCrawlerBadRequestError, redactSensitiveText } from "./errors.js"
 export const buildWebsiteExternalDocumentId = (input: {
   websiteBaseUrl: string;
   pageUrl: string;
-}): string => `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(input.websiteBaseUrl))}:${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
+}): string => `${websiteExternalDocumentIdPrefix(input.websiteBaseUrl)}${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
+
+/** What every external document id a crawl of this site publishes starts with. */
+export const websiteExternalDocumentIdPrefix = (websiteBaseUrl: string): string =>
+  `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(websiteBaseUrl))}:`;
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [
   /secret/i,

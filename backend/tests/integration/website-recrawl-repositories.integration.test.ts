@@ -20,6 +20,7 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
   const otherSiteId = randomUUID();
   const apiSourceId = randomUUID();
   const now = new Date("2026-11-21T12:00:00.000Z");
+  const crawledPrefix = "website:https://docs.example:";
 
   const insertSource = async (id: string, kind: string, name: string) => {
     await database.query(
@@ -134,29 +135,34 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
   });
 
   it("reviews the pages a crawl did not see, clearing the ones it saw from the held list", async () => {
-    const seen = await insertPage(siteId, "page-seen");
-    const gone = await insertPage(siteId, "page-gone");
-    const kept = await insertPage(siteId, "page-kept");
-    const reappeared = await insertPage(siteId, "page-back");
-    await insertPage(siteId, "page-new", new Date("2026-11-21T12:05:00.000Z"));
+    const page = (path: string) => `${crawledPrefix}https://docs.example/${path}`;
+    const seen = await insertPage(siteId, page("seen"));
+    const gone = await insertPage(siteId, page("gone"));
+    const kept = await insertPage(siteId, page("kept"));
+    const reappeared = await insertPage(siteId, page("back"));
     await database.query(
       `INSERT INTO website_source_missing_pages (document_id, workspace_id, source_id, decision)
        VALUES ($1, $3, $4, 'kept'), ($2, $3, $4, 'kept')`,
       [kept, reappeared, workspaceId, siteId],
     );
+    // None of these is a page this crawl's site published before it started.
+    await insertPage(siteId, page("new"), new Date("2026-11-21T12:05:00.000Z"));
+    await insertPage(siteId, "reviewed-import:faq");
+    await insertPage(siteId, "website:https://help.example:https://help.example/other-site");
 
     const review = await missingPages.reviewMissingPages({
       workspaceId,
       sourceId: siteId,
-      seenExternalDocumentIds: ["page-seen", "page-back", "page-new"],
+      externalDocumentIdPrefix: crawledPrefix,
+      seenExternalDocumentIds: [page("seen"), page("back")],
       crawlStartedAt: now,
     });
 
     // The pages the crawl measures a removal against: not the new page, and not the one the operator kept.
     expect(review.livePageCountBeforeCrawl).toBe(3);
     expect(review.missingPages).toEqual(expect.arrayContaining([
-      { documentId: gone, externalDocumentId: "page-gone", kept: false },
-      { documentId: kept, externalDocumentId: "page-kept", kept: true },
+      expect.objectContaining({ documentId: gone, externalDocumentId: page("gone"), kept: false }),
+      expect.objectContaining({ documentId: kept, externalDocumentId: page("kept"), kept: true }),
     ]));
     expect(review.missingPages).toHaveLength(2);
     const rows = await database.query<{ document_id: string }>(

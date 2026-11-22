@@ -28,6 +28,7 @@ const input = () => ({
   accountId: null,
   workspaceId: "workspace-1",
   sourceId: "source-1",
+  websiteBaseUrl: "https://docs.example",
   seenExternalDocumentIds: ["seen-1", "seen-2"],
   crawlStartedAt,
 });
@@ -41,14 +42,17 @@ describe("reconciling the pages a complete crawl no longer found", () => {
 
     await reconcileMissingPages(dependencies, input());
 
-    expect(store.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({
+    expect(store.reviewMissingPages).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      externalDocumentIdPrefix: "website:https://docs.example:",
       seenExternalDocumentIds: ["seen-1", "seen-2"],
       crawlStartedAt,
-    }));
+    });
     expect(reapMissingPages).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       sourceId: "source-1",
-      keepExternalDocumentIds: ["seen-1", "seen-2", "kept"],
+      documentIds: ["doc-gone"],
     });
     expect(store.holdMissingPages).not.toHaveBeenCalled();
   });

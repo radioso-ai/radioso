@@ -64,7 +64,7 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
       },
       resolveSource: async () => ({ id: sourceId }),
       updateSourceSyncState: async () => undefined,
-      reapMissingPages: (input) => documents.deleteMissingPagesBySourceAndExternalIds(input),
+      reapMissingPages: (input) => documents.deleteMissingSourcePages(input),
     },
     missingPages,
     auditService: audit,
@@ -198,13 +198,19 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
 
   it("removes what neither slice found after a crawl the operator started, when it is a fifth or less", async () => {
     await seedPages(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
+    // A page a reviewed import put in the source, which no crawl of the site published.
+    await database.query(
+      `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at)
+       VALUES ($1, $2, $3, 'reviewed-import:faq', 'FAQ', 'body', 'body', 'ready', '2026-11-01T00:00:00Z')`,
+      [randomUUID(), workspaceId, sourceId],
+    );
 
     await crawlInSlices("manual", [
       { pages: ["a", "b", "c", "d", "e"].map(page), outcome: "yielded" },
       { pages: ["f", "g", "h", "i"].map(page), outcome: "completed", frontierExhausted: true },
     ]);
 
-    expect(await livePages()).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(externalId));
+    expect(await livePages()).toEqual(["reviewed-import:faq", ...["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(externalId)]);
     expect(await heldPages()).toEqual([]);
   });
 

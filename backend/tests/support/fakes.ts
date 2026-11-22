@@ -2894,7 +2894,7 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
 
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
-  private heldPages?: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument">;
+  private heldPages?: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument" | "isKept">;
 
   constructor(private jobRepository?: InMemoryDocumentProcessingJobRepository) {}
 
@@ -2903,7 +2903,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   }
 
   /** The held-pages table `deleteHeldSourcePages` reads, as Postgres joins it. */
-  setHeldPages(heldPages: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument">): void {
+  setHeldPages(heldPages: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument" | "isKept">): void {
     this.heldPages = heldPages;
   }
 
@@ -3714,20 +3714,20 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteMissingPagesBySourceAndExternalIds(input: {
+  async deleteMissingSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    const keep = new Set(input.keepExternalDocumentIds.filter((value) => Boolean(value)));
+    const listed = new Set(input.documentIds);
     let deletedCount = 0;
     let deletedContentBytes = 0;
     for (const [id, doc] of this.items.entries()) {
       if (
         doc.workspaceId === input.workspaceId &&
         doc.sourceId === input.sourceId &&
-        doc.externalDocumentId &&
-        !keep.has(doc.externalDocumentId)
+        listed.has(id) &&
+        !this.heldPages?.isKept(id)
       ) {
         deletedContentBytes += doc.contentSizeBytes ?? 0;
         this.items.delete(id);
@@ -3822,6 +3822,10 @@ export class InMemoryWebsiteMissingPageStore implements WebsiteMissingPageStore,
 
   forgetDocument(documentId: string): void {
     this.pages.delete(documentId);
+  }
+
+  isKept(documentId: string): boolean {
+    return this.pages.get(documentId)?.decision === "kept";
   }
 }
 

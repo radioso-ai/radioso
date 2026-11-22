@@ -1,5 +1,10 @@
 import { decideMissingPageRemoval } from "./missingPageRemoval.js";
-import { buildWebsiteExternalDocumentId, normalizePageUrl, redactWebsiteCrawlerUrl } from "./pageUrls.js";
+import {
+  buildWebsiteExternalDocumentId,
+  normalizePageUrl,
+  redactWebsiteCrawlerUrl,
+  websiteExternalDocumentIdPrefix,
+} from "./pageUrls.js";
 import type { WebsiteCrawlerAuditPort, WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 
 /** A page of the source that a complete crawl did not find. `kept` when the operator chose to keep it. */
@@ -20,10 +25,15 @@ export interface MissingPageReview {
 
 /** What a crawl reads and writes about the pages it no longer finds. */
 export interface WebsiteMissingPageStore {
-  /** Clears the pages the crawl saw from the held list, then lists the source's pages it did not see. */
+  /**
+   * Clears the pages the crawl saw from the held list, then lists the pages it did not see among the
+   * ones a crawl of its site published (their external id starts with `externalDocumentIdPrefix`)
+   * before it started. A page anything else put in the source is never missing.
+   */
   reviewMissingPages(input: {
     workspaceId: string;
     sourceId: string;
+    externalDocumentIdPrefix: string;
     seenExternalDocumentIds: readonly string[];
     crawlStartedAt: Date;
   }): Promise<MissingPageReview>;
@@ -123,6 +133,8 @@ interface CompleteCrawl {
   accountId?: string | null;
   workspaceId: string;
   sourceId: string;
+  /** The site the crawl published its pages under; only those pages can go missing. */
+  websiteBaseUrl: string;
   seenExternalDocumentIds: string[];
   crawlStartedAt: Date;
 }
@@ -132,7 +144,13 @@ const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationD
     // Without a store a crawl cannot tell how much it would remove, so it removes nothing.
     return;
   }
-  const review = await dependencies.store.reviewMissingPages(input);
+  const review = await dependencies.store.reviewMissingPages({
+    workspaceId: input.workspaceId,
+    sourceId: input.sourceId,
+    externalDocumentIdPrefix: websiteExternalDocumentIdPrefix(input.websiteBaseUrl),
+    seenExternalDocumentIds: input.seenExternalDocumentIds,
+    crawlStartedAt: input.crawlStartedAt,
+  });
   const candidates = review.missingPages.filter((page) => !page.kept);
   if (candidates.length === 0) {
     return;
@@ -142,11 +160,10 @@ const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationD
     livePageCountBeforeCrawl: review.livePageCountBeforeCrawl,
   });
   if (decision === "remove") {
-    const kept = review.missingPages.filter((page) => page.kept).map((page) => page.externalDocumentId);
     await dependencies.ingestion.reapMissingPages?.({
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
-      keepExternalDocumentIds: [...input.seenExternalDocumentIds, ...kept],
+      documentIds: candidates.map((page) => page.documentId),
     });
     return;
   }

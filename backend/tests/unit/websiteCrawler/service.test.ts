@@ -1503,7 +1503,7 @@ describe("website crawler service", () => {
     expect(reapMissingPages).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       sourceId: "source-1",
-      keepExternalDocumentIds: ["website:https://example.com:https://example.com/a"],
+      documentIds: ["doc-gone"],
     });
   });
 
@@ -1753,9 +1753,13 @@ describe("website crawler service", () => {
       "website:https://example.com:https://example.com/duplicate-of-old",
       "website:https://example.com:https://example.com/a",
     ];
-    expect(reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId: "source-2", crawlStartedAt: jobStartedAt }));
+    expect(reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "source-2",
+      externalDocumentIdPrefix: "website:https://example.com:",
+      crawlStartedAt: jobStartedAt,
+    }));
     expect([...reviewMissingPages.mock.calls[0][0].seenExternalDocumentIds].sort()).toEqual([...seen].sort());
-    expect([...reapMissingPages.mock.calls[0][0].keepExternalDocumentIds].sort()).toEqual([...seen].sort());
+    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ documentIds: ["doc-gone"] }));
   });
 
   it("skips reaping when the checkpoint's processed pages may have been cut at the checkpoint cap", async () => {

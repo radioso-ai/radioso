@@ -901,9 +901,9 @@ export class DocumentIngestionService implements DocumentInventoryPort {
   async reapMissingPages(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input));
+    return this.publishingDeletion(input.workspaceId, this.documentRepository.deleteMissingSourcePages(input));
   }
 
   /** The operator's removal of pages a scheduled crawl held, through the same deletion as {@link reapMissingPages}. */

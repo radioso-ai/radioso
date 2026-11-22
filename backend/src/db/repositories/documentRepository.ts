@@ -1159,15 +1159,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteMissingPagesBySourceAndExternalIds(input: {
-    workspaceId: string;
-    sourceId: string;
-    keepExternalDocumentIds: string[];
-  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
-    return this.deleteSourcePages(input, (eb) => keep.length > 0
-      ? eb.and([eb("external_document_id", "is not", null), sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`])
-      : eb("external_document_id", "is not", null));
+  /** Deletes exactly the given pages of the source, leaving any the operator kept, locking each one it deletes. */
+  async deleteMissingSourcePages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    if (input.documentIds.length === 0) return { deletedCount: 0, deletedContentBytes: 0 };
+    return this.deleteSourcePages(input, (eb) => eb.and([eb("id", "in", [...new Set(input.documentIds)]), eb.not(eb.exists(eb.selectFrom("website_source_missing_pages as k")
+      .select("k.document_id").whereRef("k.document_id", "=", "documents.id").where("k.decision", "=", "kept")))]));
   }
 
   /** Deletes the source's pages still held for review, locking each hold so a crawl cannot clear it mid-deletion. */

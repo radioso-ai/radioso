@@ -28,13 +28,15 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const sourceId = randomUUID();
-  const pageIds = Array.from({ length: 10 }, (_, index) => `page-${index}`);
+  const site = "https://docs.example";
+  const pageId = (path: string) => `website:${site}:${site}/${path}`;
+  const pageIds = Array.from({ length: 10 }, (_, index) => pageId(`page-${index}`));
   const crawlStartedAt = new Date("2026-11-21T12:00:00.000Z");
 
   const crawl = (seenExternalDocumentIds: string[]) =>
     reconcileMissingPages(
-      { store: missingPages, ingestion: { reapMissingPages: (input) => documents.deleteMissingPagesBySourceAndExternalIds(input) }, audit },
-      { accountId: null, workspaceId, sourceId, seenExternalDocumentIds, crawlStartedAt },
+      { store: missingPages, ingestion: { reapMissingPages: (input) => documents.deleteMissingSourcePages(input) }, audit },
+      { accountId: null, workspaceId, sourceId, websiteBaseUrl: site, seenExternalDocumentIds, crawlStartedAt },
     );
   const livePages = async () => {
     const rows = await database.query<{ external_document_id: string }>(
@@ -48,7 +50,7 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
      JOIN documents d ON d.id = m.document_id WHERE m.source_id = $1 ORDER BY d.external_document_id`,
     [sourceId],
   );
-  const without = (...missing: string[]) => pageIds.filter((page) => !missing.includes(page));
+  const without = (...missing: string[]) => pageIds.filter((page) => !missing.map(pageId).includes(page));
 
   beforeAll(async () => {
     await database.query(
@@ -90,14 +92,28 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
     expect(await heldRows()).toEqual([]);
   });
 
+  it("never removes a page of the source that no crawl of the site published", async () => {
+    const reviewedImport = "reviewed-import:opening-hours";
+    await database.query(
+      `INSERT INTO documents (id, workspace_id, source_id, external_document_id, title, source_content, markdown_content, status, created_at)
+       VALUES ($1, $2, $3, $4, $4, 'body', 'body', 'ready', '2026-11-01T00:00:00Z')`,
+      [randomUUID(), workspaceId, sourceId, reviewedImport],
+    );
+
+    await crawl(without("page-0"));
+
+    expect(await livePages()).toEqual([...without("page-0"), reviewedImport].sort());
+    expect(await heldRows()).toEqual([]);
+  });
+
   it("holds more than a fifth for review, then removes them when the operator says so", async () => {
     await crawl(without("page-0", "page-1", "page-2"));
 
     expect(await livePages()).toEqual(pageIds);
     expect(await heldRows()).toEqual([
-      { external_document_id: "page-0", decision: "pending" },
-      { external_document_id: "page-1", decision: "pending" },
-      { external_document_id: "page-2", decision: "pending" },
+      { external_document_id: pageId("page-0"), decision: "pending" },
+      { external_document_id: pageId("page-1"), decision: "pending" },
+      { external_document_id: pageId("page-2"), decision: "pending" },
     ]);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "document.website_crawler.missing_pages_held",
@@ -119,7 +135,7 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
     expect((await heldRows()).map((row) => row.decision)).toEqual(["kept", "kept", "kept"]);
 
     await crawl(without("page-1", "page-2"));
-    expect((await heldRows()).map((row) => row.external_document_id)).toEqual(["page-1", "page-2"]);
+    expect((await heldRows()).map((row) => row.external_document_id)).toEqual([pageId("page-1"), pageId("page-2")]);
 
     await crawl(without("page-1", "page-2"));
     expect(await livePages()).toEqual(without("page-3"));

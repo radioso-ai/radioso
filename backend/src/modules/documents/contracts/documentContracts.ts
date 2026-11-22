@@ -367,14 +367,15 @@ export interface DocumentRepositoryPort {
     sourceId?: string | null;
     externalDocumentId: string;
   }): Promise<DocumentPageState | null>;
-  deleteMissingPagesBySourceAndExternalIds(input: {
+  /** Deletes exactly the given pages of the source that a crawl found gone, never one the operator kept. */
+  deleteMissingSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
   /**
-   * Deletes the source's pages a scheduled crawl holds for review the way
-   * {@link deleteMissingPagesBySourceAndExternalIds} does: the ones still held when it runs.
+   * Deletes the source's pages a crawl holds for review the way {@link deleteMissingSourcePages}
+   * does: the ones still held when it runs.
    */
   deleteHeldSourcePages(input: {
     workspaceId: string;

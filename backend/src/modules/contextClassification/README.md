@@ -22,8 +22,9 @@ directive, routine or notice is, how a turn runs, facets, or the event log.
 Consumed:
 
 - `ClassifiedVariableReader` (context-variables): a conversation's classified
-  variables, from the revision it is pinned to, with the conversation's own
-  values; and definitions by id for Test Chat.
+  variables, from the revision it is pinned to, with what its ladder holds for
+  each; and definitions by id for Test Chat. Its Postgres implementation reads
+  the revision through the agents module's `findRevision`, bound in composition.
 - `ConversationValueWriter` (context-variables): every write, under the
   overwrite rule. The classifier fills an empty value or replaces its own; a
   value the API, a teammate or a routine set stays. Its `null` clears only its own
@@ -51,10 +52,15 @@ Composition builds the service and registers `contextClassificationHandler` in
 
 ## A run
 
-1. Read the targets. A variable the classifier may not fill (no longer a Choice,
-   or made sensitive or signed since), or one with no active option, is dropped.
-   A variable whose value another writer holds is left out of the call. When
-   every one is held, no call is made (`skipped_override`).
+1. Read the targets: the enabled `classified` enablements of the revision the
+   conversation is pinned to, through the agents module's revision reader, and
+   what the conversation's whole ladder (conversation, session, customer, agent,
+   workspace) holds for each. A variable the classifier may not fill (no longer a
+   Choice, or made sensitive or signed since), or one with no active option, is
+   dropped. A variable another writer holds at any scope is left out of the call,
+   and a conversation value the classifier wrote for it is cleared, since it
+   would hide that writer's value. When every one is held, no call is made
+   (`skipped_override`).
 2. Read the excerpt. When every recent visitor message was withheld as sensitive
    and there is no summary, no call is made (`skipped_sensitive`).
 3. One call, with positional fields (`attribute_1`…) so a variable's name never has

@@ -58,6 +58,7 @@ export type {
   ConversationValueWriter,
   StoredConversationValue,
 } from "./conversationValueWriter.js";
+export { classificationTargetFrom } from "./classifiedVariables.js";
 export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {
   AgentContextVariableEnablement,

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { turnBackgroundJobs } from "../../../src/modules/chat/services/turnBackgroundJobs.js";
 import {
+  classificationTargetFrom,
   planConversationWrite,
   type ContextValueWriter,
   type ConversationValueWriter,
@@ -99,7 +100,10 @@ describe("context classification labelled cases (deterministic)", () => {
     const model = labelledModel();
     const classifier = new ConversationClassificationService({
       targets: {
-        readConversationTargets: async () => ({ agentId: "agent-1", targets: [{ variable: topic, stored: store.get(topic.id) ?? null }] }),
+        readConversationTargets: async () => {
+          const stored = store.get(topic.id);
+          return { agentId: "agent-1", targets: [classificationTargetFrom(topic, stored ? [{ scope: { type: "conversation", id: "conversation-1" }, ...stored }] : [])] };
+        },
         readDefinitions: async () => [topic],
       },
       excerpts: { readExcerpt: async () => ({ summary: null, messages: evalCase.messages, withheldCount: 0 }) },

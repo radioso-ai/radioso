@@ -107,3 +107,22 @@ export const readMostSpecificValues = async (
     .execute();
   return new Map(rows.map((row) => [row.variable_id, mapContextVariableValueRow(row)]));
 };
+
+/** Every stored value of the variables on any rung of the ladder, in one read; a rung that holds none adds nothing. */
+export const readLadderValues = async (
+  db: Db,
+  variableIds: readonly string[],
+  scopes: readonly ContextVariableScope[],
+): Promise<ContextVariableValue[]> => {
+  if (variableIds.length === 0 || scopes.length === 0) return [];
+  const rows = await db
+    .selectFrom("context_variable_values")
+    .select(contextVariableValueColumns)
+    .where((eb) => anyOf(eb.ref("variable_id"), variableIds, "uuid[]"))
+    .where((eb) => eb.or(scopes.map((scope) => eb.and([
+      eb("scope_type", "=", scope.type),
+      eb("scope_id", "=", storedScopeId(scope)),
+    ]))))
+    .execute();
+  return rows.map(mapContextVariableValueRow);
+};

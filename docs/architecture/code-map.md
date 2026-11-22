@@ -1139,8 +1139,9 @@ stored ones, and both resolve paths read the store for them (`readsStoredValue`)
 at most `CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent` (8) per agent; the
 service refuses any other, and refuses a definition edit that would leave a
 classified variable in such a state (`classificationRefusal`). The module gives
-the classifier its two ports: `ClassifiedVariableReader` and
-`ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
+the classifier its two ports: `ClassifiedVariableReader` (each target says
+whether another writer holds it anywhere on the conversation's ladder,
+`classificationTargetFrom`) and `ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
 with `planConversationWrite` and counts it in
 `radioso_context_value_writes_total{writer, outcome}`).
 
@@ -1159,7 +1160,7 @@ Public surfaces and key files:
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
 - `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
-- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision's snapshot, with its own values, in one query)
+- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevision`, with what its ladder holds for each)
 - `backend/src/db/migrations/273_classified_context_variables.sql` (the `classified` enablement source)
 - `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
 - `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)

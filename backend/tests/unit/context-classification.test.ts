@@ -132,7 +132,7 @@ describe("ConversationClassificationService", () => {
 
   it("writes the chosen option as the classifier with the prompt version, metered as a rewrite-tier call", async () => {
     const { service, values, complete, inferenceCreate, metrics } = serviceFor({
-      targets: [{ variable: topic(), stored: null }],
+      targets: [{ variable: topic(), stored: null, held: false }],
       completion: JSON.stringify({ attribute_1: "billing" }),
     });
 
@@ -152,13 +152,13 @@ describe("ConversationClassificationService", () => {
 
   it("sends only the variables it may still fill, and makes no call when another writer holds every one", async () => {
     const operatorSet = { data: "shipping", writtenBy: { kind: "operator" as const, ref: "user-1" } };
-    const held = serviceFor({ targets: [{ variable: topic(), stored: operatorSet }] });
+    const held = serviceFor({ targets: [{ variable: topic(), stored: operatorSet, held: true }] });
 
     await expect(held.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_override" });
     expect(held.inferenceCreate).not.toHaveBeenCalled();
 
     const mixed = serviceFor({
-      targets: [{ variable: topic(), stored: operatorSet }, { variable: urgency, stored: null }],
+      targets: [{ variable: topic(), stored: operatorSet, held: true }, { variable: urgency, stored: null, held: false }],
       completion: JSON.stringify({ attribute_1: "urgent" }),
     });
     await mixed.service.classifyNow({ workspaceId, conversationId });
@@ -168,12 +168,28 @@ describe("ConversationClassificationService", () => {
     expect(mixed.values.writes).toEqual([{ variableId: "variable-urgency", data: "urgent", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION }]);
   });
 
+  it("leaves alone a variable a wider scope holds for another writer, and clears its own value that would hide it", async () => {
+    const own = { data: "billing", writtenBy: { kind: "classifier" as const, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION } };
+    // The host set the customer's topic; the conversation still holds what the classifier chose before.
+    const shadowing = serviceFor({
+      targets: [{ variable: topic(), stored: own, held: true }],
+      completion: JSON.stringify({ attribute_1: "shipping" }),
+    });
+
+    await expect(shadowing.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({
+      outcome: "skipped_override",
+      decisions: [{ variableId: "variable-topic", value: null, write: "cleared" }],
+    });
+    expect(shadowing.inferenceCreate).not.toHaveBeenCalled();
+    expect(shadowing.values.writes).toEqual([{ variableId: "variable-topic", data: null, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION }]);
+  });
+
   it("never sends a variable it may not fill, nor a conversation whose every visitor message was sensitive", async () => {
-    const privateOnly = serviceFor({ targets: [{ variable: topic({ sensitivity: "sensitive" }), stored: null }] });
+    const privateOnly = serviceFor({ targets: [{ variable: topic({ sensitivity: "sensitive" }), stored: null, held: false }] });
     await expect(privateOnly.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_empty" });
     expect(privateOnly.inferenceCreate).not.toHaveBeenCalled();
 
-    const withheld = serviceFor({ targets: [{ variable: topic(), stored: null }], excerpt: excerpt({ messages: [], withheldCount: 2 }) });
+    const withheld = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], excerpt: excerpt({ messages: [], withheldCount: 2 }) });
     await expect(withheld.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_sensitive" });
     expect(withheld.inferenceCreate).not.toHaveBeenCalled();
   });
@@ -181,31 +197,31 @@ describe("ConversationClassificationService", () => {
   it("clears its own value on null, writes nothing when unchanged, and reports no option when none applies", async () => {
     const own = { data: "billing", writtenBy: { kind: "classifier" as const, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION } };
 
-    const cleared = serviceFor({ targets: [{ variable: topic(), stored: own }], completion: JSON.stringify({ attribute_1: null }) });
+    const cleared = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: JSON.stringify({ attribute_1: null }) });
     await expect(cleared.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "written" });
     expect(cleared.values.writes).toEqual([{ variableId: "variable-topic", data: null, ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION }]);
 
-    const unchanged = serviceFor({ targets: [{ variable: topic(), stored: own }], completion: JSON.stringify({ attribute_1: "billing" }) });
+    const unchanged = serviceFor({ targets: [{ variable: topic(), stored: own, held: false }], completion: JSON.stringify({ attribute_1: "billing" }) });
     await expect(unchanged.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "unchanged" });
     expect(unchanged.values.writes).toEqual([]);
 
-    const none = serviceFor({ targets: [{ variable: topic(), stored: null }], completion: JSON.stringify({ attribute_1: null }) });
+    const none = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: null }) });
     await expect(none.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "no_option" });
   });
 
   it("fails the run on a key outside the schema or a failed call, counting it", async () => {
-    const invalid = serviceFor({ targets: [{ variable: topic(), stored: null }], completion: JSON.stringify({ attribute_1: "urgent" }) });
+    const invalid = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: "urgent" }) });
     await expect(invalid.service.classifyNow({ workspaceId, conversationId })).rejects.toBeInstanceOf(ClassificationOutputError);
     expect(invalid.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "invalid" } }));
     expect(invalid.values.writes).toEqual([]);
 
-    const failed = serviceFor({ targets: [{ variable: topic(), stored: null }], completion: new Error("provider down") });
+    const failed = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: new Error("provider down") });
     await expect(failed.service.classifyNow({ workspaceId, conversationId })).rejects.toThrow("provider down");
     expect(failed.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "failed" } }));
   });
 
   it("classifies a transcript the caller holds, against the values it holds, for Test Chat", async () => {
-    const { service, values } = serviceFor({ targets: [{ variable: topic(), stored: null }], completion: JSON.stringify({ attribute_1: "shipping" }) });
+    const { service, values } = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: JSON.stringify({ attribute_1: "shipping" }) });
 
     const result = await service.classifyTranscript({
       workspaceId,

@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
+import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
-import { ConversationValueWriterService } from "../../src/modules/context-variables/public.js";
+import { ConversationValueWriterService, contextScopeLadder } from "../../src/modules/context-variables/public.js";
 import type { ContextVariableOption } from "../../src/modules/context-variables/public.js";
+import { ConversationClassificationService } from "../../src/modules/contextClassification/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -16,7 +18,7 @@ const option = (key: string): ContextVariableOption => ({ key, label: key, descr
 describeIntegration("classified attributes (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new ContextVariableRepository(database.kysely);
-  const reads = new ClassifiedContextVariableReads(database.kysely);
+  const reads = new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely));
   const writer = new ConversationValueWriterService({ repository });
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -34,16 +36,19 @@ describeIntegration("classified attributes (Postgres)", () => {
     surfacing: "on_reference", enabled, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
 
-  const createConversationOn = async (enablements: unknown[]): Promise<string> => {
+  const createConversationOn = async (
+    enablements: unknown[],
+    visitor: { sessionId?: string; customerId?: string } = {},
+  ): Promise<string> => {
     const revisionId = randomUUID();
     await database.query(
       "INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation) VALUES ($1, $2, $3, $4::jsonb, 1)",
-      [revisionId, agentId, workspaceId, JSON.stringify({ contextVariableEnablements: enablements })],
+      [revisionId, agentId, workspaceId, JSON.stringify({ customInstruction: null, directives: [], routines: [], contextVariableEnablements: enablements })],
     );
     const conversationId = randomUUID();
     await database.query(
-      "INSERT INTO conversations (id, workspace_id, agent_id, agent_revision_id) VALUES ($1, $2, $3, $4)",
-      [conversationId, workspaceId, agentId, revisionId],
+      "INSERT INTO conversations (id, workspace_id, agent_id, agent_revision_id, anonymous_session_id, verified_customer_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      [conversationId, workspaceId, agentId, revisionId, visitor.sessionId ?? null, visitor.customerId ?? null],
     );
     return conversationId;
   };
@@ -85,9 +90,36 @@ describeIntegration("classified attributes (Postgres)", () => {
     expect(read?.targets).toEqual([{
       variable: expect.objectContaining({ id: topic.id, options: [option("billing"), option("shipping")] }),
       stored: { data: "shipping", writtenBy: { kind: "operator", ref: "user-1" } },
+      held: true,
     }]);
     await expect(reads.readConversationTargets({ workspaceId: randomUUID(), conversationId })).resolves.toBeNull();
     await expect(reads.readDefinitions({ workspaceId, variableIds: [topic.id, pushed.id] })).resolves.toHaveLength(2);
+  });
+
+  it("holds a variable that a wider scope of the conversation's ladder holds for the API, and leaves that value to resolve", async () => {
+    const urgency = await createChoice();
+    const customerId = `customer-${randomUUID()}`;
+    const sessionId = `session-${randomUUID()}`;
+    const conversationId = await createConversationOn([enablementSnapshot(urgency.id, "classified")], { sessionId, customerId });
+    // The host pushed the customer's value through the API before the conversation's first run.
+    await repository.upsertValue(urgency.id, { type: "customer", id: customerId }, "billing", { kind: "api", ref: "credential-1" });
+    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: "shipping" }) }));
+    const classification = new ConversationClassificationService({
+      targets: reads,
+      excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },
+      values: writer,
+      inference: { create: async () => ({ complete }) },
+    });
+
+    await expect(reads.readConversationTargets({ workspaceId, conversationId })).resolves.toMatchObject({
+      targets: [{ variable: expect.objectContaining({ id: urgency.id }), stored: null, held: true }],
+    });
+    await expect(classification.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_override" });
+
+    expect(complete).not.toHaveBeenCalled();
+    const ladder = contextScopeLadder({ conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, agentId, workspaceId });
+    const resolved = await repository.readMostSpecificValues([urgency.id], ladder);
+    expect(resolved.get(urgency.id)).toMatchObject({ data: "billing", writtenBy: { kind: "api" }, scope: { type: "customer" } });
   });
 
   it("writes as the classifier only over an empty or classifier-written value, and clears only its own", async () => {

@@ -33,8 +33,8 @@ export const CONTEXT_CLASSIFICATION_RUNS_TOTAL = "radioso_context_classification
 type ClassificationTrigger = "after_turn" | "test_chat";
 
 /**
- * How a run ended. `skipped_override`: every variable holds a value another writer set, so no call
- * was made. `skipped_sensitive`: every recent visitor message was withheld. `skipped_empty`: no
+ * How a run ended. `skipped_override`: another writer holds every variable somewhere on the
+ * conversation's ladder, so no call was made. `skipped_sensitive`: every recent visitor message was withheld. `skipped_empty`: no
  * variable to fill or nothing to read. `no_option`: the model found no option for any variable.
  */
 export type ClassificationRunOutcome =
@@ -77,9 +77,15 @@ interface ClassificationRun {
 
 const skipped = (outcome: ClassificationRunOutcome): ClassificationRunResult => ({ outcome, decisions: [] });
 
-/** A variable the classifier may fill now: allowed, with an option to offer, and not held by another writer. */
-const isOpen = (target: ClassificationTarget): boolean =>
-  !target.stored || mayOverwrite(target.stored.writtenBy, "classifier");
+/** A variable the classifier may fill now: no writer it may not replace holds a value on the conversation's ladder. */
+const isOpen = (target: ClassificationTarget): boolean => !target.held;
+
+/**
+ * A held variable whose conversation value the classifier wrote before the other writer set theirs
+ * at a wider scope: the conversation's own value would hide theirs, so it is cleared, with no call.
+ */
+const hidesHeldValue = (target: ClassificationTarget): boolean =>
+  target.held && target.stored !== null && mayOverwrite(target.stored.writtenBy, "classifier");
 
 const isFillable = (target: ClassificationTarget): boolean =>
   !classificationRefusal(target.variable) && activeOptionKeys(target.variable).length > 0;
@@ -142,7 +148,10 @@ export class ConversationClassificationService implements ConversationClassifier
     const variables = await this.deps.targets.readDefinitions({ workspaceId: input.workspaceId, variableIds: input.variableIds });
     return this.run({
       ...input,
-      targets: variables.map((variable) => ({ variable, stored: input.stored.get(variable.id) ?? null })),
+      targets: variables.map((variable) => {
+        const stored = input.stored.get(variable.id) ?? null;
+        return { variable, stored, held: stored !== null && !mayOverwrite(stored.writtenBy, "classifier") };
+      }),
       // The same bounds a stored conversation's excerpt is read with: the latest messages, each cut.
       readExcerpt: async () => ({
         ...input.excerpt,
@@ -177,11 +186,14 @@ export class ConversationClassificationService implements ConversationClassifier
 
   private async classify(run: ClassificationRun): Promise<ClassificationRunResult> {
     const fillable = run.targets.filter(isFillable);
+    const cleared = await this.writeEach(run, fillable.filter(hidesHeldValue).map((target) => ({ target, value: null })));
     const open = fillable.filter(isOpen);
-    if (open.length === 0) return this.count(run.trigger, skipped(fillable.length === 0 ? "skipped_empty" : "skipped_override"));
+    if (open.length === 0) {
+      return this.count(run.trigger, { outcome: fillable.length === 0 ? "skipped_empty" : "skipped_override", decisions: cleared });
+    }
     const excerpt = await run.readExcerpt();
     if (!excerpt || (!excerpt.summary && excerpt.messages.length === 0)) {
-      return this.count(run.trigger, skipped(excerpt && excerpt.withheldCount > 0 ? "skipped_sensitive" : "skipped_empty"));
+      return this.count(run.trigger, { outcome: excerpt && excerpt.withheldCount > 0 ? "skipped_sensitive" : "skipped_empty", decisions: cleared });
     }
     let chosen: Array<string | null>;
     try {
@@ -199,9 +211,13 @@ export class ConversationClassificationService implements ConversationClassifier
       }, "Context classification run failed");
       throw error;
     }
+    const decisions = [...cleared, ...await this.writeEach(run, open.map((target, index) => ({ target, value: chosen[index] ?? null })))];
+    return this.count(run.trigger, { outcome: settledOutcome(decisions), decisions });
+  }
+
+  private async writeEach(run: ClassificationRun, answers: ReadonlyArray<{ target: ClassificationTarget; value: string | null }>): Promise<ClassificationDecision[]> {
     const decisions: ClassificationDecision[] = [];
-    for (const [index, target] of open.entries()) {
-      const value = chosen[index] ?? null;
+    for (const { target, value } of answers) {
       const write = await run.values.write({
         conversationId: run.conversationId,
         variable: target.variable,
@@ -211,7 +227,7 @@ export class ConversationClassificationService implements ConversationClassifier
       });
       decisions.push({ variableId: target.variable.id, value, write });
     }
-    return this.count(run.trigger, { outcome: settledOutcome(decisions), decisions });
+    return decisions;
   }
 
   private async callModel(run: ClassificationRun, targets: readonly ClassificationTarget[], excerpt: ConversationExcerpt): Promise<Array<string | null>> {

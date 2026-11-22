@@ -197,11 +197,16 @@ it clears the value it set.
 
 A few things to know in practice:
 
-- **Values appear from the next turn.** The run happens in the background after
-  a reply, so the turn that asked about billing does not see `billing` yet; the
-  one after it does.
+- **Values usually appear from the next turn.** The run happens in the
+  background after a reply, so the turn that asked about billing does not see
+  `billing` yet; the one after it usually does, unless the visitor answers
+  before the run finishes.
 - **Your values stick.** A value your team or your API set is never replaced or
-  cleared by the AI. Delete that value and the next run fills it again.
+  cleared by the AI, at any scope: the conversation, the visitor's session or
+  customer, the agent or the workspace. While one is set, the AI leaves that
+  attribute alone for the conversation, and clears a value it chose earlier so
+  yours is the one the conversation reads. Delete your value and the next run
+  fills the attribute again.
 - **What reaches the model:** the conversation's rolling summary and the
   visitor's latest messages, plus each attribute's name, description and
   options. A message the visitor sent while a routine collected a Private field
@@ -214,7 +219,7 @@ A few things to know in practice:
 - **Cost:** one call to the workspace's cheaper `rewrite` model per reply, for an
   agent that has the AI set at least one attribute. All of an agent's attributes
   share that one call, and a run where your team or your API already set every
-  one makes no call. Each call is counted in usage like the agent's other model
+  one, at any scope, makes no call. Each call is counted in usage like the agent's other model
   calls.
 
 The AI sets Choice attributes only, up to 8 per agent. It never sets a Private

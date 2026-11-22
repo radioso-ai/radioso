@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
+import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
@@ -30,7 +31,7 @@ describeIntegration("context classification over a stored conversation (Postgres
   });
   // The rewrite-tier model is stubbed; the reads, the excerpt and the writes are the real ones.
   const classifier = new ConversationClassificationService({
-    targets: new ClassifiedContextVariableReads(database.kysely),
+    targets: new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)),
     excerpts: new ContextClassificationExcerptReader({
       conversations: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messages: new MessageRepository(database.kysely),
@@ -51,7 +52,7 @@ describeIntegration("context classification over a stored conversation (Postgres
     const enablement = { id: randomUUID(), agentId, variableId, source: "classified", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference", enabled: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     await database.query(
       "INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation) VALUES ($1, $2, $3, $4::jsonb, 1)",
-      [revisionId, agentId, workspaceId, JSON.stringify({ contextVariableEnablements: [enablement] })],
+      [revisionId, agentId, workspaceId, JSON.stringify({ customInstruction: null, directives: [], routines: [], contextVariableEnablements: [enablement] })],
     );
     const conversationId = randomUUID();
     await database.query("INSERT INTO conversations (id, workspace_id, agent_id, agent_revision_id) VALUES ($1, $2, $3, $4)", [conversationId, workspaceId, agentId, revisionId]);

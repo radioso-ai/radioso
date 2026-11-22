@@ -36056,7 +36056,7 @@ export interface operations {
                     "image/webp": string;
                 };
             };
-            /** @description Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640 */
+            /** @description Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640. A skill card's picture not copied within the request's time answers 404 too; a later request may serve it */
             404: {
                 headers: {
                     [name: string]: unknown;

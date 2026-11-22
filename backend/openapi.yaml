@@ -46284,7 +46284,7 @@ paths:
                 type: string
                 format: binary
         "404":
-          description: Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640
+          description: Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640. A skill card's picture not copied within the request's time answers 404 too; a later request may serve it
           content:
             application/json:
               schema:

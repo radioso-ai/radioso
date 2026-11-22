@@ -30,7 +30,7 @@ export const registerReplyImagePaths = (registry: OpenAPIRegistry, schemas: Open
         },
       },
       404: {
-        description: `Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than ${servedWidths}`,
+        description: `Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than ${servedWidths}. A skill card's picture not copied within the request's time answers 404 too; a later request may serve it`,
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

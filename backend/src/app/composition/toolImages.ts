@@ -100,7 +100,7 @@ export const wireToolImages = (deps: {
   return {
     rows: store,
     previews,
-    lookup: new ToolImageLookup({ store, capture }),
+    lookup: new ToolImageLookup({ store, capture, metrics: deps.metrics, logger: deps.logger }),
     jobHandlers: [
       toolImageCaptureHandler({ capture, store }),
       toolImageObjectDeletionHandler({ objects, logger: deps.logger }),

@@ -53,8 +53,12 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     },
   };
   let photo: Buffer;
-  const fetchBytes = vi.fn(async (url: string): Promise<PublicBytesFetchResult> =>
-    url.includes("expired") ? { kind: "failed", reason: "http_status", status: 403 } : { kind: "fetched", bytes: photo, contentType: "image/jpeg", url });
+  const fetchBytes = vi.fn(async (url: string): Promise<PublicBytesFetchResult> => {
+    if (url.includes("expired")) return { kind: "failed", reason: "http_status", status: 403 };
+    // A shop's CDN takes a moment, so a carousel's captures overlap.
+    if (url.includes("cdn.shop.example")) await new Promise((resolve) => setTimeout(resolve, 50));
+    return { kind: "fetched", bytes: photo, contentType: "image/jpeg", url };
+  });
   let tags = 0;
   const capture = new ToolImageCapture({
     store,
@@ -212,6 +216,16 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     const fetchesBefore = fetchBytes.mock.calls.length;
     expect(await lookup.findServable({ imageId: expired, width: 640 })).toBeNull();
     expect(fetchBytes.mock.calls.length).toBe(fetchesBefore);
+  });
+
+  it("copies every picture of a carousel whose browser asks for all of them at once, more than the process captures at a time", async () => {
+    const sources = Array.from({ length: 6 }, (_, index) => ({ imageId: randomUUID(), url: `https://cdn.shop.example/products/${index + 1}/thumbnail.webp` }));
+    await reply(conversationId, sources);
+
+    const served = await Promise.all(sources.map(({ imageId }) => lookup.findServable({ imageId, width: 320 })));
+
+    expect(served.map((rendition) => rendition?.objectPath ?? null)).toEqual(sources.map(({ imageId }) => expect.stringContaining(`/tool-images/${imageId}-w320-`)));
+    for (const { imageId } of sources) expect(await row(imageId)).toMatchObject({ status: "stored", source_url: null });
   });
 
   it("erases a conversation's pictures and hands their objects to the deletion job", async () => {

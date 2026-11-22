@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { ToolImageCapture, ToolImageLookup } from "../../src/modules/toolImages/composition.js";
 import type { DocumentStorageLocator } from "../../src/modules/documents/contracts/storage.js";
 import type { ToolImageObjectStore } from "../../src/modules/toolImages/domain.js";
+import type { PublicBytesFetchResult } from "../../src/shared/infra/http/publicBytesFetch.js";
 import { InMemoryDocumentImages } from "../support/inMemoryDocumentImages.js";
 import { InMemoryToolImageStore } from "../support/inMemoryToolImages.js";
 import { createTestApp } from "../support/testApp.js";
@@ -117,17 +118,10 @@ describe("public reply image route", () => {
     await request(app).get(`/api/v1/public/reply-images/${imageId}/640`).expect(404);
   });
 
-  it("copies a skill's card picture on demand when the browser asks first, and answers 404 once it has failed", async () => {
-    const store = new InMemoryToolImageStore();
-    const workspaceId = randomUUID();
-    const waiting = randomUUID();
-    const expired = randomUUID();
-    store.add(waiting, workspaceId, "https://img.homes.example/photos/loft.jpg");
-    store.add(expired, workspaceId, "https://img.homes.example/photos/expired.jpg");
-    const photo = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 10, g: 80, b: 140 } } }).jpeg().toBuffer();
+  /** The route over tool images alone, writing where the test app's storage reads, so it serves the copies a capture made. */
+  const toolImageApp = (store: InMemoryToolImageStore, workspaceId: string, fetchBytes: (url: string) => Promise<PublicBytesFetchResult>) => {
     const toolImages: { lookup?: ToolImageLookup } = {};
     const { app, dependencies } = createTestApp({ toolImages: { findServable: (input) => toolImages.lookup!.findServable(input) } });
-    // Writes where the test app's storage puts it, so the route reads the copy the capture made.
     const storage = dependencies.documentStorage as typeof dependencies.documentStorage & DocumentStorageLocator;
     const objects: ToolImageObjectStore = {
       locate: ({ imageId, suffix }) => ({ ...storage.locate({ workspaceId, documentId: `tool-image-${imageId}-${suffix}` }), generation: null }),
@@ -139,15 +133,22 @@ describe("public reply image route", () => {
     };
     toolImages.lookup = new ToolImageLookup({
       store,
-      capture: new ToolImageCapture({
-        store,
-        objects,
-        fetchBytes: async (url) => url.includes("expired")
-          ? { kind: "failed", reason: "http_status", status: 410 }
-          : { kind: "fetched", bytes: photo, contentType: "image/jpeg", url },
-        renditionWidths: DOCUMENT_IMAGE_RENDITION_WIDTHS,
-      }),
+      capture: new ToolImageCapture({ store, objects, fetchBytes, renditionWidths: DOCUMENT_IMAGE_RENDITION_WIDTHS }),
     });
+    return app;
+  };
+
+  it("copies a skill's card picture on demand when the browser asks first, and answers 404 once it has failed", async () => {
+    const store = new InMemoryToolImageStore();
+    const workspaceId = randomUUID();
+    const waiting = randomUUID();
+    const expired = randomUUID();
+    store.add(waiting, workspaceId, "https://img.homes.example/photos/loft.jpg");
+    store.add(expired, workspaceId, "https://img.homes.example/photos/expired.jpg");
+    const photo = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 10, g: 80, b: 140 } } }).jpeg().toBuffer();
+    const app = toolImageApp(store, workspaceId, async (url) => url.includes("expired")
+      ? { kind: "failed", reason: "http_status", status: 410 }
+      : { kind: "fetched", bytes: photo, contentType: "image/jpeg", url });
 
     const served = await request(app).get(`/api/v1/public/reply-images/${waiting}/640`).expect(200);
     expect(served.headers["content-type"]).toBe("image/webp");
@@ -157,5 +158,22 @@ describe("public reply image route", () => {
     await request(app).get(`/api/v1/public/reply-images/${expired}/640`).expect(404);
     expect(store.rows.get(expired)?.status).toBe("failed");
     await request(app).get(`/api/v1/public/reply-images/${expired}/640`).expect(404);
+  });
+
+  it("serves every picture of a carousel whose browser asks for all of them at once, before the job has copied any", async () => {
+    const store = new InMemoryToolImageStore();
+    const workspaceId = randomUUID();
+    const cards = Array.from({ length: 6 }, () => randomUUID());
+    for (const imageId of cards) store.add(imageId, workspaceId, `https://cdn.shop.example/products/${imageId}/thumbnail.webp`);
+    const thumbnail = await sharp({ create: { width: 300, height: 300, channels: 3, background: { r: 240, g: 240, b: 240 } } }).webp().toBuffer();
+    const app = toolImageApp(store, workspaceId, async (url) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { kind: "fetched", bytes: thumbnail, contentType: "image/webp", url };
+    });
+
+    const responses = await Promise.all(cards.map((imageId) => request(app).get(`/api/v1/public/reply-images/${imageId}/320`)));
+
+    expect(responses.map((response) => response.status)).toEqual(cards.map(() => 200));
+    for (const imageId of cards) expect(store.rows.get(imageId)?.status).toBe("stored");
   });
 });

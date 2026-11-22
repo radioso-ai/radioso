@@ -46,7 +46,7 @@ const harness = (fetchResult: Fetch, options: { concurrentCaptures?: number; now
   const row = store.rows.get(IMAGE_ID)!;
   const objects = memoryObjects();
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
-  const logger = { warn: vi.fn() };
+  const logger = { warn: vi.fn(), info: vi.fn() };
   const fetchBytes = vi.fn(async (url: string, limits: PublicBytesLimits) => fetchResult(url, limits));
   let tags = 0;
   const capture = new ToolImageCapture({
@@ -114,16 +114,49 @@ describe("tool image capture", () => {
     expect(row.url).toBe(SIGNED_URL);
   });
 
-  it("leaves a failed picture failed, and tells a second capture another one holds it", async () => {
+  it("copies a shop's small WebP thumbnail, opaque or with transparency, and serves it at every width", async () => {
+    const opaque = await sharp({ create: { width: 300, height: 300, channels: 3, background: { r: 240, g: 240, b: 240 } } }).webp({ quality: 80 }).toBuffer();
+    const transparent = await sharp({ create: { width: 300, height: 300, channels: 4, background: { r: 20, g: 20, b: 20, alpha: 0.5 } } }).webp({ lossless: true }).toBuffer();
+
+    for (const thumbnail of [opaque, transparent]) {
+      const { row, capture } = harness(() => ({ kind: "fetched", bytes: thumbnail, contentType: "image/webp", url: SIGNED_URL }));
+
+      expect(await capture.capture(IMAGE_ID, "on_demand")).toBe("stored");
+
+      // Never enlarged: both widths keep the 300 px original, each under the width it is served at.
+      expect(row.renditions.map((rendition) => [rendition.width, rendition.height])).toEqual([[320, 300], [640, 300]]);
+    }
+  });
+
+  it("tells a picture that failed before from one that does not exist, without counting either as a capture", async () => {
     const failed = harness(() => ({ kind: "failed", reason: "blocked" }));
     await failed.capture.capture(IMAGE_ID, "job");
-    expect(await failed.capture.capture(IMAGE_ID, "on_demand")).toBe("source_missing");
-    expect(failed.fetchBytes).toHaveBeenCalledTimes(1);
+    failed.metrics.incrementCounter.mockClear();
 
+    expect(await failed.capture.capture(IMAGE_ID, "on_demand")).toBe("failed");
+    expect(await failed.capture.capture("44444444-4444-4444-8444-444444444444", "on_demand")).toBe("missing");
+
+    expect(failed.fetchBytes).toHaveBeenCalledTimes(1);
+    expect(failed.metrics.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it("tells a second capture another one holds the picture", async () => {
     const held = harness(() => fetched(photo));
     held.row.status = "capturing";
     held.row.claimedAt = new Date();
     expect(await held.capture.capture(IMAGE_ID, "job")).toBe("held");
+  });
+
+  it("logs a picture that fails for good with its reason and ids, never its address", async () => {
+    const { capture, logger } = harness(() => ({ kind: "failed", reason: "http_status", status: 403 }));
+
+    await capture.capture(IMAGE_ID, "on_demand");
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { imageId: IMAGE_ID, workspaceId: WORKSPACE_ID, trigger: "on_demand", outcome: "http_error" },
+      "tool_image_capture_failed",
+    );
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain("homes.example");
   });
 
   it("logs ids only when storage fails, hands the picture back, and hands off what it wrote", async () => {
@@ -226,12 +259,32 @@ describe("bounded captures", () => {
     expect(row.status).toBe("pending");
   });
 
-  it("answers busy at once on demand when every capture turn is taken, without touching the picture", async () => {
+  it("waits on demand for a capture turn to come free, and copies the picture within its deadline", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const { store, capture } = harness(async () => {
+    const { store, capture } = harness(async (url) => {
+      if (url.includes("other")) await gate;
+      return fetched(photo);
+    }, { concurrentCaptures: 1 });
+    const OTHER = "33333333-3333-4333-8333-333333333333";
+    store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
+
+    const first = capture.capture(OTHER, "job");
+    const waiting = capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 2_000 });
+    setTimeout(release, 100);
+
+    expect(await waiting).toBe("stored");
+    expect(await first).toBe("stored");
+  });
+
+  it("answers busy on demand when no capture turn comes free before its deadline, without touching the picture", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { store, capture, metrics } = harness(async () => {
       await gate;
       return fetched(photo);
     }, { concurrentCaptures: 1 });
@@ -240,9 +293,10 @@ describe("bounded captures", () => {
 
     const first = capture.capture(OTHER, "job");
     const started = Date.now();
-    expect(await capture.capture(IMAGE_ID, "on_demand")).toBe("busy");
-    expect(Date.now() - started).toBeLessThan(500);
+    expect(await capture.capture(IMAGE_ID, "on_demand", { deadlineMs: 200 })).toBe("busy");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(150);
     expect(store.rows.get(IMAGE_ID)?.status).toBe("pending");
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_capture_total", expect.objectContaining({ labels: { trigger: "on_demand", outcome: "busy" } }));
 
     release();
     expect(await first).toBe("stored");
@@ -305,24 +359,70 @@ describe("tool image lookup", () => {
     expect(served?.objectPath).toBe("p");
   });
 
-  it("misses at once while the process runs as many captures as it allows", async () => {
+  it("serves every picture of a carousel asked for at once, more than the process captures at a time", async () => {
+    // Four capture turns, as the process has by default, and six cards whose browser asks for all
+    // six pictures before the job has copied any.
+    const { store, capture } = harness(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return fetched(photo);
+    });
+    const cards = Array.from({ length: 6 }, (_, index) => `5555555${index}-5555-4555-8555-555555555555`);
+    for (const imageId of cards) store.add(imageId, WORKSPACE_ID, `https://img.homes.example/photos/${imageId}.jpg`);
+    const lookup = new ToolImageLookup({ store, capture });
+
+    const served = await Promise.all(cards.map((imageId) => lookup.findServable({ imageId, width: 320 })));
+
+    expect(served.map((rendition) => rendition?.objectPath ?? null)).toEqual(cards.map((imageId) => expect.stringContaining(`${imageId}-w320-`)));
+  });
+
+  it("counts and logs every miss with its reason and the image id only", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const { store, capture } = harness(async () => {
+    const { store, capture } = harness(async (url) => {
+      if (url.includes("expired")) return { kind: "failed", reason: "http_status", status: 410 };
       await gate;
       return fetched(photo);
     }, { concurrentCaptures: 1 });
     const OTHER = "33333333-3333-4333-8333-333333333333";
+    const EXPIRED = "66666666-6666-4666-8666-666666666666";
     store.add(OTHER, WORKSPACE_ID, "https://img.homes.example/other.jpg");
-    const busy = capture.capture(OTHER, "job");
+    store.add(EXPIRED, WORKSPACE_ID, "https://img.homes.example/expired.jpg?signature=secret");
+    const metrics = { incrementCounter: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const lookup = new ToolImageLookup({ store, capture, budgetMs: 200, metrics, logger });
 
-    const started = Date.now();
-    expect(await new ToolImageLookup({ store, capture }).findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
-    expect(Date.now() - started).toBeLessThan(500);
-
+    expect(await lookup.findServable({ imageId: EXPIRED, width: 640 })).toBeNull();
+    expect(await lookup.findServable({ imageId: "44444444-4444-4444-8444-444444444444", width: 640 })).toBeNull();
+    // The only capture turn is taken past this request's budget.
+    const holding = capture.capture(OTHER, "job");
+    expect(await lookup.findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
     release();
-    await busy;
+    await holding;
+
+    expect(metrics.incrementCounter.mock.calls.map(([name, options]) => [name, options.labels])).toEqual([
+      ["tool_image_miss_total", { reason: "failed" }],
+      ["tool_image_miss_total", { reason: "not_found" }],
+      ["tool_image_miss_total", { reason: "busy" }],
+    ]);
+    expect(logger.info).toHaveBeenCalledWith({ imageId: EXPIRED, reason: "failed", outcome: "http_error" }, "tool_image_miss");
+    expect(logger.info).toHaveBeenCalledWith({ imageId: "44444444-4444-4444-8444-444444444444", reason: "not_found", outcome: "missing" }, "tool_image_miss");
+    expect(logger.warn).toHaveBeenCalledWith({ imageId: IMAGE_ID, reason: "busy", outcome: "busy" }, "tool_image_miss");
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("homes.example");
+  });
+
+  it("misses a picture whose capture outlives the request's budget as a timeout", async () => {
+    const { store, capture } = harness(async (_url, limits) => new Promise<PublicBytesFetchResult>((resolve) => {
+      limits.signal?.addEventListener("abort", () => resolve({ kind: "failed", reason: "timeout" }), { once: true });
+    }));
+    const metrics = { incrementCounter: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
+
+    expect(await new ToolImageLookup({ store, capture, budgetMs: 150, metrics, logger }).findServable({ imageId: IMAGE_ID, width: 640 })).toBeNull();
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("tool_image_miss_total", expect.objectContaining({ labels: { reason: "timeout" } }));
+    expect(logger.warn).toHaveBeenCalledWith({ imageId: IMAGE_ID, reason: "timeout", outcome: "timeout" }, "tool_image_miss");
+    expect(store.rows.get(IMAGE_ID)?.status).toBe("pending");
   });
 });

@@ -23,8 +23,14 @@ import {
 /** What started a capture: the job after the reply, or a browser asking for the picture first. */
 export type ToolImageCaptureTrigger = "job" | "on_demand";
 
-/** A capture's result: how it ended, or `held` when another capture holds the picture. */
-export type ToolImageCaptureResult = ToolImageCaptureOutcome | "held";
+/**
+ * A capture's result: how it ended; or, when it never started, `held` while another capture holds
+ * the picture, `failed` when an earlier one failed it for good, and `missing` when no picture has
+ * the id. Only how a capture ended is counted.
+ */
+export type ToolImageCaptureResult = ToolImageCaptureOutcome | "held" | "failed" | "missing";
+
+const NOT_CAPTURED: ReadonlySet<ToolImageCaptureResult> = new Set(["held", "failed", "missing"]);
 
 /**
  * Tool images decode one at a time in their own pool, then within the process-wide pool, so a
@@ -96,7 +102,7 @@ interface ToolImageCaptureDependencies {
   /** Captures this process runs at once. */
   concurrentCaptures?: number;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
   now?: () => Date;
   /** The tag one capture's objects are named by; random, so two captures never share a name. */
   newCaptureTag?: () => string;
@@ -118,9 +124,10 @@ export class ToolImageCapture {
   }
 
   /**
-   * Captures the picture within `deadlineMs`. An on-demand capture that finds every turn taken
-   * returns `busy` at once and leaves the picture to the job; a job waits for a turn within its
-   * deadline. `signal` cancels the capture, as a job run's own deadline does.
+   * Captures the picture within `deadlineMs`, waiting within it for a turn when every one is taken:
+   * a carousel's browser asks for all its pictures at once. A capture whose deadline passes before
+   * a turn comes free returns `busy` without touching the picture. `signal` cancels the capture, as
+   * a job run's own deadline does.
    */
   capture(
     imageId: string,
@@ -145,12 +152,9 @@ export class ToolImageCapture {
     const deadline = AbortSignal.timeout(deadlineMs);
     const signal = options.signal ? AbortSignal.any([deadline, options.signal]) : deadline;
     const started = performance.now();
-    const result = await this.turns.run(
-      () => this.claimAndCapture(imageId, trigger, signal),
-      { waitMs: trigger === "on_demand" ? 0 : deadlineMs },
-    );
+    const result = await this.turns.run(() => this.claimAndCapture(imageId, trigger, signal), { waitMs: deadlineMs });
     const outcome: ToolImageCaptureResult = result === "busy" ? "busy" : result;
-    if (outcome !== "held") {
+    if (!NOT_CAPTURED.has(outcome)) {
       this.deps.metrics?.incrementCounter("tool_image_capture_total", {
         help: "Tool image captures by what started them and how they ended",
         labels: { trigger, outcome },
@@ -171,16 +175,15 @@ export class ToolImageCapture {
       case "stored":
         return "stored";
       case "held":
-        return "held";
       case "failed":
       case "missing":
-        return "source_missing";
+        return claim.kind;
       case "claimed":
         break;
     }
     const written: ToolImageObject[] = [];
     try {
-      return await this.captureClaimed(claim.image, signal, written);
+      return await this.captureClaimed(claim.image, trigger, signal, written);
     } catch (error) {
       // The deadline passed, or storage or the database failed mid-way: the picture is not at
       // fault, so a later attempt may pass. Whatever this capture wrote goes.
@@ -193,10 +196,15 @@ export class ToolImageCapture {
     }
   }
 
-  private async captureClaimed(image: ClaimedToolImage, signal: AbortSignal, written: ToolImageObject[]): Promise<ToolImageCaptureResult> {
+  private async captureClaimed(
+    image: ClaimedToolImage,
+    trigger: ToolImageCaptureTrigger,
+    signal: AbortSignal,
+    written: ToolImageObject[],
+  ): Promise<ToolImageCaptureResult> {
     const source = await this.readSource(image, signal);
     if (source.kind === "failed") {
-      return this.finish(image, source.outcome);
+      return this.finish(image, trigger, source.outcome);
     }
     const decoded = await untilAborted(decodeGuarded(
       source.bytes,
@@ -211,12 +219,12 @@ export class ToolImageCapture {
         : decoded.reason === "too_many_pixels" ? "too_large"
         : decoded.reason === "unsupported_type" ? "unsupported_type"
         : "decode_error";
-      return this.finish(image, outcome);
+      return this.finish(image, trigger, outcome);
     }
     const width = decoded.value.metadata.width ?? 0;
     const height = decoded.value.metadata.height ?? 0;
     if (width < TOOL_IMAGE_LIMITS.minSidePx || height < TOOL_IMAGE_LIMITS.minSidePx) {
-      return this.finish(image, "too_small");
+      return this.finish(image, trigger, "too_small");
     }
     const tag = (this.deps.newCaptureTag ?? (() => randomBytes(6).toString("hex")))();
     const renditions: ToolImageRendition[] = [];
@@ -258,11 +266,13 @@ export class ToolImageCapture {
     return { kind: "failed", outcome: fetched.kind === "not_modified" ? "http_error" : fetchFailure(fetched) };
   }
 
-  private async finish(image: ClaimedToolImage, outcome: ToolImageCaptureOutcome): Promise<ToolImageCaptureOutcome> {
+  private async finish(image: ClaimedToolImage, trigger: ToolImageCaptureTrigger, outcome: ToolImageCaptureOutcome): Promise<ToolImageCaptureOutcome> {
     if (TRANSIENT_CAPTURE_OUTCOMES.has(outcome)) {
       await this.deps.store.release({ image, reason: outcome, leftovers: [] });
     } else {
       await this.deps.store.markFailed({ image, reason: outcome });
+      // Logged once, as it fails: every later request for the picture is a miss counted as `failed`.
+      this.deps.logger?.info({ imageId: image.id, workspaceId: image.workspaceId, trigger, outcome }, "tool_image_capture_failed");
     }
     return outcome;
   }

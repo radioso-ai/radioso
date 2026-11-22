@@ -33,7 +33,8 @@ the bounded fetch are shared infrastructure: `shared/infra/images/` and
 
 `services/toolImageCapture.ts` copies one picture. It first takes one of the
 process's capture turns (four by default, set through `wireToolImages`'s
-`concurrentCaptures`), then claims the row: a `pending` one, or a `capturing`
+`concurrentCaptures`), waiting within its deadline when all are taken, then
+claims the row: a `pending` one, or a `capturing`
 one whose claim is older than 30 seconds. `claimed_at` is the claim's
 generation, and every write that finishes the capture (`markStored`,
 `markFailed`, `release`) matches it, so a capture that outlived its claim
@@ -60,11 +61,12 @@ Two triggers run it:
   run;
 - the reply image route, through `ToolImageLookup.findServable`
   (`services/toolImageLookup.ts`): a browser that asks for a picture before the
-  job has copied it gets it copied on demand. One capture of a picture runs at a
-  time in a process, and a request that finds another holding it waits for that
-  one within the deadline. When every capture turn is taken, or the picture
-  failed, the request is a plain miss at once: the card shows without its
-  picture, and the job copies it.
+  job has copied it gets it copied on demand. A carousel's browser asks for all
+  its pictures at once, so a request that finds every capture turn taken waits
+  for one, and one that finds another capture holding its picture waits for
+  that one, both within the 6-second deadline. A picture that failed is a miss
+  at once; one not copied by the deadline is a miss, and the job copies it. The
+  chat draws a card whose picture misses with an empty frame.
 
 `app/composition/toolImages.ts` puts the lookup behind the documents' image
 lookup, so the route serves both by image id without knowing which is which.
@@ -85,18 +87,29 @@ copies themselves are a third party's pictures and stay out of it.
 
 - `tool_image_capture_total{trigger, outcome}` and
   `tool_image_capture_duration_seconds{trigger}`, where `trigger` is `job` or
-  `on_demand` and `busy` counts an on-demand request that found no free turn;
+  `on_demand` and `busy` counts a capture whose deadline passed before a turn
+  came free. A request for a picture that failed before, that another capture
+  holds, or that does not exist is not a capture and is not counted here;
+- `tool_image_miss_total{reason}`, one per reply image request the lookup had
+  no copy for: `busy`, `timeout` (the capture, or the one holding the picture,
+  outlived the deadline), `unreachable`, `failed` or `not_found`. Each miss is
+  logged as `tool_image_miss` with the image id, the reason and the capture's
+  outcome, at `warn` for the first three and `info` for the others;
+- `tool_image_capture_failed` at `info` once, when a capture fails a picture for
+  good, with the image and workspace ids, the trigger and the reason;
 - a `tool_images.capture` span per capture, with the outcome;
 - logs carry ids and error classes only. An address, a title or a byte is never
   recorded: signed links are credentials.
 
 ## Tests
 
-- `tests/unit/toolImages/tool-image-capture.test.ts`: capture outcomes, a
-  takeover after the claim timeout, the deadline, busy turns, the job's abort
-  signal, and the on-demand lookup.
+- `tests/unit/toolImages/tool-image-capture.test.ts`: capture outcomes, small
+  WebP thumbnails, a takeover after the claim timeout, the deadline, waiting for
+  a turn, the job's abort signal, and the on-demand lookup with a carousel of
+  six and its miss reasons.
 - `tests/integration/tool-result-cards.integration.test.ts`: the reply's rows
-  and job, capture, a takeover against the real `WHERE` clauses, history,
-  erasure and the sweep on Postgres.
+  and job, capture, a takeover against the real `WHERE` clauses, a carousel's
+  six pictures asked for at once, history, erasure and the sweep on Postgres.
 - `tests/contract/reply-image.contract.test.ts`: the route copies a waiting
-  picture on demand and answers 404 once it failed.
+  picture on demand, serves all six pictures of a carousel asked for at once,
+  and answers 404 once a picture failed.

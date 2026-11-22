@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { installDashboardApiMocks, nowIso, seedDashboardStorage, workspaceKey } from "./dashboard-fixtures";
 
-// Scheduled recrawl: an operator on a plan that recrawls weekly at most sets a website source to
+// Scheduled recrawl: an operator on the free plan, which recrawls monthly at most sets a website source to
 // keep itself up to date, then decides on the pages checks held because too many went
 // missing at once: removes them on one source, keeps them on another.
 
@@ -12,7 +12,7 @@ const helpSourceId = "52525252-5252-4525-8525-525252525252";
 type SourceState = {
   id: string;
   name: string;
-  recrawlCadence: "off" | "daily" | "weekly";
+  recrawlCadence: "off" | "monthly" | "weekly" | "daily";
   nextRecrawlAt: string | null;
   heldPageCount: number;
 };
@@ -31,7 +31,7 @@ const presentSource = (source: SourceState) => ({
   recrawlCadence: source.recrawlCadence,
   nextRecrawlAt: source.nextRecrawlAt,
   heldPageCount: source.heldPageCount,
-  fastestRecrawlCadence: "weekly",
+  fastestRecrawlCadence: "monthly",
   createdAt: nowIso,
   updatedAt: nowIso,
 });
@@ -39,7 +39,7 @@ const presentSource = (source: SourceState) => ({
 const installRecrawlMocks = async (page: Page) => {
   const sources = new Map<string, SourceState>([
     [docsSourceId, { id: docsSourceId, name: "docs.example", recrawlCadence: "off", nextRecrawlAt: null, heldPageCount: 12 }],
-    [helpSourceId, { id: helpSourceId, name: "help.example", recrawlCadence: "weekly", nextRecrawlAt: "2026-04-30T09:15:00.000Z", heldPageCount: 1 }],
+    [helpSourceId, { id: helpSourceId, name: "help.example", recrawlCadence: "daily", nextRecrawlAt: "2026-04-30T09:15:00.000Z", heldPageCount: 1 }],
   ]);
   const requests: Array<{ method: string; path: string; body: unknown }> = [];
 
@@ -87,12 +87,14 @@ test("an operator keeps a website source up to date and decides on the pages a c
 
   await page.getByRole("button", { name: /docs\.example/ }).first().click();
 
-  // The plan recrawls weekly at most, so Daily is offered but not selectable.
+  // The plan recrawls monthly at most, so Weekly and Daily are offered but not selectable.
+  await expect(page.getByText("Weekly and daily aren’t on your plan.")).toBeVisible();
   await page.getByLabel("Keep up to date").click();
+  await expect(page.getByRole("option", { name: "Weekly" })).toBeDisabled();
   await expect(page.getByRole("option", { name: "Daily" })).toBeDisabled();
-  await page.getByRole("option", { name: "Weekly" }).click();
+  await page.getByRole("option", { name: "Monthly" }).click();
   await expect(page.getByText(/^Next check /)).toBeVisible();
-  expect(requests).toContainEqual({ method: "PUT", path: `${docsSourceId}/recrawl-cadence`, body: { recrawlCadence: "weekly" } });
+  expect(requests).toContainEqual({ method: "PUT", path: `${docsSourceId}/recrawl-cadence`, body: { recrawlCadence: "monthly" } });
 
   // Twelve pages went missing at once; the operator removes them.
   await expect(page.getByText("12 pages are no longer on the site")).toBeVisible();
@@ -106,6 +108,8 @@ test("an operator keeps a website source up to date and decides on the pages a c
 
   // On the other source, the operator keeps the one page a check held.
   await page.getByRole("button", { name: /help\.example/ }).first().click();
+  // Its stored daily choice is faster than the plan allows, and the hint names what it runs at.
+  await expect(page.getByText("Daily isn’t on your plan, so it checks monthly.")).toBeVisible();
   await expect(page.getByText("1 page is no longer on the site")).toBeVisible();
   await page.getByRole("button", { name: "Keep", exact: true }).click();
   await expect(page.getByText("1 page is no longer on the site")).toBeHidden();

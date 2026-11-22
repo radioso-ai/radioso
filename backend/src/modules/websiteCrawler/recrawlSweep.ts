@@ -14,7 +14,7 @@ import {
 const WEBSITE_RECRAWL_BATCH_SIZE = 50;
 const WEBSITE_RECRAWL_MAX_BATCHES_PER_RUN = 10;
 /** The cadence a source runs at when its workspace's plan cannot be read: no plan allows less. */
-const UNREAD_PLAN_RECRAWL_CADENCE: ActiveRecrawlCadence = "weekly";
+const UNREAD_PLAN_RECRAWL_CADENCE: ActiveRecrawlCadence = "monthly";
 
 /** Queues a source's stored crawl. The documents module's recrawl, which reads the source's saved scope. */
 export interface ScheduledRecrawlPort {
@@ -60,7 +60,7 @@ export class WebsiteRecrawlSweep {
         // The workspace only: a lookup's message can name billing identifiers.
         this.dependencies.logger.warn(
           { role: "website-recrawl-sweep", workspaceId },
-          "Website recrawl plan could not be read; the workspace's sources recrawl weekly this time",
+          "Website recrawl plan could not be read; the workspace's sources recrawl monthly this time",
         );
         return UNREAD_PLAN_RECRAWL_CADENCE;
       });

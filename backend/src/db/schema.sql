@@ -2612,7 +2612,7 @@ CREATE TABLE public.document_sources (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     recrawl_cadence text DEFAULT 'off'::text NOT NULL,
     next_recrawl_at timestamp with time zone,
-    CONSTRAINT document_sources_recrawl_cadence_check CHECK ((recrawl_cadence = ANY (ARRAY['off'::text, 'daily'::text, 'weekly'::text])))
+    CONSTRAINT document_sources_recrawl_cadence_check CHECK ((recrawl_cadence = ANY (ARRAY['off'::text, 'monthly'::text, 'weekly'::text, 'daily'::text])))
 );
 
 

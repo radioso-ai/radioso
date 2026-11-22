@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recrawlCadences } from "../../../../modules/websiteCrawler/public.js";
 import {
   chunkParamsSchema,
   documentParamsSchema,
@@ -61,7 +62,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
           "Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions.",
       }),
       crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
-      recrawlCadence: z.enum(["off", "daily", "weekly"]).optional().openapi({
+      recrawlCadence: z.enum(recrawlCadences).optional().openapi({
         description:
           "Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.",
       }),

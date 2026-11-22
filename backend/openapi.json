@@ -12456,8 +12456,9 @@
             "type": "string",
             "enum": [
               "off",
-              "daily",
-              "weekly"
+              "monthly",
+              "weekly",
+              "daily"
             ],
             "description": "Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence."
           },
@@ -26704,8 +26705,9 @@
             "type": "string",
             "enum": [
               "off",
-              "daily",
-              "weekly"
+              "monthly",
+              "weekly",
+              "daily"
             ],
             "description": "How often the source recrawls itself. `off` stops scheduled recrawls."
           }

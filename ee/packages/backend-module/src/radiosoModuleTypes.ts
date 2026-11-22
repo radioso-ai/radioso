@@ -202,7 +202,7 @@ type PlanLimitLookup = { accountId?: string | null; workspaceId: string };
 export interface UsageLimitPolicy {
   getNotificationEmailDailyLimit?(input: PlanLimitLookup): Promise<number | null>;
   getPublicChatMessagesPerMinute?(input: PlanLimitLookup): Promise<number | null>;
-  getFastestRecrawlCadence?(input: PlanLimitLookup): Promise<"daily" | "weekly" | null>;
+  getFastestRecrawlCadence?(input: PlanLimitLookup): Promise<"daily" | "weekly" | "monthly" | null>;
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;

@@ -14,7 +14,7 @@ const due = (sourceId: string, overrides: Partial<DueWebsiteRecrawl> = {}): DueW
   ...overrides,
 });
 
-const setup = (batches: DueWebsiteRecrawl[][], fastest: Record<string, "daily" | "weekly"> = {}) => {
+const setup = (batches: DueWebsiteRecrawl[][], fastest: Record<string, "daily" | "weekly" | "monthly"> = {}) => {
   const advancedTo = new Map<string, Date>();
   let call = 0;
   const claimDueRecrawls = vi.fn(async (input: { nextRecrawlAt: (source: DueWebsiteRecrawl) => Promise<Date> }) => {
@@ -73,12 +73,12 @@ describe("website recrawl sweep", () => {
     const { sweep, advancedTo, fastestRecrawlCadence } = setup([[
       due("on-comet", { workspaceId: "comet-workspace" }),
       due("also-on-comet", { workspaceId: "comet-workspace", recrawlCadence: "weekly" }),
-    ], [due("on-satellite", { workspaceId: "satellite-workspace" })]], { "comet-workspace": "weekly" });
+    ], [due("on-satellite", { workspaceId: "satellite-workspace" })]], { "comet-workspace": "monthly" });
 
     await sweep.run();
 
-    expect(advancedTo.get("on-comet")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
-    expect(advancedTo.get("also-on-comet")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
+    expect(advancedTo.get("on-comet")).toEqual(new Date(now.getTime() + 30 * DAY_MS));
+    expect(advancedTo.get("also-on-comet")).toEqual(new Date(now.getTime() + 30 * DAY_MS));
     expect(advancedTo.get("on-satellite")).toEqual(new Date(now.getTime() + DAY_MS));
     expect(fastestRecrawlCadence).toHaveBeenCalledTimes(2);
   });
@@ -96,8 +96,8 @@ describe("website recrawl sweep", () => {
 
     await sweep.run();
 
-    expect(advancedTo.get("unreadable-1")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
-    expect(advancedTo.get("unreadable-2")).toEqual(new Date(now.getTime() + 7 * DAY_MS));
+    expect(advancedTo.get("unreadable-1")).toEqual(new Date(now.getTime() + 30 * DAY_MS));
+    expect(advancedTo.get("unreadable-2")).toEqual(new Date(now.getTime() + 30 * DAY_MS));
     expect(advancedTo.get("readable")).toEqual(new Date(now.getTime() + DAY_MS));
     expect(recrawlSource).toHaveBeenCalledTimes(3);
     expect(logger.warn).toHaveBeenCalledOnce();

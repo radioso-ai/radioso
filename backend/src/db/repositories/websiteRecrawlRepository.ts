@@ -94,7 +94,7 @@ export class WebsiteRecrawlRepository implements WebsiteRecrawlRepositoryPort {
           workspaceId: row.workspace_id,
           sourceId: row.id,
           // The claim excludes `off`, and the column's CHECK admits only these values.
-          recrawlCadence: row.recrawl_cadence === "daily" ? "daily" : "weekly",
+          recrawlCadence: row.recrawl_cadence as ActiveRecrawlCadence,
           crawlActive: Boolean(row.crawl_active),
         };
         await trx

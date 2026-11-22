@@ -8464,7 +8464,7 @@ export interface components {
              * @description Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.
              * @enum {string}
              */
-            recrawlCadence?: "off" | "daily" | "weekly";
+            recrawlCadence?: "off" | "monthly" | "weekly" | "daily";
             /**
              * Format: date-time
              * @description Website sources only. When the next scheduled recrawl is queued; null while the cadence is `off`.
@@ -12368,7 +12368,7 @@ export interface components {
              * @description How often the source recrawls itself. `off` stops scheduled recrawls.
              * @enum {string}
              */
-            recrawlCadence: "off" | "daily" | "weekly";
+            recrawlCadence: "off" | "monthly" | "weekly" | "daily";
         };
         DocumentSourceHeldPagesRemoved: {
             /** Format: uuid */

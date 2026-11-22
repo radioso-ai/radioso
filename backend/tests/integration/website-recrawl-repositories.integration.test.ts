@@ -85,6 +85,18 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
       .resolves.toMatchObject({ recrawlCadence: "off", nextRecrawlAt: null });
   });
 
+  it("stores a monthly cadence and reads it back when the source is due", async () => {
+    const due = new Date(now.getTime() - 60_000);
+    await expect(schedule.setRecrawlSchedule({ workspaceId, sourceId: siteId, recrawlCadence: "monthly", nextRecrawlAt: due }))
+      .resolves.toMatchObject({ id: siteId, recrawlCadence: "monthly", nextRecrawlAt: due });
+
+    const claimed = await schedule.claimDueRecrawls({ now, limit: 10, nextRecrawlAt: async () => now });
+
+    expect(claimed.filter((source) => source.sourceId === siteId)).toEqual([
+      { workspaceId, sourceId: siteId, recrawlCadence: "monthly", crawlActive: false },
+    ]);
+  });
+
   it("claims due website sources once, advances them, and says which have a queued or running crawl", async () => {
     const due = new Date(now.getTime() - 60_000);
     await schedule.setRecrawlSchedule({ workspaceId, sourceId: siteId, recrawlCadence: "daily", nextRecrawlAt: due });

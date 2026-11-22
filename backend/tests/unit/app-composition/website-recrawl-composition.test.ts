@@ -14,6 +14,12 @@ describe("website recrawl composition", () => {
     expect(getFastestRecrawlCadence).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
   });
 
+  it("passes a monthly ceiling through", async () => {
+    const plan = recrawlPlanFromUsageLimits({ getFastestRecrawlCadence: async () => "monthly" });
+
+    await expect(plan.fastestRecrawlCadence({ workspaceId: "workspace-1" })).resolves.toBe("monthly");
+  });
+
   it("sets no ceiling for a deployment whose policy has no plans", async () => {
     await expect(recrawlPlanFromUsageLimits({}).fastestRecrawlCadence({ workspaceId: "workspace-1" })).resolves.toBe("daily");
     await expect(recrawlPlanFromUsageLimits({ getFastestRecrawlCadence: async () => null })

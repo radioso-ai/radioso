@@ -559,21 +559,27 @@ subject export lists them with the kind of writer that set each one.
 
 ## Inbox
 
-Open a conversation from the Inbox's **All** list, then **Open in debug view**.
-The **Attributes** block lists what the conversation holds: each attribute's
+Open a conversation from the Inbox's **All** list. Its **Attributes** block,
+above the messages, lists what the conversation holds: each attribute's
 value, who set it and when, for example "Billing", "Set by the AI". A value kept
 for the visitor's chat session or verified customer reads "for this visitor".
 When the same attribute has values at several of those levels, the most
 specific one is shown, the way the agent reads it. Agent-wide and
 workspace-wide values are defaults and stay off the list. A Private attribute
 shows "Private data" instead of its value, and an option archived since the
-value was stored keeps its label, marked "(archived)". A conversation without
-attributes shows no block.
+value was stored keeps its label, marked "(archived)". A value longer than 160
+characters shows a preview with **Show all**. A conversation without attributes
+shows no block. While the conversation is open, the block reads its attributes
+again a few seconds after each new message, so a value the AI sets after a reply
+appears without a reload.
 
 To find the conversations about one thing, pick an option from the **Attribute**
 filter on the All list. It offers every Choice attribute that is not Private,
-archived options included, and matches values set for the conversation itself:
-the AI's choices, and values your API set with `conversation` scope.
+archived options included, plus **Not set** for each. The filter reads only
+values set for the conversation itself: the AI's choices, and values your API
+set with `conversation` scope. A value kept for the visitor's session or
+customer shows in the block but does not match the filter, and a conversation
+with only such a value counts as **Not set**.
 
 Inspect an assistant turn to see what that turn read: when attributes were
 resolved for it, the debug panel shows a read-only **Visitor context** block.
@@ -601,9 +607,12 @@ returns `attributes`:
 
 `GET /api/v1/history`, `POST /api/v1/history/query` and
 `GET /api/v1/history/chat` take `attribute` and `attributeOption` together,
-for example `?attribute=topic&attributeOption=billing`. An unknown attribute or
-option, or an attribute that is not a Choice or is Private, returns `400` with
-the reason.
+for example `?attribute=topic&attributeOption=billing`, or
+`attributeOption=_not_set` for the conversations with no value of their own.
+The name matches exactly as written. An unknown attribute or option, or an
+attribute that is not a Choice or is Private, returns `400` with the reason.
+`attributes` comes with the first page of messages; an older page (`cursor`, or
+an `offset` above 0) leaves it out.
 
 ## Read next
 

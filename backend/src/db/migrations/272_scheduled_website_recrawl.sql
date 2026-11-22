@@ -1,5 +1,5 @@
 -- Scheduled website recrawl. A website source can recrawl itself on a cadence the operator picks,
--- and a scheduled crawl that would remove a large share of a source's pages holds them for review
+-- and a crawl that would remove a large share of a source's pages holds them for review
 -- instead of deleting them.
 --
 -- document_sources.recrawl_cadence is the operator's choice: 'off' (the default for every source,
@@ -8,12 +8,12 @@
 -- keys because the sweep selects on them, through the partial index below.
 --
 -- website_crawl_jobs.crawl_trigger records who started a crawl: 'manual' for the operator, API or
--- Ray, 'scheduled' for the sweep. Only a scheduled crawl holds missing pages. Rows written before
+-- Ray, 'scheduled' for the sweep. Every crawl, manual or scheduled, holds missing pages. Rows written before
 -- this migration are manual crawls.
 --
--- website_source_missing_pages lists pages a scheduled crawl found missing but did not delete:
+-- website_source_missing_pages lists pages a crawl found missing but did not delete:
 -- 'pending' until the operator decides, 'kept' once the operator keeps them. A kept page is never
--- held or deleted by a later scheduled crawl; a page seen again on the site leaves the list. The
+-- held or deleted by a later crawl; a page seen again on the site leaves the list. The
 -- row goes with its document.
 --
 -- Locks. The file is one transaction, so each lock is held until it commits. Adding a column with a

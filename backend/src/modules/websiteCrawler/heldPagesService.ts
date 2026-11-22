@@ -12,7 +12,7 @@ export interface WebsiteSourcePageRemovalPort {
   removeHeldPages(input: { workspaceId: string; sourceId: string }): Promise<{ deletedCount: number }>;
 }
 
-/** The operator's decision on the pages a scheduled crawl held: remove them, or keep them for good. */
+/** The operator's decision on the pages a crawl held: remove them, or keep them for good. */
 export class WebsiteHeldPagesService {
   constructor(private readonly dependencies: {
     sources: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">;
@@ -31,7 +31,7 @@ export class WebsiteHeldPagesService {
     return { sourceId: input.sourceId, removedPageCount: deletedCount };
   }
 
-  /** Keeps the held pages. A later scheduled crawl neither holds nor removes them. */
+  /** Keeps the held pages. A later crawl neither holds nor removes them. */
   async keepHeldPages(input: { accountId: string; workspaceId: string; sourceId: string }): Promise<{ sourceId: string; keptPageCount: number }> {
     await requireWebsiteSource(this.dependencies.sources, input);
     const keptPageCount = await this.dependencies.heldPages.keepHeldPages({ workspaceId: input.workspaceId, sourceId: input.sourceId });

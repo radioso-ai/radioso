@@ -9,7 +9,7 @@ import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
- * `website_source_missing_pages`: pages a scheduled crawl found missing and held for the operator
+ * `website_source_missing_pages`: pages a crawl found missing and held for the operator
  * (`pending`), or that the operator chose to keep (`kept`). A row goes with its document.
  */
 export class WebsiteMissingPageRepository implements WebsiteMissingPageStore, WebsiteHeldPageStore {

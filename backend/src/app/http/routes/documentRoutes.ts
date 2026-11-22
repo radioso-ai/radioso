@@ -288,7 +288,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     }
   });
 
-  // The pages a scheduled crawl held: the operator removes them, or keeps them for good.
+  // The pages a crawl held: the operator removes them, or keeps them for good.
   for (const decision of ["remove", "keep"] as const) {
     router.post(`/sources/:sourceId/held-pages/${decision}`, workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
       try {

@@ -327,7 +327,7 @@ export interface AppDependencies {
   facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
-  /** A website source's recrawl cadence and the operator's decision on pages a scheduled crawl held. */
+  /** A website source's recrawl cadence and the operator's decision on pages a crawl held. */
   websiteRecrawl: Pick<WebsiteRecrawlComposition, "scheduleService" | "heldPagesService">;
   websiteCrawlWorker: WebsiteCrawlWorker;
   websiteCrawlJobConsumer?: JobConsumerPort;

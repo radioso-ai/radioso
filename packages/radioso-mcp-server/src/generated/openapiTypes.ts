@@ -3457,7 +3457,7 @@ export interface paths {
         get?: never;
         /**
          * Set how often a website source recrawls itself
-         * @description Turning a cadence on or changing it schedules the next recrawl one interval after the last crawl, never before now, with up to an hour of jitter. Choosing the stored cadence again keeps the scheduled time; `off` clears it. A scheduled recrawl reuses the source's saved crawl settings, and holds its missing pages for review when they are more than a fifth of the source.
+         * @description Turning a cadence on or changing it schedules the next recrawl one interval after the last crawl, never before now, with up to an hour of jitter. Choosing the stored cadence again keeps the scheduled time; `off` clears it. A scheduled recrawl reuses the source's saved crawl settings. Like every crawl, it holds missing pages for review when they are more than a fifth of the source, and removes a page only once the site answers that it is gone.
          */
         put: operations["setDocumentSourceRecrawlCadence"];
         post?: never;

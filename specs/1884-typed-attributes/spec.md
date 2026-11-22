@@ -17,7 +17,7 @@ Citations are `path:line` from the repo root, read on `main` at `6a1dadbba0`.
 | D3 | New `conversation` scope keyed by `conversations.id` | 3 |
 | D4 | Types: `enum` with described options first, then `boolean`, `number`, `date`. Options have an immutable key and are archived, never deleted | 4 |
 | D5 | Every value records its last writer: `api`, `operator`, `routine` or `classifier`, plus a reference. No history table | 5 |
-| D6 | The classifier writes only over an empty or classifier-written value. Every other writer is last-writer-wins | 5 |
+| D6 | The classifier writes only over an empty or classifier-written value. Every other writer is last-writer-wins. A human value for the conversation, session or customer holds the variable; an agent or workspace value is a default the classifier's conversation value outranks | 5 |
 | D7 | Classification is a per-conversation `rerun` background job after each committed turn. It is not built on the facet job | 6 |
 | D8 | A handoff notice classifies inline before it is sent, inside the notice's own dispatch job, bounded at 10 s. A failed or timed-out classification never holds the notice | 7 |
 | D9 | `handoff.requested` keeps its payload and stays in the turn's transaction. Attributes reach automations through `context_value.changed` and the notice webhook | 7, 11 |
@@ -150,6 +150,8 @@ There is no `integration` kind. Zapier and n8n call the bearer API, the server s
 - `classifier`: writes only when there is no value or the existing value was written by the classifier.
 
 An operator's value and a host's value therefore stick with no prompt involved. **Reset to automatic** deletes the value, and the next classification fills it.
+
+**Which human values hold a variable.** A human value (`api`, `operator`, `routine`) at the `conversation`, `session` or `customer` scope is a fact about this visitor or conversation. The classifier skips the variable and clears its own older conversation value, which would otherwise hide that fact. An `agent` or `workspace` value is a default: the classifier ignores it and writes its conversation value as usual, which outranks the default in the ladder. The default applies until the classifier picks a value, and again once it clears its own.
 
 ## 6. Classification
 

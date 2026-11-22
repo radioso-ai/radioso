@@ -80,6 +80,6 @@ export const attributeHelp = {
   },
   setBy: {
     tooltip:
-      '**Your website or API**: your backend or page sends the value through the Radioso API, and Radioso keeps it per conversation, session or customer.\n\n**The AI, from the conversation**: after each reply, the AI picks one of your options from what the visitor wrote, or none. Rules and routines read it from the next turn. It never replaces a value your team or your API set. Choice attributes that aren\u2019t Private or treated as proof only.',
+      '**Your website or API**: your backend or page sends the value through the Radioso API, and Radioso keeps it per conversation, session or customer.\n\n**The AI, from the conversation**: after each reply, the AI picks one of your options from what the visitor wrote, or none. Rules and routines read it from the next turn. It never replaces a value your team or your API set for this visitor or conversation; agent-wide and workspace-wide values are defaults until the AI picks one. Choice attributes that aren\u2019t Private or treated as proof only.',
   },
 } as const

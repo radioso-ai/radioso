@@ -1,5 +1,5 @@
 import type { StoredConversationValue } from "./conversationValueWriter.js";
-import { mayOverwrite, type ContextVariable, type ContextVariableValue } from "./domain.js";
+import { mayOverwrite, type ContextVariable, type ContextVariableScopeType, type ContextVariableValue } from "./domain.js";
 
 /** A variable an agent has the classifier fill, with what the conversation holds for it. */
 export interface ClassificationTarget {
@@ -7,13 +7,25 @@ export interface ClassificationTarget {
   /** The conversation's own value and who wrote it; null when it holds none. */
   readonly stored: StoredConversationValue | null;
   /**
-   * Whether a writer the classifier may not replace holds a value anywhere on the conversation's
-   * ladder: the conversation, its session or customer, the agent or the workspace. The classifier
-   * leaves such a variable alone, so a value the API or a teammate set at any scope stays the one
-   * the conversation resolves.
+   * Whether a writer the classifier may not replace set a value for this conversation, its session
+   * or its customer. Such a value is a fact about the visitor or the conversation: the classifier
+   * leaves the variable alone, so that value stays the one the conversation resolves. An agent-wide
+   * or workspace-wide value is a default and never holds a variable.
    */
   readonly held: boolean;
 }
+
+/**
+ * Whether a human-written value at this scope is a fact about the visitor or the conversation, which
+ * the classifier must not hide, rather than a default its conversation value outranks.
+ */
+const DESCRIBES_THE_VISITOR: Record<ContextVariableScopeType, boolean> = {
+  conversation: true,
+  session: true,
+  customer: true,
+  agent: false,
+  workspace: false,
+};
 
 /** The target for a variable from every value its conversation's ladder holds for it. */
 export const classificationTargetFrom = (
@@ -24,7 +36,7 @@ export const classificationTargetFrom = (
   return {
     variable,
     stored: own ? { data: own.data, writtenBy: own.writtenBy } : null,
-    held: ladderValues.some((value) => !mayOverwrite(value.writtenBy, "classifier")),
+    held: ladderValues.some((value) => DESCRIBES_THE_VISITOR[value.scope.type] && !mayOverwrite(value.writtenBy, "classifier")),
   };
 };
 

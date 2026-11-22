@@ -67,7 +67,7 @@ export const contextVariableDefinitionInputShape = {
 /** One agent's use of a variable, as a proposal or a reviewed preparation states it. */
 export const contextVariableEnablementInputSchema = z.object({
   source: z.enum(CONTEXT_VARIABLE_SOURCES)
-    .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent, and it never replaces a value the API or a teammate set. Use surfacing on_reference for classified."),
+    .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent. It never replaces a value the API or a teammate set for this visitor or conversation (conversation, session or customer scope); an agent-wide or workspace-wide value is a default until the AI picks one. Use surfacing on_reference for classified."),
   resolverSkillId: idSchema.nullable().optional(),
   maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
   resolverTimeoutMs: z.number().int().positive().nullable().optional(),

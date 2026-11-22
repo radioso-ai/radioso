@@ -10981,7 +10981,7 @@ export interface components {
         };
         AgentContextVariableEnablementRequest: {
             /**
-             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
+             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session` or `customer` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
              * @enum {string}
              */
             source: "pushed" | "browser" | "resolver" | "classified";

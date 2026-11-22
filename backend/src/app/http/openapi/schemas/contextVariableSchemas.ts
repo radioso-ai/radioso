@@ -22,7 +22,7 @@ const ContextVariableSourceSchema = z.enum(CONTEXT_VARIABLE_SOURCES);
 // agent_context_variables row, so advertising it as an accepted request value here would
 // describe an operation the route always rejects (contextVariableRoutes.ts superRefine).
 const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver", "classified"]).openapi({
-  description: "Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.",
+  description: "Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session` or `customer` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.",
 });
 const ContextVariableScopeTypeSchema = z.enum(CONTEXT_VARIABLE_SCOPE_TYPES).openapi({
   description: "Where a value is kept. A `conversation` scope id is the conversation's id.",

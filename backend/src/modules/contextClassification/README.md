@@ -27,7 +27,7 @@ Consumed:
   the revision through the agents module's `findRevision`, bound in composition.
 - `ConversationValueWriter` (context-variables): every write, under the
   overwrite rule. The classifier fills an empty value or replaces its own; a
-  value the API, a teammate or a routine set stays. Its `null` clears only its own
+  value the API, a teammate or a routine set for the conversation stays. Its `null` clears only its own
   value, and an unchanged answer writes nothing.
 - `ConversationExcerptReader`, defined here and implemented by chat
   (`chat/services/contextClassificationExcerptReader.ts`): the rolling summary and
@@ -60,10 +60,12 @@ Composition builds the service and registers `contextClassificationHandler` in
    what the conversation's whole ladder (conversation, session, customer, agent,
    workspace) holds for each. A variable the classifier may not fill (no longer a
    Choice, or made sensitive or signed since), or one with no active option, is
-   dropped. A variable another writer holds at any scope is left out of the call,
-   and a conversation value the classifier wrote for it is cleared, since it
-   would hide that writer's value. When every one is held, no call is made
-   (`skipped_override`).
+   dropped. A variable another writer set for this conversation, its session or
+   its customer is held: it is left out of the call, and a conversation value the
+   classifier wrote for it is cleared, since it would hide that writer's value.
+   When every one is held, no call is made (`skipped_override`). An agent or
+   workspace value is a default and holds nothing: the classifier's conversation
+   value outranks it, and it applies again once the classifier clears its own.
 2. Read the excerpt. When every recent visitor message was withheld as sensitive
    and there is no summary, no call is made (`skipped_sensitive`).
 3. One call, with positional fields (`attribute_1`…) so a variable's name never has

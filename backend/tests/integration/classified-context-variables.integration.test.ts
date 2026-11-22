@@ -5,8 +5,8 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
-import { ConversationValueWriterService, contextScopeLadder } from "../../src/modules/context-variables/public.js";
-import type { ContextVariableOption } from "../../src/modules/context-variables/public.js";
+import { ContextVariableResolverService, ConversationValueWriterService, contextScopeLadder } from "../../src/modules/context-variables/public.js";
+import type { AgentContextVariableEnablement, ContextVariableOption } from "../../src/modules/context-variables/public.js";
 import { ConversationClassificationService } from "../../src/modules/contextClassification/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -96,7 +96,7 @@ describeIntegration("classified attributes (Postgres)", () => {
     await expect(reads.readDefinitions({ workspaceId, variableIds: [topic.id, pushed.id] })).resolves.toHaveLength(2);
   });
 
-  it("holds a variable that a wider scope of the conversation's ladder holds for the API, and leaves that value to resolve", async () => {
+  it("holds a variable the API set for the conversation's customer, and leaves that value to resolve", async () => {
     const urgency = await createChoice();
     const customerId = `customer-${randomUUID()}`;
     const sessionId = `session-${randomUUID()}`;
@@ -120,6 +120,38 @@ describeIntegration("classified attributes (Postgres)", () => {
     const ladder = contextScopeLadder({ conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, agentId, workspaceId });
     const resolved = await repository.readMostSpecificValues([urgency.id], ladder);
     expect(resolved.get(urgency.id)).toMatchObject({ data: "billing", writtenBy: { kind: "api" }, scope: { type: "customer" } });
+  });
+
+  it("classifies past a workspace-wide default, which the turn reads again once the classifier finds no option", async () => {
+    const topic = await createChoice();
+    const enablement = enablementSnapshot(topic.id, "classified");
+    const conversationId = await createConversationOn([enablement]);
+    await repository.upsertValue(topic.id, { type: "workspace", id: workspaceId }, "billing", { kind: "api", ref: "credential-1" });
+    let answer: string | null = "shipping";
+    const complete = vi.fn(async () => ({ text: JSON.stringify({ attribute_1: answer }) }));
+    const classification = new ConversationClassificationService({
+      targets: reads,
+      excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },
+      values: writer,
+      inference: { create: async () => ({ complete }) },
+    });
+    // What a turn reads: the stored values of the variables its release selects, most specific first.
+    const turnReads = new ContextVariableResolverService({ repository, resolver: { resolve: vi.fn() } });
+    const ladder = contextScopeLadder({ conversationId, chatSessionId: null, verifiedCustomerId: null, agentId, workspaceId });
+    const turnValue = async () => (await turnReads.resolveForEnablements(
+      workspaceId, agentId, [enablement as unknown as AgentContextVariableEnablement], ladder,
+    )).map((resolved) => resolved.value);
+
+    await expect(classification.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "written" });
+    expect(complete).toHaveBeenCalledTimes(1);
+    await expect(turnValue()).resolves.toEqual(["shipping"]);
+
+    answer = null;
+    await expect(classification.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({
+      outcome: "written", decisions: [{ variableId: topic.id, value: null, write: "cleared" }],
+    });
+    await expect(turnValue()).resolves.toEqual(["billing"]);
+    await expect(repository.readValue(topic.id, { type: "workspace", id: workspaceId })).resolves.toMatchObject({ data: "billing", writtenBy: { kind: "api" } });
   });
 
   it("writes as the classifier only over an empty or classifier-written value, and clears only its own", async () => {

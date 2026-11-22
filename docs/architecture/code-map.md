@@ -1140,8 +1140,9 @@ at most `CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent` (8) per agent; the
 service refuses any other, and refuses a definition edit that would leave a
 classified variable in such a state (`classificationRefusal`). The module gives
 the classifier its two ports: `ClassifiedVariableReader` (each target says
-whether another writer holds it anywhere on the conversation's ladder,
-`classificationTargetFrom`) and `ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
+whether another writer set it for the conversation, its session or its
+customer, `classificationTargetFrom`; an agent or workspace value is a default
+that holds nothing) and `ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
 with `planConversationWrite` and counts it in
 `radioso_context_value_writes_total{writer, outcome}`).
 

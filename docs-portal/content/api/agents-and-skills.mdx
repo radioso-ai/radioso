@@ -431,7 +431,9 @@ one agent:
 `classified` has the AI pick one of an `enum` variable's options from the
 conversation after each reply and store it in the `conversation` scope, with
 `writtenBy.kind` `classifier`. It never replaces a value your API or a teammate
-set. It takes an `enum` variable that is neither `sensitive` nor `signed`, at
+set for this visitor or conversation (`conversation`, `session` or `customer`
+scope); an `agent` or `workspace` value is a default, which applies until the
+AI picks a value. It takes an `enum` variable that is neither `sensitive` nor `signed`, at
 most 8 per agent; any other is refused with `400` and a message naming the
 reason. Use `surfacing: on_reference` to keep the value out of the answer.
 

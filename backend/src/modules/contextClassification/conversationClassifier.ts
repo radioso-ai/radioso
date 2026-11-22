@@ -35,8 +35,8 @@ export const CONTEXT_CLASSIFICATION_RUNS_TOTAL = "radioso_context_classification
 type ClassificationTrigger = "after_turn" | "caller_transcript";
 
 /**
- * How a run ended. `skipped_override`: another writer holds every variable somewhere on the
- * conversation's ladder, so no call was made. `skipped_sensitive`: every recent visitor message was
+ * How a run ended. `skipped_override`: another writer set every variable for this conversation, its
+ * session or its customer, so no call was made. `skipped_sensitive`: every recent visitor message was
  * withheld. `skipped_empty`: no variable to fill or nothing to read. `skipped_gone`: the
  * conversation was erased. `skipped_over_budget`: the prompt was over the model's input budget.
  * `skipped_timeout`: the caller's deadline aborted the call.
@@ -93,12 +93,13 @@ const isTimeout = (reason: unknown): boolean => reason instanceof Error && reaso
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A variable the classifier may fill now: no writer it may not replace holds a value on the conversation's ladder. */
+/** A variable the classifier may fill now: no writer it may not replace set it for this visitor or conversation. */
 const isOpen = (target: ClassificationTarget): boolean => !target.held;
 
 /**
  * A held variable whose conversation value the classifier wrote before the other writer set theirs
- * at a wider scope: the conversation's own value would hide theirs, so it is cleared, with no call.
+ * for the session or customer: the conversation's own value would hide theirs, so it is cleared,
+ * with no call.
  */
 const hidesHeldValue = (target: ClassificationTarget): boolean =>
   target.held && target.stored !== null && mayOverwrite(target.stored.writtenBy, "classifier");

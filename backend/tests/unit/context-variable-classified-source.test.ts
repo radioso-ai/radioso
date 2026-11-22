@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { classificationTargetFrom } from "../../src/modules/context-variables/classifiedVariables.js";
 import {
   CONTEXT_VARIABLE_SOURCES,
   classificationRefusal,
@@ -7,6 +8,8 @@ import {
 } from "../../src/modules/context-variables/domain.js";
 import type {
   AgentContextVariableEnablement,
+  ContextValueWriterKind,
+  ContextVariableScopeType,
   ContextVariable,
   ContextVariableOption,
 } from "../../src/modules/context-variables/domain.js";
@@ -163,5 +166,32 @@ describe("the classified source", () => {
     expect(applyProposal).toHaveBeenCalledTimes(1);
     await expect(service.applyProposal({ workspaceId, agentId, variableId, definition, expectedVariableUpdatedAt: null, enablement: null, expectedEnablementUpdatedAt: null }))
       .rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe("which values keep the classifier from a variable", () => {
+  const valueAt = (type: ContextVariableScopeType, kind: ContextValueWriterKind = "api") => ({
+    scope: { type, id: `${type}-1` },
+    data: "billing",
+    writtenBy: { kind, ref: kind === "classifier" ? "context-classification/1" : "credential-1" },
+  });
+
+  it("holds a variable a person or the API set for this visitor or conversation", () => {
+    for (const type of ["conversation", "session", "customer"] as const) {
+      for (const kind of ["api", "operator", "routine"] as const) {
+        expect(classificationTargetFrom(choice(), [valueAt(type, kind)]).held, `${kind} at ${type}`).toBe(true);
+      }
+    }
+  });
+
+  it("never holds a variable for an agent-wide or workspace-wide default, which the classifier's own value outranks", () => {
+    const target = classificationTargetFrom(choice(), [valueAt("agent", "operator"), valueAt("workspace", "api")]);
+
+    expect(target).toEqual({ variable: choice(), stored: null, held: false });
+    expect(classificationTargetFrom(choice(), [valueAt("conversation", "classifier"), valueAt("workspace", "api")])).toEqual({
+      variable: choice(),
+      stored: { data: "billing", writtenBy: { kind: "classifier", ref: "context-classification/1" } },
+      held: false,
+    });
   });
 });

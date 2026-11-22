@@ -12,6 +12,11 @@ export class NormalizationSlots {
     readonly waitMs: number,
   ) {}
 
+  /** How many calls are waiting for a slot now, so a caller can refuse to join a long queue. */
+  get queued(): number {
+    return this.waiting.length;
+  }
+
   /** `waitMs` replaces the pool's wait for this call, as when a caller's own deadline has partly run out. */
   async run<T>(work: () => Promise<T>, options: { readonly waitMs?: number } = {}): Promise<T | "busy"> {
     if (!await this.acquire(options.waitMs ?? this.waitMs)) return "busy";

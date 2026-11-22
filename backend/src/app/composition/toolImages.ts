@@ -20,6 +20,7 @@ import type { DB } from "../../shared/infra/kysely/types.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import type { ReplyImageObjectLookup } from "../http/routes/replyImageAddress.js";
 
 /**
  * Document storage, narrowed to a tool image's objects under the workspace's `tool-images` folder:
@@ -45,12 +46,18 @@ const toolImageObjectStore = (storage: DocumentStoragePort & DocumentStorageLoca
   remove: (object) => storage.delete(object),
 });
 
-/** Finds a reply image among the documents' images first, then among the tool images. */
+/**
+ * Finds a reply image among the documents' images first, then among the tool images; a miss is
+ * the tool images', since every id the documents lack is asked of them.
+ */
 export const composeReplyImageLookup = (
   documents: DocumentImageObjectLookup,
-  tools: DocumentImageObjectLookup,
-): DocumentImageObjectLookup => ({
-  findServable: async (input) => (await documents.findServable(input)) ?? tools.findServable(input),
+  tools: Pick<ToolImageLookup, "find">,
+): ReplyImageObjectLookup => ({
+  find: async (input, options) => {
+    const document = await documents.findServable(input);
+    return document ? { kind: "found", object: document } : tools.find(input, options);
+  },
 });
 
 /**
@@ -70,7 +77,7 @@ export const wireToolImages = (deps: {
 }): {
   rows: ToolImageRowWriter;
   previews: ToolImagePreviewRecorder;
-  lookup: DocumentImageObjectLookup;
+  lookup: Pick<ToolImageLookup, "find">;
   jobHandlers: BackgroundJobHandlerRegistration[];
 } => {
   const objects = toolImageObjectStore(deps.storage);
@@ -100,7 +107,7 @@ export const wireToolImages = (deps: {
   return {
     rows: store,
     previews,
-    lookup: new ToolImageLookup({ store, capture }),
+    lookup: new ToolImageLookup({ store, capture, metrics: deps.metrics, logger: deps.logger }),
     jobHandlers: [
       toolImageCaptureHandler({ capture, store }),
       toolImageObjectDeletionHandler({ objects, logger: deps.logger }),

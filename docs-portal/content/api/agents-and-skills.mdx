@@ -316,9 +316,11 @@ from its address, with an 8 MB cap, re-encoded to WebP at 320 and 640 pixels
 wide, and served from `/api/v1/public/reply-images/{imageId}/{width}` like the
 pictures of an answer's documents. A job copies the pictures a few seconds after
 the reply is stored, within 20 seconds each. A browser that asks for a picture
-first gets it copied on the spot within 6 seconds; while the server is already
-copying four pictures it answers `404` at once, the card shows without its
-picture, and the job copies it. JPEG, PNG, WebP, GIF and AVIF are read; an SVG,
+first gets it copied on the spot: the server copies four at a time and holds
+each request until its picture is ready, for up to 6 seconds, so a carousel's
+pictures arrive together. A picture not ready by then answers `404`, as does
+one asked for while the server already has many waiting; the card shows without
+its picture, and the job copies it for the next time the conversation is opened. JPEG, PNG, WebP, GIF and AVIF are read; an SVG,
 a page that is not a picture, a private address or a link that has expired
 leaves the card without a picture. The copies are deleted with the
 conversation, and one no stored reply carries goes after a day. A data-subject

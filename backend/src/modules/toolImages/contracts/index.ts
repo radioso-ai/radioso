@@ -33,3 +33,18 @@ export interface ToolImageRowWriter {
 export interface ToolImagePreviewRecorder {
   recordPreview(input: { workspaceId: string; sources: readonly ToolImageSource[] }): Promise<void>;
 }
+
+/**
+ * Why a lookup had no copy of a picture to serve. Bounded, as a metric label: `busy` when no
+ * capture turn or decoder came free in time, `timeout` when the capture, or another one holding the
+ * picture, outlived the request's budget, `unreachable` after a network or storage failure,
+ * `failed` for a picture that failed for good, and `not_found` when no waiting picture has the id.
+ */
+export type ToolImageMissReason = "busy" | "timeout" | "unreachable" | "failed" | "not_found";
+
+/** A lookup that found no copy: why, and whether a later request may find one. */
+export interface ToolImageMiss {
+  readonly kind: "miss";
+  readonly reason: ToolImageMissReason;
+  readonly retryable: boolean;
+}

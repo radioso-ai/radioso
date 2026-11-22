@@ -62,7 +62,7 @@ type TestChatClassifier = Pick<ConversationClassificationService, "readDefinitio
  * How long a Test Chat turn waits for its classification once the answer is out. A run past it
  * is aborted, and the side keeps the values it held (`skipped_timeout`).
  */
-export const TEST_CHAT_CLASSIFICATION_TIMEOUT_MS = 5_000;
+const TEST_CHAT_CLASSIFICATION_TIMEOUT_MS = 5_000;
 
 /** The most withheld ids a side carries; the classifier reads only the latest few messages. */
 const MAX_WITHHELD_MESSAGE_IDS = 100;

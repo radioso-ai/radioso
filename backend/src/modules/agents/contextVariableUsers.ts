@@ -3,12 +3,10 @@
  * talk to, or both. A variable's definition is workspace-level and read live, so a change to it
  * reaches every one of these at once.
  */
-export type AgentContextVariableUse = "draft" | "published" | "both";
-
-export interface AgentContextVariableUser {
+interface AgentContextVariableUser {
   readonly agentId: string;
   readonly agentName: string;
-  readonly uses: AgentContextVariableUse;
+  readonly uses: "draft" | "published" | "both";
 }
 
 /** The agents of a workspace whose draft or published release enables a variable, read from their snapshots. */

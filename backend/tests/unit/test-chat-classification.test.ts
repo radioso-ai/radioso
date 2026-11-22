@@ -181,7 +181,7 @@ describe("classifyTestChatTurn", () => {
     };
     const startedAt = Date.now();
 
-    const result = await classifyTestChatTurn(turn({ previous: { values: earlier, withheldMessageIds: [] }, classifier: classifier as never, timeoutMs: 30 }));
+    const result = await classifyTestChatTurn(turn({ previous: { values: earlier, withheldMessageIds: [] }, classifier: classifier, timeoutMs: 30 }));
 
     expect(Date.now() - startedAt).toBeLessThan(1_000);
     expect(signal?.aborted).toBe(true);
@@ -200,7 +200,7 @@ describe("classifyTestChatTurn", () => {
       }),
     };
 
-    const pending = classifyTestChatTurn(turn({ classifier: classifier as never, signal: controller.signal }));
+    const pending = classifyTestChatTurn(turn({ classifier: classifier, signal: controller.signal }));
     await vi.waitFor(() => expect(signal).toBeDefined());
     controller.abort();
 

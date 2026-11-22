@@ -319,7 +319,7 @@ describe("ChatTurnLifecycle attribute classification (#1884)", () => {
       routineReporter: { describe: () => null, sensitiveSlotKeysHeld: () => ["card_number"], sensitiveSlotKeysAwaited: () => [] } as never,
     });
 
-    const committed = persistence.completeAssistantTurn.mock.calls[0]![0];
+    const committed = persistence.completeAssistantTurn.mock.calls[0][0];
     expect(committed.backgroundJobs?.map((job) => job.kind)).toEqual(["conversation.summary_refresh", "context.classification"]);
     expect(committed).toMatchObject({ sensitiveVisitorMessage: { id: "msg_1", sensitiveSlotKeys: ["card_number"] } });
   });

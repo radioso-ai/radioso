@@ -139,7 +139,7 @@ export {
   type PublicationResult,
 } from "./agentRevision.js";
 export { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
-export type { AgentContextVariableUser, AgentContextVariableUsersReader } from "./contextVariableUsers.js";
+export type { AgentContextVariableUsersReader } from "./contextVariableUsers.js";
 export {
   AgentRevisionRuntimeResolver,
   agentNotPublished,

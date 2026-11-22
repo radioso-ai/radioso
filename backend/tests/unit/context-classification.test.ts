@@ -12,12 +12,17 @@ import {
   parseClassificationOutput,
   type ConversationExcerpt,
 } from "../../src/modules/contextClassification/public.js";
+import { CLASSIFICATION_MAX_INPUT_TOKENS, CLASSIFICATION_MAX_OUTPUT_TOKENS } from "../../src/modules/contextClassification/classificationPrompt.js";
 import {
   planConversationWrite,
   type ClassificationTarget,
   type ContextVariable,
+  type ConversationValueWriteOutcome,
   type ConversationValueWriter,
 } from "../../src/modules/context-variables/public.js";
+import { conflict, payloadTooLarge } from "../../src/shared/domain/errors.js";
+import { estimateTextGenerationInputTokens } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const workspaceId = "workspace-1";
 const conversationId = "conversation-1";
@@ -96,6 +101,34 @@ describe("classification prompt and schema", () => {
   });
 });
 
+describe("the classifier's input budget", () => {
+  /** Text at a field's authoring limit, in the costliest characters the budget estimator counts. */
+  const nonLatin = (length: number): string => "請".repeat(length);
+  /** Escaped to `\u003c` in the prompt's JSON: six ASCII characters for one typed. */
+  const escaped = (length: number): string => "<".repeat(length);
+
+  it("holds an agent's authoring maximum, in a non-Latin script or escaped characters, with the longest excerpt", () => {
+    const limits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
+    const variables = Array.from({ length: CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent }, (_, variableIndex) => topic({
+      id: `variable-${variableIndex}`,
+      // A variable's name and description: 120 and 2,000 characters (`contextVariableRoutes.ts`).
+      name: nonLatin(120),
+      description: escaped(2_000),
+      options: Array.from({ length: limits.maxOptions }, (_, optionIndex) => ({
+        key: `k${optionIndex}`.padEnd(limits.maxKeyChars, "x"),
+        label: escaped(limits.maxLabelChars),
+        description: escaped(limits.maxDescriptionChars),
+        archived: false,
+      })),
+    }));
+    const longest = excerpt({ summary: nonLatin(10_000), messages: Array.from({ length: 6 }, () => escaped(1_000)) });
+
+    const estimated = estimateTextGenerationInputTokens({ prompt: buildClassificationPrompt(variables, longest) });
+
+    expect(estimated + CLASSIFICATION_MAX_OUTPUT_TOKENS).toBeLessThanOrEqual(CLASSIFICATION_MAX_INPUT_TOKENS);
+  });
+});
+
 describe("ConversationClassificationService", () => {
   const inMemoryValues = () => {
     const writes: Array<{ variableId: string; data: unknown; ref: string | null }> = [];
@@ -109,8 +142,21 @@ describe("ConversationClassificationService", () => {
     return { writer, writes };
   };
 
-  const serviceFor = (input: { targets: ClassificationTarget[]; excerpt?: ConversationExcerpt | null; completion?: string | Error }) => {
+  const serviceFor = (input: {
+    targets: ClassificationTarget[];
+    excerpt?: ConversationExcerpt | null;
+    completion?: string | Error;
+    /** Overrides a variable's write: an error it throws, or the outcome it reports. */
+    writeOf?: Record<string, Error | ConversationValueWriteOutcome>;
+  }) => {
     const values = inMemoryValues();
+    const write = values.writer.write;
+    values.writer.write = vi.fn(async (call: Parameters<ConversationValueWriter["write"]>[0]) => {
+      const override = input.writeOf?.[call.variable.id];
+      if (override instanceof Error) throw override;
+      return override ?? write(call);
+    });
+    const logger = { warn: vi.fn() };
     const complete = vi.fn(async () => {
       if (input.completion instanceof Error) throw input.completion;
       return { text: input.completion ?? "{}" };
@@ -126,8 +172,9 @@ describe("ConversationClassificationService", () => {
       values: values.writer,
       inference: { create: inferenceCreate },
       metrics,
+      logger,
     });
-    return { service, values, complete, inferenceCreate, metrics };
+    return { service, values, complete, inferenceCreate, metrics, logger };
   };
 
   it("writes the chosen option as the classifier with the prompt version, metered as a rewrite-tier call", async () => {
@@ -218,6 +265,50 @@ describe("ConversationClassificationService", () => {
     const failed = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: new Error("provider down") });
     await expect(failed.service.classifyNow({ workspaceId, conversationId })).rejects.toThrow("provider down");
     expect(failed.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "failed" } }));
+  });
+
+  it("writes every other variable when one write fails, counts and logs the run as failed without a value, and fails the job", async () => {
+    const run = serviceFor({
+      targets: [{ variable: topic(), stored: null, held: false }, { variable: urgency, stored: null, held: false }],
+      completion: JSON.stringify({ attribute_1: "billing", attribute_2: "urgent" }),
+      writeOf: { "variable-topic": conflict("The context variable's type or options changed while the value was written") },
+    });
+
+    await expect(run.service.classifyNow({ workspaceId, conversationId })).rejects.toThrow(/options changed/u);
+
+    expect(run.values.writes).toEqual([{ variableId: "variable-urgency", data: "urgent", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION }]);
+    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "failed" } }));
+    expect(run.logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "context_classification_write_failed", workspaceId, conversationId, variableId: "variable-topic", errorType: "AppError",
+    }), expect.any(String));
+    expect(JSON.stringify(run.logger.warn.mock.calls)).not.toMatch(/billing|urgent/u);
+  });
+
+  it("ends a run whose conversation was erased mid-run as a skip, so the job is not retried", async () => {
+    const run = serviceFor({
+      targets: [{ variable: topic(), stored: null, held: false }, { variable: urgency, stored: null, held: false }],
+      completion: JSON.stringify({ attribute_1: "billing", attribute_2: "urgent" }),
+      writeOf: { "variable-topic": "gone" },
+    });
+
+    await expect(run.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_gone" });
+    expect(run.values.writes).toEqual([]);
+    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "skipped_gone" } }));
+    const handler = contextClassificationHandler(run.service);
+    await expect(handler.run({ workspaceId, conversationId }, { signal: new AbortController().signal } as never)).resolves.toEqual({ skipped: "skipped_gone" });
+  });
+
+  it("records an input over the model's budget as its own outcome and warns, without failing the job", async () => {
+    const run = serviceFor({
+      targets: [{ variable: topic(), stored: null, held: false }],
+      completion: payloadTooLarge("LLM prompt exceeds maximum input token budget", { estimatedInputTokens: 400_000, maxInputTokens: CLASSIFICATION_MAX_INPUT_TOKENS }),
+    });
+
+    await expect(run.service.classifyNow({ workspaceId, conversationId })).resolves.toMatchObject({ outcome: "skipped_over_budget", decisions: [] });
+    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "after_turn", outcome: "skipped_over_budget" } }));
+    expect(run.logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "context_classification_over_budget", workspaceId, conversationId, estimatedInputTokens: 400_000, maxInputTokens: CLASSIFICATION_MAX_INPUT_TOKENS,
+    }), expect.any(String));
   });
 
   it("classifies a transcript the caller holds, against the values it holds, for Test Chat", async () => {

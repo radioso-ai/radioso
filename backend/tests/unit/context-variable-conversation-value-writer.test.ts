@@ -6,6 +6,7 @@ import {
   planConversationWrite,
 } from "../../src/modules/context-variables/conversationValueWriter.js";
 import type { ContextValueWriter, ContextVariable } from "../../src/modules/context-variables/domain.js";
+import { conflict, notFound } from "../../src/shared/domain/errors.js";
 
 const conversationId = "00000000-0000-4000-8000-000000000004";
 const classifier: ContextValueWriter = { kind: "classifier", ref: "context-classification/1" };
@@ -81,6 +82,16 @@ describe("ConversationValueWriterService", () => {
 
     await expect(writer.write({ conversationId, variable: topic(), stored: null, data: "billing", writtenBy: classifier })).resolves.toBe("kept");
     await expect(writer.write({ conversationId, variable: topic(), stored: stored("billing", "classifier"), data: null, writtenBy: classifier })).resolves.toBe("kept");
+  });
+
+  it("reports a write to a conversation erased since the run read it as gone, and counts a failed one before throwing it", async () => {
+    const erased = writerWith({ upsertValue: vi.fn(async () => { throw notFound("Conversation not found"); }) });
+    await expect(erased.writer.write({ conversationId, variable: topic(), stored: null, data: "billing", writtenBy: classifier })).resolves.toBe("gone");
+    expect(erased.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_VALUE_WRITES_TOTAL, expect.objectContaining({ labels: { writer: "classifier", outcome: "gone" } }));
+
+    const changed = writerWith({ upsertValue: vi.fn(async () => { throw conflict("The context variable's type or options changed while the value was written"); }) });
+    await expect(changed.writer.write({ conversationId, variable: topic(), stored: null, data: "billing", writtenBy: classifier })).rejects.toThrow(/options changed/u);
+    expect(changed.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_VALUE_WRITES_TOTAL, expect.objectContaining({ labels: { writer: "classifier", outcome: "failed" } }));
   });
 
   it("clears only rows the writer may replace, and writes nothing for an unchanged value", async () => {

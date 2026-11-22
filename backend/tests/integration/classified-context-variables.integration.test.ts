@@ -142,5 +142,9 @@ describeIntegration("classified attributes (Postgres)", () => {
     await writer.write({ conversationId, variable: topic, stored: null, data: "billing", writtenBy: classifier });
     await expect(writer.write({ conversationId, variable: topic, stored: { data: "billing", writtenBy: classifier }, data: null, writtenBy: classifier })).resolves.toBe("cleared");
     await expect(repository.readValue(topic.id, scope)).resolves.toBeNull();
+
+    // A conversation erased while a run held its read is gone, not a failure the job would retry.
+    await database.query("DELETE FROM conversations WHERE id = $1", [conversationId]);
+    await expect(writer.write({ conversationId, variable: topic, stored: null, data: "billing", writtenBy: classifier })).resolves.toBe("gone");
   });
 });

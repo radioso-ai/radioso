@@ -9,6 +9,7 @@ import {
   type ConversationValueWriter,
   type StoredConversationValue,
 } from "../context-variables/public.js";
+import { AppError } from "../../shared/domain/errors.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -34,8 +35,10 @@ type ClassificationTrigger = "after_turn" | "test_chat";
 
 /**
  * How a run ended. `skipped_override`: another writer holds every variable somewhere on the
- * conversation's ladder, so no call was made. `skipped_sensitive`: every recent visitor message was withheld. `skipped_empty`: no
- * variable to fill or nothing to read. `no_option`: the model found no option for any variable.
+ * conversation's ladder, so no call was made. `skipped_sensitive`: every recent visitor message was
+ * withheld. `skipped_empty`: no variable to fill or nothing to read. `skipped_gone`: the
+ * conversation was erased. `skipped_over_budget`: the prompt was over the model's input budget.
+ * `no_option`: the model found no option for any variable. A `skipped_` run is not retried.
  */
 export type ClassificationRunOutcome =
   | "written"
@@ -44,6 +47,8 @@ export type ClassificationRunOutcome =
   | "skipped_sensitive"
   | "skipped_override"
   | "skipped_empty"
+  | "skipped_gone"
+  | "skipped_over_budget"
   | "invalid"
   | "failed";
 
@@ -76,6 +81,11 @@ interface ClassificationRun {
 }
 
 const skipped = (outcome: ClassificationRunOutcome): ClassificationRunResult => ({ outcome, decisions: [] });
+
+const errorType = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** A variable the classifier may fill now: no writer it may not replace holds a value on the conversation's ladder. */
 const isOpen = (target: ClassificationTarget): boolean => !target.held;
@@ -114,7 +124,7 @@ export class ConversationClassificationService implements ConversationClassifier
 
   async classifyNow(input: { workspaceId: string; conversationId: string; signal?: AbortSignal }): Promise<ClassificationRunResult> {
     const read = await this.deps.targets.readConversationTargets(input);
-    if (!read) return this.count("after_turn", skipped("skipped_empty"));
+    if (!read) return this.count("after_turn", skipped("skipped_gone"));
     return this.run({
       ...input,
       agentId: read.agentId,
@@ -186,48 +196,83 @@ export class ConversationClassificationService implements ConversationClassifier
 
   private async classify(run: ClassificationRun): Promise<ClassificationRunResult> {
     const fillable = run.targets.filter(isFillable);
-    const cleared = await this.writeEach(run, fillable.filter(hidesHeldValue).map((target) => ({ target, value: null })));
     const open = fillable.filter(isOpen);
-    if (open.length === 0) {
-      return this.count(run.trigger, { outcome: fillable.length === 0 ? "skipped_empty" : "skipped_override", decisions: cleared });
-    }
+    const hiding = fillable.filter(hidesHeldValue).map((target) => ({ target, value: null }));
+    if (open.length === 0) return this.write(run, hiding, () => (fillable.length === 0 ? "skipped_empty" : "skipped_override"));
     const excerpt = await run.readExcerpt();
     if (!excerpt || (!excerpt.summary && excerpt.messages.length === 0)) {
-      return this.count(run.trigger, { outcome: excerpt && excerpt.withheldCount > 0 ? "skipped_sensitive" : "skipped_empty", decisions: cleared });
+      return this.write(run, hiding, () => (excerpt && excerpt.withheldCount > 0 ? "skipped_sensitive" : "skipped_empty"));
     }
     let chosen: Array<string | null>;
     try {
       chosen = await this.callModel(run, open, excerpt);
     } catch (error) {
-      const outcome = error instanceof ClassificationOutputError ? "invalid" : "failed";
-      this.count(run.trigger, skipped(outcome));
-      this.deps.logger?.warn({
-        event: "context_classification_failed",
-        workspaceId: run.workspaceId,
-        conversationId: run.conversationId,
-        trigger: run.trigger,
-        outcome,
-        errorType: error instanceof Error ? error.name : typeof error,
-      }, "Context classification run failed");
-      throw error;
+      return this.failedCall(run, error);
     }
-    const decisions = [...cleared, ...await this.writeEach(run, open.map((target, index) => ({ target, value: chosen[index] ?? null })))];
-    return this.count(run.trigger, { outcome: settledOutcome(decisions), decisions });
+    return this.write(run, [...hiding, ...open.map((target, index) => ({ target, value: chosen[index] ?? null }))], settledOutcome);
   }
 
-  private async writeEach(run: ClassificationRun, answers: ReadonlyArray<{ target: ClassificationTarget; value: string | null }>): Promise<ClassificationDecision[]> {
+  /**
+   * Writes each answer through the writer. A write that throws is logged and counted, and the
+   * others still go; the run then fails, so the job retries. A conversation erased mid-run ends it
+   * as `skipped_gone`, which is not retried.
+   */
+  private async write(
+    run: ClassificationRun,
+    answers: ReadonlyArray<{ target: ClassificationTarget; value: string | null }>,
+    outcomeOf: (decisions: readonly ClassificationDecision[]) => ClassificationRunOutcome,
+  ): Promise<ClassificationRunResult> {
     const decisions: ClassificationDecision[] = [];
+    const failures: unknown[] = [];
     for (const { target, value } of answers) {
-      const write = await run.values.write({
-        conversationId: run.conversationId,
-        variable: target.variable,
-        stored: target.stored,
-        data: value,
-        writtenBy: { kind: "classifier", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION },
-      });
+      let write: ConversationValueWriteOutcome;
+      try {
+        write = await run.values.write({
+          conversationId: run.conversationId,
+          variable: target.variable,
+          stored: target.stored,
+          data: value,
+          writtenBy: { kind: "classifier", ref: CONTEXT_CLASSIFICATION_PROMPT_VERSION },
+        });
+      } catch (error) {
+        failures.push(error);
+        this.deps.logger?.warn({
+          event: "context_classification_write_failed",
+          workspaceId: run.workspaceId,
+          conversationId: run.conversationId,
+          trigger: run.trigger,
+          variableId: target.variable.id,
+          errorType: errorType(error),
+        }, "Context classification could not write a value");
+        continue;
+      }
+      if (write === "gone") return this.count(run.trigger, { outcome: "skipped_gone", decisions });
       decisions.push({ variableId: target.variable.id, value, write });
     }
-    return decisions;
+    if (failures.length > 0) {
+      this.count(run.trigger, { outcome: "failed", decisions });
+      throw failures[0];
+    }
+    return this.count(run.trigger, { outcome: outcomeOf(decisions), decisions });
+  }
+
+  /** A prompt over the input budget is recorded and skipped, since a retry would be over it too; any other failure fails the job. */
+  private failedCall(run: ClassificationRun, error: unknown): ClassificationRunResult {
+    const base = { workspaceId: run.workspaceId, conversationId: run.conversationId, trigger: run.trigger };
+    if (error instanceof AppError && error.code === "payload_too_large") {
+      const details = isRecord(error.details) ? error.details : {};
+      this.deps.logger?.warn({
+        event: "context_classification_over_budget",
+        ...base,
+        estimatedInputTokens: details.estimatedInputTokens,
+        maxInputTokens: details.maxInputTokens,
+      }, "Context classification prompt exceeds its input budget");
+      return this.count(run.trigger, skipped("skipped_over_budget"));
+    }
+    const outcome = error instanceof ClassificationOutputError ? "invalid" : "failed";
+    this.count(run.trigger, skipped(outcome));
+    this.deps.logger?.warn({ event: "context_classification_failed", ...base, outcome, errorType: errorType(error) }, "Context classification run failed");
+    throw error;
   }
 
   private async callModel(run: ClassificationRun, targets: readonly ClassificationTarget[], excerpt: ConversationExcerpt): Promise<Array<string | null>> {

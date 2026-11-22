@@ -14,8 +14,15 @@ export const CLASSIFICATION_EXCERPT_MAX_MESSAGES = 6;
 export const CLASSIFICATION_EXCERPT_MAX_MESSAGE_CHARS = 1_000;
 const CLASSIFICATION_SUMMARY_MAX_CHARS = 4_000;
 
-/** Eight variables of fifty described options each fit, with room for the excerpt. */
-export const CLASSIFICATION_MAX_INPUT_TOKENS = 48_000;
+/**
+ * The input budget holds the largest prompt authoring allows: eight attributes of fifty options,
+ * every name, label and description at its length limit, with the longest excerpt. The model
+ * pipeline estimates the budget per character, one token for a non-Latin code point and a quarter
+ * for an ASCII one, so the worst case is text the prompt's JSON escapes (`<` becomes `\u003c`, six
+ * ASCII characters): about 305,000 tokens. CJK at every limit is about 210,000, ASCII about 67,000;
+ * a typical agent sends a few thousand. `context-classification.test.ts` builds the worst case.
+ */
+export const CLASSIFICATION_MAX_INPUT_TOKENS = 320_000;
 export const CLASSIFICATION_MAX_OUTPUT_TOKENS = 400;
 
 /** The variable's options the classifier may pick; an archived option is never offered. */

@@ -67,9 +67,16 @@ Composition builds the service and registers `contextClassificationHandler` in
    to be a schema property. Each field is an enum of the active keys or null.
 4. A key outside the schema fails the run (`invalid`); a failed call fails it
    (`failed`). Either fails the job, which retries and dead-letters under the
-   shared runtime.
+   shared runtime. The input budget (`CLASSIFICATION_MAX_INPUT_TOKENS`) holds the
+   largest prompt authoring allows, estimated the way the model pipeline does; a
+   prompt over it anyway is logged (`context_classification_over_budget`) and
+   ends `skipped_over_budget`, without a retry.
 5. Each answer goes through the writer, with `writtenBy: classifier` and the
-   prompt version (`CONTEXT_CLASSIFICATION_PROMPT_VERSION`) as its reference.
+   prompt version (`CONTEXT_CLASSIFICATION_PROMPT_VERSION`) as its reference. A
+   write that throws (an option archived mid-run, a database error) is logged
+   with its variable id and counted; the other answers are still written, and the
+   run then fails so the job retries. A conversation erased mid-run ends the run
+   as `skipped_gone`, which is not retried.
 
 The job (`context.classification`) is keyed by conversation with
 `onDuplicateKey: "rerun"`: a burst of turns folds into one waiting run, and a
@@ -79,12 +86,14 @@ turn that lands mid-run causes one more. A value is visible from the next turn.
 
 - `radioso_context_classification_runs_total{trigger, outcome}`: trigger
   `after_turn | test_chat`; outcome `written | unchanged | no_option |
-  skipped_sensitive | skipped_override | skipped_empty | invalid | failed`.
+  skipped_sensitive | skipped_override | skipped_empty | skipped_gone |
+  skipped_over_budget | invalid | failed`.
 - `radioso_context_value_writes_total{writer, outcome}`, counted by the
   context-variables writer.
 - One span per run, `context_classification.run`, with the trigger, the recipe
   version, the outcome and counts of variables, writes, clears and kept values.
-- A failed run logs its outcome and error type.
+- A failed run logs its outcome and error type; a failed write logs its variable
+  id and error type (`context_classification_write_failed`).
 
 None of them carries a value, an option key, a prompt or visitor text.
 

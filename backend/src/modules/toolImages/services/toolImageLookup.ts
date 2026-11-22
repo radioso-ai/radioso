@@ -31,7 +31,7 @@ const missReasonOf = (result: ToolImageCaptureResult): ToolImageMissReason => {
 const RETRYABLE_MISSES: ReadonlySet<ToolImageMissReason> = new Set(["busy", "timeout", "unreachable"]);
 
 /** What a lookup found: the stored copy at the asked width, or why there is none. */
-export type ToolImageFindResult = { readonly kind: "found"; readonly object: ToolImageRendition } | ToolImageMiss;
+type ToolImageFindResult = { readonly kind: "found"; readonly object: ToolImageRendition } | ToolImageMiss;
 
 /**
  * Finds the stored copy the image route serves for a tool image, and copies a picture that is

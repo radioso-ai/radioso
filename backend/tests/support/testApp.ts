@@ -2869,6 +2869,11 @@ export const createTestDependencies = (overrides: {
     notificationDeliveries,
     eventSubscriptions: workspaceEventSubscriptions,
     contextVariables: contextVariableService,
+    contextVariableUsers: {
+      listContextVariableUsers: async () => {
+        throw new Error("contextVariableUsers reads agent snapshots in Postgres; the test app does not wire it");
+      },
+    },
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);

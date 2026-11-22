@@ -9,13 +9,14 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
-import { contextVariableDefinitionInputShape, contextVariableEnablementInputSchema, type CopilotContextVariablesPort } from "./contextVariables.js";
+import type { AgentContextVariableUsersReader } from "../../agents/public.js";
+import { contextVariableDefinitionInputShape, contextVariableEnablementInputSchema } from "./contextVariables.js";
 import { persistReviewedPreparation, recoverReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
-import { proposalAdapterFor, type CopilotAgentLookupPort } from "./shared.js";
+import { proposalAdapterFor } from "./shared.js";
 
 const NAME = "prepare_context_variable";
 const KINDS = ["create", "edit", "set_enablement"] as const;
-const DESCRIPTION = "Prepare a context variable (attribute) change for digest-bound review, applied with execute_reviewed_proposal. kind create: a new definition, optionally with this agent's enablement. kind edit: a definition, by variableId; options restate every existing key (archive an option instead of removing it), and a type cannot change once the attribute has values. kind set_enablement: one agent's source, surfacing and enabled, by variableId. A definition create or edit applies at once to every agent that uses it, so its execution waits for the operator's signed-in approval of the review; review.definition.usedBy lists those agents. An enablement goes to the agent's draft and reaches customers after prepare_agent_publication. Source classified has the AI pick one of a Choice (enum) attribute's options from the conversation after each reply, and is refused for an attribute that is not a Choice, is Private (sensitive) or treated as proof (signed), and past 8 per agent. Read current definitions and enablements with context_variables first.";
+const DESCRIPTION = "Prepare a context variable (attribute) change for digest-bound review, applied with execute_reviewed_proposal. kind create: a new definition, optionally with this agent's enablement. kind edit: a definition, by variableId; options restate every existing key (archive an option instead of removing it), and a type cannot change once the attribute has values. kind set_enablement: one agent's source, surfacing and enabled, by variableId. A definition create or edit applies at once to every agent that uses it, so its execution waits for the operator's signed-in approval of the review; review.definition.usedBy lists those agents, each marked by whether its draft, its published release or both use it. An enablement goes to the agent's draft and reaches customers after prepare_agent_publication. Source classified has the AI pick one of a Choice (enum) attribute's options from the conversation after each reply, and is refused for an attribute that is not a Choice, is Private (sensitive) or treated as proof (signed), and past 8 per agent. Read current definitions and enablements with context_variables first.";
 
 const DEFINITION_FIELDS = ["name", "description", "valueType", "options", "trustTier", "sensitivity", "defaultSurfacing"] as const;
 
@@ -57,7 +58,7 @@ const reviewSchema = z.object({
   /** A definition is workspace-level: a create or edit is live at once for every agent that uses it. */
   definition: z.object({
     before: definitionView.nullable(), after: definitionView, lifecycle: z.literal("live"),
-    usedBy: z.array(z.object({ agentId: z.string().uuid(), agentName: z.string().max(200) }).strict()).max(USED_BY_LIMIT),
+    usedBy: z.array(z.object({ agentId: z.string().uuid(), agentName: z.string().max(200), uses: z.enum(["draft", "published", "both"]) }).strict()).max(USED_BY_LIMIT),
     usedByTruncated: z.boolean(),
   }).strict().nullable(),
   /** One agent's use of it goes to that agent's draft. */
@@ -77,21 +78,15 @@ const effectOf = (writesDefinition: boolean): ReviewedChangeEffect =>
   ({ exposure: writesDefinition ? "live" : "draft", reversibility: "reversible", metered: false });
 
 export interface ContextVariableReviewedPreparationDependencies extends ReviewedPreparationDependencies {
-  readonly agentService: CopilotAgentLookupPort;
-  readonly contextVariables: Pick<CopilotContextVariablesPort, "listByAgent">;
+  /** The agents whose draft or published release enables a variable: a definition edit is live for both. */
+  readonly contextVariableUsers: AgentContextVariableUsersReader;
 }
 
 export const createContextVariableReviewedPreparationTool = (deps: ContextVariableReviewedPreparationDependencies): CopilotToolDescriptor<z.input<typeof inputSchema>, z.infer<typeof outputSchema>> => {
-  /** The agents whose draft uses the variable, bounded, read through the same port `context_variables` reads. */
   const usedBy = async (workspaceId: string, variableId: string | null) => {
-    if (!variableId) return { agents: [], truncated: false };
-    const agents = await deps.agentService.listExisting(workspaceId);
-    const users = [];
-    for (const agent of agents) {
-      const enablements = await deps.contextVariables.listByAgent(workspaceId, agent.id);
-      if (enablements.some((enablement) => enablement.variableId === variableId)) users.push({ agentId: agent.id, agentName: agent.name.slice(0, 200) });
-    }
-    return { agents: users.slice(0, USED_BY_LIMIT), truncated: users.length > USED_BY_LIMIT };
+    if (!variableId) return { users: [], truncated: false };
+    const read = await deps.contextVariableUsers.listContextVariableUsers({ workspaceId, variableId, limit: USED_BY_LIMIT });
+    return { users: read.users.map((user) => ({ ...user, agentName: user.agentName.slice(0, 200) })), truncated: read.truncated };
   };
 
   return {
@@ -125,7 +120,7 @@ export const createContextVariableReviewedPreparationTool = (deps: ContextVariab
       const review = reviewSchema.parse({
         kind,
         target: { agentId, variableId: variableId ?? null, name: payload.name },
-        definition: writesDefinition ? { before: preview.current.definition, after: payload.definition, lifecycle: "live", usedBy: users!.agents, usedByTruncated: users!.truncated } : null,
+        definition: writesDefinition ? { before: preview.current.definition, after: payload.definition, lifecycle: "live", usedBy: users!.users, usedByTruncated: users!.truncated } : null,
         enablement: payload.enablement !== null ? { before: preview.current.enablement, after: payload.enablement, lifecycle: "agent_draft" } : null,
         publicationRequired: payload.enablement !== null,
       });

@@ -528,6 +528,7 @@ callerKind: "human" as const,
     notificationDeliveries: { list: unusedPort("notificationDeliveries.list") },
     eventSubscriptions: { list: unusedPort("eventSubscriptions.list") },
     contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
+    contextVariableUsers: { listContextVariableUsers: unusedPort("contextVariableUsers.listContextVariableUsers") },
     productDocs: new ProductDocsService(),
     emailChannel: null,
     workspaceSettings: {

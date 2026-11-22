@@ -61,7 +61,7 @@ An MCP client can set up a Choice attribute the AI fills from the conversation, 
 4. `send_test_chat_message` on the saved draft, then `test_chat_turn_trace` for a turn. Its `turnTrace.attributes` lists each classified attribute's value after the turn (an option key, or `null`), its label, and `writtenBy`: `classifier` for the AI, `operator` for a Test Chat sample, which the AI never replaces.
 5. `prepare_agent_publication`, approve its review, then `execute_reviewed_proposal` to publish. Customer conversations are then classified by a background job after each committed turn; their values are not readable over MCP.
 
-`kind: "edit"` changes an existing definition the same way as a create, with `definition.usedBy` listing the agents it reaches; a type change on an attribute that has values is refused. Ray in the dashboard drafts the same changes with `propose_context_variable`, which a person applies from its card. Test Chat classifies in its own runner, beside the answer, because a Test Chat side is not a stored conversation.
+`kind: "edit"` changes an existing definition the same way as a create, with `definition.usedBy` listing the agents it reaches, each with `uses`: `draft`, `published` or `both`, since a definition is read live by an agent's draft and its published release alike; a type change on an attribute that has values is refused. Ray in the dashboard drafts the same changes with `propose_context_variable`, which a person applies from its card. Test Chat classifies in its own runner, once the answer is out, because a Test Chat side is not a stored conversation.
 
 ## Confirmation and approval## Confirmation and approval
 

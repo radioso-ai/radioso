@@ -44,10 +44,18 @@ const fixture = (seed: ContextVariable[] = [], seedEnablements: AgentContextVari
     agentSkillsReader: { list: async () => [] },
   });
   const proposalRepository = { createProposal: vi.fn(async (input: Record<string, unknown>) => ({ id: randomUUID(), ...input })) };
+  const listContextVariableUsers = vi.fn(async (input: { variableId: string }) => ({
+    users: [
+      { agentId, agentName: "Support", uses: "both" as const },
+      { agentId: otherAgentId, agentName: "Sales", uses: "published" as const },
+    ].filter(() => enablements.some((enablement) => enablement.variableId === input.variableId)),
+    truncated: false,
+  }));
   const deps = {
     proposalRepository, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() },
     proposalAdapters: [createContextVariableCopilotProposalAdapter({ contextVariables })],
-    agentService: { listExisting: async () => [{ id: agentId, name: "Support", isDefault: true, assistantBootstrapActive: false }, { id: otherAgentId, name: "Sales", isDefault: false, assistantBootstrapActive: false }] },
+    // The agents module answers who uses a variable, from each agent's draft and published release.
+    contextVariableUsers: { listContextVariableUsers },
     contextVariables,
     now: () => new Date("2026-11-22T10:00:00.000Z"), appBaseUrl: "https://app.example",
   };
@@ -56,7 +64,7 @@ const fixture = (seed: ContextVariable[] = [], seedEnablements: AgentContextVari
     review: Record<string, unknown>;
     confirmation: { requirement: string; effect: { exposure: string }; approvalUrl?: string };
   }>;
-  return { invoke, proposalRepository, repository };
+  return { invoke, proposalRepository, repository, listContextVariableUsers };
 };
 
 const enablementOf = (variableId: string, overrides: Partial<AgentContextVariableEnablementRecord & AgentContextVariableEnablement> = {}): AgentContextVariableEnablement => ({
@@ -107,11 +115,14 @@ describe("reviewed context-variable preparation", () => {
     expect(output.confirmation.requirement).toBe("signed_in_approval");
   });
 
-  it("prepares an edit with what it was before and every agent that uses it", async () => {
+  it("prepares an edit with what it was before and every agent that uses it, by its draft, its published release or both", async () => {
     const topic = choice();
-    const { invoke } = fixture([topic], [enablementOf(topic.id), enablementOf(topic.id, { agentId: otherAgentId })]);
+    const { invoke, listContextVariableUsers } = fixture([topic], [enablementOf(topic.id)]);
 
     const output = await invoke({ kind: "edit", agentId, variableId: topic.id, description: "The visitor's reason for writing." });
+
+    expect(listContextVariableUsers).toHaveBeenCalledOnce();
+    expect(listContextVariableUsers).toHaveBeenCalledWith({ workspaceId, variableId: topic.id, limit: 25 });
 
     expect(output.review).toMatchObject({
       kind: "edit",
@@ -120,7 +131,7 @@ describe("reviewed context-variable preparation", () => {
         before: { description: "What the visitor needs." },
         after: { description: "The visitor's reason for writing." },
         lifecycle: "live",
-        usedBy: [{ agentId, agentName: "Support" }, { agentId: otherAgentId, agentName: "Sales" }],
+        usedBy: [{ agentId, agentName: "Support", uses: "both" }, { agentId: otherAgentId, agentName: "Sales", uses: "published" }],
       },
       enablement: null,
       publicationRequired: false,

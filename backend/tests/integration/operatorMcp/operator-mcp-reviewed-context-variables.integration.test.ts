@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createReviewedReceiptSettlement } from "../../../src/app/composition/copilotReviewedReceiptSettlement.js";
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../../src/db/repositories/agentRepository.js";
+import { AgentRevisionRepository } from "../../../src/db/repositories/agentRevisionRepository.js";
 import { ContextVariableRepository } from "../../../src/db/repositories/contextVariableRepository.js";
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { WorkspaceRepository } from "../../../src/db/repositories/workspaceRepository.js";
@@ -87,8 +88,7 @@ describeIntegration("reviewed context-variable changes, prepared, approved and e
       proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [adapter],
       auditService: { record: vi.fn() },
-      agentService: { listExisting: async () => [{ id: fixture.agent.id, name: fixture.agent.name, isDefault: true, assistantBootstrapActive: false }] },
-      contextVariables,
+      contextVariableUsers: new AgentRevisionRepository(database.kysely),
       appBaseUrl: "https://app.example",
     }).createTool({
       workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId, surface: "mcp",

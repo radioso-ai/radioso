@@ -1039,6 +1039,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationDeliveries,
     eventSubscriptions: workspaceEventDelivery.subscriptions,
     contextVariables: contextVariableService,
+    contextVariableUsers: repositories.agentRevisionRepository,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSetupState: workspace.workspaceSummaryService,

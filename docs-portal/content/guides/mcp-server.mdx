@@ -177,7 +177,7 @@ The preparation fails with the reason when the AI can't fill the attribute: it i
 
 </Steps>
 
-`kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`. A type change on an attribute that already has values is refused. On a customer conversation the AI's value is stored in the `conversation` scope with `writtenBy.kind` `classifier`. Ray does not read a customer conversation's attribute values, because they belong to a visitor; Test Chat is your own test, so its trace shows them.
+`kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`, each with `uses` set to `draft`, `published` or `both`, because customers on the published release see the change too. A type change on an attribute that already has values is refused. On a customer conversation the AI's value is stored in the `conversation` scope with `writtenBy.kind` `classifier`. Ray does not read a customer conversation's attribute values, because they belong to a visitor; Test Chat is your own test, so its trace shows them.
 
 ## Radioso documentation tools## Radioso documentation tools
 

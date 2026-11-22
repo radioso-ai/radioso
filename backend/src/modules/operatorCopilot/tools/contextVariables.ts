@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
@@ -42,7 +43,6 @@ const readerOutputSchema = z.object({
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 
 const optionFields = contextVariableOptionInputSchema.shape;
 const optionInputSchema = contextVariableOptionInputSchema.extend({
@@ -52,10 +52,8 @@ const optionInputSchema = contextVariableOptionInputSchema.extend({
   archived: optionFields.archived.describe("Archive an option instead of removing it."),
 });
 
-const proposalInputSchema = z.object({
-  agentId: idSchema.optional(),
-  agentName: entityNameSchema.optional(),
-  variableId: idSchema.optional(),
+/** The definition fields a proposal or a reviewed preparation restates; every one optional. */
+export const contextVariableDefinitionInputShape = {
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
   valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional(),
@@ -64,14 +62,25 @@ const proposalInputSchema = z.object({
   trustTier: z.enum(contextVariableTrustTiers).optional(),
   sensitivity: z.enum(contextVariableSensitivities).optional(),
   defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
-  enablement: z.object({
-    source: z.enum(contextVariableSources),
-    resolverSkillId: idSchema.nullable().optional(),
-    maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
-    resolverTimeoutMs: z.number().int().positive().nullable().optional(),
-    surfacing: z.enum(contextVariableSurfacings),
-    enabled: z.boolean().optional(),
-  }).strict().optional(),
+};
+
+/** One agent's use of a variable, as a proposal or a reviewed preparation states it. */
+export const contextVariableEnablementInputSchema = z.object({
+  source: z.enum(CONTEXT_VARIABLE_SOURCES)
+    .describe("pushed: the host's API sets the value. resolver: a skill fetches it. classified: the AI picks one of a Choice (enum) attribute's options from the conversation after each reply; never a Private (sensitive) or proof (signed) attribute, at most 8 per agent. It never replaces a value the API or a teammate set for this visitor or conversation (conversation, session or customer scope); an agent-wide or workspace-wide value is a default until the AI picks one. Use surfacing on_reference for classified."),
+  resolverSkillId: idSchema.nullable().optional(),
+  maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
+  resolverTimeoutMs: z.number().int().positive().nullable().optional(),
+  surfacing: z.enum(contextVariableSurfacings),
+  enabled: z.boolean().optional(),
+}).strict();
+
+const proposalInputSchema = z.object({
+  agentId: idSchema.optional(),
+  agentName: entityNameSchema.optional(),
+  variableId: idSchema.optional(),
+  ...contextVariableDefinitionInputShape,
+  enablement: contextVariableEnablementInputSchema.optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
   evidenceIds: citedEvidenceSchema,
 }).strict();
@@ -150,7 +159,7 @@ const describeContextVariableAgent = (
 export const createContextVariablesCopilotTools = (
   deps: ContextVariablesCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source, resolver skill, and surfacing. A Choice attribute's options are listed in full, every key a proposal must restate. Never reads a variable's per-visitor runtime value.";
+  const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source (classified: the AI fills it from the conversation), resolver skill, and surfacing. A Choice attribute's options are listed in full, every key a proposal must restate. Never reads a variable's per-visitor runtime value; read a Test Chat turn's attribute values with test_chat_turn_trace.";
   return [
     {
       name: "context_variables", shape: "read", verificationCost: () => 0, uiLabel: "Reading context variables", contributingModule: "contextVariables", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
@@ -197,7 +206,7 @@ const contextVariableProposalPayloadSchema = z.object({
     defaultSurfacing: z.enum(contextVariableSurfacings),
   }).strict().nullable(),
   enablement: z.object({
-    source: z.enum(contextVariableSources),
+    source: z.enum(CONTEXT_VARIABLE_SOURCES),
     resolverSkillId: z.string().uuid().nullable(),
     maxAgeSeconds: z.number().int().nonnegative().nullable(),
     resolverTimeoutMs: z.number().int().positive().nullable(),

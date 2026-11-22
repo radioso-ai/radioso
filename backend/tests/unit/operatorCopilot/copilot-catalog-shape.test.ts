@@ -493,6 +493,7 @@ describe("reviewed operations stay MCP-only", () => {
       "execute_reviewed_proposal",
       "prepare_agent_publication",
       "prepare_agent_settings",
+      "prepare_context_variable",
       "prepare_directive",
       "prepare_document_import",
       "prepare_document_removal",

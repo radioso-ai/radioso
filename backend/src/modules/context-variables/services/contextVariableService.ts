@@ -1,6 +1,7 @@
 import type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableDefinitionWrite,
@@ -8,7 +9,16 @@ import type {
   ContextVariableUpdateRecord,
 } from "../repository.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
-import { RESERVED_CONTEXT_VARIABLE_PREFIX, isReservedContextVariableName, typeChangeWithValuesRefused } from "../domain.js";
+import {
+  RESERVED_CONTEXT_VARIABLE_PREFIX,
+  classificationRefusal,
+  isClassifiedEnablement,
+  isReservedContextVariableName,
+  typeChangeWithValuesRefused,
+  type ClassificationFitRefusal,
+  type ClassificationRefusal,
+} from "../domain.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
   validateOptions,
   validateValue,
@@ -18,6 +28,7 @@ import {
 import type {
   AgentContextVariableEnablement,
   ContextValueWriter,
+  ContextVariableSource,
   ContextVariable,
   ContextVariableOption,
   ContextVariableScope,
@@ -78,15 +89,18 @@ export class ContextVariableService {
 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
     this.assertNameIsNotReserved(input.name);
-    if (input.valueType === undefined && input.options === undefined) {
+    const typed = input.valueType !== undefined || input.options !== undefined;
+    const changesClassifiability = input.valueType !== undefined || input.sensitivity !== undefined || input.trustTier !== undefined;
+    if (!typed && !changesClassifiability) {
       return this.repository.update(workspaceId, id, input);
     }
     const current = await this.repository.get(workspaceId, id);
     if (!current) return null;
-    return this.repository.update(workspaceId, id, {
-      ...input,
-      ...await this.typedDefinitionAfterEdit(current, input.valueType, input.options),
-    });
+    const definition = typed ? await this.typedDefinitionAfterEdit(current, input.valueType, input.options) : {};
+    if (changesClassifiability) {
+      await this.assertDefinitionKeepsClassification(current, { ...current, ...input }, null);
+    }
+    return this.repository.update(workspaceId, id, { ...input, ...definition });
   }
 
   /**
@@ -183,7 +197,7 @@ export class ContextVariableService {
     return this.repository.deleteValue(variableId, scope);
   }
 
-  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+  async applyProposal(input: ApplyContextVariableProposalInput, options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> {
     // A proposal with a null `variableId` inserts a brand-new variable, so this is a third write
     // path and not a variant of `update`. A Ray-proposed `radioso_`-prefixed name would otherwise be
     // created and then permanently shadowed by the reserved key, leaving a variable that never reads.
@@ -197,9 +211,13 @@ export class ContextVariableService {
         throw conflict("Context variable was updated by another writer; reload before saving again");
       }
       await this.assertDefinitionTypeFits(current, input.definition);
+      if (current) {
+        await this.assertDefinitionKeepsClassification(current, input.definition, { agentId: input.agentId, source: input.enablement?.source ?? null });
+      }
     }
     if (input.enablement) {
       assertEnablementIsWellFormed(input.enablement);
+      await this.assertClassificationFits(input.workspaceId, input.agentId, input.variableId, input.enablement, input.definition ?? current);
       await this.assertResolverSkillReference(
         input.workspaceId,
         input.agentId,
@@ -209,7 +227,7 @@ export class ContextVariableService {
           : conflict(`Resolver skill "${skillId}" is disabled on this agent`),
       );
     }
-    return this.repository.applyProposal(input);
+    return this.repository.applyProposal(input, options);
   }
 
   /**
@@ -228,15 +246,21 @@ export class ContextVariableService {
     await this.typedDefinitionAfterEdit(current, definition.valueType, definition.options);
   }
 
+  /**
+   * `definition` is the one the enablement will be paired with: a proposal's own, when it writes
+   * one, else the stored definition is read.
+   */
   async assertEnablementReferences(
     workspaceId: string,
     agentId: string,
     variableId: string | null,
-    enablement: Pick<AgentContextVariableEnablementRecord, "source" | "resolverSkillId" | "maxAgeSeconds" | "resolverTimeoutMs">,
+    enablement: Pick<AgentContextVariableEnablementRecord, "source" | "resolverSkillId" | "maxAgeSeconds" | "resolverTimeoutMs" | "enabled">,
+    definition?: ClassifiableDefinition | null,
   ): Promise<void> {
     await this.requireAgent(workspaceId, agentId);
-    if (variableId) await this.requireVariable(workspaceId, variableId);
+    const stored = variableId ? await this.requireVariable(workspaceId, variableId) : null;
     assertEnablementIsWellFormed(enablement);
+    await this.assertClassificationFits(workspaceId, agentId, variableId, enablement, definition ?? stored);
     await this.assertResolverSkillReference(
       workspaceId,
       agentId,
@@ -245,6 +269,68 @@ export class ContextVariableService {
         ? badRequest(`resolverSkillId "${skillId}" does not name a skill on this agent`)
         : badRequest(`resolverSkillId "${skillId}" names a skill that is disabled on this agent`),
     );
+  }
+
+  /**
+   * Why the agent cannot have the classifier fill this variable, or null when it can (or the
+   * enablement is not `classified`). It needs a definition the classifier may fill, and an agent
+   * fills at most `maxClassifiedPerAgent`, since they all go in one model call; a disabled one is not
+   * counted. `definition` defaults to the stored one.
+   */
+  async classificationFitRefusal(
+    workspaceId: string,
+    agentId: string,
+    variableId: string | null,
+    enablement: Pick<AgentContextVariableEnablementRecord, "source" | "enabled">,
+    definition?: ClassifiableDefinition | null,
+  ): Promise<ClassificationFitRefusal | null> {
+    if (enablement.source !== "classified") return null;
+    const read = definition === undefined && variableId ? await this.repository.get(workspaceId, variableId) : definition ?? null;
+    const refusal = read ? classificationRefusal(read) : "not_choice";
+    if (refusal) return refusal;
+    if (enablement.enabled === false) return null;
+    const others = (await this.repository.listByAgent(workspaceId, agentId))
+      .filter((candidate) => isClassifiedEnablement(candidate) && candidate.variableId !== variableId);
+    return others.length >= CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent ? "too_many" : null;
+  }
+
+  private async assertClassificationFits(
+    workspaceId: string,
+    agentId: string,
+    variableId: string | null,
+    enablement: Pick<AgentContextVariableEnablementRecord, "source" | "enabled">,
+    definition: ClassifiableDefinition | null,
+  ): Promise<void> {
+    const refusal = await this.classificationFitRefusal(workspaceId, agentId, variableId, enablement, definition);
+    if (refusal === "too_many") {
+      throw badRequest(
+        `An agent can classify at most ${CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent} attributes (source "classified")`,
+        { code: "too_many_classified_context_variables" },
+      );
+    }
+    if (refusal) throw badRequest(classificationRefusalMessages[refusal], { code: "context_variable_not_classifiable", reason: refusal });
+  }
+
+  /**
+   * Refuses an edit that leaves `current` a definition the classifier could no longer fill while an
+   * agent's draft has it do so. A definition it could not fill before has no such agent.
+   * `proposal` names the agent whose own enablement the same write replaces, by its new source, so a
+   * proposal that moves its agent off `classified` and makes the variable private in one step applies.
+   */
+  async assertDefinitionKeepsClassification(
+    current: ClassifiableDefinition & Pick<ContextVariable, "id">,
+    definition: ClassifiableDefinition,
+    proposal: { agentId: string; source: ContextVariableSource | null } | null,
+  ): Promise<void> {
+    if (classificationRefusal(current) || !classificationRefusal(definition)) return;
+    const agentIds = await this.repository.classifiedEnablementAgentIds(current.id);
+    const stillClassifying = agentIds.filter((agentId) => !(proposal && proposal.agentId === agentId && proposal.source !== null && proposal.source !== "classified"));
+    if (stillClassifying.length > 0) {
+      throw badRequest(
+        'An agent fills this attribute with source "classified", so it must stay a Choice (enum) attribute that is neither Private (sensitive) nor treated as proof (signed)',
+        { code: "context_variable_classified", agentIds: stillClassifying },
+      );
+    }
   }
 
   private async assertResolverSkillReference(
@@ -264,6 +350,14 @@ export class ContextVariableService {
     }
   }
 }
+
+type ClassifiableDefinition = Pick<ContextVariable, "valueType" | "sensitivity" | "trustTier">;
+
+const classificationRefusalMessages: Record<ClassificationRefusal, string> = {
+  not_choice: 'Only a Choice (enum) attribute can use source "classified"',
+  private: 'A Private (sensitive) attribute cannot use source "classified"',
+  proof: 'An attribute treated as proof (signed) cannot use source "classified": the AI reads it from what the visitor typed',
+};
 
 /** Whether `current` is still the version a proposal was drafted against; no version names any. */
 const draftedAgainst = (current: ContextVariable, expectedUpdatedAt: Date | null): boolean =>

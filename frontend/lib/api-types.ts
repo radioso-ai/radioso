@@ -71,7 +71,7 @@ export type AgentContextVariableEnablement = ApiSchemas['AgentContextVariableEna
 export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVariableEnablementRequest']
 export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
-export type ContextVariableSource = Extract<AgentContextVariableEnablementRequest['source'], 'pushed'>
+export type ContextVariableSource = Extract<AgentContextVariableEnablementRequest['source'], 'pushed' | 'classified'>
 export type ContextVariableSurfacing = AgentContextVariableEnablementRequest['surfacing']
 export type ContextVariableValueType = ContextVariableCreateRequest['valueType']
 

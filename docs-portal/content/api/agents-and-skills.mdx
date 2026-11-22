@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 # Agents and skills
@@ -424,11 +424,20 @@ The catalog endpoints create and update the definitions:
 The per-agent enablement endpoints choose how a catalog variable is wired for
 one agent:
 
-- `source`: `pushed` or `resolver`
+- `source`: `pushed`, `resolver`, or `classified`
 - `surfacing`: `always`, `on_reference`, or `operator_only`
 - `enabled`
 
-The dashboard exposes the `pushed` source. Resolver-backed variables
+`classified` has the AI pick one of an `enum` variable's options from the
+conversation after each reply and store it in the `conversation` scope, with
+`writtenBy.kind` `classifier`. It never replaces a value your API or a teammate
+set for this visitor or conversation (`conversation`, `session` or `customer`
+scope); an `agent` or `workspace` value is a default, which applies until the
+AI picks a value. It takes an `enum` variable that is neither `sensitive` nor `signed`, at
+most 8 per agent; any other is refused with `400` and a message naming the
+reason. Use `surfacing: on_reference` to keep the value out of the answer.
+
+The dashboard exposes the `pushed` and `classified` sources. Resolver-backed variables
 are part of the API contract; the operator UI does not configure them. A
 resolver enablement also supplies `resolverSkillId`, which must name an enabled
 skill on the same agent. Disabling that skill disables its resolver enablements;
@@ -748,6 +757,7 @@ Each `kind` names one thing to go fix, and where:
 - `skill_target_unbound`: the skill's connection — a webhook, an MCP server, a mailbox — holds a credential and stayed in the source workspace. Point the skill at a connection here, then enable it.
 - `skill_capability_unknown`: the bundle names a capability this deployment doesn't register. The skill wasn't created, so anything that called it stays unbound.
 - `context_variable_missing`: no context variable with this name exists in the destination workspace. Create it, then re-enable the enablement on the agent.
+- `context_variable_not_classifiable`: the enablement has the AI fill the attribute (`source: "classified"`), but the destination workspace's attribute of that name is not a Choice attribute, is Private, or is treated as proof, or the agent already has the AI fill 8 attributes. The enablement is not written; the `detail` names the reason. Change the attribute, or enable it on the agent with another source.
 - `resolver_skill_missing`: the enablement's resolver skill isn't on the imported agent — often because that skill itself hit `skill_capability_unknown`. Re-enable the variable once the skill exists.
 - `routine_invalid`: the routine could not be written into the destination workspace. A completion export pointing at a webhook destination that only exists in the source workspace is the usual cause. The `detail` names the reason; create what it names, then add the routine through the routine endpoints.
 - `document_source_unresolved`: the source agent answered from a specific set of documents. Document ids don't carry across workspaces, so the imported agent starts with no sources selected — pick its sources under Knowledge.

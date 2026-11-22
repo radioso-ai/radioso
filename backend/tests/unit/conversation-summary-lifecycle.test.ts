@@ -295,3 +295,32 @@ describe("conversation summary refresh job", () => {
     expect(store.rows.size).toBe(0);
   });
 });
+
+describe("ChatTurnLifecycle attribute classification (#1884)", () => {
+  const classifyingSession = (): PreparedSession => ({
+    ...session(),
+    conversation: { id: "conv_1", sourceChannel: "embed" },
+    userMessage: { id: "msg_1", role: "user", source: "customer" },
+    revisionContextVariableEnablements: [{
+      id: "enablement_1", agentId: "agent_1", variableId: "variable_1", source: "classified", resolverSkillId: null,
+      maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference", enabled: true, createdAt: new Date(0), updatedAt: new Date(0),
+    }],
+  } as unknown as PreparedSession);
+
+  it("writes the classification job in the commit of a turn whose routine held a sensitive slot, beside the marks that withhold its message", async () => {
+    const persistence = recordingPersistence();
+    const lifecycle = lifecycleWith({ persistence, backgroundJobs: { enqueue: vi.fn() } });
+    const held = { status: "active", routineId: "routine_1" } as never;
+
+    await lifecycle.completeAssistantTurn({
+      ...turnInput(),
+      session: classifyingSession(),
+      routineStateTransition: { kind: "save", state: held },
+      routineReporter: { describe: () => null, sensitiveSlotKeysHeld: () => ["card_number"], sensitiveSlotKeysAwaited: () => [] } as never,
+    });
+
+    const committed = persistence.completeAssistantTurn.mock.calls[0][0];
+    expect(committed.backgroundJobs?.map((job) => job.kind)).toEqual(["conversation.summary_refresh", "context.classification"]);
+    expect(committed).toMatchObject({ sensitiveVisitorMessage: { id: "msg_1", sensitiveSlotKeys: ["card_number"] } });
+  });
+});

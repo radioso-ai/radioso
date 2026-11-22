@@ -4,6 +4,7 @@ import {
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
+  testExecutionFixtureId,
   type ContextVariableRequestFixture,
   workspaceKey,
 } from "./dashboard-fixtures";
@@ -110,6 +111,109 @@ test("an operator creates a choice attribute with described options, then archiv
       { key: "billing_disputes", label: "Billing disputes", archived: false },
     ],
   });
+});
+
+test("an operator has the AI set a Choice attribute, which a Text or Private attribute cannot use", async ({ page }) => {
+  const contextVariableRequests: ContextVariableRequestFixture[] = [];
+  const attribute = (id: string, name: string, overrides: Record<string, unknown>) => ({
+    id: `88888888-8888-4888-8888-${id}`,
+    workspaceId: "00000000-0000-4000-8000-000000000000",
+    name,
+    description: null,
+    valueType: "enum" as const,
+    options: [
+      { key: "billing", label: "Billing", description: "Invoices and refunds.", archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ],
+    trustTier: "unverified" as const,
+    sensitivity: "normal" as const,
+    defaultSurfacing: "always" as const,
+    createdAt: "2026-11-22T00:00:00.000Z",
+    updatedAt: "2026-11-22T00:00:00.000Z",
+    ...overrides,
+  });
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    contextVariableRequests,
+    contextVariables: [
+      attribute("000000000001", "topic", {}),
+      attribute("000000000002", "plan", { valueType: "string", options: null }),
+      attribute("000000000003", "health", { sensitivity: "sensitive" }),
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`);
+  await expect(page.getByRole("heading", { name: "Attributes", level: 1 })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Compiling")).toHaveCount(0, { timeout: 15000 });
+
+  for (const name of ["topic", "plan", "health"]) {
+    await page.getByLabel(`Enable ${name}`).click();
+    await expect(page.getByLabel(`Disable ${name}`)).toBeVisible();
+  }
+  const setBy = page.getByLabel("Set by", { exact: true });
+  await expect(setBy).toHaveCount(3);
+
+  // A Text attribute and a Private one say why the AI can't set them.
+  await setBy.nth(1).click();
+  await expect(page.getByRole("option", { name: /The AI, from the conversation/u })).toBeDisabled();
+  await expect(page.getByRole("option", { name: /Choice attributes only/u })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await setBy.nth(0).click();
+  await expect(page.getByRole("option", { name: /The AI, from the conversation/u })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await setBy.nth(2).click();
+  await expect(page.getByRole("option", { name: /Not for Private attributes/u })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await setBy.nth(0).click();
+  await page.getByRole("option", { name: "The AI, from the conversation" }).click();
+
+  await expect(setBy.nth(0)).toHaveText("The AI, from the conversation");
+  // The AI's value stays out of the reply by default.
+  await expect(page.getByLabel("Used by", { exact: true }).nth(0)).toHaveText("Only rules, routines and skills that name it");
+  await expect.poll(() =>
+    contextVariableRequests.filter((request) => request.method === "PUT" && request.path.endsWith("88888888-8888-4888-8888-000000000001")).at(-1)?.body,
+  ).toMatchObject({ source: "classified", surfacing: "on_reference" });
+
+  // In Test Chat, a turn's debug shows what the AI set: every attribute it sets, set or not.
+  const executionId = testExecutionFixtureId(1);
+  const reply = "I can help with that charge.";
+  await page.route(/\/backend\/api\/v1\/agents\/[^/]+\/test-executions\/[^/]+\/messages$/, async (route) => {
+    const body = route.request().postDataJSON() as { turnId: string; attemptId: string };
+    const identity = { executionId, generation: 1, sideId: "side-1-0", turnId: body.turnId, attemptId: body.attemptId };
+    const turnTrace = {
+      version: 1,
+      spine: { traceId: "attribute-turn", startedAt: "2026-11-22T00:00:00.000Z", stages: [] },
+      attributes: {
+        outcome: "written",
+        values: [
+          { name: "topic", value: "billing", label: "Billing", writtenBy: "classifier" },
+          { name: "urgency", value: null, writtenBy: null },
+        ],
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: [
+        { type: "side_started", ...identity },
+        { type: "message_delta", ...identity, delta: reply },
+        { type: "side_completed", ...identity, messageId: "message-1", answer: reply, turnTrace },
+        { type: "execution_completed", executionId, generation: 1, turnId: body.turnId, attemptId: body.attemptId },
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    });
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
+  await page.getByPlaceholder("Ask a question...").fill("Why was I charged twice?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByText(reply, { exact: true }).click();
+
+  const attributes = page.getByRole("region", { name: "Attributes" });
+  await expect(attributes).toContainText("topic");
+  await expect(attributes).toContainText("Billing · set by the AI");
+  await expect(attributes).toContainText("urgency");
+  await expect(attributes).toContainText("Not set");
 });
 
 test("a refused save and an unusable option list explain themselves inside the edit dialog", async ({ page }) => {

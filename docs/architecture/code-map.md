@@ -1132,6 +1132,20 @@ session or verified customer, or under the conversation when the turn has
 neither, never under the agent or workspace, and hands its skill the first
 scope past the conversation.
 
+An enablement's source is `pushed`, `resolver` or `classified` (`browser` and
+`request` are refused at authoring). `pushed` and `classified` values are
+stored ones, and both resolve paths read the store for them (`readsStoredValue`).
+`classified` takes only a Choice variable that is neither sensitive nor signed,
+at most `CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent` (8) per agent; the
+service refuses any other, and refuses a definition edit that would leave a
+classified variable in such a state (`classificationRefusal`). The module gives
+the classifier its two ports: `ClassifiedVariableReader` (each target says
+whether another writer set it for the conversation, its session or its
+customer, `classificationTargetFrom`; an agent or workspace value is a default
+that holds nothing) and `ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
+with `planConversationWrite` and counts it in
+`radioso_context_value_writes_total{writer, outcome}`).
+
 Public surfaces and key files:
 
 - `backend/src/modules/context-variables/public.ts`
@@ -1147,10 +1161,13 @@ Public surfaces and key files:
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
 - `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
+- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevision`, with what its ladder holds for each)
+- `backend/src/db/migrations/273_classified_context_variables.sql` (the `classified` enablement source)
 - `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
 - `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
 - `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
 - `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
+- `backend/src/modules/operatorCopilot/tools/contextVariableReviewedPreparation.ts` (operator MCP's `prepare_context_variable`: `create`, `edit` and `set_enablement`, reviewed and applied through the same adapter, whose apply commits the execution's receipt in the owner's transaction; a definition is `live` and needs signed-in approval, an enablement is an `agent_draft`)
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 
 Focused checks:
@@ -1166,6 +1183,42 @@ Related specs and issues:
 - `specs/097-visitor-context-variables/`
 - `specs/1884-typed-attributes/`
 - Issues `#1036`, `#1046`, `#1115`, and `#1884`
+
+## Context Classification
+
+Fills an agent's classified attributes from the conversation: one
+`rewrite`-tier call per run reads the rolling summary and the visitor's latest
+messages and picks, per attribute, one active option key or none, under a
+strict JSON schema (`backend/prompts/context-classification.md`). It knows the
+recipe, the schema, the parse, the job kind and the model tier; how values are
+stored and overwritten belongs to context-variables, and how a conversation is
+read belongs to chat, which implements its `ConversationExcerptReader`.
+
+A committed turn writes the `context.classification` job (`rerun`, keyed by
+conversation) beside the summary refresh when its revision classifies an
+attribute (`chat/services/turnBackgroundJobs.ts`). Test Chat sides are not
+stored conversations, so the trusted Test Chat runner classifies each test turn
+itself once its answer is out (`chat/services/testChatClassification.ts`, bounded
+at 5 s, never after a turn that held a sensitive slot), carries the values and the
+withheld message ids in the side's continuation and shows every classified
+attribute on the turn trace as `attributes`, which `test_chat_turn_trace` returns
+and the dashboard's turn debug renders.
+
+Public surfaces and key files:
+
+- `backend/src/modules/contextClassification/README.md`
+- `backend/src/modules/contextClassification/public.ts`
+- `backend/src/modules/contextClassification/conversationClassifier.ts` (`classifyNow`, `classifyTranscript`, `radioso_context_classification_runs_total{trigger, outcome}`, the `context_classification.run` span)
+- `backend/src/modules/contextClassification/classificationJob.ts`
+- `backend/src/app/composition/contextClassification.ts` and `backend/src/app/composition/backgroundJobHandlers.ts`
+- `backend/src/modules/chat/services/contextClassificationExcerptReader.ts`
+- `backend/scripts/runClassificationEvals.ts` and `backend/tests/fixtures/context-classification/` (the labelled set and its baseline)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/context-classification.test.ts tests/unit/context-variable-conversation-value-writer.test.ts tests/unit/context-classification-excerpt-reader.test.ts tests/unit/test-chat-classification.test.ts tests/unit/turn-background-jobs.test.ts tests/unit/eval-suite/context-classification-cases.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts tests/integration/context-classification-turn.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm run evals:classification` (live; one rewrite-tier call per case and sample)
 
 ## Visitors
 

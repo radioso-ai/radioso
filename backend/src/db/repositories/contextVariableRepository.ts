@@ -5,6 +5,7 @@ import {
   CONTEXT_VALUE_WRITER_KINDS,
   keepsEveryOptionKey,
   mayOverwrite,
+  readsStoredValue,
   resolvedVariableInput,
   validateValue,
   type AgentContextVariableEnablement,
@@ -24,6 +25,7 @@ import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableRepositoryPort,
@@ -55,7 +57,7 @@ import {
   storedScopeId,
 } from "./contextVariableValueReads.js";
 
-interface ContextVariableRow {
+export interface ContextVariableRow {
   id: string;
   workspace_id: string;
   name: string;
@@ -96,7 +98,7 @@ interface AgentContextVariableWithVariableRow extends AgentContextVariableRow {
   variable_updated_at: Date | string;
 }
 
-const contextVariableColumns = [
+export const contextVariableColumns = [
   "id",
   "workspace_id",
   "name",
@@ -135,7 +137,7 @@ const optionsToRow = (options: readonly ContextVariableOption[] | null | undefin
 const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
   CONTEXT_VALUE_WRITER_KINDS.filter((existing) => mayOverwrite({ kind: existing, ref: null }, incoming));
 
-const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
+export const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
   id: row.id,
   workspaceId: row.workspace_id,
   name: row.name,
@@ -620,6 +622,18 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return row !== undefined;
   }
 
+  async classifiedEnablementAgentIds(variableId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("agent_context_variables")
+      .select("agent_id")
+      .where("variable_id", "=", variableId)
+      .where("source", "=", "classified")
+      .where("enabled", "=", true)
+      .orderBy("agent_id")
+      .execute();
+    return rows.map((row) => row.agent_id);
+  }
+
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
     return readContextVariableValue(this.db, variableId, scope);
   }
@@ -634,13 +648,25 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return (result?.numDeletedRows ?? 0n) > 0n;
   }
 
+  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+    if (writerKinds.length === 0) return false;
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("variable_id", "=", variableId)
+      .where("scope_type", "=", scope.type)
+      .where("scope_id", "=", storedScopeId(scope))
+      .where("written_by_kind", "in", [...writerKinds])
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
   async resolveForAgent(
     workspaceId: string,
     agentId: string,
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]> {
     const enablements = (await this.listByAgent(workspaceId, agentId))
-      .filter((enablement) => enablement.enabled && enablement.source === "pushed");
+      .filter((enablement) => enablement.enabled && readsStoredValue(enablement.source));
     const values = await this.readMostSpecificValues(enablements.map((enablement) => enablement.variableId), scopes);
     return enablements.flatMap((enablement) => {
       const value = values.get(enablement.variableId);
@@ -655,7 +681,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return readMostSpecificValues(this.db, variableIds, scopes);
   }
 
-  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+  async applyProposal(input: ApplyContextVariableProposalInput, options: ApplyContextVariableProposalOptions = {}): Promise<ApplyContextVariableProposalResult> {
     return withAgentDraftMutation(this.db, input.workspaceId, input.agentId, async (trx, snapshot) => {
       let variableId = input.variableId;
       let savedEnablement: AgentContextVariableEnablement | null = null;
@@ -809,6 +835,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         throw badRequest("A context variable proposal must include a definition or target an existing variable");
       }
       const result = { variableId };
+      await options.onCommitted?.(trx, result);
       return savedEnablement
         ? {
             result,

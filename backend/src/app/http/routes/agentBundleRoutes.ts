@@ -10,6 +10,7 @@ import {
   type MachineAwareRoutePrincipal,
 } from "../shared/machinePublicSurfacePolicy.js";
 import type { AgentBundle } from "../../../modules/agentBundle/public.js";
+import { CONTEXT_VARIABLE_SOURCES } from "../../../modules/context-variables/public.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 const agentParamsSchema = z.object({ agentId: z.string().uuid() });
@@ -39,7 +40,7 @@ export const agentBundleBodySchema = z.object({
   }).passthrough()).default([]),
   contextVariables: z.array(z.object({
     variableName: z.string(),
-    source: z.enum(["pushed", "browser", "resolver", "request"]),
+    source: z.enum(CONTEXT_VARIABLE_SOURCES),
     resolverSkillName: z.string().nullable(),
     maxAgeSeconds: z.number().int().nullable(),
     resolverTimeoutMs: z.number().int().nullable(),

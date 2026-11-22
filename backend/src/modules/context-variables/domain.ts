@@ -11,7 +11,12 @@ export type ContextVariableValueType = typeof CONTEXT_VARIABLE_VALUE_TYPES[numbe
 export type ContextVariableTrustTier = "unverified" | "signed";
 /** The same authored sensitivity a routine slot carries, with the same masking rule. */
 export type ContextVariableSensitivity = ValueSensitivity;
-export type ContextVariableSource = "pushed" | "browser" | "resolver" | "request";
+/**
+ * Every way an agent's variable gets its value. `classified` is a stored value the classifier also
+ * keeps: it reads the conversation and picks one of a Choice variable's options.
+ */
+export const CONTEXT_VARIABLE_SOURCES = ["pushed", "browser", "resolver", "request", "classified"] as const;
+export type ContextVariableSource = typeof CONTEXT_VARIABLE_SOURCES[number];
 /** Every scope a value can be kept under, the types `context_variable_values.scope_type` accepts. */
 export const CONTEXT_VARIABLE_SCOPE_TYPES = ["conversation", "session", "customer", "agent", "workspace"] as const;
 export type ContextVariableScopeType = typeof CONTEXT_VARIABLE_SCOPE_TYPES[number];
@@ -55,6 +60,33 @@ export interface ContextVariable {
   updatedAt: Date;
 }
 
+/**
+ * Whether a source's value lives in the value store, which both resolve paths read: `pushed` (the
+ * API, an operator or a routine writes it) and `classified` (the classifier writes it too).
+ */
+export const readsStoredValue = (source: ContextVariableSource): boolean =>
+  source === "pushed" || source === "classified";
+
+/** Why a variable cannot be `classified`: the classifier picks an option, and only for a value it may hold. */
+export type ClassificationRefusal = "not_choice" | "private" | "proof";
+
+/** Why an agent cannot classify a variable: the variable's own refusal, or the agent's cap (`too_many`). */
+export type ClassificationFitRefusal = ClassificationRefusal | "too_many";
+
+/**
+ * Null when the classifier may fill the variable. It fills Choice variables only. It never fills a
+ * sensitive one, since an inferred value would be special-category data nobody declared, nor a
+ * signed one, since its value comes from what the visitor typed and would pass as proof.
+ */
+export const classificationRefusal = (
+  variable: Pick<ContextVariable, "valueType" | "sensitivity" | "trustTier">,
+): ClassificationRefusal | null => {
+  if (variable.valueType !== "enum") return "not_choice";
+  if (variable.sensitivity === "sensitive") return "private";
+  if (variable.trustTier === "signed") return "proof";
+  return null;
+};
+
 export interface AgentContextVariableEnablement {
   id: string;
   agentId: string;
@@ -69,6 +101,10 @@ export interface AgentContextVariableEnablement {
   updatedAt: Date;
   variable?: ContextVariable;
 }
+
+/** Whether an agent's enablement has the classifier fill its variable: enabled, with source `classified`. */
+export const isClassifiedEnablement = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
+  enablement.enabled && enablement.source === "classified";
 
 export interface ContextVariableScope {
   type: ContextVariableScopeType;

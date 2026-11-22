@@ -17,7 +17,7 @@ Citations are `path:line` from the repo root, read on `main` at `6a1dadbba0`.
 | D3 | New `conversation` scope keyed by `conversations.id` | 3 |
 | D4 | Types: `enum` with described options first, then `boolean`, `number`, `date`. Options have an immutable key and are archived, never deleted | 4 |
 | D5 | Every value records its last writer: `api`, `operator`, `routine` or `classifier`, plus a reference. No history table | 5 |
-| D6 | The classifier writes only over an empty or classifier-written value. Every other writer is last-writer-wins | 5 |
+| D6 | The classifier writes only over an empty or classifier-written value. Every other writer is last-writer-wins. A human value for the conversation, session or customer holds the variable; an agent or workspace value is a default the classifier's conversation value outranks | 5 |
 | D7 | Classification is a per-conversation `rerun` background job after each committed turn. It is not built on the facet job | 6 |
 | D8 | A handoff notice classifies inline before it is sent, inside the notice's own dispatch job, bounded at 10 s. A failed or timed-out classification never holds the notice | 7 |
 | D9 | `handoff.requested` keeps its payload and stays in the turn's transaction. Attributes reach automations through `context_value.changed` and the notice webhook | 7, 11 |
@@ -151,6 +151,8 @@ There is no `integration` kind. Zapier and n8n call the bearer API, the server s
 
 An operator's value and a host's value therefore stick with no prompt involved. **Reset to automatic** deletes the value, and the next classification fills it.
 
+**Which human values hold a variable.** A human value (`api`, `operator`, `routine`) at the `conversation`, `session` or `customer` scope is a fact about this visitor or conversation. The classifier skips the variable and clears its own older conversation value, which would otherwise hide that fact. An `agent` or `workspace` value is a default: the classifier ignores it and writes its conversation value as usual, which outranks the default in the ladder. The default applies until the classifier picks a value, and again once it clears its own.
+
 ## 6. Classification
 
 ### Why not the facet job
@@ -187,7 +189,8 @@ One `rewrite`-tier call per coalesced run, for agents with a classified variable
 
 - the role and the untrusted-content rule;
 - per variable: name, description, and each active option as `key — description`. Descriptions are in whatever language the operator writes. Keys are identifiers and are never matched against visitor text;
-- output: a strict JSON schema, one property per variable, each an enum of that variable's active keys or `null`.
+- output: a strict JSON schema, one property per variable, each written in order: `evidence`, one sentence in the model's own words on what the visitor stated that bears on the variable; `option_applies`, the explicit "none of these" path; and `key`, an enum of that variable's active keys or `null`. A field whose `option_applies` is false is read as `null`. The evidence makes the key follow from stated facts; it is model output derived from visitor text, so the parse discards it and it is never stored, logged, traced or exported;
+- no value the conversation holds: the classifier judges the conversation, not its earlier answer.
 
 `null` means "none of these": leave the value unset, or clear a previous classifier value. There is no built-in "unknown" option. An absent value is the unknown state and is filterable as **Not set**. An operator who wants "Other" authors it as an option.
 
@@ -442,6 +445,7 @@ Playwright covers the journeys.
 | Destination | What may go there |
 |---|---|
 | Classifier prompt | Conversation text the answer model already receives, minus turns whose routine held a sensitive slot; option keys and descriptions. No values of other variables |
+| Classifier output | Keys only. The per-variable `evidence` the model writes is discarded at parse |
 | Directive matcher and planner | Non-sensitive values, bounded; sensitive as `[redacted]` (`matchContextProjection.ts:85-89`) |
 | Answer prompt | Per surfacing; classified defaults to `on_reference` |
 | Logs, metrics, spans | Variable ids, value types, writer kinds, counts, outcome enums, prompt version. Never a value, including an enum key, and never a `wa_id` |

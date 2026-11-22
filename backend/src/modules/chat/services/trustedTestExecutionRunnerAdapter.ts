@@ -11,6 +11,7 @@ import {
 import { frozenTestValueInput, type ResolvedVariableInput } from "../../context-variables/public.js";
 import {
   importTestExecutionReplayContinuation,
+  withTestChatAttributeState,
 } from "./testExecutionContinuation.js";
 import type { WorkbenchReplayInput, WorkbenchReplayRunner } from "./workbenchReplayRunner.js";
 import type { ChatBootstrapService } from "./chatBootstrapService.js";
@@ -18,6 +19,8 @@ import type { ToolImagePreviewRecorder } from "../../toolImages/contracts/index.
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
 import { readItemSelection, type SelectedItem } from "./replyBlocks/itemSelection.js";
+import type { ConversationClassificationService } from "../../contextClassification/public.js";
+import { classifyTestChatTurn, testChatAttributeInputs, type TestChatAttributeState } from "./testChatClassification.js";
 
 type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
@@ -38,6 +41,8 @@ interface TrustedTestExecutionRunnerAdapterOptions {
   bootstrap?: Pick<ChatBootstrapService, "startConversation">;
   /** Copies the pictures a turn's cards show; without it, Test Chat's cards show none. */
   toolImagePreviews?: ToolImagePreviewRecorder;
+  /** Fills the revision's classified attributes after each turn; without it, Test Chat classifies nothing. */
+  classifier?: Pick<ConversationClassificationService, "readDefinitions" | "classifyTranscript">;
 }
 
 /**
@@ -122,13 +127,26 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
   }
 
   async *stream(input: TestExecutionRunInput): ReturnType<TrustedTestExecutionRunnerPort["stream"]> {
-    const replayed = yield* this.options.replay.stream(await this.replayInput(input));
+    const { replay, revision, attributes } = await this.replayInput(input);
+    const replayed = yield* this.options.replay.stream(replay);
     if (!replayed.continuation) {
       throw new Error("test_execution_continuation_missing");
     }
     if (!replayed.messageId) {
       throw new Error("test_execution_message_id_missing");
     }
+    // Once the answer is out, as live chat classifies after its turn commits: only then is it known
+    // whether the turn held a sensitive slot. A failed replay never starts it.
+    const classified = this.options.classifier
+      ? await classifyTestChatTurn({
+          classifier: this.options.classifier, workspaceId: input.workspaceId, agentId: input.agentId,
+          conversationId: input.conversationId, revision, history: input.history, message: replay.query,
+          ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
+          samples: input.testValues, previous: attributes, sensitiveSlotKeys: replayed.sensitiveSlotKeys ?? [],
+          ...(input.signal ? { signal: input.signal } : {}),
+        })
+      : null;
+    const carried = classified?.state ?? attributes;
     // Written before the answer is returned, so the pictures exist when Test Chat asks for them.
     if (replayed.toolImages?.length) {
       await this.options.toolImagePreviews?.recordPreview({ workspaceId: input.workspaceId, sources: replayed.toolImages });
@@ -138,14 +156,14 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       messageId: replayed.messageId,
       // The sources the replayed turn's presentation cites: the same ones live chat stores with this reply.
       ...answerSources(replayed),
-      turnTrace: replayed.turnTrace,
-      continuation: replayed.continuation,
+      turnTrace: classified && replayed.turnTrace ? { ...replayed.turnTrace, attributes: classified.trace } : replayed.turnTrace,
+      continuation: withTestChatAttributeState(replayed.continuation, carried),
       ...(replayed.blocks?.length ? { blocks: replayed.blocks } : {}),
       ...(replayed.messageReplyBlocks ? { messageMetadata: replayed.messageReplyBlocks } : {}),
     };
   }
 
-  private async replayInput(input: TestExecutionRunInput): Promise<WorkbenchReplayInput> {
+  private async replayInput(input: TestExecutionRunInput): Promise<{ replay: WorkbenchReplayInput; revision: AgentRevision; attributes: TestChatAttributeState }> {
     if (input.executionMode !== "safe_test") {
       throw new Error("test_execution_requires_safe_test");
     }
@@ -163,7 +181,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     const continuation = importTestExecutionReplayContinuation(input.continuation, input.conversationId);
     const history = input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId));
     const picked = input.itemSelection ? pickedItem(history, input.conversationId, input.itemSelection) : null;
-    return {
+    const replay: WorkbenchReplayInput = {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       sourceAgentId: input.agentId,
@@ -193,7 +211,11 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
         : null,
       directiveStateStartState: continuation.directiveState,
       consentStartState: continuation.consents,
-      preResolvedHostVariables: sampleVariables(input.testValues, revision),
+      // The samples, then what the classifier wrote on earlier turns, which a sample overrides.
+      preResolvedHostVariables: [
+        ...sampleVariables(input.testValues, revision),
+        ...testChatAttributeInputs(continuation.attributes.values, input.testValues, revision),
+      ],
       executionMode: "safe_test",
       skillEffects: input.skillEffects,
       signal: input.signal,
@@ -205,5 +227,6 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       // in that transcript.
       includeSlotValues: true,
     };
+    return { replay, revision, attributes: continuation.attributes };
   }
 }

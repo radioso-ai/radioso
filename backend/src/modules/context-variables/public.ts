@@ -31,10 +31,14 @@ export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
 export {
   CONTEXT_VALUE_WRITER_KINDS,
   CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
+  classificationRefusal,
   contextScopeLadder,
   frozenTestValueInput,
+  isClassifiedEnablement,
   mayOverwrite,
+  readsStoredValue,
   resolvedVariableInput,
   typeChangeWithValuesRefused,
 } from "./domain.js";
@@ -45,8 +49,20 @@ export {
   normalizeContextVariableOption,
 } from "./optionSchema.js";
 export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
+export {
+  ConversationValueWriterService,
+  planConversationWrite,
+} from "./conversationValueWriter.js";
+export type {
+  ConversationValueWriteOutcome,
+  ConversationValueWriter,
+  StoredConversationValue,
+} from "./conversationValueWriter.js";
+export { classificationTargetFrom } from "./classifiedVariables.js";
+export type { ClassificationTarget, ClassifiedVariableReader } from "./classifiedVariables.js";
 export type {
   AgentContextVariableEnablement,
+  ClassificationFitRefusal,
   ContextScopeKeys,
   ContextValueWriter,
   ContextValueWriterKind,
@@ -62,6 +78,7 @@ export type {
 export type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableEnablementReaderPort,

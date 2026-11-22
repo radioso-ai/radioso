@@ -291,6 +291,7 @@ import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSo
 import type {
   AgentContextVariableEnablement,
   ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
   ContextVariableScope,
   ContextVariableValue,
@@ -825,8 +826,19 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return this.values.delete(this.valueKey(variableId, scope));
   }
 
+  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+    const stored = this.values.get(this.valueKey(variableId, scope));
+    return stored && writerKinds.includes(stored.writtenBy.kind) ? this.values.delete(this.valueKey(variableId, scope)) : false;
+  }
+
   async hasValues(variableId: string): Promise<boolean> {
     return [...this.values.values()].some((value) => value.variableId === variableId);
+  }
+
+  async classifiedEnablementAgentIds(variableId: string): Promise<string[]> {
+    return [...this.enablements.values()]
+      .filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled)
+      .map((enablement) => enablement.agentId);
   }
 
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
@@ -2874,6 +2886,11 @@ export const createTestDependencies = (overrides: {
     notificationDeliveries,
     eventSubscriptions: workspaceEventSubscriptions,
     contextVariables: contextVariableService,
+    contextVariableUsers: {
+      listContextVariableUsers: async () => {
+        throw new Error("contextVariableUsers reads agent snapshots in Postgres; the test app does not wire it");
+      },
+    },
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);

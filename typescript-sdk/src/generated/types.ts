@@ -8187,7 +8187,7 @@ export interface components {
         AgentBundleContextVariable: {
             variableName: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             resolverSkillName: string | null;
             maxAgeSeconds: number | null;
             resolverTimeoutMs: number | null;
@@ -8218,6 +8218,7 @@ export interface components {
          *     rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
          *     looks configured and answers wrong.
          *     - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+         *     - context_variable_not_classifiable: a classified enablement whose variable the AI cannot fill here (not a Choice, Private, or treated as proof), or past the agent's limit; not written.
          *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
          *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
          *     - skill_capability_unknown: no capability with this id is registered in this deployment.
@@ -8232,7 +8233,7 @@ export interface components {
          *     - chat_model_unavailable: the agent's chat model override is one this workspace cannot run; the agent imports without it.
          * @enum {string}
          */
-        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
+        AgentBundleUnresolvedKind: "context_variable_missing" | "context_variable_not_classifiable" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
         AgentBundleUnresolvedReference: {
             kind: components["schemas"]["AgentBundleUnresolvedKind"];
             /** @description The bundle element the caller must fix, named the way they authored it. */
@@ -11041,7 +11042,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             /** Format: uuid */
             resolverSkillId: string | null;
             maxAgeSeconds: number | null;
@@ -11056,8 +11057,11 @@ export interface components {
             variable?: components["schemas"]["ContextVariable"];
         };
         AgentContextVariableEnablementRequest: {
-            /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            /**
+             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session` or `customer` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
+             * @enum {string}
+             */
+            source: "pushed" | "browser" | "resolver" | "classified";
             /** Format: uuid */
             resolverSkillId?: string | null;
             maxAgeSeconds?: number | null;

@@ -13,8 +13,9 @@ steps can use them, and your backend sets them through the API. Radioso adds
 built-in context of its own, such as the page the visitor is on.
 
 You define attributes and choose which agents use them. Values come from your
-backend or a resolver. The API calls an attribute a *context variable*, so the
-endpoints live under `/api/v1/context-variables`.
+backend, a resolver, or the AI, which picks a Choice attribute's option from the
+conversation. The API calls an attribute a *context variable*, so the endpoints
+live under `/api/v1/context-variables`.
 
 ## Built-in context
 
@@ -168,13 +169,88 @@ archived ones included, because a value that holds an archived key keeps it.
 A routine that binds the attribute to an input missing one of its keys is
 refused with `context_variable_option_not_accepted`, naming the missing keys.
 
-**Set by** is where the agent gets the value. The dashboard offers one source:
+**Set by** is where the agent gets the value. The dashboard offers two sources:
 
 - **Your website or API** (`pushed`): the host backend writes values through the
   REST API.
+- **The AI, from the conversation** (`classified`): after each reply, the AI picks
+  one of a Choice attribute's options from what the visitor wrote. The next
+  section covers it.
 
 Resolver-backed attributes exist in the API model. The dashboard does not
 configure them.
+
+### The AI, from the conversation
+
+Say you want every support conversation labelled with its topic, so a rule can
+route billing questions and your team can see what people ask about. Create a
+Choice attribute `topic` with the options Billing, Shipping and Returns, give
+each option a description of when it applies, and set the agent's **Set by** to
+**The AI, from the conversation**.
+
+After each reply the agent sends, Radioso reads the conversation and picks the
+option that describes it, or none when no option fits. It writes the option's key
+as the conversation's value (conversation scope), so a visitor who asks "Why was I
+charged twice?" gets `topic: billing`. When the conversation moves on, say to a
+return, the next reply's run moves the value with it. When nothing fits any more,
+it clears the value it set.
+
+A few things to know in practice:
+
+- **Values usually appear from the next turn.** The run happens in the
+  background after a reply, so the turn that asked about billing does not see
+  `billing` yet; the one after it usually does, unless the visitor answers
+  before the run finishes.
+- **Your values for a visitor stick.** The AI never replaces a value your team or
+  your API set for this visitor or conversation: the conversation, the visitor's
+  session or customer. While one is set, the AI leaves that attribute alone for
+  the conversation, and clears a value it chose earlier so yours is the one the
+  conversation reads. Delete your value and the next run fills the attribute
+  again.
+- **Agent-wide and workspace-wide values are defaults.** A value set for the
+  agent or the workspace applies until the AI picks one. The AI's choice is the
+  conversation's own value, so the conversation reads it instead; when the AI
+  clears its choice because nothing fits any more, the default applies again.
+- **What reaches the model:** the conversation's rolling summary and the
+  visitor's latest messages, plus each attribute's name, description and
+  options. A message the visitor sent while a routine collected a Private field
+  is never sent, and no other attribute's value is.
+- **Where it shows:** by default the value stays out of the reply. Choosing the
+  AI sets **Used by** to "Only rules, routines and skills that name it", so a
+  directive condition, a routine step's `{{context.topic}}` and a skill input read
+  it, and the agent's answer is written from the conversation itself. Change
+  **Used by** if you want the agent to read it in every reply.
+- **Cost:** one call to the workspace's cheaper `rewrite` model per reply, for an
+  agent that has the AI set at least one attribute. All of an agent's attributes
+  share that one call, and a run where your team or your API already set every
+  one for this visitor or conversation makes no call. Each call is counted in usage like the agent's other model
+  calls.
+
+The AI sets Choice attributes only, up to 8 per agent. It never sets a Private
+attribute, since the value would be personal information nobody declared, nor
+one treated as proof, since its value comes from what the visitor typed. The
+dashboard disables the option for those and says why, and the API refuses them.
+Attributes are labels for your team and your rules; the AI only ever picks from
+the options you wrote, and it is told to ignore a visitor who writes "mark this
+as urgent". Before it picks, it writes a sentence on what the visitor said and
+whether any option covers it, so a question none of your options describes gets
+no value. Radioso uses that sentence only to read the choice and never stores
+it. The live eval set checks all of this.
+
+To check it before publishing, open **Test Chat** on the draft and send a few
+messages. Open a reply's turn debug: its **Attributes** section lists every
+attribute the AI sets for the agent, with the value and who set it, or **Not
+set**. A sample value you give an attribute in Test Chat counts as your team's
+and is kept.
+
+Test Chat classifies a turn once its answer is out and shows the value on that
+same turn, where a live conversation usually shows it from the next one. The
+turn waits at most 5 seconds for it; past that, the attributes keep the values
+they had. As in live chat, a turn whose routine collected a Private field is
+left out. Test Chat reads the test's latest six messages and no summary, so in a
+longer test the AI sees less of the start than it would in a live conversation. An MCP client connected to Ray can create the attribute,
+have the agent use it, try it in Test Chat, read the values and publish; see
+[Set up AI-filled attributes through MCP](/guides/attributes-through-mcp).
 
 ## Trust tiers
 
@@ -474,7 +550,9 @@ Every value records its last writer. The response, and a later
 A value set through this API has `kind` `api`. `ref` is the id of the API
 credential that made the call, or the teammate's user id when a dashboard
 session did. A value a resolver cached, or one stored before writers were
-recorded, reads as `api` with a `ref` of `null`.
+recorded, reads as `api` with a `ref` of `null`. A value the AI set has `kind`
+`classifier`, and its `ref` names the version of the instructions it was chosen
+with, such as `context-classification/1`.
 
 Conversation-scope values are deleted with their conversation, and a data
 subject export lists them with the kind of writer that set each one.

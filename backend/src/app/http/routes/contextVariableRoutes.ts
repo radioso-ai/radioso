@@ -10,6 +10,7 @@ import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfi
 import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
 import {
   CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   deriveVisitorIdentitySigningKey,
@@ -20,7 +21,6 @@ import type { AuthenticatedPrincipal } from "../../../modules/account/services/a
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -85,7 +85,7 @@ const contextVariableValueDeleteBodySchema = z.object({
 }).strict();
 
 const agentContextVariableEnablementBodySchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable().optional(),
   maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
   resolverTimeoutMs: z.number().int().positive().nullable().optional(),

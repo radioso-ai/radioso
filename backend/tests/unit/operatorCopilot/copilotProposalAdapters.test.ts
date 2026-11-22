@@ -16,6 +16,7 @@ import {
   type AgentContextVariableEnablement,
   type AgentContextVariableEnablementRecord,
   type ApplyContextVariableProposalInput,
+  type ApplyContextVariableProposalOptions,
   type ApplyContextVariableProposalResult,
   type ContextVariable,
   type ContextVariableRepositoryPort,
@@ -77,9 +78,11 @@ const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) =>
       [...enablements.values()].filter((enablement) => enablement.agentId === agentId)),
     upsertEnablement: vi.fn(async (input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> => upsertEnablement(input)),
     hasValues: vi.fn(async (): Promise<boolean> => false),
+    classifiedEnablementAgentIds: vi.fn(async (variableId: string): Promise<string[]> =>
+      [...enablements.values()].filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled).map((enablement) => enablement.agentId)),
     // In-memory analogue of the real repository's transaction: both version guards are checked
     // before either write is applied, so a failing guard never leaves a partial write behind.
-    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> => {
+    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput, _options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> => {
       let variableId = input.variableId;
 
       if (input.definition && variableId) {
@@ -154,6 +157,72 @@ const createContextVariableCopilotProposalAdapter = (deps: {
     agentReader: deps.agentService,
     agentSkillsReader: deps.agentSkillsService,
   }),
+});
+
+describe("createContextVariableCopilotProposalAdapter classified attributes", () => {
+  const choiceOptions = [
+    { key: "billing", label: "Billing", description: "Invoices, refunds and payment methods" },
+    { key: "shipping", label: "Shipping", description: "Delivery times and tracking" },
+  ];
+  const setUp = (seed: ContextVariable[] = []) => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository(seed.map((variable) => ({ ...variable, workspaceId })));
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+    return { workspaceId, agentId, adapter, contextVariableRepository };
+  };
+  const newChoice = (overrides: Record<string, unknown> = {}) => ({
+    name: "topic", valueType: "enum", options: choiceOptions, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    enablement: { source: "classified", surfacing: "on_reference" },
+    ...overrides,
+  });
+
+  it("drafts and applies a new Choice attribute the agent classifies, in one proposal", async () => {
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp();
+    const targetRef = { agentId, variableId: null };
+
+    const validated = await adapter.validatePayload(workspaceId, targetRef, newChoice());
+    const outcome = await adapter.applyIfVersionMatches(workspaceId, validated.targetRef, validated.payload, validated.versionToken);
+
+    expect(outcome.outcome).toBe("applied");
+    const [enablement] = await contextVariableRepository.listByAgent(workspaceId, agentId);
+    expect(enablement).toMatchObject({ source: "classified", surfacing: "on_reference", enabled: true });
+  });
+
+  it.each([
+    ["a Text attribute", { valueType: "string", options: null }, /Only a Choice \(enum\) attribute/u],
+    ["a Private attribute", { sensitivity: "sensitive" }, /Private \(sensitive\)/u],
+    ["an attribute treated as proof", { trustTier: "signed" }, /proof \(signed\)/u],
+  ])("refuses to draft %s the agent classifies, with the reason", async (_label, overrides, reason) => {
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp();
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, newChoice(overrides)))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(reason) });
+    expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ninth classified attribute on one agent", async () => {
+    const seeded = Array.from({ length: 9 }, (_, index) => makeVariable({ name: `topic_${index}`, valueType: "enum", options: choiceOptions.map((option) => ({ ...option, archived: false })) }));
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp(seeded);
+    for (const variable of seeded.slice(0, 8)) {
+      await contextVariableRepository.upsertEnablement({ agentId, variableId: variable.id, source: "classified", surfacing: "on_reference", enabled: true });
+    }
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: seeded[8].id }, { enablement: { source: "classified", surfacing: "on_reference" } }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 8/u) });
+  });
+
+  it("refuses to make an attribute its agent classifies private without moving the agent off it", async () => {
+    const choice = makeVariable({ name: "topic", valueType: "enum", options: choiceOptions.map((option) => ({ ...option, archived: false })) });
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp([choice]);
+    await contextVariableRepository.upsertEnablement({ agentId, variableId: choice.id, source: "classified", surfacing: "on_reference", enabled: true });
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: choice.id }, { sensitivity: "sensitive" }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/source "classified"/u) });
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: choice.id }, { sensitivity: "sensitive", enablement: { source: "pushed", surfacing: "on_reference" } }))
+      .resolves.toBeDefined();
+  });
 });
 
 describe("createContextVariableCopilotProposalAdapter", () => {
@@ -508,9 +577,10 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     const applied = await adapter.applyIfVersionMatches(workspaceId, validated.targetRef, validated.payload, validated.versionToken);
     expect(applied.outcome).toBe("applied");
+    // A dashboard apply carries no reviewed receipt, so no commit hook is passed through.
     expect(contextVariableRepository.applyProposal).toHaveBeenCalledWith(expect.objectContaining({
       definition: expect.objectContaining({ valueType: "enum", options }),
-    }));
+    }), undefined);
   });
 
   it("keeps an enum's stored options through an edit that names none, and refuses one that drops an option", async () => {

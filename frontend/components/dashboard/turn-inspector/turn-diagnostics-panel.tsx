@@ -15,7 +15,9 @@ import {
   clarificationDecisionFromSpine,
   resolveAnswerCoverage,
   routineTurnSignalFromSpine,
+  testChatAttributesFromTrace,
   turnTraceRollup,
+  type TestChatTurnAttribute,
 } from '@/lib/turn-trace'
 import {
   answerCoverageAwareOutcome,
@@ -73,6 +75,33 @@ export function CompactIdField({ label, value }: { label: string; value: string 
       <code className="min-w-0 truncate font-mono text-foreground">{value}</code>
       {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />}
     </button>
+  )
+}
+
+const attributeWriterLabels: Record<NonNullable<TestChatTurnAttribute['writtenBy']>, string> = {
+  classifier: 'set by the AI',
+  operator: 'your sample',
+}
+
+/** The attributes the AI sets, after a Test Chat turn: each value and who set it. */
+function TestChatAttributesSection({ attributes }: { attributes: TestChatTurnAttribute[] }) {
+  return (
+    <section className="rounded-lg border border-border/70 bg-background/60 p-3" aria-label="Attributes">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attributes</p>
+      <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        {attributes.map((attribute) => (
+          <div key={attribute.name} className="min-w-0">
+            <dt className="font-mono text-[11px] text-muted-foreground">{attribute.name}</dt>
+            <dd className="mt-0.5 break-words text-sm text-foreground">
+              {attribute.value === null ? 'Not set' : (attribute.label ?? attribute.value)}
+              {attribute.writtenBy ? (
+                <span className="text-muted-foreground"> · {attributeWriterLabels[attribute.writtenBy]}</span>
+              ) : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 
@@ -146,6 +175,7 @@ export function TurnDiagnosticsPanel({
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
   const rollup = turnTraceRollup(activeEnvelope)
+  const attributes = testChatAttributesFromTrace(activeEnvelope)
   const { assessment: normalizedAnswerCoverage, source: answerCoverageSource } = resolveAnswerCoverage(
     normalizeAnswerCoverage(diagnostics.answerCoverage),
     diagnostics.turnTrace,
@@ -186,6 +216,8 @@ export function TurnDiagnosticsPanel({
           <p className="mt-1 text-sm text-muted-foreground">The complete execution trace is available in Flow.</p>
         </section>
       ) : null}
+
+      {attributes?.length ? <TestChatAttributesSection attributes={attributes} /> : null}
 
       <AnswerCoverageSection
         assessment={answerCoverage}

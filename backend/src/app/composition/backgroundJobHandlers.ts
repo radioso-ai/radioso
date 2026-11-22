@@ -2,12 +2,13 @@ import type { BackgroundJobHandlerRegistration } from "../../shared/background-j
 
 /**
  * Every background job kind's handler, the list the runtime is built over: the ones the chat and
- * Slack compositions return, and the deletion jobs whose handlers the dependency graph builds
- * beside them.
+ * Slack compositions return, the attribute classification, and the deletion jobs whose handlers the
+ * dependency graph builds beside them.
  */
 export const backgroundJobHandlers = (input: {
   chat: readonly BackgroundJobHandlerRegistration[];
   slackInbound: readonly BackgroundJobHandlerRegistration[];
+  contextClassification: BackgroundJobHandlerRegistration;
   voiceRecordingErasure: BackgroundJobHandlerRegistration;
   visitorImageObjectDeletion: BackgroundJobHandlerRegistration;
   workspaceEventDelivery: BackgroundJobHandlerRegistration;
@@ -15,6 +16,8 @@ export const backgroundJobHandlers = (input: {
 }): BackgroundJobHandlerRegistration[] => [
   ...input.chat,
   ...input.slackInbound,
+  // A conversation's classified attributes, after a turn commits.
+  input.contextClassification,
   // The recordings a deletion handed off, deleted at the voice vendor with the key held beside them.
   input.voiceRecordingErasure,
   // The photos an erasure or the unbound sweep handed off.

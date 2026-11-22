@@ -704,7 +704,7 @@ CREATE TABLE public.agent_context_variables (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT agent_context_variables_check CHECK ((((source = 'resolver'::text) AND (resolver_skill_id IS NOT NULL)) OR ((source <> 'resolver'::text) AND (resolver_skill_id IS NULL)))),
     CONSTRAINT agent_context_variables_check1 CHECK (((source = 'resolver'::text) OR ((max_age_seconds IS NULL) AND (resolver_timeout_ms IS NULL)))),
-    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text, 'request'::text]))),
+    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text, 'request'::text, 'classified'::text]))),
     CONSTRAINT agent_context_variables_surfacing_check CHECK ((surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text])))
 );
 

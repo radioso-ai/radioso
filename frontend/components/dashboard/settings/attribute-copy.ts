@@ -1,4 +1,4 @@
-import type { ContextVariableCreateRequest, ContextVariableSource, ContextVariableSurfacing, ContextVariableValueType } from '@/lib/api'
+import type { ContextVariable, ContextVariableCreateRequest, ContextVariableSource, ContextVariableSurfacing, ContextVariableValueType } from '@/lib/api'
 
 export type SourceOption = ContextVariableSource
 export type SurfacingOption = ContextVariableSurfacing
@@ -17,6 +17,22 @@ export const defaultAdvancedSettings: AdvancedAttributeSettings = {
 
 export const sourceLabels: Record<SourceOption, string> = {
   pushed: 'Your website or API',
+  classified: 'The AI, from the conversation',
+}
+
+/** How many attributes one agent can have the AI set; the backend holds the same limit. */
+const MAX_CLASSIFIED_PER_AGENT = 8
+
+/** Why the AI can't set this attribute on this agent, or null when it can. */
+export const classifiedUnavailableReason = (
+  variable: Pick<ContextVariable, 'valueType' | 'sensitivity' | 'trustTier'>,
+  classifiedElsewhere: number,
+): string | null => {
+  if (variable.valueType !== 'enum') return 'Choice attributes only'
+  if (variable.sensitivity === 'sensitive') return 'Not for Private attributes'
+  if (variable.trustTier === 'signed') return 'Not for attributes treated as proof'
+  if (classifiedElsewhere >= MAX_CLASSIFIED_PER_AGENT) return `Up to ${MAX_CLASSIFIED_PER_AGENT} per agent`
+  return null
 }
 
 export const surfacingLabels: Record<SurfacingOption, string> = {
@@ -64,6 +80,6 @@ export const attributeHelp = {
   },
   setBy: {
     tooltip:
-      '**Your website or API**: your backend or page sends the value through the Radioso API, and Radioso keeps it per conversation, session or customer.',
+      '**Your website or API**: your backend or page sends the value through the Radioso API, and Radioso keeps it per conversation, session or customer.\n\n**The AI, from the conversation**: after each reply, the AI picks one of your options from what the visitor wrote, or none. Rules and routines read it from the next turn. It never replaces a value your team or your API set for this visitor or conversation; agent-wide and workspace-wide values are defaults until the AI picks one. Choice attributes that aren\u2019t Private or treated as proof only.',
   },
 } as const

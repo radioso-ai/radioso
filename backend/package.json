@@ -43,6 +43,8 @@
     "evals:copilot:ci": "tsx ./scripts/runCopilotEvals.ts --samples 3",
     "evals:copilot:update-baseline": "tsx ./scripts/runCopilotEvals.ts --update-baseline --samples 3",
     "evals:email": "tsx ./scripts/runEmailBehaviourEvals.ts",
+    "evals:classification": "tsx ./scripts/runClassificationEvals.ts",
+    "evals:classification:update-baseline": "tsx ./scripts/runClassificationEvals.ts --update-baseline --samples 3",
     "db:migrate": "tsx ./scripts/migrate.ts",
     "db:schema": "bash ./scripts/dump-schema.sh",
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",

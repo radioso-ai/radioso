@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
+import type { CopilotContextVariableProposalAdapter, CopilotReviewedReceiptPort } from "./contracts.js";
 import {
+  CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
   contextVariableOptionInputSchema,
   contextVariableOptionSchema,
@@ -12,6 +13,7 @@ import {
   type ContextVariableService,
 } from "../context-variables/public.js";
 import { isStale } from "./proposalVersioning.js";
+import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 // Proposal shape remains Ray-owned; the context-variable module validates the
@@ -19,7 +21,6 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 // includesDefinition/includesEnablement are optional so a targetRef persisted before this field
 // existed still parses; readCurrentVersionParts treats an absent flag as "true" (the old,
 // coarser behavior of always gating on both rows) rather than as "false". See the comment on
@@ -31,7 +32,7 @@ const contextVariableTargetRefSchema = z.object({
   includesEnablement: z.boolean().optional(),
 }).strict();
 const contextVariableEnablementInputSchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable().optional(),
   maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
   resolverTimeoutMs: z.number().int().positive().nullable().optional(),
@@ -63,7 +64,7 @@ const contextVariableDefinitionStoredSchema = z.object({
   defaultSurfacing: z.enum(contextVariableSurfacings),
 }).strict();
 const contextVariableEnablementStoredSchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable(),
   maxAgeSeconds: z.number().int().nonnegative().nullable(),
   resolverTimeoutMs: z.number().int().positive().nullable(),
@@ -166,7 +167,9 @@ const normalizeOptions = (
   options?.map(normalizeContextVariableOption) ?? null;
 
 export const createContextVariableCopilotProposalAdapter = (deps: {
-  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertEnablementReferences" | "applyProposal">;
+  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertDefinitionKeepsClassification" | "assertEnablementReferences" | "applyProposal">;
+  /** Commits a reviewed MCP execution's receipt in the proposal's own transaction (`prepare_context_variable`). */
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariables, workspaceId, agentId, variableId);
@@ -266,6 +269,12 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         defaultSurfacing,
       };
       await deps.contextVariables.assertDefinitionTypeFits(existing, definition);
+      if (existing) {
+        await deps.contextVariables.assertDefinitionKeepsClassification(existing, definition, {
+          agentId: targetRef.agentId,
+          source: payload.enablement?.source ?? null,
+        });
+      }
 
       // A create, or a rename, that would collide with another variable's workspace+name identity
       // (context_variables_workspace_id_name_key) can never apply - refusing it here, at draft
@@ -330,11 +339,14 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       // the raw payload here would reject a merge this function is meant to allow. Any way the
       // merge could still produce a contradictory/inert combination is caught by the
       // context-variable service here instead.
+      // Against the definition this proposal writes, when it writes one: a proposal can create a
+      // Choice attribute and have the agent classify it in one step.
       await deps.contextVariables.assertEnablementReferences(
         workspaceId,
         targetRef.agentId,
         targetRef.variableId,
         mergedEnablement,
+        definition,
       );
       enablement = mergedEnablement;
     }
@@ -415,9 +427,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         proposed: { definition: payload.definition ?? currentDefinition, enablement: payload.enablement ?? currentEnablement },
       };
     },
-    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
+      const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { variableId: string }) => ({ agentId: targetRef.agentId, variableId: committed.variableId }));
       try {
         // The context-variable service resolves the agent again inside applyProposal. That check
         // is not used to gate on updatedAt: a
@@ -432,7 +445,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         // gated by its own predicate, and only for the row its own input actually supplies), not
         // by a read-then-compare here: a pre-read leaves a window where a concurrent edit lands
         // between the check and the write.
-        const result = await deps.contextVariables.applyProposal({
+        const proposal = {
           workspaceId,
           agentId: targetRef.agentId,
           variableId: targetRef.variableId,
@@ -440,12 +453,21 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
           expectedVariableUpdatedAt: targetRef.variableId ? decoded.variableUpdatedAt : null,
           enablement: payload.enablement,
           expectedEnablementUpdatedAt: decoded.enablementUpdatedAt,
-        });
+        };
+        const result = await deps.contextVariables.applyProposal(proposal, onCommitted ? { onCommitted } : undefined);
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId: result.variableId } };
       } catch (error) {
+        // A reviewed execution reports only an owner's refusal as failed; anything else, its
+        // receipt conflict included, escapes so the execution settles as uncertain, as a directive's does.
+        if (onCommitted) return reviewedApplyError(error);
         if (isStale(error)) return { outcome: "stale" as const };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Context variable apply failed" };
       }
+    },
+    // A reviewed execution's receipt commits with its writes, so an attempt that left no receipt
+    // wrote nothing and may run again.
+    async reconcileMcpInterruptedApply() {
+      return { outcome: "not_applied" as const };
     },
     async validatePayload(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);

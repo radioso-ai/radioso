@@ -411,6 +411,40 @@ describe("context variable HTTP API", () => {
       .expect(409);
   });
 
+  it("lets an agent classify a Choice attribute and refuses any other with the reason", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "context-vars-classified@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await createAgent(app, authorization);
+    const topic = await request(app).post("/api/v1/context-variables").set("Authorization", authorization)
+      .send({
+        name: "topic", valueType: "enum", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+        options: [{ key: "billing", label: "Billing", description: "Invoices and payments." }],
+      })
+      .expect(201);
+    const cart = await createContextVariable(app, authorization);
+    const classify = { source: "classified", surfacing: "on_reference" };
+
+    const enabled = await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${topic.body.contextVariable.id}`)
+      .set("Authorization", authorization)
+      .send(classify)
+      .expect(200);
+    expect(enabled.body.enablement).toMatchObject({ source: "classified", surfacing: "on_reference", enabled: true });
+
+    const refused = await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${cart.body.contextVariable.id}`)
+      .set("Authorization", authorization)
+      .send(classify)
+      .expect(400);
+    expect(refused.body.error.message).toMatch(/Only a Choice \(enum\) attribute can use source "classified"/u);
+
+    const madePrivate = await request(app).patch(`/api/v1/context-variables/${topic.body.contextVariable.id}`).set("Authorization", authorization)
+      .send({ sensitivity: "sensitive" })
+      .expect(400);
+    expect(madePrivate.body.error.message).toMatch(/source "classified"/u);
+  });
+
   it("writes a conversation's value and records which credential or teammate wrote it", async () => {
     const { app } = createTestApp();
     const session = await issueTestToken(app, "context-vars-writer@example.com");

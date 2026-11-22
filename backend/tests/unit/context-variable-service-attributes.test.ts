@@ -41,7 +41,7 @@ const storedValue = (data: unknown): ContextVariableValue => ({
 });
 
 const serviceWith = (repository: Partial<ContextVariableRepositoryPort>) => new ContextVariableService({
-  repository: repository as ContextVariableRepositoryPort,
+  repository: { classifiedEnablementAgentIds: async () => [], ...repository } as ContextVariableRepositoryPort,
   agentReader: { get: async () => ({ id: agentId }) },
   agentSkillsReader: { list: async () => [] },
 });

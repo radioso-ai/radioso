@@ -6,6 +6,7 @@ import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
 import { AttributeAdvancedFields } from '@/components/dashboard/settings/attribute-advanced-fields'
 import {
   attributeHelp,
+  classifiedUnavailableReason,
   defaultAdvancedSettings,
   sourceLabels,
   surfacingLabels,
@@ -76,7 +77,11 @@ const activeOptionCount = (options: readonly ContextVariableOption[]): string =>
 }
 
 const isUiSource = (source: AgentContextVariableEnablement['source']): source is SourceOption =>
-  source === 'pushed'
+  source === 'pushed' || source === 'classified'
+
+// The AI's value stays out of the reply by default: rules, routines and skills that name it read it.
+const sourcePatch = (source: SourceOption): Partial<AgentContextVariableEnablementRequest> =>
+  source === 'classified' ? { source, surfacing: 'on_reference' } : { source }
 
 const variableToForm = (variable: ContextVariable): VariableFormState => ({
   name: variable.name,
@@ -145,6 +150,8 @@ export function AssistantContextVariablesSection({
     }
     return lookup
   }, [enablements])
+  const classifiedElsewhere = (variableId: string) =>
+    enablements.filter((enablement) => enablement.enabled && enablement.source === 'classified' && enablement.variableId !== variableId).length
 
   const nameError = useMemo(() => {
     const name = form.name.trim()
@@ -345,7 +352,8 @@ export function AssistantContextVariablesSection({
 
         <p className="rounded-lg border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
           Attributes hold what you know about a conversation or visitor — such as the topic, the current cart, or the
-          plan — so this agent, its routines and your automations share it. Your website or API sets the values.
+          plan — so this agent, its routines and your automations share it. Your website or API sets the values, or the
+          AI picks one of a Choice attribute&apos;s options from the conversation.
           Built-in page and visitor-identity context is managed by Radioso and isn&apos;t listed here. Use the{' '}
           <span className="font-medium text-foreground">?</span> next to a field to see what it does.
         </p>
@@ -367,6 +375,7 @@ export function AssistantContextVariablesSection({
               const enabled = Boolean(enablement)
               const source = enablement && isUiSource(enablement.source) ? enablement.source : 'pushed'
               const busy = busyAction === `enablement:${variable.id}`
+              const classifiedReason = classifiedUnavailableReason(variable, classifiedElsewhere(variable.id))
               return (
                 <article key={variable.id} className="space-y-4 rounded-lg border border-border p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -418,7 +427,7 @@ export function AssistantContextVariablesSection({
                         />
                         <Select
                           value={source}
-                          onValueChange={(value) => void updateEnablement(variable, enablement, { source: value as SourceOption })}
+                          onValueChange={(value) => void updateEnablement(variable, enablement, sourcePatch(value as SourceOption))}
                           disabled={busy}
                         >
                           <SelectTrigger id={`context-source-${variable.id}`}>
@@ -426,6 +435,12 @@ export function AssistantContextVariablesSection({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="pushed">{sourceLabels.pushed}</SelectItem>
+                            <SelectItem value="classified" disabled={Boolean(classifiedReason) && source !== 'classified'}>
+                              {sourceLabels.classified}
+                              {classifiedReason && source !== 'classified' ? (
+                                <span className="ml-2 text-xs text-muted-foreground">{classifiedReason}</span>
+                              ) : null}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

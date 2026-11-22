@@ -114,6 +114,8 @@ import type {
 } from "../types/assistantApi.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
+import { sensitiveSlotKeysForTurn } from "./routines/sensitiveTurnMarker.js";
+import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 
 const DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY: ClarificationPolicy = {
   floor: 0,
@@ -185,6 +187,8 @@ export interface WorkbenchReplayResult {
   handoff?: ChatTurnAssemblyRoutineResult["handoff"];
   /** Present only for the trusted multi-turn test-execution adapter. */
   continuation?: TestExecutionReplayContinuationV1;
+  /** The sensitive slots the turn's routine held, the ones live chat marks a turn's messages with; server-only. */
+  sensitiveSlotKeys?: string[];
   resolvedConfig: WorkbenchReplayResolvedConfig;
 }
 
@@ -695,6 +699,7 @@ export class WorkbenchReplayRunner {
       handoff: routineResult.handoff,
       operatorNotice: routineResult.operatorNotice,
       routineReporter: routineResult.routineReporter,
+      routineStateTransition: routineResult.routineStateTransition,
       continuation: this.continuation(turn.effects, turn.session.conversation.id, turn.routineStore),
     });
   }
@@ -732,6 +737,7 @@ export class WorkbenchReplayRunner {
       handoff: rendered.handoff,
       operatorNotice: rendered.operatorNotice,
       routineReporter: rendered.routineReporter,
+      routineStateTransition: rendered.routineStateTransition,
       continuation: this.continuation(turn.effects, turn.session.conversation.id, turn.routineStore),
     });
   }
@@ -914,6 +920,7 @@ export class WorkbenchReplayRunner {
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
     operatorNotice?: ChatTurnAssemblyRoutineResult["operatorNotice"];
     routineReporter?: ChatRoutineTurnReporter;
+    routineStateTransition?: CapturedRoutineTransition | null;
     continuation?: TestExecutionReplayContinuationV1;
   }): WorkbenchReplayResult {
     const tracePresentation = buildTurnTraceForPresentation({
@@ -953,6 +960,7 @@ export class WorkbenchReplayRunner {
       pendingDecisionTransition: input.pendingDecisionTransition,
       handoff: input.handoff,
       ...(input.continuation ? { continuation: input.continuation } : {}),
+      sensitiveSlotKeys: sensitiveSlotKeysForTurn(input),
       resolvedConfig: {
         composedInstructions: input.session.retrieval.systemPrompt,
         modelProvider: input.agent.chatModelOverride?.provider,

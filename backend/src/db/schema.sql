@@ -36,6 +36,45 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
+-- Name: agent_skill_target_uses(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.agent_skill_target_uses(p_workspace_id uuid, p_target_type text, p_target_id text) RETURNS TABLE(agent_id uuid, agent_name text, skill_name text, in_draft boolean, in_published_release boolean)
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT
+    agent.id,
+    COALESCE(NULLIF(agent.internal_name, ''), agent.name),
+    uses.skill_name,
+    bool_or(uses.in_draft),
+    bool_or(NOT uses.in_draft)
+  FROM (
+    SELECT draft_skill.agent_id, draft_skill.skill_name, TRUE AS in_draft
+    FROM agent_skills draft_skill
+    WHERE draft_skill.workspace_id = p_workspace_id
+      AND draft_skill.target_type = p_target_type
+      AND draft_skill.target_id = p_target_id
+    UNION ALL
+    SELECT published_agent.id, released_skill ->> 'skillName', FALSE
+    FROM agents published_agent
+    JOIN agent_revisions published_release ON published_release.id = published_agent.published_revision_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(published_release.snapshot -> 'agentSkills') = 'array'
+        THEN published_release.snapshot -> 'agentSkills'
+        ELSE '[]'::jsonb
+      END
+    ) AS released_skill
+    WHERE published_agent.workspace_id = p_workspace_id
+      AND released_skill ->> 'targetType' = p_target_type
+      AND released_skill ->> 'targetId' = p_target_id
+  ) uses
+  JOIN agents agent ON agent.id = uses.agent_id
+  GROUP BY agent.id, agent.internal_name, agent.name, uses.skill_name
+  ORDER BY 2, 3, 1;
+$$;
+
+
+--
 -- Name: agent_skill_target_uuid(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -59,22 +98,9 @@ CREATE FUNCTION public.block_agent_skill_api_connection_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'api_request'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'api_connection'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'API connection % is referenced by agent skills', OLD.id
-      USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_api_request_target_fk';
-  END IF;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'api_connection', OLD.id, 'API connection', 'agent_skills_api_request_target_fk'
+  );
   RETURN OLD;
 END;
 $$;
@@ -92,22 +118,9 @@ BEGIN
     RETURN OLD;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'customer_email'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'customer_email_connection'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'customer email connection % is referenced by agent skills', OLD.id
-      USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_customer_email_target_fk';
-  END IF;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'customer_email_connection', OLD.id, 'customer email connection', 'agent_skills_customer_email_target_fk'
+  );
   RETURN OLD;
 END;
 $$;
@@ -121,23 +134,56 @@ CREATE FUNCTION public.block_agent_skill_mcp_connection_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'mcp_connection', OLD.id, 'MCP connection', 'agent_skills_external_mcp_target_fk'
+  );
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: block_agent_skill_slack_installation_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_slack_installation_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'slack_installation', OLD.id, 'Slack installation', 'agent_skills_slack_target_fk'
+  );
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: block_agent_skill_target_delete(uuid, text, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_target_delete(p_workspace_id uuid, p_target_type text, p_target_id uuid, p_target_label text, p_constraint text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  use_list TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = p_workspace_id) THEN
+    RETURN;
   END IF;
 
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'external_mcp'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'mcp_connection'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'MCP connection % is referenced by agent skills', OLD.id
+  SELECT string_agg(
+    format('%s on %s%s', uses.skill_name, uses.agent_name, CASE WHEN uses.in_draft THEN '' ELSE ' (published release)' END),
+    ', '
+  )
+  INTO use_list
+  FROM agent_skill_target_uses(p_workspace_id, p_target_type, p_target_id::text) uses;
+
+  IF use_list IS NOT NULL THEN
+    RAISE EXCEPTION '% % is referenced by agent skills: %', p_target_label, p_target_id, use_list
       USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_external_mcp_target_fk';
+            CONSTRAINT = p_constraint;
   END IF;
-  RETURN OLD;
 END;
 $$;
 
@@ -150,22 +196,9 @@ CREATE FUNCTION public.block_agent_skill_webhook_destination_delete() RETURNS tr
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'webhook'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'webhook_destination'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'webhook destination % is referenced by agent skills', OLD.id
-      USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_webhook_target_fk';
-  END IF;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'webhook_destination', OLD.id, 'webhook destination', 'agent_skills_webhook_target_fk'
+  );
   RETURN OLD;
 END;
 $$;
@@ -11197,6 +11230,13 @@ CREATE TRIGGER trg_mcp_connections_fill_workspace_from_agent BEFORE INSERT ON pu
 --
 
 CREATE TRIGGER trg_routine_completion_export_destination BEFORE INSERT OR UPDATE OF definition_id, enabled, destination_ref ON public.routine_completion_export FOR EACH ROW EXECUTE FUNCTION public.enforce_published_routine_completion_export_destination();
+
+
+--
+-- Name: slack_installations trg_slack_installations_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_slack_installations_block_agent_skill_reference BEFORE DELETE ON public.slack_installations FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_slack_installation_delete();
 
 
 --

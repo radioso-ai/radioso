@@ -1,6 +1,7 @@
 // First: Zod 4 gives `.openapi()` only to schemas built after this runs; other packages load this harness too.
 import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createWebsiteRecrawlComposition } from "../../src/app/composition/websiteRecrawl.js";
 import { createCopilotContext } from "../../src/app/composition/copilotContext.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
@@ -371,6 +372,8 @@ import {
   InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
+  InMemoryWebsiteMissingPageStore,
+  InMemoryWebsiteRecrawlRepository,
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
@@ -536,6 +539,7 @@ interface TestRepositories {
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
   documentSourceRepository: InMemoryDocumentSourceRepository;
+  websiteMissingPageStore: InMemoryWebsiteMissingPageStore;
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
@@ -1542,6 +1546,18 @@ export const createTestDependencies = (overrides: {
       ? addressedDocumentImageListing(overrides.documentImageRows, createReplyImageUrls(publicApiBaseUrl(env)))
       : undefined,
   );
+  const websiteMissingPageStore = new InMemoryWebsiteMissingPageStore();
+  documentRepository.setHeldPages(websiteMissingPageStore);
+  const websiteRecrawl = createWebsiteRecrawlComposition({
+    schedule: new InMemoryWebsiteRecrawlRepository(documentSourceRepository),
+    missingPages: websiteMissingPageStore,
+    sources: documentSourceRepository,
+    usageLimits: usageLimitPolicy,
+    recrawls: { recrawlSource: async () => undefined },
+    pages: { removeHeldPages: (removal) => documentIngestionService.removeHeldSourcePages(removal) },
+    audit: auditService,
+    logger,
+  });
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
@@ -2798,6 +2814,7 @@ export const createTestDependencies = (overrides: {
       reprocessDocument: documentIngestionService.reprocessEligible.bind(documentIngestionService),
       reprocessSource: (input) => documentSourceReprocessService.reprocessSource(input),
       recrawlSource: documentSourceRecrawlService.recrawlSource.bind(documentSourceRecrawlService),
+      setRecrawlCadence: (input) => websiteRecrawl.scheduleService.setRecrawlCadence(input),
     },
     evalResultsService: evalCaseService,
     evalCaseCapture: new EvalCaseCaptureService({
@@ -3238,6 +3255,7 @@ export const createTestDependencies = (overrides: {
     documentSourceReprocessService,
     documentProcessingWorker,
     websiteCrawlJobService,
+    websiteRecrawl,
     websiteCrawlWorker: {
       start: async () => undefined,
       stop: async () => undefined,
@@ -3455,6 +3473,7 @@ export const createTestDependencies = (overrides: {
       retrievalSettingsRepository,
       documentRepository,
       documentSourceRepository,
+      websiteMissingPageStore,
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,

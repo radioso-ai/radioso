@@ -4,6 +4,7 @@ import {
 } from "@radioso/workspace-invalidation-contract";
 
 import type {
+  SourceCrawlJobAdmission,
   WebsiteCrawlJobRecord,
   WebsiteCrawlJobRepositoryPort,
   WebsiteCrawlJobStatus,
@@ -11,9 +12,10 @@ import type {
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
-import { normalizeBaseUrl } from "./service.js";
+import { normalizeBaseUrl } from "./pageUrls.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 import type { WebsiteCrawlerDocumentIngestionPort } from "./service.js";
+import type { CrawlTrigger } from "./recrawlSchedule.js";
 import {
   DEFAULT_WEBSITE_CRAWL_POLICY,
   normalizeWebsiteCrawlPolicy,
@@ -157,15 +159,16 @@ export class WebsiteCrawlJobService {
         },
       },
     }) ?? null;
-    const job = await this.dependencies.repository.create({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      sourceId: source?.id ?? null,
-      requestedUrl,
-      limit: input.limit,
-      policy,
-    });
-    return this.publishAndDispatch(job);
+    const jobInput = { accountId: input.accountId, workspaceId: input.workspaceId, requestedUrl, limit: input.limit, policy, trigger: "manual" as const };
+    if (!source) {
+      return this.publishAndDispatch(await this.dependencies.repository.create({ ...jobInput, sourceId: null }));
+    }
+    // A URL that names an existing source shares that source's one-crawl-at-a-time rule.
+    const admission = await this.dependencies.repository.createForSource({ ...jobInput, sourceId: source.id });
+    if (!admission) {
+      throw notFound("Source not found");
+    }
+    return this.admit(admission);
   }
 
   async enqueueForSource(input: {
@@ -175,6 +178,8 @@ export class WebsiteCrawlJobService {
     url: string;
     limit: number;
     policy?: Partial<WebsiteCrawlPolicy>;
+    /** `manual` unless the recrawl sweep queues it. */
+    trigger?: CrawlTrigger;
   }): Promise<{
     jobId: string;
     sourceId: string;
@@ -187,18 +192,40 @@ export class WebsiteCrawlJobService {
       ...DEFAULT_WEBSITE_CRAWL_POLICY,
       ...(input.policy ?? {}),
     });
-    const job = await this.dependencies.repository.createForSource({
+    const admission = await this.dependencies.repository.createForSource({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
       requestedUrl,
       limit: input.limit,
       policy,
+      trigger: input.trigger ?? "manual",
     });
-    if (!job) {
+    if (!admission) {
       throw notFound("Source not found");
     }
-    return this.publishAndDispatch(job);
+    return this.admit(admission);
+  }
+
+  /**
+   * A source runs one crawl at a time. When it is already crawling, the request is answered with
+   * that crawl: it is already queued or running, so there is nothing to publish or dispatch.
+   */
+  private async admit(admission: SourceCrawlJobAdmission): Promise<{
+    jobId: string;
+    sourceId: string;
+    requestedUrl: string;
+    status: "queued";
+  }> {
+    if (admission.created) {
+      return this.publishAndDispatch(admission.job);
+    }
+    return {
+      jobId: admission.job.id,
+      sourceId: admission.job.sourceId,
+      requestedUrl: admission.job.requestedUrl,
+      status: "queued",
+    };
   }
 
   private async publishAndDispatch<TSourceId extends string | null>(

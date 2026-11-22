@@ -34,6 +34,7 @@ const catalogToolCoverage = {
   listDocumentChunks: "document_chunks",
   getDocumentChunk: "document_chunks",
   recrawlDocumentSource: "recrawl_source",
+  setDocumentSourceRecrawlCadence: "set_recrawl_cadence",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
   createDocument: "propose_document",
@@ -577,6 +578,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
+  // A scheduled recrawl holds a large removal precisely so that a person, not automation, decides it.
+  ...coverage(["removeDocumentSourceHeldPages", "keepDocumentSourceHeldPages"], permanent(
+    "Permanent exclusion: a scheduled recrawl holds pages it no longer finds when they are more than a fifth of the source, because a loss that large is more often a broken or moved site than a pruned one. Removing them deletes documents in bulk and keeping them exempts them from later scheduled removal, so the decision stays with a person on the source in the dashboard. Ray sets the cadence through set_recrawl_cadence and recrawls through recrawl_source.",
+  )),
   ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
   ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
   ...coverage([

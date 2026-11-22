@@ -3,6 +3,7 @@ import { z } from "zod";
 import { documentInventoryStatuses, type ChunkRepositoryPort, type DocumentInventoryPort, documentSourceIdSchema } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import { readRequestedDateRange } from "../../retrieval/public.js";
+import { recrawlCadences, type RecrawlCadence } from "../../websiteCrawler/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
 import { copilotPayloadCharBudget } from "../turnBudget.js";
@@ -151,6 +152,12 @@ const recrawlSourceOutputSchema = z.object({
   requestedUrl: z.string().url(),
   status: z.literal("queued"),
 });
+const setRecrawlCadenceInputSchema = z.object({ sourceId: documentSourceIdSchema, recrawlCadence: z.enum(recrawlCadences) }).strict();
+const setRecrawlCadenceOutputSchema = z.object({
+  sourceId: z.string(),
+  recrawlCadence: z.enum(recrawlCadences),
+  nextRecrawlAt: z.string().datetime().nullable(),
+});
 
 export interface CopilotDocumentSearchPort {
   search(input: {
@@ -203,6 +210,11 @@ export interface CopilotDocumentMaintenancePort {
     sourceId: string | null;
     requestedUrl: string;
     status: "queued";
+  }>;
+  setRecrawlCadence(input: { workspaceId: string; sourceId: string; recrawlCadence: RecrawlCadence }): Promise<{
+    id: string;
+    recrawlCadence: RecrawlCadence;
+    nextRecrawlAt: Date | null;
   }>;
 }
 export interface DocumentSearchCopilotToolDependencies { readonly documentSearchService: CopilotDocumentSearchPort; }
@@ -325,6 +337,7 @@ export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotTool
 const DOCUMENT_CHUNKS_DESCRIPTION = `Inspect how one workspace document was chunked. Returns text, offsets, metadata, search text, and active-embedding presence for at most ${documentChunkPageLimit} chunks starting at a chunk index. Follow nextChunkIndex to continue; use a small range, since chunk text is normally returned in full but is compacted, with \`truncation\` reporting it, if a page would otherwise exceed the result size limit.`;
 const REPROCESS_DOCUMENT_DESCRIPTION = "Requeue one existing document, or the existing documents belonging to one source, through the normal processing pipeline. This is an idempotent maintenance act: it does not create content, change settings, or reprocess a whole workspace.";
 const RECRAWL_SOURCE_DESCRIPTION = "Recrawl one existing configured website source using its stored URL, bounded page limit, and crawl policy. This cannot create a new source or accept a different URL.";
+const SET_RECRAWL_CADENCE_DESCRIPTION = "Set how often one existing website source recrawls itself with its stored crawl settings: off, daily, or weekly. The workspace's plan may allow weekly at most and refuses a faster cadence. A crawl of the source, scheduled or manual, that would remove more than a fifth of its pages holds them for the operator to review in the dashboard instead.";
 
 export const createDocumentKnowledgeCopilotTools = (
   deps: DocumentKnowledgeCopilotToolDependencies,
@@ -458,6 +471,32 @@ export const createDocumentKnowledgeCopilotTools = (
           workspaceId: context.workspaceId,
         }),
       ),
+    }),
+  },
+  {
+    name: "set_recrawl_cadence",
+    shape: "act",
+    verificationCost: () => 0,
+    uiLabel: "Setting a source's recrawl cadence",
+    contributingModule: "websiteCrawler",
+    dashboardSubject: { type: "document" },
+    requiredPermissions: ["workspace.documents.manage"],
+    description: SET_RECRAWL_CADENCE_DESCRIPTION,
+    inputSchema: setRecrawlCadenceInputSchema,
+    outputSchema: setRecrawlCadenceOutputSchema,
+    createTool: (context) => ({
+      name: "set_recrawl_cadence",
+      description: SET_RECRAWL_CADENCE_DESCRIPTION,
+      inputSchema: setRecrawlCadenceInputSchema,
+      outputSchema: setRecrawlCadenceOutputSchema,
+      invoke: async ({ sourceId, recrawlCadence }) => {
+        const source = await deps.documentMaintenance.setRecrawlCadence({ workspaceId: context.workspaceId, sourceId, recrawlCadence });
+        return setRecrawlCadenceOutputSchema.parse({
+          sourceId: source.id,
+          recrawlCadence: source.recrawlCadence,
+          nextRecrawlAt: source.nextRecrawlAt?.toISOString() ?? null,
+        });
+      },
     }),
   },
 ];

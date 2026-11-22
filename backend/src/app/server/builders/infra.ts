@@ -36,6 +36,8 @@ import { SessionRepository } from "../../../db/repositories/sessionRepository.js
 import { UserFederatedIdentityRepository } from "../../../db/repositories/userFederatedIdentityRepository.js";
 import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
+import { WebsiteMissingPageRepository } from "../../../db/repositories/websiteMissingPageRepository.js";
+import { WebsiteRecrawlRepository } from "../../../db/repositories/websiteRecrawlRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
@@ -263,6 +265,8 @@ export const buildRepositories = (
   userFederatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
   userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
+  websiteMissingPageRepository: new WebsiteMissingPageRepository(database.kysely),
+  websiteRecrawlRepository: new WebsiteRecrawlRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceSetupStateRepository: new WorkspaceSetupStateRepository(database.kysely),

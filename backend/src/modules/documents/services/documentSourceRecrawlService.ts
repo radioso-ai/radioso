@@ -1,26 +1,27 @@
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import type { WebsiteCrawlPolicy } from "../../websiteCrawler/public.js";
+import type { CrawlTrigger, WebsiteCrawlPolicy } from "../../websiteCrawler/public.js";
 
-export interface DocumentSourceRecrawlResult {
+interface DocumentSourceRecrawlResult {
   jobId: string;
   sourceId: string | null;
   requestedUrl: string;
   status: "queued";
 }
 
-export interface DocumentSourceRecrawlCrawlJobsPort {
+interface DocumentSourceRecrawlCrawlJobsPort {
   enqueueForSource(input: {
-    accountId: string;
+    accountId: string | null;
     workspaceId: string;
     sourceId: string;
     url: string;
     limit: number;
     policy?: Partial<WebsiteCrawlPolicy>;
+    trigger: CrawlTrigger;
   }): Promise<DocumentSourceRecrawlResult>;
 }
 
-export interface DocumentSourceRecrawlCrawlerConfig {
+interface DocumentSourceRecrawlCrawlerConfig {
   defaultLimit: number;
   maxLimit: number;
 }
@@ -32,10 +33,12 @@ export class DocumentSourceRecrawlService {
     crawlerConfig: DocumentSourceRecrawlCrawlerConfig;
   }) {}
 
+  /** `accountId` is the operator who asked, or null for the recrawl sweep's `scheduled` crawl. */
   async recrawlSource(input: {
-    accountId: string;
+    accountId: string | null;
     workspaceId: string;
     sourceId: string;
+    trigger?: CrawlTrigger;
   }): Promise<DocumentSourceRecrawlResult> {
     const source = await this.dependencies.sourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
     if (!source) {
@@ -66,6 +69,7 @@ export class DocumentSourceRecrawlService {
       url,
       limit: Math.min(persistedLimit, this.dependencies.crawlerConfig.maxLimit),
       policy,
+      trigger: input.trigger ?? "manual",
     });
   }
 }

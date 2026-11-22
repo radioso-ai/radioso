@@ -11,6 +11,7 @@ const createJob = (): WebsiteCrawlJobRecord => ({
   requestedUrl: "https://example.com",
   limit: 2,
   status: "processing",
+  trigger: "manual",
   attemptCount: 1,
   policy: {
     includeUrlPatterns: [],
@@ -1032,5 +1033,94 @@ describe("website crawl worker", () => {
     expect(markFailed).not.toHaveBeenCalled();
     expect(releasePausedClaim).toHaveBeenCalledWith(oldJob.id, oldJob.attemptCount);
     expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  const scheduledJobWorker = (isNewestForSource: ReturnType<typeof vi.fn>, missingPage?: { documentId: string; externalDocumentId: string; pageUrl: string; kept: boolean }) => {
+    const sourceId = "44444444-4444-4444-8444-444444444444";
+    const job: WebsiteCrawlJobRecord = { ...createJob(), sourceId, trigger: "scheduled", limit: 10, createdAt: new Date("2026-11-21T09:00:00.000Z") };
+    const record = vi.fn().mockResolvedValue(undefined);
+    const missingPages = {
+      reviewMissingPages: vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 10, missingPages: missingPage ? [missingPage] : [] }),
+      holdMissingPages: vi.fn(),
+    };
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const pageProbe = {
+      probePages: vi.fn(async (urls: readonly string[]) => urls.map((url) => ({ kind: "answered" as const, status: 410, url }))),
+    };
+    const markCompleted = vi.fn().mockResolvedValue(true);
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted,
+        markFailed: vi.fn().mockResolvedValue(true),
+        updateCheckpoint: vi.fn().mockResolvedValue(false),
+        releasePausedClaim: vi.fn().mockResolvedValue(false),
+        isNewestForSource,
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          runId: "run-1",
+          status: "completed",
+          frontierExhausted: true,
+          pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+        }),
+      },
+      dispatcher: createDispatcher(),
+      documentIngestionService: {
+        ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
+        resolveSource: vi.fn().mockResolvedValue({ id: sourceId }),
+        updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
+        reapMissingPages,
+      },
+      auditService: { record },
+      missingPages,
+      pageProbe,
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+    });
+    return { worker, job, sourceId, record, missingPages, reapMissingPages, pageProbe, markCompleted };
+  };
+
+  it("asks the site through the probe it was given before it removes a missing page", async () => {
+    const gone = {
+      documentId: "doc-gone",
+      externalDocumentId: "website:https://example.com:https://example.com/gone",
+      pageUrl: "https://example.com/gone",
+      kept: false,
+    };
+    const { worker, sourceId, pageProbe, reapMissingPages } = scheduledJobWorker(vi.fn().mockResolvedValue(true), gone);
+
+    await worker.runOnce();
+
+    expect(pageProbe.probePages).toHaveBeenCalledWith([gone.pageUrl], expect.anything());
+    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId, documentIds: ["doc-gone"] }));
+  });
+
+  it("crawls a scheduled job as a scheduled crawl, holding missing pages through the store it was given", async () => {
+    const isNewestForSource = vi.fn().mockResolvedValue(true);
+    const { worker, job, sourceId, record, missingPages } = scheduledJobWorker(isNewestForSource);
+
+    await worker.runOnce();
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      metadata: expect.objectContaining({ trigger: "scheduled" }),
+    }));
+    expect(isNewestForSource).toHaveBeenCalledWith({ jobId: job.id, workspaceId: job.workspaceId, sourceId });
+    // Pages are counted against what the source had when the job started, not when its last slice did.
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId, crawlStartedAt: job.createdAt }));
+  });
+
+  it("neither removes nor holds missing pages for a job a newer crawl of its source superseded", async () => {
+    // A paused job resumed after the operator started another crawl of the source: its view of the site is older.
+    const { worker, missingPages, reapMissingPages, markCompleted } = scheduledJobWorker(vi.fn().mockResolvedValue(false));
+
+    await worker.runOnce();
+
+    expect(missingPages.reviewMissingPages).not.toHaveBeenCalled();
+    expect(missingPages.holdMissingPages).not.toHaveBeenCalled();
+    expect(reapMissingPages).not.toHaveBeenCalled();
+    expect(markCompleted).toHaveBeenCalledOnce();
   });
 });

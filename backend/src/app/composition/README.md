@@ -66,6 +66,12 @@ composition calls them and assembles the result.
   builds it, after the voice recording composition it hands recordings to.
   That composition's `erasureRecoveryTask` (`voice-recording-erasure-recovery`)
   is a built-in periodic task beside the conversation retention sweep.
+- `websiteRecrawl.ts`: scheduled website recrawl. It adapts the usage limit
+  policy's optional `getFastestRecrawlCadence` into the crawler's
+  `RecrawlPlanPort` (no plan, no ceiling: `daily`), builds the cadence and
+  held-page services, and wraps the crawler's `WebsiteRecrawlSweep` as the
+  built-in `website-recrawl` periodic task (every 15 minutes), which
+  `periodicTasks.ts` lists beside the other built-in tasks.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

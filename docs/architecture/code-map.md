@@ -2021,20 +2021,72 @@ text extraction keeps as main content, with its alt text, its figure's caption
 and its offset in the page text. The provider passes them to ingestion as
 document image candidates; the documents module fetches and stores them.
 
+A source runs one crawl at a time: `WebsiteCrawlJobRepository.createForSource`
+holds the source row's lock and returns the source's queued or processing crawl
+instead of inserting a second, and every path that crawls an existing source
+(recrawl, scheduled recrawl, a new crawl of the same URL) goes through it. A job
+records its `crawl_trigger` (`manual` or `scheduled`).
+
+Scheduled recrawl (migration `272_scheduled_website_recrawl.sql`): a website
+source's `recrawl_cadence` (`off`, `daily`, `weekly`) and `next_recrawl_at` live
+on `document_sources`. `recrawlSchedule.ts` is the pure cadence arithmetic and
+plan clamp, with the `RecrawlPlanPort` the plan's ceiling arrives through;
+`recrawlScheduleService.ts` sets a cadence (`PUT
+/api/v1/document/sources/:sourceId/recrawl-cadence`, refusing a cadence over the
+plan with `403 recrawl_cadence_not_in_plan`); `recrawlSweep.ts` claims due
+sources (`db/repositories/websiteRecrawlRepository.ts`, `FOR UPDATE SKIP
+LOCKED`) and queues their recrawls through the documents module's
+`DocumentSourceRecrawlService`; `app/composition/websiteRecrawl.ts` wires it as
+the `website-recrawl` periodic task. A crawl removes missing pages only when
+`crawlSawWholeSite` (`missingPages.ts`) says it saw the whole site: the last
+slice's provider reported `frontierExhausted` (`crawlSiteStream` in
+`packages/crawler/src/transport/crawler.ts` returns it), no slice dropped a link
+at a limit (the checkpoint's sticky `linksDroppedAtLimit`) or failed to read
+`robots.txt` or a sitemap (sticky `sitemapUnread`), no page failed, and the
+checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
+whether the job is still the source's newest
+(`WebsiteCrawlJobRepository.isNewestForSource`). The pages it did not find are
+the source's pages published under this site's external-id prefix
+(`websiteExternalDocumentIdPrefix` in `pageUrls.ts`) before the job started,
+less the ones the operator kept. Whatever started the crawl, it holds them when
+they are more than a fifth of the source's pages other than kept ones
+(`missingPageRemoval.ts`) in
+`website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`).
+Otherwise it asks the site about each one first (`missingPageVerification.ts`:
+the `WebsitePageProbe` port, the pure `judgePageAnswer` and
+`decideVerifiedRemoval`, at most `MAX_VERIFIED_MISSING_PAGES` per crawl) and
+removes exactly the ones the site says are gone
+(`DocumentRepository.deleteMissingSourcePages`). The probe is
+`createRadiosoWebsitePageProbe` in `radiosoCrawlerProvider.ts` over
+`probePages` (`packages/crawler/src/transport/pageProbe.ts`), the crawler's own
+guarded fetch, wired into the crawl worker in
+`app/server/builders/documentsRetrieval.ts`;
+`heldPagesService.ts` removes the pages still held (`DocumentRepository.deleteHeldSourcePages`)
+or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
+is the catalog's `fastestRecrawlCadence`, read by the EE usage limit service's
+`getFastestRecrawlCadence`. The dashboard's controls are
+`frontend/components/dashboard/documents/source-recrawl-controls.tsx`; Ray's
+tool is `set_recrawl_cadence` in `operatorCopilot/tools/documents.ts`.
+
 Public surfaces and key files:
 
 - `backend/src/modules/websiteCrawler/public.ts`
 - `backend/src/modules/websiteCrawler/service.ts`
 - `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
-- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`)
+- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`, `createRadiosoWebsitePageProbe`)
 - `backend/src/modules/websiteCrawler/routes.ts`
+- `backend/src/modules/websiteCrawler/recrawlSchedule.ts`, `recrawlScheduleService.ts`, `recrawlSweep.ts`, `missingPages.ts`, `missingPageRemoval.ts`, `missingPageVerification.ts`, `heldPagesService.ts`
+- `backend/src/app/composition/websiteRecrawl.ts`
 - `packages/crawler/src/transport/htmlImageExtraction.ts`
+- `packages/crawler/src/transport/pageProbe.ts`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
-- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
+- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts tests/unit/crawlFrontier.test.ts tests/unit/pageProbe.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts tests/integration/website-recrawl-multi-slice.integration.test.ts`
+- `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 
 Related docs:
 
@@ -3261,7 +3313,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set, whether prices include
+  top-up, managed service, the managed-plan model set, the fastest scheduled
+  website recrawl (`fastestRecrawlCadence`), whether prices include
   VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
   data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
   staff-only model spend estimate (list prices, `eurPerUsd`, the conversation

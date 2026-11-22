@@ -1001,11 +1001,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentInventory: {
       listInventoryForWorkspace: documents.documentIngestionService.listInventoryForWorkspace.bind(documents.documentIngestionService),
     },
-    documentChunks: repositories.chunkRepository,
-    documentMaintenance: {
+    documentChunks: repositories.chunkRepository, documentMaintenance: {
       reprocessDocument: documents.documentIngestionService.reprocessEligible.bind(documents.documentIngestionService),
       reprocessSource: (input) => documents.documentSourceReprocessService.reprocessSource(input),
       recrawlSource: documents.documentSourceRecrawlService.recrawlSource.bind(documents.documentSourceRecrawlService),
+      setRecrawlCadence: (input) => documents.websiteRecrawl.scheduleService.setRecrawlCadence(input),
     },
     evalResultsService: evalCaseService,
     pendingApprovals: chat.approvalDecisionService,
@@ -1165,7 +1165,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retention: { db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger, metrics: infrastructure.metricsRegistry },
     identityNonces: { nonces: repositories.identityNonceRepository, logger },
     voiceRecordingErasureRecovery: voiceRecordings.erasureRecoveryTask,
-    workspaceEventDelivery: workspaceEventDelivery.periodicTask,
+    workspaceEventDelivery: workspaceEventDelivery.periodicTask, websiteRecrawl: documents.websiteRecrawl.periodicTask,
     contributed: {
       registrations: composition.periodicTaskRegistrations,
       context: { database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null },
@@ -1308,7 +1308,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     facetExtractionWorkspaceDrainWorker,
     facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
-    websiteCrawlJobService: documents.websiteCrawlJobService,
+    websiteCrawlJobService: documents.websiteCrawlJobService, websiteRecrawl: documents.websiteRecrawl,
     websiteCrawlWorker: documents.websiteCrawlWorker,
     websiteCrawlJobConsumer: documents.websiteCrawlJobConsumer,
     documentDeletionService: documents.documentDeletionService,

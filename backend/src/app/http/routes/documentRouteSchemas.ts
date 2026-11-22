@@ -7,6 +7,7 @@ import {
   inlineDocumentFieldsSchema,
 } from "../../../modules/documents/public.js";
 import { documentSourceIdSchema } from "../../../modules/documents/contracts/index.js";
+import { recrawlCadences } from "../../../modules/websiteCrawler/public.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -29,6 +30,10 @@ export const reprocessSingleDocumentBodySchema = z.object({
 export const sourceParamsSchema = z.object({
   sourceId: documentSourceIdSchema,
 });
+
+export const recrawlCadenceUpdateSchema = z.object({
+  recrawlCadence: z.enum(recrawlCadences),
+}).strict();
 
 export const sourceUpdateSchema = z.object({
   documentEnrichmentOverride: documentSourceEnrichmentOverrideSchema.optional(),

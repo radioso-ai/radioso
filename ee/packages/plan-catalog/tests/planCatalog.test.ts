@@ -71,6 +71,15 @@ describe("catalog invariants", () => {
     }
   });
 
+  it("lets the free plan recrawl a website weekly at most and every paid plan daily", () => {
+    expect(PLAN_CATALOG.plans.map((plan) => [plan.id, plan.fastestRecrawlCadence])).toEqual([
+      ["comet", "weekly"],
+      ["satellite", "daily"],
+      ["planet", "daily"],
+    ]);
+    expect(findPlan(PLAN_CATALOG.defaultPlanId)?.fastestRecrawlCadence).toBe("weekly");
+  });
+
   it("resolves defaultPlanId to a real plan", () => {
     expect(findPlan(PLAN_CATALOG.defaultPlanId)).toBeDefined();
   });

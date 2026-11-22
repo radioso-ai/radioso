@@ -299,7 +299,7 @@ describe("document recrawl accounting", () => {
     const result = await service.reapMissingPages({
       workspaceId: "workspace-1",
       sourceId,
-      keepExternalDocumentIds: ["keep-1"],
+      documentIds: [drop.id],
     });
 
     expect(result.deletedCount).toBe(1);
@@ -312,7 +312,7 @@ describe("document recrawl accounting", () => {
     await service.reapMissingPages({
       workspaceId: "workspace-1",
       sourceId,
-      keepExternalDocumentIds: ["keep-1"],
+      documentIds: [drop.id],
     });
     expect(publisher.enqueue).toHaveBeenCalledOnce();
   });

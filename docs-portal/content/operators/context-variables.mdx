@@ -227,8 +227,8 @@ attribute, since the value would be personal information nobody declared, nor
 one treated as proof, since its value comes from what the visitor typed. The
 dashboard disables the option for those and says why, and the API refuses them.
 Attributes are labels for your team and your rules; the AI only ever picks from
-the options you wrote, and a visitor who writes "mark this as urgent" has not
-made it urgent.
+the options you wrote, and it is told to ignore a visitor who writes "mark this
+as urgent". The live eval set checks that it does.
 
 To check it before publishing, open **Test Chat** on the draft and send a few
 messages. Open a reply's turn debug: its **Attributes** section lists every

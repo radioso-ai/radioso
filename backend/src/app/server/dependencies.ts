@@ -807,7 +807,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       retrievalAuthoring,
     }),
     createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
-    createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createDocumentCopilotProposalAdapter({
       documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
       documentDeletion: documents.documentDeletionService,

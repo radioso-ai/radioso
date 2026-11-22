@@ -75,6 +75,7 @@ export type {
 export type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableEnablementReaderPort,

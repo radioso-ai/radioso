@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CopilotContextVariableProposalAdapter } from "./contracts.js";
+import type { CopilotContextVariableProposalAdapter, CopilotReviewedReceiptPort } from "./contracts.js";
 import {
   CONTEXT_VARIABLE_SOURCES,
   CONTEXT_VARIABLE_VALUE_TYPES,
@@ -13,6 +13,7 @@ import {
   type ContextVariableService,
 } from "../context-variables/public.js";
 import { isStale } from "./proposalVersioning.js";
+import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 // Proposal shape remains Ray-owned; the context-variable module validates the
@@ -167,6 +168,8 @@ const normalizeOptions = (
 
 export const createContextVariableCopilotProposalAdapter = (deps: {
   readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertDefinitionTypeFits" | "assertDefinitionKeepsClassification" | "assertEnablementReferences" | "applyProposal">;
+  /** Commits a reviewed MCP execution's receipt in the proposal's own transaction (`prepare_context_variable`). */
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariables, workspaceId, agentId, variableId);
@@ -424,9 +427,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         proposed: { definition: payload.definition ?? currentDefinition, enablement: payload.enablement ?? currentEnablement },
       };
     },
-    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
+      const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { variableId: string }) => ({ agentId: targetRef.agentId, variableId: committed.variableId }));
       try {
         // The context-variable service resolves the agent again inside applyProposal. That check
         // is not used to gate on updatedAt: a
@@ -441,7 +445,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         // gated by its own predicate, and only for the row its own input actually supplies), not
         // by a read-then-compare here: a pre-read leaves a window where a concurrent edit lands
         // between the check and the write.
-        const result = await deps.contextVariables.applyProposal({
+        const proposal = {
           workspaceId,
           agentId: targetRef.agentId,
           variableId: targetRef.variableId,
@@ -449,12 +453,23 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
           expectedVariableUpdatedAt: targetRef.variableId ? decoded.variableUpdatedAt : null,
           enablement: payload.enablement,
           expectedEnablementUpdatedAt: decoded.enablementUpdatedAt,
-        });
+        };
+        const result = onCommitted
+          ? await deps.contextVariables.applyProposal(proposal, { onCommitted })
+          : await deps.contextVariables.applyProposal(proposal);
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId: result.variableId } };
       } catch (error) {
+        // A reviewed execution reports only an owner's refusal as failed; anything else, its
+        // receipt conflict included, escapes so the execution settles as uncertain, as a directive's does.
+        if (onCommitted) return reviewedApplyError(error);
         if (isStale(error)) return { outcome: "stale" as const };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Context variable apply failed" };
       }
+    },
+    // A reviewed execution's receipt commits with its writes, so an attempt that left no receipt
+    // wrote nothing and may run again.
+    async reconcileMcpInterruptedApply() {
+      return { outcome: "not_applied" as const };
     },
     async validatePayload(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);

@@ -1,6 +1,7 @@
 import type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableDefinitionWrite,
@@ -194,7 +195,7 @@ export class ContextVariableService {
     return this.repository.deleteValue(variableId, scope);
   }
 
-  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+  async applyProposal(input: ApplyContextVariableProposalInput, options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> {
     // A proposal with a null `variableId` inserts a brand-new variable, so this is a third write
     // path and not a variant of `update`. A Ray-proposed `radioso_`-prefixed name would otherwise be
     // created and then permanently shadowed by the reserved key, leaving a variable that never reads.
@@ -224,7 +225,7 @@ export class ContextVariableService {
           : conflict(`Resolver skill "${skillId}" is disabled on this agent`),
       );
     }
-    return this.repository.applyProposal(input);
+    return options ? this.repository.applyProposal(input, options) : this.repository.applyProposal(input);
   }
 
   /**

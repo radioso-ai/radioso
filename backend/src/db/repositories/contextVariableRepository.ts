@@ -25,6 +25,7 @@ import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalOptions,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableRepositoryPort,
@@ -680,7 +681,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return readMostSpecificValues(this.db, variableIds, scopes);
   }
 
-  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+  async applyProposal(input: ApplyContextVariableProposalInput, options: ApplyContextVariableProposalOptions = {}): Promise<ApplyContextVariableProposalResult> {
     return withAgentDraftMutation(this.db, input.workspaceId, input.agentId, async (trx, snapshot) => {
       let variableId = input.variableId;
       let savedEnablement: AgentContextVariableEnablement | null = null;
@@ -834,6 +835,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         throw badRequest("A context variable proposal must include a definition or target an existing variable");
       }
       const result = { variableId };
+      await options.onCommitted?.(trx, result);
       return savedEnablement
         ? {
             result,

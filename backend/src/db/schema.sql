@@ -53,7 +53,7 @@ CREATE FUNCTION public.agent_skill_target_uses(p_workspace_id uuid, p_target_typ
     FROM agent_skills draft_skill
     WHERE draft_skill.workspace_id = p_workspace_id
       AND draft_skill.target_type = p_target_type
-      AND draft_skill.target_id = p_target_id
+      AND lower(draft_skill.target_id) = lower(p_target_id)
     UNION ALL
     SELECT published_agent.id, released_skill ->> 'skillName', FALSE
     FROM agents published_agent
@@ -66,7 +66,7 @@ CREATE FUNCTION public.agent_skill_target_uses(p_workspace_id uuid, p_target_typ
     ) AS released_skill
     WHERE published_agent.workspace_id = p_workspace_id
       AND released_skill ->> 'targetType' = p_target_type
-      AND released_skill ->> 'targetId' = p_target_id
+      AND lower(released_skill ->> 'targetId') = lower(p_target_id)
   ) uses
   JOIN agents agent ON agent.id = uses.agent_id
   GROUP BY agent.id, agent.internal_name, agent.name, uses.skill_name

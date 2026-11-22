@@ -12,6 +12,7 @@ import { OauthConnectionRepository } from "../../src/db/repositories/oauthConnec
 import { WebhookDestinationRepository } from "../../src/db/repositories/webhookDestinationRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AgentSkillRepository, AgentSkillTargetUses, type AgentSkillKind } from "../../src/modules/agentSkills/public.js";
+import { writeAgentSkillIntoDraft } from "../../src/modules/agentSkills/repository.js";
 import { ApiConnectionService } from "../../src/modules/apiRequestSkills/public.js";
 import { CustomerEmailConnectionService, StaticCustomerEmailProviderRegistry } from "../../src/modules/customerEmail/public.js";
 import { McpConnectionService } from "../../src/modules/externalSkills/services/mcpConnectionService.js";
@@ -22,6 +23,7 @@ import {
   SlackInstallationRepository,
   SlackInstallationService,
 } from "../../src/modules/slack/public.js";
+import { SlackSkillDefinitionRepository, SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import { WebhookDestinationService } from "../../src/modules/webhooks/public.js";
 import type { SkillTargetType } from "../../src/shared/domain/skillTargetUses.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -321,6 +323,35 @@ describeIntegration("deleting a skill target an agent's published release uses (
       expect(await kind.exists(targetId)).toBe(false);
     });
 
+    it("counts a skill whose stored target id differs only in letter case, in the draft and in the release", async () => {
+      const workspaceId = await createWorkspace();
+      const agentId = await createAgent(workspaceId, "Support");
+      const targetId = await kind.create(workspaceId);
+      const skill = await skills.create({
+        workspaceId,
+        agentId,
+        skillName: "reach_target",
+        kind: kind.skillKind,
+        targetType: kind.targetType,
+        targetId: targetId.toUpperCase(),
+        config: kind.skillConfig,
+        invocationMode: "routine_named",
+        enabled: true,
+      });
+
+      await expect(kind.remove(workspaceId, targetId)).rejects.toMatchObject({ statusCode: 409 });
+      expect(pgErrorMeta(await directDelete(targetId))).toMatchObject({ code: "23503", constraint: kind.constraint });
+
+      await publish(workspaceId, agentId);
+      await skills.remove(workspaceId, agentId, skill.id);
+
+      await expect(kind.remove(workspaceId, targetId)).rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining('Publish agent "Support" first.'),
+      });
+      expect(pgErrorMeta(await directDelete(targetId))).toMatchObject({ code: "23503", constraint: kind.constraint });
+    });
+
     it("reads the live skills for a release that recorded none", async () => {
       const { workspaceId, agentId, targetId, skillId } = await setUp();
       const releaseId = await publish(workspaceId, agentId);
@@ -370,6 +401,59 @@ describeIntegration("deleting a skill target an agent's published release uses (
       expect(await skillTargetUses.listSkillTargetUses({ workspaceId: await createWorkspace(), targetType: "api_connection", targetId: connection })).toEqual([]);
       expect(await apiConnections.findByIdAndWorkspace(connection, workspaceId)).not.toBeNull();
     });
+  });
+
+  it("stores a Slack skill on the installation's own id, whatever the letter case it was given in", async () => {
+    const workspaceId = await createWorkspace();
+    const agentId = await createAgent(workspaceId, "Support");
+    const installationId = await kinds[4].create(workspaceId);
+    const service = new SlackSkillDefinitionService({
+      repository: new SlackSkillDefinitionRepository(database.kysely, writeAgentSkillIntoDraft),
+      installations: new SlackInstallationRepository(database.kysely),
+    });
+
+    const created = await service.create(workspaceId, agentId, {
+      skillName: "post_to_slack",
+      installationId: installationId.toUpperCase(),
+      boundInputs: { channelId: "CROUTINE" },
+      exposedInputs: { text: { slotBinding: "message", required: true } },
+      enabled: true,
+    });
+
+    expect(created.installationId).toBe(installationId);
+    expect(await database.query("SELECT target_id FROM agent_skills WHERE id = $1", [created.id])).toEqual([{ target_id: installationId }]);
+  });
+
+  it("lists an agent under an MCP connection's usedByAgents while only its published release uses it", async () => {
+    const workspaceId = await createWorkspace();
+    const agentId = await createAgent(workspaceId, "Nico");
+    await database.query("UPDATE agents SET internal_name = 'Sales IT' WHERE id = $1", [agentId]);
+    const connectionId = await kinds[1].create(workspaceId);
+    const skill = await skills.create({
+      workspaceId,
+      agentId,
+      skillName: "post_message",
+      kind: "external_mcp",
+      targetType: "mcp_connection",
+      targetId: connectionId,
+      config: { toolName: "post_message" },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+    await publish(workspaceId, agentId);
+    await skills.remove(workspaceId, agentId, skill.id);
+    const service = new McpConnectionService({
+      repository: new McpConnectionRepository(database.kysely),
+      toolServiceFactory: {
+        create: () => {
+          throw new Error("no tools are discovered");
+        },
+      },
+      skillTargetUses,
+    });
+
+    expect((await service.get(workspaceId, connectionId)).usedByAgents).toEqual([{ id: agentId, name: "Sales IT" }]);
+    expect((await service.list(workspaceId)).map((connection) => connection.usedByAgents)).toEqual([[{ id: agentId, name: "Sales IT" }]]);
   });
 
   it("lets a workspace go with the skills and targets its agents' releases use", async () => {

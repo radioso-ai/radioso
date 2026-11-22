@@ -13,6 +13,8 @@
 -- skills (one frozen before skills were tracked, or cleared by migration 268) serves the live table,
 -- which the draft branch already covers. The backend reads the same function to name the skills in
 -- the 409 it answers, and each kind's trigger raises the constraint name its service already maps.
+-- Target ids are UUIDs stored as text, so they are compared without regard to letter case: a skill
+-- written with an upper-case id still holds its target.
 
 CREATE OR REPLACE FUNCTION agent_skill_target_uses(p_workspace_id UUID, p_target_type TEXT, p_target_id TEXT)
 RETURNS TABLE (agent_id UUID, agent_name TEXT, skill_name TEXT, in_draft BOOLEAN, in_published_release BOOLEAN)
@@ -30,7 +32,7 @@ AS $$
     FROM agent_skills draft_skill
     WHERE draft_skill.workspace_id = p_workspace_id
       AND draft_skill.target_type = p_target_type
-      AND draft_skill.target_id = p_target_id
+      AND lower(draft_skill.target_id) = lower(p_target_id)
     UNION ALL
     SELECT published_agent.id, released_skill ->> 'skillName', FALSE
     FROM agents published_agent
@@ -43,7 +45,7 @@ AS $$
     ) AS released_skill
     WHERE published_agent.workspace_id = p_workspace_id
       AND released_skill ->> 'targetType' = p_target_type
-      AND released_skill ->> 'targetId' = p_target_id
+      AND lower(released_skill ->> 'targetId') = lower(p_target_id)
   ) uses
   JOIN agents agent ON agent.id = uses.agent_id
   GROUP BY agent.id, agent.internal_name, agent.name, uses.skill_name

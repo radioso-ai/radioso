@@ -162,11 +162,11 @@ describe("reviewed context-variable preparation", () => {
     const seeded = Array.from({ length: 9 }, (_, index) => choice({ name: `topic_${index}` }));
     const { invoke, repository } = fixture(seeded, seeded.slice(0, 8).map((variable) => enablementOf(variable.id, { source: "classified" })));
 
-    await expect(invoke({ kind: "set_enablement", agentId, variableId: seeded[8]!.id, enablement: { source: "classified", surfacing: "on_reference" } }))
+    await expect(invoke({ kind: "set_enablement", agentId, variableId: seeded[8].id, enablement: { source: "classified", surfacing: "on_reference" } }))
       .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 8/u) });
 
     repository.hasValues.mockResolvedValue(true);
-    await expect(invoke({ kind: "edit", agentId, variableId: seeded[8]!.id, valueType: "string", options: null }))
+    await expect(invoke({ kind: "edit", agentId, variableId: seeded[8].id, valueType: "string", options: null }))
       .rejects.toMatchObject({ statusCode: 409, code: "context_variable_has_values" });
   });
 

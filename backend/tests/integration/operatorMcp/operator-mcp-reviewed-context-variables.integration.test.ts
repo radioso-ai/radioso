@@ -90,7 +90,7 @@ describeIntegration("reviewed context-variable changes, prepared, approved and e
       agentService: { listExisting: async () => [{ id: fixture.agent.id, name: fixture.agent.name, isDefault: true, assistantBootstrapActive: false }] },
       contextVariables,
       appBaseUrl: "https://app.example",
-    } as never).createTool({
+    }).createTool({
       workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId, surface: "mcp",
       operatorMcpInvocationId: await invocation(fixture, "prepare_context_variable", "propose"), operatorMcpGrantId: fixture.grantId, operatorMcpClientId: fixture.clientId,
       currentAuthorization: { hasAllPermissions: async () => true },

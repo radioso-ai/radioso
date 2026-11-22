@@ -14,7 +14,7 @@ import { previewAttributeValue } from '@/lib/conversation-attributes'
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 /** What a teammate who may edit the conversation's attributes hands the block. */
-export interface ConversationAttributeEditing {
+interface ConversationAttributeEditing {
   workspaceId: string
   conversationId: string
   /** The edit's result, as the conversation now reads the attribute; null when nothing holds it. */

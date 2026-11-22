@@ -20,7 +20,7 @@ interface Reread {
   attributes: ConversationAttribute[]
 }
 
-export interface LiveConversationAttributes {
+interface LiveConversationAttributes {
   attributes: ConversationAttribute[] | undefined
   /** Shows a teammate's edit at once, as the edit's response read it, over any read already under way. */
   applyChange: (name: string, changed: ConversationAttribute | null) => void

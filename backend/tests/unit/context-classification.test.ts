@@ -318,13 +318,25 @@ describe("ConversationClassificationService", () => {
       workspaceId,
       conversationId,
       agentId: "agent-1",
-      variableIds: ["variable-topic"],
+      variables: [topic()],
       stored: new Map(),
       excerpt: excerpt({ messages: ["Where is my parcel?"] }),
       values: values.writer,
     });
 
     expect(result).toMatchObject({ outcome: "written", decisions: [{ variableId: "variable-topic", value: "shipping", write: "written" }] });
+  });
+
+  it("ends a call its caller's deadline aborted as a timeout, not a failure", async () => {
+    const run = serviceFor({ targets: [{ variable: topic(), stored: null, held: false }], completion: new DOMException("The operation was aborted due to timeout", "AbortError") });
+    const deadline = new AbortController();
+    deadline.abort(new DOMException("The operation timed out", "TimeoutError"));
+
+    await expect(run.service.classifyTranscript({
+      workspaceId, conversationId, agentId: "agent-1", variables: [topic()], stored: new Map(),
+      excerpt: excerpt(), values: run.values.writer, signal: deadline.signal,
+    })).resolves.toMatchObject({ outcome: "skipped_timeout" });
+    expect(run.metrics.incrementCounter).toHaveBeenCalledWith(CONTEXT_CLASSIFICATION_RUNS_TOTAL, expect.objectContaining({ labels: { trigger: "test_chat", outcome: "skipped_timeout" } }));
   });
 });
 

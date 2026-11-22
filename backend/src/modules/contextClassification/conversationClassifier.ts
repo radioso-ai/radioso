@@ -6,6 +6,7 @@ import {
   type ClassificationTarget,
   type ClassifiedVariableReader,
   type ConversationValueWriteOutcome,
+  type ContextVariable,
   type ConversationValueWriter,
   type StoredConversationValue,
 } from "../context-variables/public.js";
@@ -38,6 +39,7 @@ type ClassificationTrigger = "after_turn" | "test_chat";
  * conversation's ladder, so no call was made. `skipped_sensitive`: every recent visitor message was
  * withheld. `skipped_empty`: no variable to fill or nothing to read. `skipped_gone`: the
  * conversation was erased. `skipped_over_budget`: the prompt was over the model's input budget.
+ * `skipped_timeout`: the caller's deadline aborted the call.
  * `no_option`: the model found no option for any variable. A `skipped_` run is not retried.
  */
 export type ClassificationRunOutcome =
@@ -49,6 +51,7 @@ export type ClassificationRunOutcome =
   | "skipped_empty"
   | "skipped_gone"
   | "skipped_over_budget"
+  | "skipped_timeout"
   | "invalid"
   | "failed";
 
@@ -83,6 +86,9 @@ interface ClassificationRun {
 const skipped = (outcome: ClassificationRunOutcome): ClassificationRunResult => ({ outcome, decisions: [] });
 
 const errorType = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
+
+/** The reason `AbortSignal.timeout` aborts with. */
+const isTimeout = (reason: unknown): boolean => reason instanceof Error && reason.name === "TimeoutError";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -140,22 +146,27 @@ export class ConversationClassificationService implements ConversationClassifier
     });
   }
 
+  /** The workspace's definitions of these variables, for a caller that classifies a transcript it holds. */
+  readDefinitions(input: { workspaceId: string; variableIds: readonly string[] }): Promise<ContextVariable[]> {
+    return this.deps.targets.readDefinitions(input);
+  }
+
   /**
-   * For a caller that holds the conversation and its values itself, as Test Chat does: its private
-   * test conversations are not stored, so it hands over the excerpt, the values it holds and a
-   * writer over them.
+   * For a caller that holds the conversation and its values itself: a conversation that is not
+   * stored, such as a private test's, is handed over as its excerpt, the definitions to fill, the
+   * values it holds and a writer over them.
    */
   async classifyTranscript(input: {
     workspaceId: string;
     conversationId: string;
     agentId: string;
-    variableIds: readonly string[];
+    variables: readonly ContextVariable[];
     stored: ReadonlyMap<string, StoredConversationValue>;
     excerpt: ConversationExcerpt;
     values: ConversationValueWriter;
     signal?: AbortSignal;
   }): Promise<ClassificationRunResult> {
-    const variables = await this.deps.targets.readDefinitions({ workspaceId: input.workspaceId, variableIds: input.variableIds });
+    const { variables } = input;
     return this.run({
       ...input,
       targets: variables.map((variable) => {
@@ -256,9 +267,13 @@ export class ConversationClassificationService implements ConversationClassifier
     return this.count(run.trigger, { outcome: outcomeOf(decisions), decisions });
   }
 
-  /** A prompt over the input budget is recorded and skipped, since a retry would be over it too; any other failure fails the job. */
+  /**
+   * A prompt over the input budget is recorded and skipped, since a retry would be over it too, and
+   * so is a call its caller's deadline aborted (`skipped_timeout`); any other failure fails the job.
+   */
   private failedCall(run: ClassificationRun, error: unknown): ClassificationRunResult {
     const base = { workspaceId: run.workspaceId, conversationId: run.conversationId, trigger: run.trigger };
+    if (run.signal?.aborted && isTimeout(run.signal.reason)) return this.count(run.trigger, skipped("skipped_timeout"));
     if (error instanceof AppError && error.code === "payload_too_large") {
       const details = isRecord(error.details) ? error.details : {};
       this.deps.logger?.warn({

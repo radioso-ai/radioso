@@ -1008,11 +1008,15 @@ imports from `services/`.
   not read before it is marked), never one marked as holding a sensitive routine value, nor a
   teammate's. Test Chat
   sides are not stored conversations, so the trusted runner classifies a test turn itself
-  (`services/testChatClassification.ts`): over the side's own transcript, against the values the
-  test holds (its samples count as the operator's), with the same classifier and overwrite rule.
-  The values ride the test's continuation into its next turn, where they resolve as the
-  conversation's, and the turn's trace carries them as `attributes` (value, label and writer),
-  the way `handoffPreview` rides a Test Chat trace.
+  (`services/testChatClassification.ts`), once the replayed turn has answered: over the side's
+  own transcript, against the values the test holds (its samples count as the operator's), with
+  the same classifier and overwrite rule, bounded at `TEST_CHAT_CLASSIFICATION_TIMEOUT_MS` (5 s;
+  past it the side keeps its values, `skipped_timeout`). A turn whose routine held a sensitive slot
+  (`WorkbenchReplayResult.sensitiveSlotKeys`, the keys live chat marks a turn with) is not
+  classified, and its message id joins the continuation's `withheldMessageIds`, which no later run
+  reads. The values ride the test's continuation into its next turn, where they resolve as the
+  conversation's, and the turn's trace carries every classified attribute as `attributes` (value,
+  label and writer, or null), the way `handoffPreview` rides a Test Chat trace.
 - Draft a reply without becoming a turn: `services/replyDraftRunner.ts` composes what
   the agent would say next in a live conversation by running the workbench replay over
   that conversation's own transcript, with the last customer message as the query. It is

@@ -1197,9 +1197,11 @@ A committed turn writes the `context.classification` job (`rerun`, keyed by
 conversation) beside the summary refresh when its revision classifies an
 attribute (`chat/services/turnBackgroundJobs.ts`). Test Chat sides are not
 stored conversations, so the trusted Test Chat runner classifies each test turn
-itself (`chat/services/testChatClassification.ts`), carries the values in the
-side's continuation and shows them on the turn trace as `attributes`, which
-`test_chat_turn_trace` returns.
+itself once its answer is out (`chat/services/testChatClassification.ts`, bounded
+at 5 s, never after a turn that held a sensitive slot), carries the values and the
+withheld message ids in the side's continuation and shows every classified
+attribute on the turn trace as `attributes`, which `test_chat_turn_trace` returns
+and the dashboard's turn debug renders.
 
 Public surfaces and key files:
 

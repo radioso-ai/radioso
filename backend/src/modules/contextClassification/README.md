@@ -44,9 +44,11 @@ Exposed:
   when the conversation's revision classifies something
   (`chat/services/turnBackgroundJobs.ts`).
 - `ConversationClassifier.classifyNow`, which the job's handler calls.
-- `classifyTranscript`, for Test Chat: its private test conversations are not
-  stored, so the trusted runner hands over the side's transcript, the values the
-  test holds and a writer over them (`chat/services/testChatClassification.ts`).
+- `readDefinitions` and `classifyTranscript`, for a caller that holds a
+  conversation that is not stored, as Test Chat does: it reads the definitions,
+  then hands over the transcript, the values it holds, a writer over them and its
+  deadline as an abort signal (`chat/services/testChatClassification.ts`). A call
+  the deadline aborts ends `skipped_timeout`.
 
 Composition builds the service and registers `contextClassificationHandler` in
 `app/composition/backgroundJobHandlers.ts` (`app/composition/contextClassification.ts`).
@@ -88,7 +90,7 @@ turn that lands mid-run causes one more. A value is visible from the next turn.
 - `radioso_context_classification_runs_total{trigger, outcome}`: trigger
   `after_turn | test_chat`; outcome `written | unchanged | no_option |
   skipped_sensitive | skipped_override | skipped_empty | skipped_gone |
-  skipped_over_budget | invalid | failed`.
+  skipped_over_budget | skipped_timeout | invalid | failed`.
 - `radioso_context_value_writes_total{writer, outcome}`, counted by the
   context-variables writer.
 - One span per run, `context_classification.run`, with the trigger, the recipe

@@ -231,9 +231,17 @@ the options you wrote, and a visitor who writes "mark this as urgent" has not
 made it urgent.
 
 To check it before publishing, open **Test Chat** on the draft and send a few
-messages. Each turn's trace lists the attributes the AI set, with the value and
-who set it. A sample value you give an attribute in Test Chat counts as your
-team's and is kept. An MCP client connected to Ray can create the attribute,
+messages. Open a reply's turn debug: its **Attributes** section lists every
+attribute the AI sets for the agent, with the value and who set it, or **Not
+set**. A sample value you give an attribute in Test Chat counts as your team's
+and is kept.
+
+Test Chat classifies a turn once its answer is out and shows the value on that
+same turn, where a live conversation usually shows it from the next one. The
+turn waits at most 5 seconds for it; past that, the attributes keep the values
+they had. As in live chat, a turn whose routine collected a Private field is
+left out. Test Chat reads the test's latest six messages and no summary, so in a
+longer test the AI sees less of the start than it would in a live conversation. An MCP client connected to Ray can create the attribute,
 have the agent use it, try it in Test Chat, read the values and publish; see
 [Have the AI fill an attribute](/guides/mcp-server#have-the-ai-fill-an-attribute).
 

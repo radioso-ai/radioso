@@ -39,7 +39,7 @@ export const classifyEvalCase = async (
     workspaceId: classificationEvalAttributes[0].workspaceId,
     conversationId: evalCase.id,
     agentId: "classification-eval-agent",
-    variableIds: classificationEvalAttributes.map((attribute) => attribute.id),
+    variables: classificationEvalAttributes,
     stored: new Map(),
     excerpt: { summary: evalCase.summary ?? null, messages: evalCase.messages, withheldCount: 0 },
     values,

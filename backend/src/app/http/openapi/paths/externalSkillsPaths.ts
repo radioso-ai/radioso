@@ -175,7 +175,7 @@ export const registerExternalSkillsPaths = (
       204: { description: "Connection deleted" },
       401: errorResponse("Authentication required"),
       404: errorResponse("Connection not found"),
-      409: errorResponse("Connection is still referenced by a skill"),
+      409: errorResponse("A skill in an agent's draft or published version uses the connection; the message names each agent and skill"),
     },
   });
 

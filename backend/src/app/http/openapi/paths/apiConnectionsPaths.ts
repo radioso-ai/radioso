@@ -176,7 +176,7 @@ export const registerApiConnectionsPaths = (
       204: { description: "API connection deleted" },
       401: errorResponse("Authentication required"),
       404: errorResponse("API connection not found"),
-      409: errorResponse("An agent skill uses the connection"),
+      409: errorResponse("`api_connection_in_use`: a skill in an agent's draft or published version uses the connection; the message names each agent and skill"),
     },
   });
 

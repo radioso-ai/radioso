@@ -17672,7 +17672,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Destination is referenced by enabled routines */
+            /** @description `webhook_destination_in_use`: an enabled routine, or a skill in an agent's draft or published version, uses the destination; the message names each one */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18830,7 +18830,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description An agent skill uses the connection */
+            /** @description `api_connection_in_use`: a skill in an agent's draft or published version uses the connection; the message names each agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22435,7 +22435,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Connection is still referenced by a skill */
+            /** @description A skill in an agent's draft or published version uses the connection; the message names each agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23635,7 +23635,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Customer email connection is still referenced by an email skill */
+            /** @description A skill in an agent's draft or published version uses the connection; the message names each agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24680,6 +24680,15 @@ export interface operations {
             };
             /** @description Agent manage permission required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `slack_installation_in_use`: a skill in an agent's draft or published version uses the installation; the message names each agent and skill */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

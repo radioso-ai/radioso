@@ -262,7 +262,7 @@ export const registerCustomerEmailPaths = (
       401: errorResponse("Authentication required"),
       403: errorResponse("Workspace settings permission required"),
       404: errorResponse("Customer email connection not found"),
-      409: errorResponse("Customer email connection is still referenced by an email skill"),
+      409: errorResponse("A skill in an agent's draft or published version uses the connection; the message names each agent and skill"),
     },
   });
 

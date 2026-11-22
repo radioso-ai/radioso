@@ -57,7 +57,7 @@ export const attributesEditableSchema = z.boolean().optional().openapi({
 export const registerConversationAttributeChangeSchema = (registry: OpenAPIRegistry, attribute: z.ZodTypeAny) => registry.register(
   "ConversationAttributeChange",
   z.object({
-    attribute: attribute.nullable().openapi({
+    attribute: z.union([attribute, z.null()]).openapi({
       description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value.",
     }),
     classificationQueued: z.boolean().openapi({

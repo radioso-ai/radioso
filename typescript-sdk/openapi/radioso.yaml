@@ -13966,12 +13966,10 @@ components:
       type: object
       properties:
         attribute:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/ConversationAttribute"
-            - type:
-                - object
-                - "null"
-              description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value."
+            - type: "null"
+          description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value."
         classificationQueued:
           type: boolean
           description: "True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued."

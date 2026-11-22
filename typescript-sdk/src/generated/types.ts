@@ -10419,7 +10419,8 @@ export interface components {
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
         ConversationAttributeChange: {
-            attribute: components["schemas"]["ConversationAttribute"] & (Record<string, never> | null);
+            /** @description The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value. */
+            attribute: components["schemas"]["ConversationAttribute"] | null;
             /** @description True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued. */
             classificationQueued: boolean;
         };

@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { chatApi } from '@/lib/api'
 import type { ChatConversationMessage, ConversationAttribute } from '@/lib/api-types'
+import { applyAttributeChange } from '@/lib/conversation-attribute-edits'
 
 /**
  * When to read a conversation's attributes again after the tail delivers a new message. The AI
@@ -19,9 +20,15 @@ interface Reread {
   attributes: ConversationAttribute[]
 }
 
+export interface LiveConversationAttributes {
+  attributes: ConversationAttribute[] | undefined
+  /** Shows a teammate's edit at once, as the edit's response read it, over any read already under way. */
+  applyChange: (name: string, changed: ConversationAttribute | null) => void
+}
+
 /**
  * A conversation's attributes, kept current while it is open: the detail's own, then a first-page
- * read shortly after each message the tail delivers.
+ * read shortly after each message the tail delivers, and a teammate's own edits as they land.
  */
 export const useLiveConversationAttributes = ({
   conversationId,
@@ -31,9 +38,11 @@ export const useLiveConversationAttributes = ({
   conversationId: string | null
   loaded: ConversationAttribute[] | undefined
   tail: { messages: readonly ChatConversationMessage[]; hasPolled: boolean }
-}): ConversationAttribute[] | undefined => {
+}): LiveConversationAttributes => {
   const [reread, setReread] = useState<Reread | null>(null)
   const loadedRef = useRef(loaded)
+  // Bumped by each edit, so a read that started before it can't put the older value back.
+  const edits = useRef(0)
   const delivered = useRef<{ conversationId: string; lastMessageId: string | undefined } | null>(null)
   const lastMessageId = tail.messages.at(-1)?.id
 
@@ -58,9 +67,10 @@ export const useLiveConversationAttributes = ({
 
     let cancelled = false
     const timers = REREAD_DELAYS_MS.map((delay) => setTimeout(() => {
+      const editsBefore = edits.current
       void chatApi.getHistoryConversation(conversationId, { limit: 1 })
         .then((detail) => {
-          if (!cancelled && detail.attributes) {
+          if (!cancelled && detail.attributes && edits.current === editsBefore) {
             setReread({ conversationId, over: loadedRef.current, attributes: detail.attributes })
           }
         })
@@ -75,5 +85,16 @@ export const useLiveConversationAttributes = ({
     }
   }, [conversationId, lastMessageId, tail.hasPolled])
 
-  return reread && reread.conversationId === conversationId && reread.over === loaded ? reread.attributes : loaded
+  const applyChange = useCallback((name: string, changed: ConversationAttribute | null) => {
+    if (!conversationId) return
+    edits.current += 1
+    setReread((current) => {
+      const over = loadedRef.current
+      const showing = current && current.conversationId === conversationId && current.over === over ? current.attributes : over
+      return { conversationId, over, attributes: applyAttributeChange(showing, name, changed) }
+    })
+  }, [conversationId])
+
+  const attributes = reread && reread.conversationId === conversationId && reread.over === loaded ? reread.attributes : loaded
+  return { attributes, applyChange }
 }

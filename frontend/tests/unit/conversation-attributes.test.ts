@@ -38,6 +38,7 @@ const attribute = (overrides: Partial<ConversationAttribute>): ConversationAttri
   scope: 'conversation',
   writtenBy: { kind: 'classifier', ref: null },
   updatedAt: '2026-11-22T09:30:00.000Z',
+  classified: false,
   ...overrides,
 })
 

@@ -125,6 +125,7 @@ const catalog = [
     options: [
       { key: "billing", label: "Billing", description: null, archived: false },
       { key: "shipping", label: "Shipping", description: null, archived: true },
+      { key: "returns", label: "Returns", description: null, archived: false },
     ],
   }),
   catalogVariable("000000000002", "injury", {
@@ -266,4 +267,133 @@ test("a filter the backend now refuses is dropped, and the Inbox lists every con
   await expect(page.getByRole("button", { name: /Where is my parcel\?/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /I was charged twice this month/ })).toBeVisible();
   await expect(page.getByText("No attribute is named topic")).toHaveCount(0);
+});
+
+/** The catalog with a second Choice attribute, which the edit journeys set from "Set attribute" or over the visitor's value. */
+const editCatalog = [
+  ...catalog,
+  catalogVariable("000000000004", "region", {
+    options: [{ key: "eu", label: "Europe", description: null, archived: false }],
+  }),
+];
+
+const editable = (attributes: unknown[]) => ({ ...detail(billingId, "I was charged twice this month", attributes), attributesEditable: true });
+const topicAttribute = (overrides: Record<string, unknown>) => ({
+  name: "topic",
+  valueType: "enum",
+  value: "billing",
+  option: { label: "Billing", archived: false },
+  redacted: false,
+  scope: "conversation",
+  writtenBy: { kind: "classifier", ref: "context-classification/1" },
+  updatedAt: nowIso,
+  classified: true,
+  ...overrides,
+});
+
+/** Answers the Inbox's attribute edits the way the backend does, and records each one. */
+const installAttributeEdits = async (page: Page) => {
+  const edits: Array<{ method: string; name: string; value?: unknown }> = [];
+  await page.route(new RegExp(`/backend/api/v1/history/chat/${billingId}/attributes/[^/?]+$`), async (route) => {
+    const request = route.request();
+    const name = decodeURIComponent(new URL(request.url()).pathname.split("/").at(-1) ?? "");
+    if (request.method() === "PUT") {
+      const { value } = request.postDataJSON() as { value: string };
+      edits.push({ method: "PUT", name, value });
+      const options = (editCatalog.find((variable) => variable.name === name)?.options ?? []) as Array<{ key: string; label: string }>;
+      const label = options.find((option) => option.key === value)?.label;
+      await route.fulfill({
+        json: {
+          attribute: topicAttribute({
+            name,
+            value,
+            option: { label, archived: false },
+            writtenBy: { kind: "operator", ref: "user-1" },
+            classified: name === "topic",
+          }),
+          classificationQueued: false,
+        },
+      });
+      return;
+    }
+    edits.push({ method: "DELETE", name });
+    await route.fulfill({ json: { attribute: null, classificationQueued: name === "topic" } });
+  });
+  return edits;
+};
+
+test("a teammate sets an attribute the AI chose, then hands it back to the AI", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyItems: { items: [{ kind: "chat", id: billingId, sortAt: nowIso, conversation: conversations[0] }], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [billingId]: editable([topicAttribute({})]) },
+    contextVariables: editCatalog,
+  });
+  const edits = await installAttributeEdits(page);
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await attributes.getByRole("button", { name: "Change topic" }).click();
+  // Only the active options are offered; an archived one names stored values but can't be set.
+  await expect(page.getByRole("menuitemradio", { name: "Shipping" })).toHaveCount(0);
+  if (screenshotDir) await page.screenshot({ path: `${screenshotDir}/attributes-edit-menu.png` });
+  await page.getByRole("menuitemradio", { name: "Returns" }).click();
+
+  await expect.poll(() => edits).toEqual([{ method: "PUT", name: "topic", value: "returns" }]);
+  await expect(attributes.getByText("Returns", { exact: true })).toBeVisible();
+  await expect(attributes.getByText(/^Set by your team · /)).toBeVisible();
+
+  await attributes.getByRole("button", { name: "Change topic" }).click();
+  await page.getByRole("menuitem", { name: "Reset to automatic" }).click();
+
+  await expect.poll(() => edits.at(-1)).toEqual({ method: "DELETE", name: "topic" });
+  await expect(attributes.getByText("Returns", { exact: true })).toHaveCount(0);
+
+  // With no value left, the attribute is offered under Set attribute.
+  await attributes.getByRole("button", { name: "Set attribute" }).click();
+  await page.getByRole("menuitem", { name: "topic" }).click();
+  await page.getByRole("menuitem", { name: "Billing" }).click();
+
+  await expect.poll(() => edits.at(-1)).toEqual({ method: "PUT", name: "topic", value: "billing" });
+  await expect(attributes.getByText("Billing", { exact: true })).toBeVisible();
+  if (screenshotDir) await attributes.screenshot({ path: `${screenshotDir}/attributes-edited.png` });
+});
+
+test("a teammate clears a value they set where nothing fills it, and reads that a set replaces the visitor's value", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const region = topicAttribute({
+    name: "region", value: "eu", option: { label: "Europe", archived: false }, scope: "session",
+    writtenBy: { kind: "api", ref: "credential-1" }, classified: false,
+  });
+  await installDashboardApiMocks(page, {
+    historyItems: { items: [{ kind: "chat", id: billingId, sortAt: nowIso, conversation: conversations[0] }], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [billingId]: editable([region, topicAttribute({ writtenBy: { kind: "operator", ref: "user-1" }, classified: false })]) },
+    contextVariables: editCatalog,
+  });
+  const edits = await installAttributeEdits(page);
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await attributes.getByRole("button", { name: "Change region" }).click();
+  await expect(page.getByText("Replaces the visitor's value here")).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Clear" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await attributes.getByRole("button", { name: "Change topic" }).click();
+  await expect(page.getByRole("menuitem", { name: "Reset to automatic" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Clear" }).click();
+
+  await expect.poll(() => edits).toEqual([{ method: "DELETE", name: "topic" }]);
+  await expect(attributes.getByText("Billing", { exact: true })).toHaveCount(0);
+  await expect(attributes.getByText("Europe", { exact: true })).toBeVisible();
+});
+
+test("a teammate who may not take conversations over reads the attributes without changing them", async ({ page }) => {
+  await installMocks(page);
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await expect(attributes.getByText("Billing", { exact: true })).toBeVisible();
+  await expect(attributes.getByRole("button", { name: "Change topic" })).toHaveCount(0);
+  await expect(attributes.getByRole("button", { name: "Set attribute" })).toHaveCount(0);
 });

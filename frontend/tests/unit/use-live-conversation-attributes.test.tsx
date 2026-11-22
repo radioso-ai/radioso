@@ -19,6 +19,7 @@ const attribute = (value: string): ConversationAttribute => ({
   scope: 'conversation',
   writtenBy: { kind: 'classifier', ref: null },
   updatedAt: '2026-11-22T09:30:00.000Z',
+  classified: true,
 })
 
 const message = (id: string) => ({ id, role: 'user', content: id }) as ChatConversationMessage
@@ -31,9 +32,13 @@ interface Props {
 }
 
 let shown: ConversationAttribute[] | undefined
+let applyChange: (name: string, changed: ConversationAttribute | null) => void = () => undefined
 function Probe({ conversationId, loaded, messages, hasPolled }: Props) {
-  const attributes = useLiveConversationAttributes({ conversationId, loaded, tail: { messages, hasPolled } })
-  useEffect(() => { shown = attributes })
+  const live = useLiveConversationAttributes({ conversationId, loaded, tail: { messages, hasPolled } })
+  useEffect(() => {
+    shown = live.attributes
+    applyChange = live.applyChange
+  })
   return null
 }
 
@@ -93,6 +98,24 @@ describe('useLiveConversationAttributes', () => {
     await render({ loaded: reloaded, messages: [message('m1'), message('m2')], hasPolled: true })
 
     expect(shown).toBe(reloaded)
+  })
+
+  it('shows a teammate\'s edit at once, over a read that started before it', async () => {
+    let finishRead: (detail: { attributes: ConversationAttribute[] }) => void = () => undefined
+    api.getHistoryConversation.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve }))
+    await render({ messages: [message('m1')], hasPolled: true })
+    await render({ messages: [message('m1'), message('m2')], hasPolled: true })
+    await advance(3_000)
+
+    const edited = { ...attribute('shipping'), writtenBy: { kind: 'operator' as const, ref: 'user-1' } }
+    await act(async () => applyChange('topic', edited))
+    expect(shown).toEqual([edited])
+
+    await act(async () => finishRead({ attributes: [attribute('billing')] }))
+    expect(shown).toEqual([edited])
+
+    await act(async () => applyChange('topic', null))
+    expect(shown).toEqual([])
   })
 
   it('drops a read for one conversation once another is open', async () => {

@@ -5,7 +5,7 @@ import { ExternalLink } from 'lucide-react'
 
 import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnails'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
-import { ConversationAttributes } from '@/components/dashboard/conversation-attributes'
+import { attributeEditingFor, ConversationAttributes } from '@/components/dashboard/conversation-attributes'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import {
   useHistoryDetailState,
@@ -184,7 +184,7 @@ export function InboxResponseView({
     isAudiencePulseEvidence,
   })
 
-  const attributes = useLiveConversationAttributes({
+  const { attributes, applyChange: applyAttributeChange } = useLiveConversationAttributes({
     conversationId,
     loaded: conversationDetail?.attributes,
     tail: conversationTail,
@@ -472,7 +472,7 @@ export function InboxResponseView({
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
-            <ConversationAttributes attributes={attributes} />
+            <ConversationAttributes attributes={attributes} editing={attributeEditingFor(conversationDetail, applyAttributeChange)} />
             {effectiveItem?.type === 'approval' && !effectiveItem.heldReplyId ? (
               approvalDecision ? (
                 <ApprovalDecisionPanel

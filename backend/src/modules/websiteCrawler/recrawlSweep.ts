@@ -24,7 +24,7 @@ export interface ScheduledRecrawlPort {
 interface WebsiteRecrawlSweepCounts {
   due: number;
   enqueued: number;
-  /** Due sources that already had a crawl queued, running or paused; they wait for their next time. */
+  /** Due sources that already had a crawl queued or running; they wait for their next time. */
   skippedActive: number;
   failed: number;
 }

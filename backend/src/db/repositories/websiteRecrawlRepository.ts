@@ -8,7 +8,7 @@ import {
   type DocumentSourceRow,
 } from "./documentSourceRepository.js";
 
-/** A website source the sweep claimed. `crawlActive` when it already has a crawl queued, running or paused. */
+/** A website source the sweep claimed. `crawlActive` when it already has a crawl queued or running; a paused crawl does not block the schedule. */
 export interface DueWebsiteRecrawl {
   workspaceId: string;
   sourceId: string;
@@ -37,7 +37,7 @@ export interface WebsiteRecrawlRepositoryPort {
   }): Promise<DueWebsiteRecrawl[]>;
 }
 
-const UNFINISHED_CRAWL_STATUSES = ["queued", "processing", "paused"];
+const RUNNING_CRAWL_STATUSES = ["queued", "processing"];
 
 export class WebsiteRecrawlRepository implements WebsiteRecrawlRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -77,7 +77,7 @@ export class WebsiteRecrawlRepository implements WebsiteRecrawlRepositoryPort {
               .select("j.id")
               .whereRef("j.source_id", "=", "s.id")
               .whereRef("j.workspace_id", "=", "s.workspace_id")
-              .where("j.status", "in", UNFINISHED_CRAWL_STATUSES),
+              .where("j.status", "in", RUNNING_CRAWL_STATUSES),
           ).as("crawl_active"),
         ])
         .where("s.kind", "=", "website")

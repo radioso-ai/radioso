@@ -85,13 +85,13 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
       .resolves.toMatchObject({ recrawlCadence: "off", nextRecrawlAt: null });
   });
 
-  it("claims due website sources once, advances them, and says which already have a crawl", async () => {
+  it("claims due website sources once, advances them, and says which have a queued or running crawl", async () => {
     const due = new Date(now.getTime() - 60_000);
     await schedule.setRecrawlSchedule({ workspaceId, sourceId: siteId, recrawlCadence: "daily", nextRecrawlAt: due });
     await schedule.setRecrawlSchedule({ workspaceId, sourceId: otherSiteId, recrawlCadence: "weekly", nextRecrawlAt: due });
     await database.query(
       `INSERT INTO website_crawl_jobs (id, workspace_id, source_id, requested_url, crawl_limit, status)
-       VALUES ($1, $2, $3, 'https://help.example', 10, 'paused')`,
+       VALUES ($1, $2, $3, 'https://help.example', 10, 'queued')`,
       [randomUUID(), workspaceId, otherSiteId],
     );
     const advancedTo = new Date("2026-11-22T12:00:00.000Z");
@@ -109,6 +109,22 @@ describeIntegration("Website recrawl schedule and missing pages (Postgres)", () 
     expect(rows.map((row) => row.next_recrawl_at)).toEqual([advancedTo, advancedTo]);
     await expect(schedule.claimDueRecrawls({ now, limit: 10, nextRecrawlAt: async () => advancedTo }))
       .resolves.toEqual([]);
+  });
+
+  it("does not count a paused crawl as active, so the schedule runs next to it", async () => {
+    const due = new Date(now.getTime() - 60_000);
+    await schedule.setRecrawlSchedule({ workspaceId, sourceId: siteId, recrawlCadence: "daily", nextRecrawlAt: due });
+    await database.query(
+      `INSERT INTO website_crawl_jobs (id, workspace_id, source_id, requested_url, crawl_limit, status)
+       VALUES ($1, $2, $3, 'https://help.example', 10, 'paused')`,
+      [randomUUID(), workspaceId, siteId],
+    );
+
+    const claimed = await schedule.claimDueRecrawls({ now, limit: 10, nextRecrawlAt: async () => new Date(now.getTime() + 86_400_000) });
+
+    expect(claimed.filter((source) => source.sourceId === siteId)).toEqual([
+      { workspaceId, sourceId: siteId, recrawlCadence: "daily", crawlActive: false },
+    ]);
   });
 
   it("leaves sources that are off, not yet due, or not websites", async () => {

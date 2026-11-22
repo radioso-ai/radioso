@@ -854,11 +854,16 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return this.values.get(this.valueKey(variableId, scope)) ?? null;
   }
 
-  async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
+  async deleteValue(variableId: string, scope: ContextVariableScope, _deletedBy: ContextValueWriter): Promise<boolean> {
     return this.values.delete(this.valueKey(variableId, scope));
   }
 
-  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+  async deleteValueWrittenBy(
+    variableId: string,
+    scope: ContextVariableScope,
+    writerKinds: readonly ContextValueWriterKind[],
+    _deletedBy: ContextValueWriter,
+  ): Promise<boolean> {
     const stored = this.values.get(this.valueKey(variableId, scope));
     return stored && writerKinds.includes(stored.writtenBy.kind) ? this.values.delete(this.valueKey(variableId, scope)) : false;
   }

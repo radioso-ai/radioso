@@ -21,7 +21,7 @@ export const registerWorkspaceEventLogPaths = (
     tags: ["Workspace Events"],
     summary: "List workspace events",
     description: [
-      "Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting.",
+      "Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting, a conversation's attribute changed.",
       "Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward.",
       "Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number.",
       "Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`.",

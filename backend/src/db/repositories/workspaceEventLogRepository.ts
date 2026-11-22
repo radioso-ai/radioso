@@ -246,9 +246,9 @@ export class WorkspaceEventLogRetention implements ConversationDataRetentionRule
 /**
  * A withdrawn consent's values leave the log (#1544). By structure first, so the events go even
  * after the routine's state, and with it the values, has expired: every `routine.completed` of a
- * routine whose consent was withdrawn, and every `contact_request.created` whose values name one of
- * its slots. Then, as the audit withholder does, any other event of the conversation that states a
- * withdrawn value.
+ * routine whose consent was withdrawn, every `context_value.changed` that routine wrote, and every
+ * `contact_request.created` whose values name one of its slots. Then, as the audit withholder does,
+ * any other event of the conversation that states a withdrawn value.
  */
 export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
   readonly owner = "workspace-events";
@@ -263,7 +263,7 @@ export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
     let removed = 0;
     for (const { routineId, slotKeys } of messages.withdrawnRoutineSlots) {
       const runs = await ofConversation()
-        .where("type", "=", "routine.completed")
+        .where("type", "in", ["routine.completed", "context_value.changed"])
         .where((eb) => eb(jsonbKeyText(eb.ref("data"), "routineId"), "=", routineId))
         .executeTakeFirst();
       removed += Number(runs.numDeletedRows);

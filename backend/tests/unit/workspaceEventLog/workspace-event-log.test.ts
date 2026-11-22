@@ -157,6 +157,7 @@ describe("readable event types", () => {
       "contact_request.created",
       "handoff.requested",
       "routine.completed",
+      "context_value.changed",
     ]);
     expect(await resolveReadableEventTypes(holding("workspace.history.read", "workspace.conversation.takeover", "workspace.documents.read"))).toEqual(ALL_TYPES);
     expect(await resolveReadableEventTypes(holding("workspace.conversation.takeover"))).toEqual([]);

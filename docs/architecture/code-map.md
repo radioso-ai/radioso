@@ -2746,7 +2746,7 @@ Related docs:
 
 Owns the workspace event log (#1851): business events an automation acts on
 (`conversation.started`, `contact_request.created`, `handoff.requested`,
-`routine.completed`, `decision.pending`), each written in the transaction of the
+`routine.completed`, `decision.pending`, `context_value.changed`), each written in the transaction of the
 change it records and listed at `GET /api/v1/workspace/events` by a cursor that
 never passes a row still being committed. It is not the dashboard's
 `GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
@@ -2769,6 +2769,10 @@ Where each type is recorded:
   transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
+- `context_value.changed`: every write or delete that changes a conversation's
+  attribute value (`db/repositories/contextVariableValueWrites.ts`), from the
+  draft `modules/context-variables/contextValueChangedEvent.ts` builds; the
+  repository a turn's resolver caches through is built without the recorder
 - `document.processed`, `document.failed`: a vectorize job's terminal write
   (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
   fence (`status = 'processing'` and the claimed attempt) hits, from drafts the

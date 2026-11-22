@@ -50,6 +50,8 @@ export {
   normalizeContextVariableOption,
 } from "./optionSchema.js";
 export { keepsEveryOptionKey, validateValue } from "./valueValidation.js";
+export { contextValueChanged, contextValueChangedEvent } from "./contextValueChangedEvent.js";
+export type { ContextValueChangedDraft } from "./contextValueChangedEvent.js";
 export {
   ConversationValueWriterService,
   planConversationWrite,

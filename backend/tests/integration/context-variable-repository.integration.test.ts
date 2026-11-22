@@ -174,7 +174,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
     expect(updated?.id).toBe(created?.id);
     expect(await repository.readValue(variable.id, scope)).toMatchObject({ data: { status: "shipped" } });
 
-    expect(await repository.deleteValue(variable.id, scope)).toBe(true);
+    expect(await repository.deleteValue(variable.id, scope, { kind: "api", ref: null })).toBe(true);
     expect(await repository.readValue(variable.id, scope)).toBeNull();
   });
 
@@ -219,11 +219,11 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       },
     ]);
 
-    await repository.deleteValue(variable.id, scopes[0]);
+    await repository.deleteValue(variable.id, scopes[0], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "customer" });
-    await repository.deleteValue(variable.id, scopes[1]);
+    await repository.deleteValue(variable.id, scopes[1], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "agent" });
-    await repository.deleteValue(variable.id, scopes[2]);
+    await repository.deleteValue(variable.id, scopes[2], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "workspace" });
   });
 

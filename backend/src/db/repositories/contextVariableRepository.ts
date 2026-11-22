@@ -2,12 +2,9 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import {
-  CONTEXT_VALUE_WRITER_KINDS,
   keepsEveryOptionKey,
-  mayOverwrite,
   readsStoredValue,
   resolvedVariableInput,
-  validateValue,
   type AgentContextVariableEnablement,
   type ContextValueWriter,
   type ContextValueWriterKind,
@@ -40,6 +37,7 @@ import {
 } from "../../shared/domain/dataSubjectAccess.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ConversationDataEraser,
@@ -48,14 +46,9 @@ import type {
   VerifiedCustomerErasureScope,
 } from "../../shared/domain/conversationDataErasure.js";
 import { agentRevisionLockKey, withAgentDraftMutation } from "./agentDraftMutation.js";
-import { lockDefinition, refuseTypeChangeWithValues, requireConversation } from "./contextVariableRowLocks.js";
-import {
-  contextVariableValueColumns,
-  mapContextVariableValueRow,
-  readContextVariableValue,
-  readMostSpecificValues,
-  storedScopeId,
-} from "./contextVariableValueReads.js";
+import { lockDefinition, refuseTypeChangeWithValues } from "./contextVariableRowLocks.js";
+import { readContextVariableValue, readMostSpecificValues } from "./contextVariableValueReads.js";
+import { ContextVariableValueWrites, optionsFromRow } from "./contextVariableValueWrites.js";
 
 export interface ContextVariableRow {
   id: string;
@@ -126,16 +119,8 @@ const agentContextVariableColumns = [
   "updated_at",
 ] as const;
 
-/** Options as stored: the jsonb array of an enum variable, null otherwise. */
-const optionsFromRow = (value: unknown): readonly ContextVariableOption[] | null =>
-  Array.isArray(value) ? (value as ContextVariableOption[]) : null;
-
 const optionsToRow = (options: readonly ContextVariableOption[] | null | undefined) =>
   options ? toJsonb(options) : null;
-
-/** The stored writers an incoming writer may replace, under the module's overwrite rule. */
-const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueWriterKind[] =>
-  CONTEXT_VALUE_WRITER_KINDS.filter((existing) => mayOverwrite({ kind: existing, ref: null }, incoming));
 
 export const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
   id: row.id,
@@ -256,7 +241,16 @@ const lockResolverSkillForEnablement = async (
 };
 
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
-  constructor(private readonly db: Db) {}
+  private readonly valueWrites: ContextVariableValueWrites;
+
+  /**
+   * `valueEvents` records `context_value.changed` for each change of a conversation's value. The
+   * repository a turn's resolver caches through is built without it: a cached fetch from the host's
+   * own API is not a change an automation acts on.
+   */
+  constructor(private readonly db: Db, valueEvents: WorkspaceEventRecorder | null = null) {
+    this.valueWrites = new ContextVariableValueWrites(db, valueEvents);
+  }
 
   async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
     const row = await this.db
@@ -557,59 +551,8 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return rows.map((row) => mapAgentContextVariableWithVariableRow(row as AgentContextVariableWithVariableRow));
   }
 
-  async upsertValue(
-    variableId: string,
-    scope: ContextVariableScope,
-    data: unknown,
-    writtenBy: ContextValueWriter,
-  ): Promise<ContextVariableValue | null> {
-    return this.db.transaction().execute(async (trx) => {
-      // Key-shared until the write commits. A type change locks the row for update before it looks
-      // for values, so it waits for this write, and a write after it reads the type it committed.
-      const variable = await trx
-        .selectFrom("context_variables")
-        .select(["workspace_id", "value_type", "options"])
-        .where("id", "=", variableId)
-        .forKeyShare()
-        .executeTakeFirst();
-      if (!variable) throw notFound("Context variable not found");
-      const definition = { valueType: variable.value_type as ContextVariableValueType, options: optionsFromRow(variable.options) };
-      if (!validateValue(definition, data).ok) {
-        throw conflict("The context variable's type or options changed while the value was written");
-      }
-      // A conversation is keyed by its own id, in the form every reader compares against.
-      const scopeId = scope.type === "conversation"
-        ? await requireConversation(trx, variable.workspace_id, scope.id)
-        : scope.id;
-
-      const row = await trx
-        .insertInto("context_variable_values")
-        .values({
-          id: randomUUID(),
-          workspace_id: variable.workspace_id,
-          variable_id: variableId,
-          scope_type: scope.type,
-          scope_id: scopeId,
-          data: toJsonb(data),
-          last_modified: currentTimestamp(),
-          written_by_kind: writtenBy.kind,
-          written_by_ref: writtenBy.ref,
-        })
-        .onConflict((oc) =>
-          oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
-            workspace_id: eb.ref("excluded.workspace_id"),
-            data: eb.ref("excluded.data"),
-            last_modified: currentTimestamp(),
-            written_by_kind: eb.ref("excluded.written_by_kind"),
-            written_by_ref: eb.ref("excluded.written_by_ref"),
-          // Decided against the stored row in the same statement, so a write racing this one cannot
-          // slip between a read of the stored writer and the update.
-          })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
-        )
-        .returning(contextVariableValueColumns)
-        .executeTakeFirst();
-      return row ? mapContextVariableValueRow(row) : null;
-    });
+  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null> {
+    return this.valueWrites.upsertValue(variableId, scope, data, writtenBy);
   }
 
   async hasValues(variableId: string): Promise<boolean> {
@@ -638,26 +581,17 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
     return readContextVariableValue(this.db, variableId, scope);
   }
 
-  async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("context_variable_values")
-      .where("variable_id", "=", variableId)
-      .where("scope_type", "=", scope.type)
-      .where("scope_id", "=", storedScopeId(scope))
-      .executeTakeFirst();
-    return (result?.numDeletedRows ?? 0n) > 0n;
+  deleteValue(variableId: string, scope: ContextVariableScope, deletedBy: ContextValueWriter): Promise<boolean> {
+    return this.valueWrites.deleteValue(variableId, scope, deletedBy);
   }
 
-  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
-    if (writerKinds.length === 0) return false;
-    const result = await this.db
-      .deleteFrom("context_variable_values")
-      .where("variable_id", "=", variableId)
-      .where("scope_type", "=", scope.type)
-      .where("scope_id", "=", storedScopeId(scope))
-      .where("written_by_kind", "in", [...writerKinds])
-      .executeTakeFirst();
-    return (result?.numDeletedRows ?? 0n) > 0n;
+  deleteValueWrittenBy(
+    variableId: string,
+    scope: ContextVariableScope,
+    writerKinds: readonly ContextValueWriterKind[],
+    deletedBy: ContextValueWriter,
+  ): Promise<boolean> {
+    return this.valueWrites.deleteValueWrittenBy(variableId, scope, writerKinds, deletedBy);
   }
 
   async resolveForAgent(

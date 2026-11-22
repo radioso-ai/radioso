@@ -98,7 +98,7 @@ describe("ConversationValueWriterService", () => {
     const { writer, deps, metrics } = writerWith({});
 
     await expect(writer.write({ conversationId, variable: topic(), stored: stored("billing", "classifier"), data: null, writtenBy: classifier })).resolves.toBe("cleared");
-    expect(deps.deleteValueWrittenBy).toHaveBeenCalledWith("variable-1", { type: "conversation", id: conversationId }, ["classifier"]);
+    expect(deps.deleteValueWrittenBy).toHaveBeenCalledWith("variable-1", { type: "conversation", id: conversationId }, ["classifier"], classifier);
 
     await expect(writer.write({ conversationId, variable: topic(), stored: stored("billing", "classifier"), data: "billing", writtenBy: classifier })).resolves.toBe("unchanged");
     expect(deps.upsertValue).not.toHaveBeenCalled();

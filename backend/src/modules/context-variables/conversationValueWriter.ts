@@ -131,7 +131,7 @@ export class ConversationValueWriterService implements ConversationValueWriter {
     }
     if (plan.action === "clear") {
       const replaceable = CONTEXT_VALUE_WRITER_KINDS.filter((kind) => mayOverwrite({ kind, ref: null }, input.writtenBy.kind));
-      return await this.deps.repository.deleteValueWrittenBy(input.variable.id, scope, replaceable) ? "cleared" : "kept";
+      return await this.deps.repository.deleteValueWrittenBy(input.variable.id, scope, replaceable, input.writtenBy) ? "cleared" : "kept";
     }
     return plan.outcome;
   }

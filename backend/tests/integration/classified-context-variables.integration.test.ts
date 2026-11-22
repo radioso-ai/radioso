@@ -170,7 +170,7 @@ describeIntegration("classified attributes (Postgres)", () => {
     await expect(writer.write({ conversationId, variable: topic, stored: { data: "billing", writtenBy: classifier }, data: "shipping", writtenBy: classifier })).resolves.toBe("kept");
     await expect(repository.readValue(topic.id, scope)).resolves.toMatchObject({ data: "shipping", writtenBy: { kind: "api" } });
 
-    await repository.deleteValue(topic.id, scope);
+    await repository.deleteValue(topic.id, scope, { kind: "api", ref: null });
     await writer.write({ conversationId, variable: topic, stored: null, data: "billing", writtenBy: classifier });
     await expect(writer.write({ conversationId, variable: topic, stored: { data: "billing", writtenBy: classifier }, data: null, writtenBy: classifier })).resolves.toBe("cleared");
     await expect(repository.readValue(topic.id, scope)).resolves.toBeNull();

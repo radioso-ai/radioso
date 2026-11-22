@@ -32,13 +32,15 @@ its own facts:
 | `contact_request.created`, `decision.pending`, `routine.completed` | `modules/chat/services/workspaceEventLogDrafts.ts`, recorded in the turn's transaction by `modules/chat/infra/turnOutboxWrites.ts`, and by `ContactRequestRecordingOutbox` for a notify step |
 | `handoff.requested` | `modules/conversationActivity/workspaceEventLogBridge.ts`, beside every `handoff_requested` activity |
 | `document.processed`, `document.failed` | `modules/documents/services/documentWorkspaceEvents.ts`, recorded by the job's fenced terminal write in `db/repositories/documentProcessingJobOutcomes.ts` |
+| `context_value.changed` | `modules/context-variables/contextValueChangedEvent.ts`, recorded by every write or delete of a conversation's value in `db/repositories/contextVariableValueWrites.ts` |
 
 `app/composition/workspaceEventLog.ts` is the one seam: it owns the recorder and the bridged
 activity recorder, and every construction that records an event is handed them from there.
 The Postgres side is `db/repositories/workspaceEventLogRepository.ts`: the stateless recorder,
 the document event eraser that deleting documents calls (a title can name a person), the snapshot
 read, the 30-day retention rule and the consent withholder, which removes a withdrawn routine's
-events by structure (routine id, slot keys) as well as by value.
+events (its `routine.completed` and the `context_value.changed` it wrote) by structure (routine id,
+slot keys) as well as by value.
 
 ## Subscriptions and delivery (#1852)
 

@@ -100,7 +100,7 @@ import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCop
 import { resolveCopilotContributions } from "../composition/copilotContributions.js";
 import { ConversationIngestService, ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ReviewTurnAuditReader } from "../../modules/chat/contracts/index.js";
-import { buildWorkspaceEventDelivery } from "../composition/workspaceEventLog.js";
+import { buildWorkspaceEventDelivery, workspaceEventRecorder } from "../composition/workspaceEventLog.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
@@ -518,7 +518,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     database: infrastructure.database,
     registry: connectorRegistry,
   });
-  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely, workspaceEventRecorder);
   const contextClassification = buildContextClassification({ infrastructure, repositories, contextVariableRepository, resolver: llmCapabilityResolver, logger });
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,

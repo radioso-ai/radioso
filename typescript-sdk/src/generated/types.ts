@@ -3079,7 +3079,7 @@ export interface paths {
         };
         /**
          * List workspace events
-         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
+         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting, a conversation's attribute changed. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
          */
         get: operations["listWorkspaceEvents"];
         put?: never;
@@ -12225,6 +12225,74 @@ export interface components {
                 deadline: string | null;
             };
         };
+        ContextValueChangedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "context_value.changed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /** @description The attribute's name, as `GET /api/v1/context-variables` lists it. */
+                variable: string;
+                /**
+                 * @description The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
+                 * @enum {string}
+                 */
+                valueType: "string" | "json" | "enum";
+                /**
+                 * @description Where the value is kept. Version 1 records the values kept for the conversation.
+                 * @enum {string}
+                 */
+                scope: "conversation";
+                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute. */
+                value?: unknown;
+                /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. */
+                redacted: boolean;
+                /**
+                 * @description Who changed it: `classifier` (the AI), `operator` (a teammate in the Inbox or through Ray), `api` (an API token or the dashboard's values API) or `routine`.
+                 * @enum {string}
+                 */
+                writtenBy: "api" | "operator" | "routine" | "classifier";
+                /** @description The routine that wrote the value when `writtenBy` is `routine`; null otherwise. */
+                routineId: string | null;
+            };
+        };
         DocumentProcessedEvent: {
             /**
              * Format: uuid
@@ -12321,7 +12389,7 @@ export interface components {
                 failureCode: string | null;
             };
         };
-        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
+        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["ContextValueChangedEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
         WorkspaceEventPage: {
             events: components["schemas"]["WorkspaceEvent"][];
             /** @description Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place. */
@@ -12339,7 +12407,7 @@ export interface components {
             label: "zapier" | "n8n" | "custom";
             /** @description The host events are POSTed to. The full target URL is never returned after create. */
             targetHost: string;
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "context_value.changed" | "document.processed" | "document.failed")[];
             /**
              * @description `disabled` receives nothing more until its client subscribes the same URL again.
              * @enum {string}
@@ -12381,7 +12449,7 @@ export interface components {
             /** @description The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id. */
             targetUrl: string;
             /** @description The event types to receive. Each needs the permission that reads it from the event log. */
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "context_value.changed" | "document.processed" | "document.failed")[];
             /**
              * @description Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings.
              * @enum {string}

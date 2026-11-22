@@ -192,9 +192,9 @@ export class ContextVariableService {
     return this.repository.readValue(variableId, scope);
   }
 
-  async deleteValue(workspaceId: string, variableId: string, scope: ContextVariableScope): Promise<boolean> {
+  async deleteValue(workspaceId: string, variableId: string, scope: ContextVariableScope, deletedBy: ContextValueWriter): Promise<boolean> {
     await this.requireVariable(workspaceId, variableId);
-    return this.repository.deleteValue(variableId, scope);
+    return this.repository.deleteValue(variableId, scope, deletedBy);
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput, options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> {

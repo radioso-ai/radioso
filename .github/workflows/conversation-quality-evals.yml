@@ -109,6 +109,14 @@ jobs:
         # configuration's rerank-tier model; every other case scores its deterministic layer.
         run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --samples ${{ github.event.inputs.samples || '5' }} --judge-tag quick-reply --judge-tag unavailable --judge-tag offer-scope --judge-tag photo-turn
 
+      - name: Run attribute classification set
+        # The labelled set for the AI's attribute classification (#1884): one rewrite-tier call per
+        # case and sample, gated on tests/fixtures/context-classification/baseline.json. It needs no
+        # database or worker, and runs even when the suite above regressed.
+        if: ${{ !cancelled() }}
+        working-directory: backend
+        run: node --env-file=./.env.evals --import tsx ./scripts/runClassificationEvals.ts --samples 3
+
       - name: Stop document worker
         if: always()
         run: kill "${WORKER_PID}" 2>/dev/null || true

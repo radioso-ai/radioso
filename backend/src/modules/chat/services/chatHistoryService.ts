@@ -4,12 +4,11 @@ import type { CallerKind, ConversationSourceScope } from "../../../shared/domain
 import type { ConversationAttributeFilter } from "../../context-variables/public.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ReplyImageUrls } from "../contracts/replyBlocks.js";
-import {
-  formatActivityCursor,
-  type ConversationActivityEntry,
-  type ConversationActivityReadScope,
-  type ConversationActivityTimeline,
-  type ConversationActivityTimelineReader,
+import type {
+  ConversationActivityEntry,
+  ConversationActivityReadScope,
+  ConversationActivityTimeline,
+  ConversationActivityTimelineReader,
 } from "../../conversationActivity/contracts/index.js";
 import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
@@ -25,7 +24,6 @@ import type {
 } from "../../../db/repositories/messageRepository.js";
 import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsFilters, HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
-import type { VisitorRecord } from "../../../db/repositories/visitorRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
@@ -51,6 +49,15 @@ import {
   type TurnTraceEnvelope,
 } from "./turnTraceEnvelope.js";
 import { RETRIEVAL_TRACE_LEAF, capabilitySubTrace } from "./chatTraceLeaves.js";
+import {
+  NO_TEAMMATE_LABELS,
+  NoopConversationActivityReader,
+  NoopConversationOwnershipReader,
+  NoopTeammateLabelReader,
+  NoopVisitorProfileReader,
+  type ConversationOwnershipHistoryReader,
+  type VisitorProfileReaderPort,
+} from "./historyReaderDefaults.js";
 import {
   NoopContactHistoryProvider,
   type ContactHistoryDetail,
@@ -87,54 +94,6 @@ export interface ChatConversationOwnership {
   takenOverAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-// Narrow read port the history service needs — single load for detail, batch for lists
-// (no N+1). A missing entry means AI-owned (the ownership table is lazy).
-interface ConversationOwnershipHistoryReader {
-  load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
-  loadByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationOwnershipRecord>>;
-}
-
-/** Bounded persisted diagnostic read used only by the operator history projection. */
-
-class NoopConversationOwnershipReader implements ConversationOwnershipHistoryReader {
-  async load(): Promise<ConversationOwnershipRecord | null> {
-    return null;
-  }
-  async loadByConversationIds(): Promise<Map<string, ConversationOwnershipRecord>> {
-    return new Map();
-  }
-}
-
-/**
- * Narrow read port chat/history needs from the visitors module: just enough to attach an
- * operator-facing profile to a conversation detail (spec 1277, FR-040). `VisitorRepository`
- * (`db/repositories/visitorRepository.ts`) satisfies this structurally — chat depends on this
- * shape, not on the visitors module's fuller `VisitorRepositoryPort`.
- */
-interface VisitorProfileReaderPort {
-  findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null>;
-}
-
-class NoopVisitorProfileReader implements VisitorProfileReaderPort {
-  async findById(): Promise<VisitorRecord | null> {
-    return null;
-  }
-}
-
-const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
-
-class NoopTeammateLabelReader implements TeammateLabelReaderPort {
-  async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
-    return NO_TEAMMATE_LABELS;
-  }
-}
-
-class NoopConversationActivityReader implements ConversationActivityTimelineReader {
-  async readTimeline(): Promise<ConversationActivityTimeline> {
-    return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
-  }
 }
 
 const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => {

@@ -1,6 +1,5 @@
 import { decideMissingPageRemoval } from "./missingPageRemoval.js";
 import { buildWebsiteExternalDocumentId, normalizePageUrl, redactWebsiteCrawlerUrl } from "./pageUrls.js";
-import type { CrawlTrigger } from "./recrawlSchedule.js";
 import type { WebsiteCrawlerAuditPort, WebsiteCrawlerDocumentIngestionPort } from "./service.js";
 
 /** A page of the source that a complete crawl did not find. `kept` when the operator chose to keep it. */
@@ -87,10 +86,9 @@ export const pagesSeenByCrawl = (input: {
 };
 
 /**
- * Removes the pages a complete crawl no longer found, or holds them for the operator. A crawl the
- * operator started removes every page it did not see. A scheduled crawl leaves pages the operator
- * kept, and holds the rest instead when they are too large a share of the source
- * ({@link decideMissingPageRemoval}). A crawl that a newer crawl of the source superseded does
+ * Removes the pages a complete crawl no longer found, or holds them for the operator, whatever
+ * started the crawl. It leaves pages the operator kept, and holds the rest instead of removing
+ * them when they are too large a share of the source ({@link decideMissingPageRemoval}). A crawl that a newer crawl of the source superseded does
  * neither: what it saw is older than what the newer crawl publishes.
  */
 export const reconcileMissingPages = async (
@@ -119,7 +117,6 @@ interface MissingPageReconciliationDependencies {
 
 /** A crawl that saw the whole site ({@link crawlSawWholeSite}), and every page it saw. */
 interface CompleteCrawl {
-  trigger: CrawlTrigger;
   accountId?: string | null;
   workspaceId: string;
   sourceId: string;
@@ -128,31 +125,26 @@ interface CompleteCrawl {
 }
 
 const removeOrHoldMissingPages = async (dependencies: MissingPageReconciliationDependencies, input: CompleteCrawl): Promise<void> => {
-  const remove = async (keepExternalDocumentIds: string[]) => {
-    await dependencies.ingestion.reapMissingPages?.({ workspaceId: input.workspaceId, sourceId: input.sourceId, keepExternalDocumentIds });
-  };
   if (!dependencies.store) {
-    // Without a store a scheduled crawl cannot tell how much it would remove, so it removes nothing.
-    if (input.trigger === "manual") await remove(input.seenExternalDocumentIds);
+    // Without a store a crawl cannot tell how much it would remove, so it removes nothing.
     return;
   }
   const review = await dependencies.store.reviewMissingPages(input);
-  if (input.trigger === "manual") {
-    await remove(input.seenExternalDocumentIds);
-    return;
-  }
   const candidates = review.missingPages.filter((page) => !page.kept);
   if (candidates.length === 0) {
     return;
   }
   const decision = decideMissingPageRemoval({
-    trigger: input.trigger,
     missingPageCount: candidates.length,
     livePageCountBeforeCrawl: review.livePageCountBeforeCrawl,
   });
   if (decision === "remove") {
     const kept = review.missingPages.filter((page) => page.kept).map((page) => page.externalDocumentId);
-    await remove([...input.seenExternalDocumentIds, ...kept]);
+    await dependencies.ingestion.reapMissingPages?.({
+      workspaceId: input.workspaceId,
+      sourceId: input.sourceId,
+      keepExternalDocumentIds: [...input.seenExternalDocumentIds, ...kept],
+    });
     return;
   }
   const newlyHeldPageCount = await dependencies.store.holdMissingPages({

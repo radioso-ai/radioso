@@ -24,8 +24,7 @@ const setup = (review: { livePageCountBeforeCrawl: number; missingPages: Missing
   return { store, reapMissingPages, audit, dependencies: { store, ingestion: { reapMissingPages }, audit } };
 };
 
-const input = (trigger: "manual" | "scheduled") => ({
-  trigger,
+const input = () => ({
   accountId: null,
   workspaceId: "workspace-1",
   sourceId: "source-1",
@@ -34,13 +33,13 @@ const input = (trigger: "manual" | "scheduled") => ({
 });
 
 describe("reconciling the pages a complete crawl no longer found", () => {
-  it("removes every page a crawl the operator started did not see, kept or not", async () => {
-    const { store, reapMissingPages, audit, dependencies } = setup({
+  it("removes a small share after any crawl and leaves the pages the operator kept", async () => {
+    const { store, reapMissingPages, dependencies } = setup({
       livePageCountBeforeCrawl: 10,
-      missingPages: [page("a"), page("b"), page("c", true)],
+      missingPages: [page("gone"), page("kept", true)],
     });
 
-    await reconcileMissingPages(dependencies, input("manual"));
+    await reconcileMissingPages(dependencies, input());
 
     expect(store.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({
       seenExternalDocumentIds: ["seen-1", "seen-2"],
@@ -49,35 +48,18 @@ describe("reconciling the pages a complete crawl no longer found", () => {
     expect(reapMissingPages).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       sourceId: "source-1",
-      keepExternalDocumentIds: ["seen-1", "seen-2"],
-    });
-    expect(store.holdMissingPages).not.toHaveBeenCalled();
-    expect(audit.record).not.toHaveBeenCalled();
-  });
-
-  it("removes a small share after a scheduled crawl and leaves the pages the operator kept", async () => {
-    const { store, reapMissingPages, dependencies } = setup({
-      livePageCountBeforeCrawl: 10,
-      missingPages: [page("gone"), page("kept", true)],
-    });
-
-    await reconcileMissingPages(dependencies, input("scheduled"));
-
-    expect(reapMissingPages).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-      sourceId: "source-1",
       keepExternalDocumentIds: ["seen-1", "seen-2", "kept"],
     });
     expect(store.holdMissingPages).not.toHaveBeenCalled();
   });
 
-  it("holds a large share after a scheduled crawl, deletes nothing, and audits the hold", async () => {
+  it("holds a large share after any crawl, deletes nothing, and audits the hold", async () => {
     const { store, reapMissingPages, audit, dependencies } = setup({
       livePageCountBeforeCrawl: 10,
       missingPages: [page("a"), page("b"), page("c"), page("kept", true)],
     });
 
-    await reconcileMissingPages(dependencies, input("scheduled"));
+    await reconcileMissingPages(dependencies, input());
 
     expect(reapMissingPages).not.toHaveBeenCalled();
     expect(store.holdMissingPages).toHaveBeenCalledWith({
@@ -94,26 +76,24 @@ describe("reconciling the pages a complete crawl no longer found", () => {
     });
   });
 
-  it("does nothing after a scheduled crawl that found every page, or only missed kept ones", async () => {
+  it("does nothing after any crawl that found every page, or only missed kept ones", async () => {
     const { store, reapMissingPages, audit, dependencies } = setup({
       livePageCountBeforeCrawl: 10,
       missingPages: [page("kept", true)],
     });
 
-    await reconcileMissingPages(dependencies, input("scheduled"));
+    await reconcileMissingPages(dependencies, input());
 
     expect(reapMissingPages).not.toHaveBeenCalled();
     expect(store.holdMissingPages).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 
-  it("removes nothing after a scheduled crawl when there is no store to measure against", async () => {
+  it("removes nothing after any crawl when there is no store to measure against", async () => {
     const reapMissingPages = vi.fn();
 
-    await reconcileMissingPages({ ingestion: { reapMissingPages } }, input("scheduled"));
-    expect(reapMissingPages).not.toHaveBeenCalled();
+    await reconcileMissingPages({ ingestion: { reapMissingPages } }, input());
 
-    await reconcileMissingPages({ ingestion: { reapMissingPages } }, input("manual"));
-    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ keepExternalDocumentIds: ["seen-1", "seen-2"] }));
+    expect(reapMissingPages).not.toHaveBeenCalled();
   });
 });

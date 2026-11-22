@@ -196,7 +196,19 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
     expect(await heldPages()).toEqual([]);
   });
 
-  it("removes what neither slice found after a crawl the operator started", async () => {
+  it("removes what neither slice found after a crawl the operator started, when it is a fifth or less", async () => {
+    await seedPages(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
+
+    await crawlInSlices("manual", [
+      { pages: ["a", "b", "c", "d", "e"].map(page), outcome: "yielded" },
+      { pages: ["f", "g", "h", "i"].map(page), outcome: "completed", frontierExhausted: true },
+    ]);
+
+    expect(await livePages()).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(externalId));
+    expect(await heldPages()).toEqual([]);
+  });
+
+  it("holds what neither slice found after a crawl the operator started, when it is more than a fifth", async () => {
     await seedPages(["a", "b", "c", "d", "e"]);
 
     await crawlInSlices("manual", [
@@ -204,6 +216,7 @@ describeIntegration("A crawl that completes over two slices reconciles missing p
       { pages: [page("c")], outcome: "completed", frontierExhausted: true },
     ]);
 
-    expect(await livePages()).toEqual(["a", "b", "c"].map(externalId));
+    expect(await livePages()).toEqual(["a", "b", "c", "d", "e"].map(externalId));
+    expect(await heldPages()).toEqual([externalId("d"), externalId("e")]);
   });
 });

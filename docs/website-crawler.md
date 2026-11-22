@@ -199,7 +199,7 @@ A source runs one crawl at a time. When a crawl for the source is already queued
 
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
 
-After a crawl that saw the whole site, the source's pages the crawl did not find are removed. A crawl saw the whole site when all of these hold, however many two-minute slices it took and whether or not it was paused and resumed:
+After a crawl that saw the whole site, the source's pages the crawl did not find are removed, or held for you when they are a large share of the source (see [Pages a crawl holds](#pages-a-crawl-holds)). A crawl saw the whole site when all of these hold, however many two-minute slices it took and whether or not it was paused and resumed:
 
 - Its last slice stopped because nothing was left to fetch. A crawl that reached its page limit with URLs still waiting did not, even if it published fewer pages than the limit: a redirect to a page it already fetched, or a page an earlier slice already processed, spends the limit too.
 - No slice dropped a link because the crawl had discovered as many URLs as it may. A crawl discovers at most ten times its page limit, or its limit plus 50 when that is more, counted across all of its slices.
@@ -230,15 +230,15 @@ Every website source in the source list carries four fields about this:
 | `recrawlCadence` | The cadence the operator chose. |
 | `nextRecrawlAt` | When the next scheduled recrawl is queued, or `null` while the cadence is `off`. |
 | `fastestRecrawlCadence` | The fastest cadence the workspace's plan allows: `daily` on self-hosted deployments, and on Radioso Cloud `weekly` on Comet and `daily` on Satellite and Planet. |
-| `heldPageCount` | Pages a scheduled recrawl no longer found and held for review. |
+| `heldPageCount` | Pages a crawl no longer found and held for review. |
 
 Asking for a cadence faster than `fastestRecrawlCadence` answers `403` with code `recrawl_cadence_not_in_plan` and `details.fastestRecrawlCadence`. A workspace that moves to a plan with a slower ceiling keeps its sources' chosen cadence; they recrawl at the plan's fastest.
 
 The `website-recrawl` periodic task queues the crawls. Every 15 minutes it claims the website sources whose next recrawl is due, moves each one interval ahead, and queues a crawl for it. A source that already has a crawl queued, processing, or paused waits for its next time, and so does one whose crawl could not be queued. On a self-hosted deployment the document worker's poll loop runs the task, so a stack started with `./run-dev.sh` or Docker Compose recrawls with no extra settings. On Cloud Run, a Cloud Scheduler job calls `/internal/tasks/periodic-tasks/website-recrawl/run` on the worker task service. Each run logs one line with how many sources were due, queued, skipped because a crawl was active, and failed.
 
-### Pages a scheduled recrawl holds
+### Pages a crawl holds
 
-A scheduled recrawl never removes a large share of a source on its own. It removes or holds pages only after a crawl that saw the whole site, as above. When the pages it did not find are more than a fifth of the pages the source had when its job started, not counting pages the operator kept, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less is removed as a manual recrawl removes it. A manual recrawl or a new crawl of the same URL removes every page it did not find, held or not, because the operator asked for a fresh copy of the site.
+No crawl removes a large share of a source on its own, whether the operator, the API, Ray, or the schedule started it. A crawl removes or holds pages only after it saw the whole site, as above. Pages the operator kept are never removed or held. When the other pages it did not find are more than a fifth of the pages the source had when its job started, not counting the kept ones, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less is removed. A crawl with no way to measure that share removes nothing.
 
 Decide on held pages with:
 
@@ -247,7 +247,7 @@ POST /api/v1/document/sources/{sourceId}/held-pages/remove
 POST /api/v1/document/sources/{sourceId}/held-pages/keep
 ```
 
-Remove deletes the pages still held when it runs, the way a recrawl removes missing pages, and answers `{ "sourceId": "...", "removedPageCount": 12 }`. A held page that a crawl finds again before Remove runs stays. Keep answers `{ "sourceId": "...", "keptPageCount": 12 }`; later scheduled recrawls neither hold nor remove a kept page. A held or kept page that a complete crawl finds again goes back to being an ordinary page. A source with nothing held answers with a count of `0`.
+Remove deletes the pages still held when it runs, the way a recrawl removes missing pages, and answers `{ "sourceId": "...", "removedPageCount": 12 }`. A held page that a crawl finds again before Remove runs stays. Keep answers `{ "sourceId": "...", "keptPageCount": 12 }`; later crawls neither hold nor remove a kept page. A held or kept page that a complete crawl finds again goes back to being an ordinary page. A source with nothing held answers with a count of `0`.
 
 The crawl audit event, `document.website_crawler.crawl`, records `trigger`: `manual` for a crawl the operator, the API, or Ray started, `scheduled` for one the sweep queued. A hold records `document.website_crawler.missing_pages_held` with the source, how many pages are held, and how many pages the source had. The operator's decisions record `document.website_crawler.held_pages_removed` and `document.website_crawler.held_pages_kept` with the page count. A scheduled recrawl that stops on the workspace's ingestion quota fails like any other crawl: the job shows the failure and the source's last sync is `failure`.
 

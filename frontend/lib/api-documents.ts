@@ -222,14 +222,14 @@ export const documentsApi = {
     }, { withSession: true })
   },
 
-  /** Deletes the pages a scheduled recrawl held for review. */
+  /** Deletes the pages a crawl held for review. */
   async removeSourceHeldPages(sourceId: string): Promise<DocumentSourceHeldPagesRemoved> {
     return request<DocumentSourceHeldPagesRemoved>(`/document/sources/${encodeURIComponent(sourceId)}/held-pages/remove`, {
       method: 'POST',
     }, { withSession: true })
   },
 
-  /** Keeps the pages a scheduled recrawl held; later scheduled recrawls leave them. */
+  /** Keeps the pages a crawl held; later crawls leave them. */
   async keepSourceHeldPages(sourceId: string): Promise<DocumentSourceHeldPagesKept> {
     return request<DocumentSourceHeldPagesKept>(`/document/sources/${encodeURIComponent(sourceId)}/held-pages/keep`, {
       method: 'POST',

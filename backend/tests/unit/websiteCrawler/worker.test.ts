@@ -1090,7 +1090,7 @@ describe("website crawl worker", () => {
     }));
     expect(isNewestForSource).toHaveBeenCalledWith({ jobId: job.id, workspaceId: job.workspaceId, sourceId });
     // Pages are counted against what the source had when the job started, not when its last slice did.
-    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ trigger: "scheduled", sourceId, crawlStartedAt: job.createdAt }));
+    expect(missingPages.reviewMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId, crawlStartedAt: job.createdAt }));
   });
 
   it("neither removes nor holds missing pages for a job a newer crawl of its source superseded", async () => {

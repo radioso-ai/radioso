@@ -2045,8 +2045,9 @@ at a limit (the checkpoint's sticky `linksDroppedAtLimit`), no page failed, and
 the checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
 whether the job is still the source's newest
 (`WebsiteCrawlJobRepository.isNewestForSource`) and removes the pages it did not
-find, or, for a scheduled crawl that would remove more than a fifth of the
-source's pages other than kept ones (`missingPageRemoval.ts`), holds them in
+find, leaving the pages the operator kept, or, whatever started the crawl, holds them
+when they are more than a fifth of the source's pages other than kept ones
+(`missingPageRemoval.ts`) in
 `website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`);
 `heldPagesService.ts` removes the pages still held (`DocumentRepository.deleteHeldSourcePages`)
 or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling

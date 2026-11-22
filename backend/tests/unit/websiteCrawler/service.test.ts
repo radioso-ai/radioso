@@ -40,6 +40,15 @@ const createCheckpointFlushTestService = (
   assertCrawlUrlAllowed: async () => undefined,
 });
 
+/** A store reporting one missing page out of ten, a share any crawl removes on its own. */
+const smallLossStore = () => ({
+  reviewMissingPages: vi.fn().mockResolvedValue({
+    livePageCountBeforeCrawl: 10,
+    missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", kept: false }],
+  }),
+  holdMissingPages: vi.fn(),
+});
+
 describe("website crawler service", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -580,6 +589,7 @@ describe("website crawler service", () => {
         images: [{ sourceUrl: "https://cdn.example.com/a.jpg", role: "primary" }],
       }]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      missingPages: smallLossStore(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1478,6 +1488,7 @@ describe("website crawler service", () => {
         },
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      missingPages: smallLossStore(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1514,6 +1525,7 @@ describe("website crawler service", () => {
         },
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      missingPages: smallLossStore(),
       auditService: { record: vi.fn() },
       logger,
       assertCrawlUrlAllowed: async () => undefined,
@@ -1550,6 +1562,7 @@ describe("website crawler service", () => {
         updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
         reapMissingPages,
       },
+      missingPages: smallLossStore(),
       ...extra,
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1663,7 +1676,10 @@ describe("website crawler service", () => {
     const resolveSource = vi.fn().mockResolvedValue({ id: "source-2" });
     const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
     const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
-    const reviewMissingPages = vi.fn().mockResolvedValue({ livePageCountBeforeCrawl: 3, missingPages: [] });
+    const reviewMissingPages = vi.fn().mockResolvedValue({
+      livePageCountBeforeCrawl: 10,
+      missingPages: [{ documentId: "doc-gone", externalDocumentId: "website:https://example.com:https://example.com/gone", kept: false }],
+    });
     const jobStartedAt = new Date("2026-11-21T09:00:00.000Z");
 
     const service = new WebsiteCrawlerService({
@@ -1797,6 +1813,7 @@ describe("website crawler service", () => {
         },
       ]),
       documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      missingPages: smallLossStore(),
       auditService: { record: vi.fn() },
       assertCrawlUrlAllowed: async () => undefined,
     });
@@ -1820,6 +1837,7 @@ describe("website crawler service", () => {
         updateSourceSyncState: vi.fn().mockResolvedValue(undefined),
         reapMissingPages,
       },
+      missingPages: smallLossStore(),
       assertCrawlUrlAllowed: async () => undefined,
     });
 

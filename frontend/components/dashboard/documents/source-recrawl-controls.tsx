@@ -31,8 +31,8 @@ const formatNextCheck = (value: string | null | undefined) => {
 }
 
 /**
- * A website source's "Keep up to date" cadence, when it next checks, and the pages a scheduled
- * recrawl held because too many went missing at once.
+ * A website source's "Keep up to date" cadence, when it next checks, and the pages a crawl
+ * held because too many went missing at once.
  */
 export function SourceRecrawlControls({
   source,

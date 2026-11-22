@@ -158,14 +158,14 @@ How fast you can go depends on the plan. Each website source carries `fastestRec
 
 A recrawl removes a page only once it has seen the whole site: its last slice ran out of pages to fetch rather than out of page limit, it dropped no link for having discovered too many, no page failed, and no newer crawl of the source started meanwhile. A crawl that stopped at its page limit removes nothing, so give a source a limit that covers the site you scoped, or narrow the scope with `includeUrlPatterns` and `excludeUrlPatterns`.
 
-A scheduled recrawl never removes a large share of a source on its own. When more than a fifth of the source's pages are missing from the site, not counting pages you chose to keep, it keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
+No crawl removes a large share of a source on its own, whether you, the API, or the schedule started it. When more than a fifth of the source's pages are missing from the site, not counting pages you chose to keep, the crawl keeps all of them and holds them for you; `heldPageCount` on the source says how many, and the dashboard shows "12 pages are no longer on the site" with **Remove** and **Keep**. Over the API:
 
 ```bash
 curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/held-pages/remove \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN"
 ```
 
-`held-pages/remove` deletes the pages still held when it runs, so a page a crawl found again in the meantime stays; `held-pages/keep` keeps them, and later scheduled recrawls leave kept pages alone. A fifth or less is removed without asking, the way a manual recrawl removes pages it no longer finds. A manual recrawl always removes every page it does not find, held or not.
+`held-pages/remove` deletes the pages still held when it runs, so a page a crawl found again in the meantime stays; `held-pages/keep` keeps them, and later crawls leave kept pages alone. A fifth or less is removed without asking.
 
 A source runs one crawl at a time. Recrawling a source that is already crawling answers with the running crawl's `jobId` instead of starting a second one.
 

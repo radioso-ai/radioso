@@ -74,7 +74,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       }),
       heldPageCount: z.number().int().min(0).optional().openapi({
         description:
-          "Website sources only. Pages a scheduled recrawl no longer found and held for review instead of removing, because they were more than a fifth of the source.",
+          "Website sources only. Pages a crawl no longer found and held for review instead of removing, because they were more than a fifth of the source.",
       }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),

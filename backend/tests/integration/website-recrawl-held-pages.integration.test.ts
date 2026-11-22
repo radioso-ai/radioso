@@ -31,10 +31,10 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
   const pageIds = Array.from({ length: 10 }, (_, index) => `page-${index}`);
   const crawlStartedAt = new Date("2026-11-21T12:00:00.000Z");
 
-  const crawl = (trigger: "manual" | "scheduled", seenExternalDocumentIds: string[]) =>
+  const crawl = (seenExternalDocumentIds: string[]) =>
     reconcileMissingPages(
       { store: missingPages, ingestion: { reapMissingPages: (input) => documents.deleteMissingPagesBySourceAndExternalIds(input) }, audit },
-      { trigger, accountId: null, workspaceId, sourceId, seenExternalDocumentIds, crawlStartedAt },
+      { accountId: null, workspaceId, sourceId, seenExternalDocumentIds, crawlStartedAt },
     );
   const livePages = async () => {
     const rows = await database.query<{ external_document_id: string }>(
@@ -83,15 +83,15 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
     await database.close().catch(() => undefined);
   });
 
-  it("removes a fifth of the pages or less on a scheduled crawl, as a manual crawl does", async () => {
-    await crawl("scheduled", without("page-0", "page-1"));
+  it("removes a fifth of the pages or less", async () => {
+    await crawl(without("page-0", "page-1"));
 
     expect(await livePages()).toEqual(without("page-0", "page-1"));
     expect(await heldRows()).toEqual([]);
   });
 
   it("holds more than a fifth for review, then removes them when the operator says so", async () => {
-    await crawl("scheduled", without("page-0", "page-1", "page-2"));
+    await crawl(without("page-0", "page-1", "page-2"));
 
     expect(await livePages()).toEqual(pageIds);
     expect(await heldRows()).toEqual([
@@ -110,19 +110,19 @@ describeIntegration("Scheduled recrawl holds, removes and keeps missing pages (P
     expect(await heldRows()).toEqual([]);
   });
 
-  it("keeps pages the operator kept through later scheduled crawls, until one reappears or a manual crawl runs", async () => {
-    await crawl("scheduled", without("page-0", "page-1", "page-2"));
+  it("keeps pages the operator kept through later crawls, until one reappears", async () => {
+    await crawl(without("page-0", "page-1", "page-2"));
     await expect(heldPages.keepHeldPages({ accountId, workspaceId, sourceId })).resolves.toEqual({ sourceId, keptPageCount: 3 });
 
-    await crawl("scheduled", without("page-0", "page-1", "page-2", "page-3"));
+    await crawl(without("page-0", "page-1", "page-2", "page-3"));
     expect(await livePages()).toEqual(without("page-3"));
     expect((await heldRows()).map((row) => row.decision)).toEqual(["kept", "kept", "kept"]);
 
-    await crawl("scheduled", without("page-1", "page-2"));
+    await crawl(without("page-1", "page-2"));
     expect((await heldRows()).map((row) => row.external_document_id)).toEqual(["page-1", "page-2"]);
 
-    await crawl("manual", without("page-1", "page-2"));
-    expect(await livePages()).toEqual(without("page-1", "page-2", "page-3"));
-    expect(await heldRows()).toEqual([]);
+    await crawl(without("page-1", "page-2"));
+    expect(await livePages()).toEqual(without("page-3"));
+    expect((await heldRows()).map((row) => row.decision)).toEqual(["kept", "kept"]);
   });
 });

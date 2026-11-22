@@ -602,7 +602,6 @@ export class WebsiteCrawlerService {
             ingestion: this.dependencies.documentIngestionService,
             audit: this.dependencies.auditService,
           }, {
-            trigger: input.trigger ?? "manual",
             accountId: input.accountId,
             workspaceId: input.workspaceId,
             sourceId,

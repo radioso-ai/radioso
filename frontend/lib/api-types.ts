@@ -71,6 +71,9 @@ export type AgentContextVariableEnablement = ApiSchemas['AgentContextVariableEna
 export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVariableEnablementRequest']
 export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
+export type ContextVariableSource = Extract<AgentContextVariableEnablementRequest['source'], 'pushed'>
+export type ContextVariableSurfacing = AgentContextVariableEnablementRequest['surfacing']
+export type ContextVariableValueType = ContextVariableCreateRequest['valueType']
 
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'item'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'

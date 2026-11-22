@@ -1,7 +1,7 @@
 ---
 title: "Attributes and context"
 description: "How operators define typed attributes, wire them to agents, and how page, identity and host values reach an agent's turns."
-last_updated: 2026-11-21
+last_updated: 2026-11-22
 ---
 
 # Attributes and context
@@ -97,17 +97,32 @@ page:
 - **Name** is how directives, routines and the API refer to it, as in
   `{{context.topic}}`.
 - **Description** tells operators, and the agent, what the value means.
-- **Value type** is **Text** (`string`), **Choice** (`enum`), or **JSON**
-  (`json`). Every value has this type, and the type is fixed once the attribute
-  has a value anywhere.
-- **Trust tier** is `unverified` or `signed`.
-- **Sensitivity** is `normal` or `sensitive`.
-- **Default surfacing** is the default prompt visibility policy.
+- **Type** is **Text** (`string`), **Choice** (`enum`), or **JSON** (`json`),
+  which holds structured data your site sends, such as a cart. Every value has
+  this type, and the type is fixed once the attribute has a value anywhere.
+
+The **Advanced** section is closed on a new attribute and opens by itself when
+the attribute has a non-default setting:
+
+- **Treat as proof** (`trustTier: signed`) lets skills that need a verified
+  identity accept the value. Radioso does not check a signature on the value
+  itself, so tick it only when your server alone sets it, such as the
+  customer's plan. Unchecked (`trustTier: unverified`), the value is a hint.
+- **Private data** (`sensitivity: sensitive`) masks the value in logs, stored
+  history and directive conditions, which see `[redacted]`. It does not hide
+  the value from replies: wherever an agent's **Used by** is "Every reply, and
+  rules, routines and skills", the agent still reads the raw value. Set the
+  agent's **Used by** to another option to keep it out of the reply.
+- **Used by (default)** (`defaultSurfacing`) is the setting each agent starts
+  with. Each agent sets its own **Used by** on its card. The options are "Every
+  reply, and rules, routines and skills" (`always`), "Only rules, routines and
+  skills that name it" (`on_reference`), and "Only your team"
+  (`operator_only`).
 
 A definition is shared: an edit applies at once to every agent that uses it,
 published versions included. Each agent then enables the attributes it should
-use. On the agent's **Attributes** page, choose the source and surfacing for
-that agent.
+use. On the agent's **Attributes** page, turn an attribute on, then choose **Set by**
+and **Used by** for that agent.
 
 The selection belongs to the agent's private draft. Save it, then use **Test
 Chat** to try the candidate with sample values for the enabled attributes.
@@ -153,16 +168,18 @@ archived ones included, because a value that holds an archived key keeps it.
 A routine that binds the attribute to an input missing one of its keys is
 refused with `context_variable_option_not_accepted`, naming the missing keys.
 
-The dashboard supports one source:
+**Set by** is where the agent gets the value. The dashboard offers one source:
 
-- **Pushed API** — the host backend writes values through the REST API.
+- **Your website or API** (`pushed`): the host backend writes values through the
+  REST API.
 
 Resolver-backed attributes exist in the API model. The dashboard does not
 configure them.
 
 ## Trust tiers
 
-Trust tier describes how much the system should trust the value.
+The trust tier describes how much the system should trust the value. In the
+dashboard it is the **Treat as proof** checkbox.
 
 - `unverified` is suitable for page state and host-supplied hints. Do not use
   it to unlock account-specific answers.
@@ -340,17 +357,19 @@ matching altogether.
 
 ## Surfacing
 
-Surfacing controls whether a resolved value is shown to the model as part of
+Surfacing is the **Used by** setting in the dashboard. It controls whether a resolved value is shown to the model as part of
 the prompt context.
 
-- `always` includes the value whenever it resolves.
-- `on_reference` keeps the value available for turn logic and includes it only
-  when the turn needs it.
+- `always` includes the value in the answer prompt whenever it resolves, and
+  leaves it available to directives, routine steps and skill inputs.
+- `on_reference` keeps the value out of the answer prompt. Directives, routine
+  steps (`{{context.x}}`) and skill inputs that name it read it.
 - `operator_only` stores it for operator inspection and logic, but does not
   surface it into the answer prompt; a routine step that references it reads
   nothing.
 
-Sensitive attributes should use the narrowest surfacing that works. Redacted
+Private data (`sensitive`) is masked in logs and history, not in the answer
+prompt when surfacing is `always`, so use the narrowest surfacing that works. Redacted
 values may still appear in the Inbox so operators can debug what happened
 without exposing raw sensitive data.
 

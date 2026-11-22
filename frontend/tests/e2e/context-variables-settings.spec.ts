@@ -30,8 +30,8 @@ test("agent attribute settings create, enable, and update surfacing", async ({ p
   await expect(page.getByText("@cart", { exact: true })).toBeVisible();
   await page.getByLabel("Enable cart").click();
   await expect(page.getByLabel("Disable cart")).toBeVisible();
-  await page.getByLabel("Surfacing", { exact: true }).click();
-  await page.getByRole("option", { name: "Always" }).click();
+  await page.getByLabel("Used by", { exact: true }).click();
+  await page.getByRole("option", { name: "Every reply, and rules, routines and skills" }).click();
 
   await expect.poll(() =>
     contextVariableRequests.some((request) =>
@@ -63,7 +63,7 @@ test("an operator creates a choice attribute with described options, then archiv
   await page.getByRole("button", { name: "Add attribute" }).click();
   const dialog = page.getByRole("dialog", { name: "Add attribute" });
   await dialog.getByLabel("Name", { exact: true }).fill("topic");
-  await dialog.getByLabel("Value type", { exact: true }).click();
+  await dialog.getByLabel("Type", { exact: true }).click();
   await page.getByRole("option", { name: "Choice" }).click();
 
   await dialog.getByRole("button", { name: "Add option" }).click();
@@ -165,4 +165,56 @@ test("a refused save and an unusable option list explain themselves inside the e
   await expect(page.getByText(refusal)).toHaveCount(0);
   await page.getByRole("button", { name: "Edit topic" }).click();
   await expect(page.getByRole("dialog", { name: "Edit attribute" }).getByText(refusal)).toHaveCount(0);
+});
+
+test("advanced attribute settings stay closed by default and open when one is set", async ({ page }) => {
+  const contextVariableRequests: ContextVariableRequestFixture[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    contextVariableRequests,
+    contextVariables: [
+      {
+        id: "88888888-8888-4888-8888-0000000000a2",
+        name: "plan",
+        description: null,
+        valueType: "string",
+        options: null,
+        trustTier: "signed",
+        sensitivity: "normal",
+        defaultSurfacing: "on_reference",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as never,
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`);
+  await expect(page.getByRole("heading", { name: "Attributes", level: 1 })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Compiling")).toHaveCount(0, { timeout: 15000 });
+  await expect(page.getByText("Signed", { exact: true })).toBeVisible();
+
+  // A default attribute keeps Advanced closed.
+  await page.getByRole("button", { name: "Add attribute" }).click();
+  const createDialog = page.getByRole("dialog", { name: "Add attribute" });
+  await expect(createDialog.getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-expanded", "false");
+  await expect(createDialog.getByLabel("Treat as proof")).toBeHidden();
+
+  // Checking both boxes is sent as trustTier and sensitivity.
+  await createDialog.getByLabel("Name", { exact: true }).fill("account_tier");
+  await createDialog.getByRole("button", { name: "Advanced" }).click();
+  await createDialog.getByLabel("Treat as proof").check();
+  await createDialog.getByLabel("Private data").check();
+  await createDialog.getByRole("button", { name: "Add attribute" }).click();
+  await expect.poll(() => contextVariableRequests.find((request) => request.method === "POST")?.body).toMatchObject({
+    name: "account_tier",
+    trustTier: "signed",
+    sensitivity: "sensitive",
+  });
+
+  // An attribute with a non-default setting opens Advanced by itself.
+  await page.getByRole("button", { name: "Edit plan" }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit attribute" });
+  await expect(editDialog.getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-expanded", "true");
+  await expect(editDialog.getByLabel("Treat as proof")).toBeChecked();
+  await expect(editDialog.getByLabel("Private data")).not.toBeChecked();
 });

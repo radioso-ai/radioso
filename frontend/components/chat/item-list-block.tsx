@@ -1,7 +1,7 @@
 'use client'
 
 import { useId, useState, type ReactNode } from 'react'
-import { Check, ExternalLink, ImageOff } from 'lucide-react'
+import { Check, ExternalLink } from 'lucide-react'
 
 import type { ChatUserInputMetadata, ReplyBlock } from '@/lib/api-types'
 import {
@@ -35,14 +35,17 @@ const FRAME_CLASSES: Record<PictureFrame, string> = {
 const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 /**
- * A picture in a frame of fixed shape, so the card keeps its size while the picture loads. A
- * picture that fails to load, such as one whose document was deleted, leaves the frame empty.
+ * A picture in a frame of fixed shape, so the card keeps its size while the picture loads. The
+ * frame pulses while the picture is on its way: a skill's picture is copied when first asked for,
+ * which can take a few seconds. A card without a picture, or whose picture fails to load (one
+ * whose document was deleted, or that could not be copied), keeps its frame, plain and empty.
  */
 function ItemPicture({ image, layout, className }: { image?: ReplyImage; layout: ItemListLayout; className?: string }) {
-  const [failed, setFailed] = useState(false)
+  const [state, setState] = useState<'loading' | 'shown' | 'failed'>('loading')
+  const showing = image !== undefined && state !== 'failed'
   return (
-    <span className={cn('flex items-center justify-center overflow-hidden bg-muted text-muted-foreground', className)}>
-      {image && !failed ? (
+    <span className={cn('flex items-center justify-center overflow-hidden bg-muted', showing && state === 'loading' && 'motion-safe:animate-pulse', className)}>
+      {showing ? (
         // eslint-disable-next-line @next/next/no-img-element -- the server serves each picture at the widths in its srcSet
         <img
           src={image.src}
@@ -53,12 +56,11 @@ function ItemPicture({ image, layout, className }: { image?: ReplyImage; layout:
           alt={image.alt}
           loading="lazy"
           decoding="async"
-          onError={() => setFailed(true)}
+          onLoad={() => setState('shown')}
+          onError={() => setState('failed')}
           className="size-full object-contain"
         />
-      ) : (
-        <ImageOff aria-hidden="true" className="size-5 opacity-40" />
-      )}
+      ) : null}
     </span>
   )
 }

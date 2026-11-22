@@ -109,6 +109,48 @@ const lodgeRooms: ReplyBlock = {
   }],
 };
 
+// A skill's records as cards: the shop's pictures are copied the moment the browser first asks, so
+// the image route holds each request a moment, and one picture's address had expired.
+const expiredProductImageId = "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b66";
+const productsQuestion = "Which tents do you have for two people?";
+const productsAnswer = "Six tents for two people are in stock.";
+const products: ReplyBlock = {
+  type: "item_list",
+  id: "block-products",
+  layout: "carousel",
+  selection: "none",
+  caption: "Tents for two",
+  items: [
+    ["Ridge Tent 2", "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b61"],
+    ["Meadow Dome 2", "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b62"],
+    ["Summit Tunnel 2", "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b63"],
+    ["Valley Shelter 2", "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b64"],
+    ["Lakeside Pod 2", "4c2a9e10-7b3d-4f5e-8a6c-1d2e3f4a5b65"],
+    ["Canyon Cabin 2", expiredProductImageId],
+  ].map(([title, imageId]) => ({
+    key: imageId,
+    title,
+    image: picture(imageId, `Photo of the ${title}`, 300, 300),
+    actions: [],
+  })),
+};
+
+/** The image route while it copies a skill's pictures: each answers after a moment, the expired one with 404. */
+const copyPicturesOnDemand = async (page: Page) => {
+  await page.route("**/public/reply-images/**", async (route) => {
+    const imageId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    if (imageId === expiredProductImageId) {
+      await route.fulfill({ status: 404, body: "" }).catch(() => undefined);
+      return;
+    }
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#e7e5e4"/><path d="M60 220 L150 80 L240 220 Z" fill="#c2410c"/></svg>`,
+    }).catch(() => undefined);
+  });
+};
+
 /** The image route: every picture is a plain drawing, except one whose document was deleted. */
 const servePictures = async (page: Page) => {
   await page.route("**/public/reply-images/**", async (route) => {
@@ -269,6 +311,27 @@ test("a gallery shows a page's pictures with their titles, and a picture that no
   await expect(gallery.getByRole("img", { name: "A sloped ceiling over a reading corner" })).toHaveCount(0);
   // Pictures without a page are shown, not linked.
   await expect(gallery.getByRole("link")).toHaveCount(0);
+});
+
+test("a carousel of a skill's records shows each picture once its copy is ready, and a card whose picture could not be copied keeps its title without one", async ({ page }) => {
+  await copyPicturesOnDemand(page);
+  await mockPublicChat(page, { question: productsQuestion, answer: productsAnswer, blocks: [products] });
+
+  await page.goto(`/chat/${publicToken}`);
+  await ask(page, productsQuestion);
+
+  const cards = page.getByRole("list", { name: "Tents for two" });
+  await expect(cards.getByRole("listitem")).toHaveCount(6);
+  await expect(cards.getByText("Canyon Cabin 2")).toBeVisible();
+
+  // Every picture that could be copied arrives and draws; the expired one leaves its card without a picture.
+  const pictures = cards.getByRole("img");
+  await expect(pictures).toHaveCount(5);
+  for (const picture of await pictures.all()) {
+    await expect.poll(() => picture.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
+  }
+  await expect(cards.getByRole("img", { name: "Photo of the Canyon Cabin 2" })).toHaveCount(0);
+  await expect(cards.getByText("Canyon Cabin 2")).toBeVisible();
 });
 
 test("a card's link is named by its title, or by its picture without one, and a strip with an unlinked card scrolls from the keyboard", async ({ page }) => {

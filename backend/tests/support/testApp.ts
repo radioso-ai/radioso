@@ -303,7 +303,8 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import { ContextVariableService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import type { ConversationAttributeReadPort, ConversationScope, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -379,6 +380,7 @@ import {
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
+  type ConversationValueMatcher,
   InMemoryMessageRepository,
   InMemoryActionOutbox,
   InMemoryConversationActivityStore,
@@ -672,6 +674,35 @@ class InMemoryDirectiveStateStore implements DirectiveStateStore {
   async save({ sessionId, state }: { sessionId: string; state: DirectiveFiringState }): Promise<void> {
     this.states.set(sessionId, { turnSeq: state.turnSeq, firings: { ...state.firings } });
   }
+}
+
+/** A conversation's attributes from the in-memory context-variable store: each variable's most specific value on the rungs. */
+class InMemoryConversationAttributeReads implements ConversationAttributeReadPort {
+  constructor(private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">) {}
+
+  async readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]> {
+    const rungOf = (value: ContextVariableValue) => scopes.findIndex((scope) => scope.type === value.scope.type && scope.id === value.scope.id);
+    const mostSpecific = new Map<string, ContextVariableValue>();
+    for (const value of this.variables.values.values()) {
+      const held = mostSpecific.get(value.variableId);
+      if (value.workspaceId === workspaceId && rungOf(value) >= 0 && (!held || rungOf(value) < rungOf(held))) mostSpecific.set(value.variableId, value);
+    }
+    return [...mostSpecific.values()].flatMap((value) => {
+      const variable = this.variables.variables.get(value.variableId);
+      return variable ? [{ variable, value }] : [];
+    });
+  }
+
+  async findByName(workspaceId: string, name: string): Promise<ContextVariable | null> {
+    return [...this.variables.variables.values()].find((variable) => variable.workspaceId === workspaceId && variable.name === name) ?? null;
+  }
+
+  /** The history lists' attribute filter: whether the conversation's own value is the filter's key, or, for Not set, whether it has none. */
+  readonly holdsValue: ConversationValueMatcher = (filter, conversationId) => {
+    const own = [...this.variables.values.values()].find((value) =>
+      value.variableId === filter.variableId && value.scope.type === "conversation" && value.scope.id === conversationId);
+    return filter.key === null ? own === undefined : own?.data === filter.key;
+  };
 }
 
 class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
@@ -2244,11 +2275,13 @@ export const createTestDependencies = (overrides: {
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
+  const conversationAttributeReads = new InMemoryConversationAttributeReads(contextVariableRepository);
+  conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
     auditEventRepository,
-    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
+    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository, conversationAttributeReads.holdsValue),
     overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
@@ -2257,6 +2290,7 @@ export const createTestDependencies = (overrides: {
     teammateLabels,
     conversationActivityReads,
     replyBlocks.imageUrls,
+    new ConversationAttributeService(conversationAttributeReads),
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();

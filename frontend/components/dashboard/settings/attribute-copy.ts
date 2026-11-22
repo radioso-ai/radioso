@@ -1,4 +1,5 @@
 import type { ContextVariable, ContextVariableCreateRequest, ContextVariableSource, ContextVariableSurfacing, ContextVariableValueType } from '@/lib/api'
+import type { ConversationAttribute } from '@/lib/api-types'
 
 export type SourceOption = ContextVariableSource
 export type SurfacingOption = ContextVariableSurfacing
@@ -34,6 +35,24 @@ export const classifiedUnavailableReason = (
   if (classifiedElsewhere >= MAX_CLASSIFIED_PER_AGENT) return `Up to ${MAX_CLASSIFIED_PER_AGENT} per agent`
   return null
 }
+
+const writerLabels: Record<ConversationAttribute['writtenBy']['kind'], string> = {
+  classifier: 'the AI',
+  api: 'your website or API',
+  operator: 'your team',
+  routine: 'a routine',
+}
+
+/** A conversation's attribute value as the Inbox shows it. */
+export const attributeValueText = (attribute: ConversationAttribute): string => {
+  if (attribute.redacted) return 'Private data'
+  if (attribute.option) return attribute.option.label
+  return typeof attribute.value === 'string' ? attribute.value : JSON.stringify(attribute.value)
+}
+
+/** Who set a conversation's attribute value, and whether it is kept for the visitor rather than this conversation. */
+export const attributeWrittenText = (attribute: ConversationAttribute): string =>
+  `Set by ${writerLabels[attribute.writtenBy.kind]}${attribute.scope === 'conversation' ? '' : ' for this visitor'}`
 
 export const surfacingLabels: Record<SurfacingOption, string> = {
   always: 'Every reply, and rules, routines and skills',

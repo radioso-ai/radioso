@@ -191,6 +191,7 @@ import type {
   HistoryItemsRepositoryPort,
   HistoryItemsSourceRecord,
 } from "../../src/db/repositories/historyItemsRepository.js";
+import type { ConversationAttributeFilter } from "../../src/modules/context-variables/public.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
 import type {
   ConversationMessageSummary,
@@ -4569,6 +4570,13 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     this.ownershipReader = ownershipReader;
   }
 
+  private holdsValue: ConversationValueMatcher = () => false;
+
+  /** Lets the list read the conversations' attribute values, which another store keeps. */
+  setAttributeValueMatcher(holdsValue: ConversationValueMatcher): void {
+    this.holdsValue = holdsValue;
+  }
+
   async getOrCreateByAnonymousSession(input: {
     workspaceId: string;
     agentId: string;
@@ -4680,10 +4688,12 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
       agentId?: string | null;
+      attribute?: ConversationAttributeFilter;
     } = { limit: 50, offset: 0 },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const workspaceConversations = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId && (!input.agentId || item.agentId === input.agentId))
+      .filter((item) => !input.attribute || this.holdsValue(input.attribute, item.id))
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
@@ -5655,15 +5665,19 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
   }
 }
 
+/** Whether a conversation's own value of the filter's variable is the filter's key; the attribute filter of the history lists. */
+export type ConversationValueMatcher = (filter: ConversationAttributeFilter, conversationId: string) => boolean;
+
 export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPort {
   constructor(
     private readonly conversationRepository: InMemoryConversationRepository,
     _auditEventRepository: InMemoryAuditEventRepository,
+    private readonly holdsValue: ConversationValueMatcher = () => false,
   ) {}
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string; attribute?: ConversationAttributeFilter } = { limit: 50, offset: 0 },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     // Matches the title only; the Postgres repository also matches the first user message.
@@ -5671,6 +5685,7 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
     const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
       .filter((conversation) => conversation.workspaceId === workspaceId && (!input.agentId || conversation.agentId === input.agentId))
       .filter((conversation) => !search || (conversation.title ?? "").toLowerCase().includes(search))
+      .filter((conversation) => !input.attribute || this.holdsValue(input.attribute, conversation.id))
       .map((conversation) => ({
         kind: "chat" as const,
         id: conversation.id,

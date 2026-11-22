@@ -28,6 +28,8 @@ import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnail
 import { ChatMessageThread } from './chat-message-thread'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { DeleteConversationAction } from './delete-conversation-action'
+import { ConversationAttributes } from './conversation-attributes'
+import { useLiveConversationAttributes } from './use-live-conversation-attributes'
 import { ConversationConsents } from './conversation-consents'
 import { VisitorPanel } from './visitor-panel'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
@@ -313,6 +315,11 @@ export function ConversationDrawer({
     isAudiencePulseEvidence,
     additionalConversationMessages: conversationTail.messages,
   })
+  const attributes = useLiveConversationAttributes({
+    conversationId: selectedChatConversationId,
+    loaded: conversationDetail?.attributes,
+    tail: conversationTail,
+  })
   useCopilotEntity(
     'conversation',
     selectedChatConversationId,
@@ -561,6 +568,7 @@ export function ConversationDrawer({
                     onSelectConversation={(conversationId) => onSelectedItemChange({ kind: 'chat', id: conversationId })}
                     className="mb-4"
                   />
+                  <ConversationAttributes attributes={attributes} className="mb-4" />
                   {selectedItem.kind === 'chat' ? (
                     <ConversationConsents
                       conversationId={selectedItem.id}

@@ -1,15 +1,18 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
-import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
+import type {
+  ConversationAttribute,
+  ConversationAttributeFilterInput,
+  ConversationAttributeReader,
+} from "../../context-variables/public.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ReplyImageUrls } from "../contracts/replyBlocks.js";
-import {
-  formatActivityCursor,
-  type ConversationActivityEntry,
-  type ConversationActivityReadScope,
-  type ConversationActivityTimeline,
-  type ConversationActivityTimelineReader,
+import type {
+  ConversationActivityEntry,
+  ConversationActivityReadScope,
+  ConversationActivityTimeline,
+  ConversationActivityTimelineReader,
 } from "../../conversationActivity/contracts/index.js";
 import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
@@ -24,8 +27,7 @@ import type {
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
 import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
-import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
-import type { VisitorRecord } from "../../../db/repositories/visitorRepository.js";
+import type { HistoryItemsFilters, HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
@@ -35,12 +37,8 @@ import {
   type ActivitySummary,
   type ActivityTrace,
 } from "../../retrieval/public.js";
-import {
-  type AssistantTurnOutcome,
-  type SkillTurnOutcome,
-  skillTurnOutcomeFromLegacyAnswerOutcome,
-} from "./assistantTurnOutcomeTypes.js";
-import { skillOutcomeStatusSchema } from "../../skills/public.js";
+import type { AssistantTurnOutcome, SkillTurnOutcome } from "./assistantTurnOutcomeTypes.js";
+import { normalizeSkillTurnOutcome, type NormalizedSkillTurnOutcome } from "./historySkillTurnOutcome.js";
 import type { ChatSuggestion } from "../types/chatResponses.js";
 import { buildChatConversationSummary, buildHistoryItem, messageSummaryFields } from "./historyItemPresenter.js";
 import { messageMetadataSuggestions, normalizeChatSuggestion, storedMessageFields, type StoredMessageFields } from "./historyMessageFields.js";
@@ -51,6 +49,16 @@ import {
   type TurnTraceEnvelope,
 } from "./turnTraceEnvelope.js";
 import { RETRIEVAL_TRACE_LEAF, capabilitySubTrace } from "./chatTraceLeaves.js";
+import {
+  NO_TEAMMATE_LABELS,
+  NoopConversationActivityReader,
+  NoopConversationAttributeReader,
+  NoopConversationOwnershipReader,
+  NoopTeammateLabelReader,
+  NoopVisitorProfileReader,
+  type ConversationOwnershipHistoryReader,
+  type VisitorProfileReaderPort,
+} from "./historyReaderDefaults.js";
 import {
   NoopContactHistoryProvider,
   type ContactHistoryDetail,
@@ -87,54 +95,6 @@ export interface ChatConversationOwnership {
   takenOverAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-// Narrow read port the history service needs — single load for detail, batch for lists
-// (no N+1). A missing entry means AI-owned (the ownership table is lazy).
-interface ConversationOwnershipHistoryReader {
-  load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
-  loadByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationOwnershipRecord>>;
-}
-
-/** Bounded persisted diagnostic read used only by the operator history projection. */
-
-class NoopConversationOwnershipReader implements ConversationOwnershipHistoryReader {
-  async load(): Promise<ConversationOwnershipRecord | null> {
-    return null;
-  }
-  async loadByConversationIds(): Promise<Map<string, ConversationOwnershipRecord>> {
-    return new Map();
-  }
-}
-
-/**
- * Narrow read port chat/history needs from the visitors module: just enough to attach an
- * operator-facing profile to a conversation detail (spec 1277, FR-040). `VisitorRepository`
- * (`db/repositories/visitorRepository.ts`) satisfies this structurally — chat depends on this
- * shape, not on the visitors module's fuller `VisitorRepositoryPort`.
- */
-interface VisitorProfileReaderPort {
-  findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null>;
-}
-
-class NoopVisitorProfileReader implements VisitorProfileReaderPort {
-  async findById(): Promise<VisitorRecord | null> {
-    return null;
-  }
-}
-
-const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
-
-class NoopTeammateLabelReader implements TeammateLabelReaderPort {
-  async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
-    return NO_TEAMMATE_LABELS;
-  }
-}
-
-class NoopConversationActivityReader implements ConversationActivityTimelineReader {
-  async readTimeline(): Promise<ConversationActivityTimeline> {
-    return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
-  }
 }
 
 const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => {
@@ -369,6 +329,8 @@ export interface ChatConversationDetail {
   ownership?: ChatConversationOwnership;
   /** See {@link ChatConversationTail.activity}: on operator reads only. */
   activity?: ConversationActivityEntry[];
+  /** The conversation's attributes, on an operator read of the first page only: they don't change with the page. */
+  attributes?: ConversationAttribute[];
 }
 
 /**
@@ -485,104 +447,6 @@ interface ChatAuditMetadata {
     retrievalInvoked?: unknown;
   };
 }
-
-interface NormalizedSkillTurnOutcome {
-  skillName: string;
-  outcome?: string;
-  status: SkillTurnOutcome["status"];
-}
-
-const normalizeSkillStatus = (value: unknown): SkillTurnOutcome["status"] | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const parsed = skillOutcomeStatusSchema.safeParse(value.trim());
-  return parsed.success ? parsed.data : undefined;
-};
-
-const normalizeSkillTurnFields = (input: {
-  skillName?: unknown;
-  skillOutcome?: unknown;
-  skillStatus?: unknown;
-  requireOutcome: boolean;
-}): NormalizedSkillTurnOutcome | undefined => {
-  if (typeof input.skillName !== "string" || input.skillName.trim().length === 0) {
-    return undefined;
-  }
-  const status = normalizeSkillStatus(input.skillStatus);
-  if (!status) {
-    return undefined;
-  }
-  const outcome = typeof input.skillOutcome === "string" && input.skillOutcome.trim().length > 0
-    ? input.skillOutcome.trim()
-    : undefined;
-  if (input.requireOutcome && !outcome) {
-    return undefined;
-  }
-
-  return {
-    skillName: input.skillName.trim(),
-    outcome,
-    status,
-  };
-};
-
-const normalizeSkillIntakeOutcome = (value: unknown): NormalizedSkillTurnOutcome | undefined => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const candidate = value as { skillName?: unknown; skillOutcome?: unknown; status?: unknown };
-  const normalized = normalizeSkillTurnFields({
-    skillName: candidate.skillName,
-    skillOutcome: candidate.skillOutcome,
-    skillStatus: candidate.status,
-    requireOutcome: false,
-  });
-  return normalized
-    ? {
-        ...normalized,
-        outcome: normalized.outcome ?? "unknown",
-      }
-    : undefined;
-};
-
-const normalizeMessageSkillTurnOutcome = (message: MessageRecord | undefined): NormalizedSkillTurnOutcome | undefined =>
-  normalizeSkillTurnFields({
-    skillName: message?.skillName,
-    skillOutcome: message?.skillOutcome,
-    skillStatus: message?.skillStatus,
-    requireOutcome: false,
-  });
-
-const normalizeSkillTurnOutcome = (
-  metadata: ChatAuditMetadata,
-  message: MessageRecord | undefined,
-): NormalizedSkillTurnOutcome | undefined => {
-  if (metadata.skillTurn && typeof metadata.skillTurn === "object" && !Array.isArray(metadata.skillTurn)) {
-    const candidate = metadata.skillTurn as { skillName?: unknown; outcome?: unknown; status?: unknown };
-    const normalized = normalizeSkillTurnFields({
-      skillName: candidate.skillName,
-      skillOutcome: candidate.outcome,
-      skillStatus: candidate.status,
-      requireOutcome: true,
-    });
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  const messageSkillTurnOutcome = normalizeMessageSkillTurnOutcome(message);
-  if (messageSkillTurnOutcome) {
-    return messageSkillTurnOutcome;
-  }
-
-  const skillIntakeOutcome = normalizeSkillIntakeOutcome(metadata.skillIntake);
-  if (skillIntakeOutcome) {
-    return skillIntakeOutcome;
-  }
-
-  return skillTurnOutcomeFromLegacyAnswerOutcome(metadata.answerOutcome);
-};
 
 interface AssistantTurnArtifacts {
   citations?: ChatCitation[];
@@ -829,6 +693,7 @@ export class ChatHistoryService {
     private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
     private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
     private readonly replyImageUrls: ReplyImageUrls | null = null,
+    private readonly attributes: ConversationAttributeReader = new NoopConversationAttributeReader(),
   ) {}
 
   async listConversations(
@@ -841,11 +706,12 @@ export class ChatHistoryService {
       ownership?: ConversationOwnershipScope;
       agentId?: string;
       channel?: string;
+      attribute?: ConversationAttributeFilterInput;
     } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
       workspaceId,
-      { ...input, sourceScope: input.sourceScope ?? "end_user" },
+      { ...input, sourceScope: input.sourceScope ?? "end_user", attribute: await this.resolveAttributeFilter(workspaceId, input.attribute) },
     );
     return this.buildConversationPage(workspaceId, { conversations, total, nextCursor, hasMore });
   }
@@ -902,17 +768,8 @@ export class ChatHistoryService {
 
   async listItems(
     workspaceId: string,
-    input: {
-      limit: number;
-      offset?: number;
-      sourceScope?: ConversationSourceScope;
-      /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
-      q?: string;
-      agentId?: string;
-      sourceOrigin?: string;
-      outcome?: ConversationOutcomeFilter;
-      callerKind?: CallerKind;
-    } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; attribute?: ConversationAttributeFilterInput }
+      & Omit<HistoryItemsFilters, "attribute"> = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
@@ -924,7 +781,7 @@ export class ChatHistoryService {
     // Only `agent` is chat-only. A contact request is submitted by a person, so asking for human
     // callers should still return them; asking for agent callers cannot, because no agent fills in
     // a contact form.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent");
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent" || input.attribute);
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
@@ -935,6 +792,7 @@ export class ChatHistoryService {
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
         callerKind: input.callerKind,
+        attribute: await this.resolveAttributeFilter(workspaceId, input.attribute),
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })
@@ -1071,6 +929,8 @@ export class ChatHistoryService {
       // OFF (absent) by default: the conversation's activity names teammates by label, which can
       // be an email, so only operator reads set it — with the kinds the caller may see.
       activity?: ConversationActivityReadScope;
+      // OFF by default: an operator read. Read on the first page only; an older page leaves them out.
+      includeAttributes?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1079,7 +939,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity] =
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity, attributes] =
       await Promise.all([
         this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
         this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
@@ -1094,6 +954,9 @@ export class ChatHistoryService {
           ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
           : Promise.resolve(null),
         this.loadActivity(workspaceId, conversation.id, options.activity),
+        options.includeAttributes && !input.cursor && !input.offset ? this.attributes.read(workspaceId, {
+          conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId, verifiedCustomerId: conversation.verifiedCustomerId,
+        }) : Promise.resolve(null),
       ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -1192,7 +1055,13 @@ export class ChatHistoryService {
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
+      ...(attributes ? { attributes } : {}),
     };
+  }
+
+  /** A caller's attribute filter, resolved to the stored value it matches; refuses one no conversation can satisfy. */
+  private async resolveAttributeFilter(workspaceId: string, filter: ConversationAttributeFilterInput | undefined) {
+    return filter ? this.attributes.resolveFilter(workspaceId, filter) : undefined;
   }
 
   async getConversationTurn(

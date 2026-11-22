@@ -230,6 +230,16 @@ describe('history list query', () => {
     }, signal)
   })
 
+  it('forwards an attribute filter from the key tail as its name and option key', async () => {
+    const signal = new AbortController().signal
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response)
+    await fetchHistory({
+      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, null, null, null, null, null, 'topic', 'billing'],
+      signal,
+    } as never)
+    expect(chatApi.listHistory).toHaveBeenCalledWith({ limit: 50, offset: 0, attribute: 'topic', attributeOption: 'billing' }, signal)
+  })
+
   it('omits absent searchParams key slots (null) rather than forwarding null values', async () => {
     const signal = new AbortController().signal
     vi.mocked(chatApi.listHistory).mockResolvedValue(response)

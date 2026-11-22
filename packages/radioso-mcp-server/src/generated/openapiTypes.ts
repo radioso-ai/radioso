@@ -10183,6 +10183,35 @@ export interface components {
             message: components["schemas"]["HumanReplyMessage"];
             ownership: components["schemas"]["ConversationOwnership"] & unknown;
         };
+        ConversationAttribute: {
+            /** @description The attribute's name, as in `{{context.<name>}}`. */
+            name: string;
+            /** @enum {string} */
+            valueType: "string" | "json" | "enum";
+            /** @description The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`. */
+            value?: unknown;
+            /** @description The option an `enum` value names, archived or not. Absent for other types, for a redacted value, and for a key no option has. */
+            option?: {
+                label: string;
+                archived: boolean;
+            };
+            /** @description True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain. */
+            redacted: boolean;
+            /**
+             * @description Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed.
+             * @enum {string}
+             */
+            scope: "conversation" | "session" | "customer";
+            /** @description The value's last writer. */
+            writtenBy: {
+                /** @enum {string} */
+                kind: "api" | "operator" | "routine" | "classifier";
+                /** @description What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`. */
+                ref: string | null;
+            };
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ChatConversationDetail: {
             /** Format: uuid */
             conversationId: string;
@@ -10228,6 +10257,8 @@ export interface components {
             recording?: {
                 available: boolean;
             };
+            /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
+            attributes?: components["schemas"]["ConversationAttribute"][];
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
@@ -29469,6 +29500,10 @@ export interface operations {
                 outcome?: "in_progress" | "completed" | "handed_off";
                 /** @description Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller. */
                 callerKind?: "human" | "agent";
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                attribute?: string;
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                attributeOption?: string;
             };
             header?: never;
             path?: never;
@@ -29539,6 +29574,10 @@ export interface operations {
                      * @enum {string}
                      */
                     callerKind?: "human" | "agent";
+                    /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                    attribute?: string;
+                    /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                    attributeOption?: string;
                     /** @description Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither). */
                     q?: string;
                 };
@@ -29586,6 +29625,10 @@ export interface operations {
                 ownership?: "human_owned";
                 agentId?: string;
                 channel?: string;
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. */
+                attribute?: string;
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                attributeOption?: string;
             };
             header?: never;
             path?: never;
@@ -29600,6 +29643,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatHistoryListResponse"];
+                };
+            };
+            /** @description Invalid query, including an attribute filter no conversation can match */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

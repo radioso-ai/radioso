@@ -5,12 +5,20 @@ import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 export type OutcomeFilter = 'all' | ConversationOutcome['kind']
 export type CallerKindFilter = ChatConversationSummary['callerKind']
 
+/** A Choice attribute's name and one of its option keys: conversations whose own value is that option. */
+export interface AttributeFilter {
+  name: string
+  option: string
+}
+
 export interface ConversationFilterState {
   search: string
   outcome: OutcomeFilter
   agentId: string | null
   siteOrigin: string | null
   callerKind: CallerKindFilter | null
+  /** Server-side only: the All lens sends it, and a client-side filter of a loaded page ignores it. */
+  attribute: AttributeFilter | null
 }
 
 export const EMPTY_CONVERSATION_FILTERS: ConversationFilterState = {
@@ -19,6 +27,7 @@ export const EMPTY_CONVERSATION_FILTERS: ConversationFilterState = {
   agentId: null,
   siteOrigin: null,
   callerKind: null,
+  attribute: null,
 }
 
 /**
@@ -85,6 +94,8 @@ export interface ConversationSearchParams {
   agentId?: string
   sourceOrigin?: string
   callerKind?: CallerKindFilter
+  attribute?: string
+  attributeOption?: string
 }
 
 /**
@@ -94,7 +105,8 @@ export interface ConversationSearchParams {
  * `null`/empty filter into an absent key so an unset filter never appears in the request.
  */
 export function buildConversationSearchParams(
-  filters: Pick<ConversationFilterState, 'search' | 'outcome' | 'agentId' | 'siteOrigin' | 'callerKind'>,
+  filters: Pick<ConversationFilterState, 'search' | 'outcome' | 'agentId' | 'siteOrigin' | 'callerKind'>
+    & Partial<Pick<ConversationFilterState, 'attribute'>>,
 ): ConversationSearchParams {
   const q = filters.search.trim()
   return {
@@ -103,5 +115,6 @@ export function buildConversationSearchParams(
     ...(filters.agentId ? { agentId: filters.agentId } : {}),
     ...(filters.siteOrigin ? { sourceOrigin: filters.siteOrigin } : {}),
     ...(filters.callerKind ? { callerKind: filters.callerKind } : {}),
+    ...(filters.attribute ? { attribute: filters.attribute.name, attributeOption: filters.attribute.option } : {}),
   }
 }

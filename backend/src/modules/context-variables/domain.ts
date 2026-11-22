@@ -1,6 +1,7 @@
 import type { ValueSensitivity } from "@radioso/conversation-contract";
 
 import { AppError } from "../../shared/domain/errors.js";
+import type { SameType } from "../../shared/types/sameType.js";
 
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 import type { FrozenTestValue } from "./testValues.js";
@@ -187,11 +188,31 @@ export interface ContextScopeKeys {
   workspaceId: string;
 }
 
-/** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
-export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [
+/** The keys of the rungs that hold facts about one conversation. */
+export type ConversationScopeKeys = Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId">;
+
+/**
+ * A conversation's own rungs of the ladder, most specific first: what it, the visitor's chat session
+ * and the verified customer hold. The agent's and the workspace's rungs below them hold defaults that
+ * every conversation of the agent or workspace shares.
+ */
+export const conversationScopeLadder = (keys: ConversationScopeKeys) => [
   ...(keys.conversationId ? [{ type: "conversation" as const, id: keys.conversationId }] : []),
   ...(keys.chatSessionId ? [{ type: "session" as const, id: keys.chatSessionId }] : []),
   ...(keys.verifiedCustomerId ? [{ type: "customer" as const, id: keys.verifiedCustomerId }] : []),
+];
+export type ConversationScope = ReturnType<typeof conversationScopeLadder>[number];
+export type ConversationScopeType = ConversationScope["type"];
+
+/** The types of a conversation's own rungs, most specific first. Each surface that names one takes it from here. */
+export const CONVERSATION_SCOPE_TYPES = ["conversation", "session", "customer"] as const;
+// A rung added to conversationScopeLadder fails tsc here until it is listed, and every schema built on the list follows.
+const conversationScopeTypesListed: SameType<typeof CONVERSATION_SCOPE_TYPES[number], ConversationScopeType> = true;
+void conversationScopeTypesListed;
+
+/** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
+export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [
+  ...conversationScopeLadder(keys),
   { type: "agent", id: keys.agentId },
   { type: "workspace", id: keys.workspaceId },
 ];

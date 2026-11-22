@@ -390,7 +390,8 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 
 - `contextVariables.definition.propose` (`copilotPrimitiveRegistry.ts:2`) learns `valueType`, `options` and the `classified` source, so Ray can propose an attribute and its classification as one draft diff.
 - Routine proposals pick up `saveTo` through the shared schema.
-- Reading values is a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- The per-scope value routes stay a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- A conversation's attributes are read the way the Inbox reads them (slice 1c): `conversation_transcript` returns them, Private values redacted, and `conversation_history_search` filters by a Choice option. Both map to the history routes already covered (`getHistoryConversation`, `listHistory`).
 - Tool descriptions stay under the 2,048-character cap.
 
 ### Zapier and n8n (slice 6)
@@ -401,7 +402,7 @@ A trigger **Attribute changed** on the new event, in the REST-hook pattern of th
 
 - **Catalog** (`assistant-context-variables-section.tsx`, 672 lines): renamed **Attributes**; a type picker; an options editor as its own component, because the file is near the 1,000-line ratchet.
 - **Agent Context section:** **Classify automatically** per enum attribute.
-- **Inbox drawer:** an **Attributes** block showing each value and who set it. Read-only in 1c; edit and **Reset to automatic** in slice 2.
+- **Inbox reading pane:** an **Attributes** block, after the situation card and before the messages, showing each value and who set it; the conversation drawer shows it too. Read-only in 1c; edit and **Reset to automatic** in slice 2.
 - **Inbox filter** by attribute.
 - **Routine editor:** **Save to** on a slot row (3a); a context chip in the Rule builder (3b).
 
@@ -485,7 +486,7 @@ Two migrations (270: enum type, `options`, `conversation` scope, provenance colu
 **PR 1b: classifier and toggle (about 26 files).**
 The `contextClassification` module, prompt and job; enqueue in chat; the excerpt reader; composition; the `classified` source in the snapshot schema, routes and Ray adapter; the agent toggle; unit, deterministic-suite and live eval cases; module README and docs. Contract change: yes.
 
-**PR 1c: drawer block and filter (about 16 files).**
+**PR 1c: reading-pane block and filter (about 16 files).**
 `attributes` on conversation detail; the history list filter; the read-only **Attributes** block; the Inbox filter; Playwright for both; one test that a directive condition reads a classified value and one that a routine step renders it; docs. Contract change: yes.
 The filter's query must carry `filterIndexPredicate` (`backend/src/db/repositories/contextVariableValueReads.ts`), the filter index's predicate: Postgres uses a partial index only when the query implies its predicate, and `data = $1` alone does not. A test runs `EXPLAIN` on the filter query and expects the index.
 

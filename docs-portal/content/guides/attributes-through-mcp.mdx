@@ -1,6 +1,6 @@
 ---
 title: "Set up AI-filled attributes through MCP"
-description: "Create a Choice attribute, have the AI fill it from the conversation, check it in Test Chat and publish, from an MCP client connected to Ray."
+description: "Create a Choice attribute, have the AI fill it from the conversation, check it in Test Chat, publish, and read what it chose, from an MCP client connected to Ray."
 last_updated: 2026-11-22
 ---
 
@@ -54,9 +54,33 @@ The preparation fails with the reason when the AI can't fill the attribute: it i
 
 `prepare_agent_publication` prepares the candidate; approve its review, then `execute_reviewed_proposal` publishes it. From then on every new customer conversation is classified after each reply; a conversation that started on an earlier release keeps that release's attributes.
 
+### Read what the AI chose
+
+`conversation_history_search` with `"attribute": { "name": "topic", "option": "billing" }` lists the conversations whose own `topic` is Billing, newest first; `"option": "_not_set"` lists those with no `topic` of their own. An archived option still finds the conversations that hold it. The name matches exactly as written. Ray refuses a name no attribute has, an option the attribute lacks, and an attribute that is not a Choice or is Private.
+
+`conversation_transcript` for one of them returns its `attributes` beside the messages:
+
+```json
+{
+  "name": "topic",
+  "valueType": "enum",
+  "value": "billing",
+  "option": { "label": "Billing", "archived": false },
+  "redacted": false,
+  "truncated": false,
+  "scope": "conversation",
+  "writtenBy": { "kind": "classifier", "ref": "context-classification/1" },
+  "updatedAt": "2026-11-22T09:30:00.000Z"
+}
+```
+
+The list holds each attribute's value for the conversation, the visitor's chat session or the verified customer, whichever is most specific. The AI's value is in the `conversation` scope with `writtenBy.kind` `classifier`. A Private attribute arrives with `redacted: true` and a `value` of `null`; who set it and when remain. A value longer than 500 characters arrives as its first 500, as text, with `truncated: true`.
+
 </Steps>
 
-`kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`, each with `uses` set to `draft`, `published` or `both`, because customers on the published release see the change too. A type change on an attribute that already has values is refused. On a customer conversation the AI's value is stored in the `conversation` scope with `writtenBy.kind` `classifier`. Ray does not read a customer conversation's attribute values, because they belong to a visitor; Test Chat is your own test, so its trace shows them.
+## Change an attribute later
+
+`kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`, each with `uses` set to `draft`, `published` or `both`, because customers on the published release see the change too. A type change on an attribute that already has values is refused.
 
 ## Read next
 

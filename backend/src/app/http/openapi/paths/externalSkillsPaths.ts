@@ -44,7 +44,9 @@ const ConnectionSummarySchema = z.object({
   authMethod: z.string(),
   status: z.string(),
   hasCredential: z.boolean(),
-  usedByAgents: z.array(z.object({ id: z.string(), name: z.string() })),
+  usedByAgents: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .describe("Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409."),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

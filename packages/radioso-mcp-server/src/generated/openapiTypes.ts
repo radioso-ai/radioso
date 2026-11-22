@@ -17667,7 +17667,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `webhook_destination_in_use`: an enabled routine, or a skill in an agent's draft or published version, uses the destination; the message names each one */
+            /** @description `webhook_destination_in_use`: the latest version of an enabled routine exports to the destination, or a skill in an agent's draft or published release uses it; the message names each routine, agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22147,6 +22147,7 @@ export interface operations {
                             authMethod: string;
                             status: string;
                             hasCredential: boolean;
+                            /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                             usedByAgents: {
                                 id: string;
                                 name: string;
@@ -22227,6 +22228,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22364,6 +22366,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22474,6 +22477,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22954,6 +22958,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;

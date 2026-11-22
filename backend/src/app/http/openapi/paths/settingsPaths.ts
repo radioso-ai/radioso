@@ -127,7 +127,7 @@ export const registerSettingsPaths = (
       204: { description: "Webhook destination deleted" },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Webhook destination not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      409: { description: "`webhook_destination_in_use`: an enabled routine, or a skill in an agent's draft or published version, uses the destination; the message names each one", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "`webhook_destination_in_use`: the latest version of an enabled routine exports to the destination, or a skill in an agent's draft or published release uses it; the message names each routine, agent and skill", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

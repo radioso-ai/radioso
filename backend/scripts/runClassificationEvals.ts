@@ -8,6 +8,7 @@
  *
  *   pnpm run evals:classification                          # one sample per case, gated on the baseline
  *   pnpm run evals:classification -- --samples 3
+ *   pnpm run evals:classification -- --case en-injection-only --case en-shipping-tracking --samples 3
  *   pnpm run evals:classification:update-baseline          # re-record the baseline
  *
  * A case passes when every attribute it scores holds an accepted answer; accuracy is the share of
@@ -55,10 +56,19 @@ const flagValue = (name: string): string | null => {
   return index >= 0 ? (process.argv[index + 1] ?? null) : null;
 };
 
+/** Every value a repeatable flag was given. */
+const flagValues = (name: string): string[] =>
+  process.argv.flatMap((arg, index) => (arg === `--${name}` && process.argv[index + 1] ? [process.argv[index + 1]] : []));
+
 const main = async (): Promise<void> => {
   const samples = Number(flagValue("samples") ?? "1");
   if (!Number.isInteger(samples) || samples < 1) throw new Error("--samples takes a positive integer");
   const updateBaseline = process.argv.includes("--update-baseline");
+  const caseIds = flagValues("case");
+  if (updateBaseline && caseIds.length > 0) throw new Error("--update-baseline records the whole set, so it cannot be combined with --case");
+  const unknown = caseIds.filter((id) => !classificationEvalCases.some((evalCase) => evalCase.id === id));
+  if (unknown.length > 0) throw new Error(`No such case: ${unknown.join(", ")}`);
+  const selected = caseIds.length === 0 ? classificationEvalCases : classificationEvalCases.filter((evalCase) => caseIds.includes(evalCase.id));
 
   const logger = createLogger();
   const pipeline = buildLlmRegistry(getEnv(), logger).createRewriteInferencePipeline();
@@ -72,7 +82,7 @@ const main = async (): Promise<void> => {
   const outcomes: CaseOutcome[] = [];
   let fieldsScored = 0;
   let fieldsCorrect = 0;
-  for (const evalCase of classificationEvalCases) {
+  for (const evalCase of selected) {
     let passes = 0;
     let errored = false;
     for (let sample = 0; sample < samples; sample += 1) {

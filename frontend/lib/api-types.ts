@@ -511,6 +511,7 @@ export type OperatorReplySpeech = ApiSchemas['OperatorReplySpeech']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }
+export type ConversationAttribute = ApiSchemas['ConversationAttribute']
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages' | 'channelContext'> & {
   messages: ChatConversationTurn[]
   tailCursor: string | null

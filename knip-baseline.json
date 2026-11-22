@@ -102,8 +102,6 @@
   "exports|frontend/components/ui/drawer.tsx|DrawerTrigger",
   "exports|frontend/components/ui/dropdown-menu.tsx|DropdownMenuPortal",
   "exports|frontend/components/ui/dropdown-menu.tsx|DropdownMenuShortcut",
-  "exports|frontend/components/ui/select.tsx|SelectGroup",
-  "exports|frontend/components/ui/select.tsx|SelectLabel",
   "exports|frontend/components/ui/select.tsx|SelectScrollDownButton",
   "exports|frontend/components/ui/select.tsx|SelectScrollUpButton",
   "exports|frontend/components/ui/select.tsx|SelectSeparator",

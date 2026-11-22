@@ -9,13 +9,16 @@ import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { useCopilotEntity } from '@/lib/copilot-context'
+import { decodeAttributeFilter, encodeAttributeFilter, type AttributeFilterChoice } from '@/lib/conversation-attributes'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
 import {
@@ -34,6 +37,7 @@ import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboar
 const ALL_AGENTS = '__all_agents__'
 const ALL_SITES = '__all_sites__'
 const ALL_CALLERS = '__all_callers__'
+const ALL_ATTRIBUTES = '__all_attributes__'
 
 const OUTCOME_OPTIONS: Array<{ value: OutcomeFilter; label: string }> = [
   { value: 'all', label: 'Outcome: all' },
@@ -287,6 +291,45 @@ export const filterAllLensItems = (
   return true
 })
 
+function AttributeFilterSelect({
+  choices,
+  filters,
+  onFiltersChange,
+}: {
+  choices: readonly AttributeFilterChoice[]
+  filters: ConversationFilterState
+  onFiltersChange: (next: ConversationFilterState) => void
+}) {
+  const selected = filters.attribute
+  const selectedLabel = selected
+    ? choices.find((choice) => choice.name === selected.name)?.options.find((option) => option.key === selected.option)?.label
+    : undefined
+  return (
+    <Select
+      value={selected ? encodeAttributeFilter(selected) : ALL_ATTRIBUTES}
+      onValueChange={(value) => onFiltersChange({ ...filters, attribute: decodeAttributeFilter(value) })}
+    >
+      <SelectTrigger size="sm" className="h-8 min-w-[7.5rem] flex-auto text-xs" aria-label="Filter by attribute">
+        {/* The option alone reads ambiguously once picked; the trigger names its attribute too. */}
+        <SelectValue>{selected ? `${selected.name}: ${selectedLabel ?? selected.option}` : 'Attribute: all'}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_ATTRIBUTES}>Attribute: all</SelectItem>
+        {choices.map((choice) => (
+          <SelectGroup key={choice.name}>
+            <SelectLabel className="font-mono">{choice.name}</SelectLabel>
+            {choice.options.map((option) => (
+              <SelectItem key={option.key} value={encodeAttributeFilter({ name: choice.name, option: option.key })}>
+                {option.archived ? `${option.label} (archived)` : option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 interface AllConversationsListPaneProps {
   lensToggle: ReactNode
   items: HistoryListItem[]
@@ -299,6 +342,8 @@ interface AllConversationsListPaneProps {
    */
   agentOptions: ReturnType<typeof buildAgentOptions>
   siteOptions: ReturnType<typeof buildSiteOptions>
+  /** Empty hides the attribute filter: it narrows only on the server, which only the 'all' variant asks. */
+  attributeChoices: readonly AttributeFilterChoice[]
   filters: ConversationFilterState
   onFiltersChange: (next: ConversationFilterState) => void
   now: Date
@@ -321,6 +366,7 @@ export function AllConversationsListPane({
   items,
   agentOptions,
   siteOptions,
+  attributeChoices,
   filters,
   onFiltersChange,
   now,
@@ -399,6 +445,9 @@ export function AllConversationsListPane({
               ))}
             </SelectContent>
           </Select>
+          {attributeChoices.length > 0 ? (
+            <AttributeFilterSelect choices={attributeChoices} filters={filters} onFiltersChange={onFiltersChange} />
+          ) : null}
         </div>
       </div>
 

@@ -26,6 +26,7 @@ import {
   filterAllLensItems,
 } from './all-conversations-list-pane'
 import { InboxLensToggle } from './inbox-lens-toggle'
+import { useInboxAttributeOptions } from './use-inbox-attribute-options'
 import { InboxResponseView, type InboxResponseSelection } from './inbox-response-view'
 
 // Matches the "collapse rapid keystrokes into one request" convention documented on
@@ -317,6 +318,9 @@ export function AllConversationsView({
   )
   const agentOptions = useMemo(() => buildAgentOptions(unfilteredChatConversations), [unfilteredChatConversations])
   const siteOptions = useMemo(() => buildSiteOptions(unfilteredChatConversations), [unfilteredChatConversations])
+  // Only the 'all' variant filters by attribute: the other three filter their loaded page here,
+  // and a page carries no attribute values.
+  const attributeChoices = useInboxAttributeOptions(activeFilter === 'all')
 
   // A chat selection always resolves — the response view loads the
   // conversation independently by id (same as the old history drawer), so a
@@ -386,6 +390,7 @@ export function AllConversationsView({
               items={filteredItems}
               agentOptions={agentOptions}
               siteOptions={siteOptions}
+              attributeChoices={activeFilter === 'all' ? attributeChoices : []}
               filters={conversationFilters}
               onFiltersChange={setConversationFilters}
               now={now}

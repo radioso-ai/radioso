@@ -709,6 +709,16 @@ describeIfDatabase("EE usage limit service integration", () => {
       .resolves.toBe(satellite.dailyNotificationEmails);
   });
 
+  it("resolves the fastest website recrawl cadence from the workspace's assigned catalog plan", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+
+    await service.assignProfile(accountId, "comet");
+    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("weekly");
+    await service.assignProfile(accountId, "satellite");
+    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("daily");
+  });
+
   it("keeps a console edit to a seeded profile when the migrator runs again", async () => {
     const service = new EnterpriseUsageLimitService(database);
     const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;

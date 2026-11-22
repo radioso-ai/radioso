@@ -12452,6 +12452,36 @@
           "crawlSettings": {
             "$ref": "#/components/schemas/DocumentSourceCrawlSettings"
           },
+          "recrawlCadence": {
+            "type": "string",
+            "enum": [
+              "off",
+              "daily",
+              "weekly"
+            ],
+            "description": "Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence."
+          },
+          "nextRecrawlAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Website sources only. When the next scheduled recrawl is queued; null while the cadence is `off`."
+          },
+          "fastestRecrawlCadence": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ],
+            "description": "Website sources only. The fastest cadence the workspace's plan allows. A stored cadence faster than this runs at this cadence."
+          },
+          "heldPageCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Website sources only. Pages a crawl no longer found and held for review instead of removing, because they were more than a fifth of the source."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -26665,6 +26695,58 @@
         },
         "required": [
           "subscription"
+        ]
+      },
+      "DocumentSourceRecrawlCadenceRequest": {
+        "type": "object",
+        "properties": {
+          "recrawlCadence": {
+            "type": "string",
+            "enum": [
+              "off",
+              "daily",
+              "weekly"
+            ],
+            "description": "How often the source recrawls itself. `off` stops scheduled recrawls."
+          }
+        },
+        "required": [
+          "recrawlCadence"
+        ],
+        "additionalProperties": false
+      },
+      "DocumentSourceHeldPagesRemoved": {
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "removedPageCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "sourceId",
+          "removedPageCount"
+        ]
+      },
+      "DocumentSourceHeldPagesKept": {
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "keptPageCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "sourceId",
+          "keptPageCount"
         ]
       },
       "ConversationConsent": {
@@ -57424,6 +57506,249 @@
           },
           "404": {
             "description": "Document not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/sources/{sourceId}/recrawl-cadence": {
+      "put": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Set how often a website source recrawls itself",
+        "description": "Turning a cadence on or changing it schedules the next recrawl one interval after the last crawl, never before now, with up to an hour of jitter. Choosing the stored cadence again keeps the scheduled time; `off` clears it. A scheduled recrawl reuses the source's saved crawl settings. Like every crawl, it holds missing pages for review when they are more than a fifth of the source, and removes a page only once the site answers that it is gone.",
+        "operationId": "setDocumentSourceRecrawlCadence",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentSourceRecrawlCadenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The source with its new cadence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceListItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed, or the source is not a website source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace documents manage permission required, or `recrawl_cadence_not_in_plan`: the plan allows a slower cadence at most; `details.fastestRecrawlCadence` names it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/sources/{sourceId}/held-pages/remove": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Remove the pages a crawl held",
+        "description": "Deletes the source's pages still held for review, without asking the site again. A held page a crawl found again before this runs stays. A source with no held pages answers with a count of 0.",
+        "operationId": "removeDocumentSourceHeldPages",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Held pages removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceHeldPagesRemoved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed, or the source is not a website source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace documents manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/sources/{sourceId}/held-pages/keep": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Keep the pages a crawl held",
+        "description": "Keeps the source's held pages. Later crawls neither hold nor remove a kept page; a page that appears on the site again stops being kept.",
+        "operationId": "keepDocumentSourceHeldPages",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Held pages kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceHeldPagesKept"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed, or the source is not a website source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace documents manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
             "content": {
               "application/json": {
                 "schema": {

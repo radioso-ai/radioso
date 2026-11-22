@@ -91,6 +91,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   quality_signals: eligibleRead,
   replay_eval_case: contextDependent,
   recrawl_source: unsafeAct,
+  set_recrawl_cadence: unsafeAct,
   reprocess_document: unsafeAct,
   retrieval_probe: {
     status: "eligible",

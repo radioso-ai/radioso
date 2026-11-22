@@ -34,6 +34,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   updateAgentDirective: ["workspace.agents.manage"],
   deleteAgentDirective: ["workspace.agents.manage"],
   recrawlDocumentSource: ["workspace.documents.manage"],
+  setDocumentSourceRecrawlCadence: ["workspace.documents.manage"],
   reprocessDocumentSource: ["workspace.documents.manage"],
   reprocessDocument: ["workspace.documents.manage"],
   createDocument: ["workspace.documents.manage"],

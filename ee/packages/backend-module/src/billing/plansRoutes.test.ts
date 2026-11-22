@@ -47,6 +47,7 @@ describe("GET /api/v1/plans", () => {
         "annualPriceCents",
         "dailyNotificationEmails",
         "documents",
+        "fastestRecrawlCadence",
         "id",
         "interval",
         "models",

@@ -39,6 +39,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "settings.ingestion.propose": { owningModule: "settings", exportedPort: "IngestionSettingsService" },
   "settings.timeZone.propose": { owningModule: "settings", exportedPort: "TimeZoneSettingsService" },
   "websiteCrawler.crawl.propose": { owningModule: "websiteCrawler", exportedPort: "WebsiteCrawlJobService" },
+  "websiteCrawler.recrawl-cadence.act": { owningModule: "websiteCrawler", exportedPort: "WebsiteRecrawlScheduleService" },
   "operatorCopilot.proposal.create": { owningModule: "operatorCopilot", exportedPort: "CopilotRepositoryPort" },
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },

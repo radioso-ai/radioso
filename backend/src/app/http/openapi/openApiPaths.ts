@@ -27,6 +27,7 @@ import { registerAgentSkillsPaths } from "./paths/agentSkillsPaths.js";
 import { registerAgentWizardPaths } from "./paths/agentWizardPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerDocumentChunksPaths } from "./paths/documentChunksPaths.js";
+import { registerWebsiteRecrawlPaths } from "./paths/websiteRecrawlPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerHistoryConsentPaths } from "./paths/historyConsentPaths.js";
 import { registerHistoryContactPaths } from "./paths/historyContactPaths.js";
@@ -91,6 +92,7 @@ export const registerOpenApiPaths = (
   registerWorkspaceEventSubscriptionPaths(registry, schemas, security, eventLog.WorkspaceEventSchema);
   registerRetrievalAnswerPaths(registry, schemas, security);
   registerDocumentsPaths(registry, schemas, security);
+  registerWebsiteRecrawlPaths(registry, schemas, security);
   registerDocumentChunksPaths(registry, schemas, security);
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);
   registerAssistantFeedbackPaths(registry, schemas, security);

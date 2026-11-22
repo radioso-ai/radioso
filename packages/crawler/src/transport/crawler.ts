@@ -82,7 +82,14 @@ export type FetchPage = (
 
 type CrawlSiteParams = {
   baseUrl: string;
+  /** The most requests this run makes. */
   pageLimit: number;
+  /**
+   * The whole crawl's page limit when this run continues it from `seedDiscoveredUrls`. The
+   * discovery limit is sized from it, because the URLs earlier runs discovered count against it.
+   * Defaults to `pageLimit`.
+   */
+  totalPageLimit?: number;
   pageConcurrency?: number;
   userAgent?: string;
   includeUrlPatterns?: string[];
@@ -98,6 +105,17 @@ type CrawlSiteParams = {
     url: string
   ) => Promise<{ etag?: string | null; lastModified?: string | null } | null>;
   onDiscoveredUrl?: (url: string) => void | Promise<void>;
+  /**
+   * Called once when the run cannot read the site's robots.txt or a sitemap it lists, so pages only
+   * a sitemap names may be unknown to it. The run is then not exhausted.
+   */
+  onSitemapUnread?: () => void | Promise<void>;
+  /**
+   * The longest one page may take, from its fetch to the end of `onResult`. A page that takes
+   * longer is not fetched again, and leaves the run not exhausted. Defaults to
+   * {@link DEFAULT_PAGE_TIMEOUT_SECS}.
+   */
+  pageTimeoutSecs?: number;
   onCandidateUrl?: (
     decision: CrawlCandidateDecision & { sourcePageUrl: string }
   ) => void | Promise<void>;
@@ -114,11 +132,32 @@ type CrawlSiteParams = {
   signal?: AbortSignal;
 };
 
-const crawlSiteInternal = async (params: CrawlSiteParams) => {
+type CrawlSiteRun = {
+  /** Requests the run handled. */
+  pages: number;
+  /**
+   * True only when the run stopped because nothing was left to fetch: it read the site's sitemaps,
+   * fetched every URL it queued and dropped none at the discovery limit. A run stopped by its
+   * request budget or an abort, or with a request that never completed or ran out of time, is not
+   * exhausted.
+   */
+  frontierExhausted: boolean;
+};
+
+/**
+ * Above the longest a page legitimately takes: the HTTP fetch and its fallback (up to 60 s and
+ * 30 s), a robots.txt read per redirect hop (15 s each), and publishing the page.
+ */
+const DEFAULT_PAGE_TIMEOUT_SECS = 300;
+
+const discoveryLimitFor = (pageLimit: number): number => Math.max(pageLimit * 10, pageLimit + 50);
+
+const crawlSiteInternal = async (params: CrawlSiteParams): Promise<CrawlSiteRun> => {
   ensureSystemBinaryPaths();
   const {
     baseUrl,
     pageLimit,
+    totalPageLimit,
     pageConcurrency = 1,
     userAgent,
     includeUrlPatterns,
@@ -132,6 +171,8 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     fetchImpl,
     getPageMetadata,
     onDiscoveredUrl,
+    onSitemapUnread,
+    pageTimeoutSecs = DEFAULT_PAGE_TIMEOUT_SECS,
     onCandidateUrl,
     onPage,
     resolvePolicy,
@@ -139,9 +180,15 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     signal
   } = params;
   let processed = 0;
-  const discoveryLimit = Math.max(pageLimit * 10, pageLimit + 50);
+  const discoveryLimit = discoveryLimitFor(totalPageLimit ?? pageLimit);
   const discovered = new Set<string>();
+  // Request keys handed to the crawler, and the ones whose request completed.
   const queued = new Set<string>();
+  const handled = new Set<string>();
+  let droppedAtDiscoveryLimit = false;
+  let sitemapUnread = false;
+  // A request crawlee gave up on outside the handler, such as one that ran out of time.
+  let requestFailedOutsideHandler = false;
   const claimedResolvedUrls = new Set<string>();
   const discoveryOnlyUrls = new Set<string>();
   log.setLevel(LogLevel.ERROR);
@@ -269,6 +316,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       return buildRejectedCandidateDecision(rawUrl, "duplicate", canonicalUrl, policyResolution);
     }
     if (discovered.size >= discoveryLimit) {
+      droppedAtDiscoveryLimit = true;
       return buildRejectedCandidateDecision(rawUrl, "page_limit_reached", canonicalUrl, policyResolution);
     }
 
@@ -284,17 +332,25 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     return decision;
   };
 
-  const seedSitemapUrls = async (): Promise<string[]> => {
+  /**
+   * The page URLs the site's sitemaps list. `unread` when robots.txt or a sitemap it lists could not
+   * be read: a site without robots.txt has no sitemap, but one that failed to answer may have one.
+   */
+  const seedSitemapUrls = async (): Promise<{ urls: string[]; unread: boolean }> => {
     try {
       const robotsUrl = toOriginScopeUrl(baseUrl);
       const parsedRobotsUrl = new URL(robotsUrl);
       parsedRobotsUrl.pathname = "/robots.txt";
       const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent, validateNavigationUrl, fetchImpl });
-      if (robots.status === 404 || !robots.ok) {
-        return [];
+      if (robots.status === 404) {
+        return { urls: [], unread: false };
+      }
+      if (!robots.ok) {
+        return { urls: [], unread: true };
       }
       const robotsFile = RobotsTxtFile.from(parsedRobotsUrl.toString(), robots.body);
       const sitemapPageUrls: string[] = [];
+      let unread = false;
       for (const rawSitemapUrl of unique(robotsFile.getSitemaps())) {
         const sitemapUrl = normalizeSameOriginFetchUrl(rawSitemapUrl, robotsUrl);
         if (!sitemapUrl) {
@@ -303,16 +359,17 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
         try {
           const sitemap = await fetchText(sitemapUrl, { signal, userAgent, validateNavigationUrl, fetchImpl });
           if (!sitemap.ok) {
+            unread = true;
             continue;
           }
           sitemapPageUrls.push(...parseSitemapUrls(sitemap.body, sitemap.contentType));
         } catch {
-          continue;
+          unread = true;
         }
       }
-      return sitemapPageUrls;
+      return { urls: sitemapPageUrls, unread };
     } catch {
-      return [];
+      return { urls: [], unread: true };
     }
   };
 
@@ -320,6 +377,13 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     {
       maxConcurrency: Math.max(1, pageConcurrency),
       maxRequestsPerCrawl: pageLimit,
+      // The handler catches its own errors, so crawlee only fails a request that ran out of time. Its
+      // handler is still running then: fetching the page again would race it.
+      maxRequestRetries: 0,
+      requestHandlerTimeoutSecs: pageTimeoutSecs,
+      failedRequestHandler: () => {
+        requestFailedOutsideHandler = true;
+      },
       requestHandler: async ({ request }) => {
         const next = request.url;
         try {
@@ -343,6 +407,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           claimedResolvedUrls.add(resolvedCanonical);
           if (alreadyClaimed) {
             processed += 1;
+            handled.add(request.uniqueKey);
             return;
           }
           const status = page.notModified ? "unchanged" : "success";
@@ -375,14 +440,8 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             normalizedContentHash: page.normalizedContentHash ?? null,
             images: page.images ?? []
           };
-          processed += 1;
-          if (onResult) {
-            await onResult(result);
-          }
-          if (onPage) {
-            await onPage({ url: page.url, status });
-          }
-
+          // A page's links are queued and reported before the page is, so a run resumed from any
+          // record that lists the page as processed also lists the pages it links to.
           for (const link of page.links) {
             const discovered = await enqueueCandidate(link, { sourcePageUrl: page.url });
             if (onCandidateUrl) {
@@ -392,6 +451,14 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
               });
             }
           }
+          processed += 1;
+          if (onResult) {
+            await onResult(result);
+          }
+          if (onPage) {
+            await onPage({ url: page.url, status });
+          }
+          handled.add(request.uniqueKey);
         } catch (error) {
           if (signal?.aborted) {
             return;
@@ -418,6 +485,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           if (onPage) {
             await onPage({ url: next, status: "failed" });
           }
+          handled.add(request.uniqueKey);
         }
       }
     },
@@ -447,6 +515,11 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       discoveryOnlyUrls.add(seed.canonicalUrl);
     }
     initialUrls.push({ url: seed.canonicalUrl, uniqueKey: seed.canonicalUrl });
+    // Reported like any queued link, so a run that stops before fetching it leaves it to the next.
+    await onCandidateUrl?.({
+      ...buildAcceptedCandidateDecision(url, seed.canonicalUrl),
+      sourcePageUrl: baseUrl
+    });
   };
   for (const url of seedPendingUrls ?? []) {
     await seedPending(url);
@@ -454,17 +527,12 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
   if (includeBaseUrl ?? true) {
     await seedPending(baseUrl);
   }
-  for (const sitemapUrl of unique(await seedSitemapUrls())) {
-    if (discovered.size >= discoveryLimit) {
-      const canonicalUrl = canonicalize(sitemapUrl);
-      if (onCandidateUrl) {
-        await onCandidateUrl({
-          ...buildRejectedCandidateDecision(sitemapUrl, "page_limit_reached", canonicalUrl),
-          sourcePageUrl: baseUrl
-        });
-      }
-      continue;
-    }
+  const sitemaps = await seedSitemapUrls();
+  if (sitemaps.unread && !signal?.aborted) {
+    sitemapUnread = true;
+    await onSitemapUnread?.();
+  }
+  for (const sitemapUrl of unique(sitemaps.urls)) {
     const decision = await enqueueCandidate(sitemapUrl, { sourcePageUrl: baseUrl, seed: true });
     if (onCandidateUrl) {
       await onCandidateUrl({
@@ -481,7 +549,14 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
 
   await crawler.run(initialUrls);
 
-  return { pages: processed };
+  return {
+    pages: processed,
+    frontierExhausted: !signal?.aborted &&
+      !droppedAtDiscoveryLimit &&
+      !sitemapUnread &&
+      !requestFailedOutsideHandler &&
+      [...queued].every((key) => handled.has(key)),
+  };
 };
 
 export const crawlSiteStream = async (
@@ -502,4 +577,4 @@ export const crawlSite = async (params: Omit<CrawlSiteParams, "onResult">) => {
   return results;
 };
 
-export type { CrawlSiteParams };
+export type { CrawlSiteParams, CrawlSiteRun };

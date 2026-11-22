@@ -5,6 +5,7 @@ import { sql } from "kysely";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { DocumentSourceSummary } from "../../modules/documents/contracts/documentContracts.js";
+import type { RecrawlCadence } from "../../modules/websiteCrawler/public.js";
 
 export type DocumentOriginKind = "website" | "api" | "connector" | "upload";
 
@@ -18,6 +19,9 @@ export interface DocumentSourceRecord {
   metadata: Record<string, unknown>;
   lastSyncStatus: string | null;
   lastSyncedAt: Date | null;
+  /** How often a website source recrawls itself; `off` for every other kind. */
+  recrawlCadence: RecrawlCadence;
+  nextRecrawlAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,7 +67,7 @@ export interface DocumentSourceRepositoryPort {
   deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean>;
 }
 
-interface DocumentSourceRow {
+export interface DocumentSourceRow {
   id: string;
   workspace_id: string;
   kind: DocumentOriginKind;
@@ -73,6 +77,8 @@ interface DocumentSourceRow {
   metadata: Record<string, unknown> | null;
   last_sync_status: string | null;
   last_synced_at: Date | null;
+  recrawl_cadence: RecrawlCadence;
+  next_recrawl_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -81,7 +87,7 @@ interface DocumentSourceListRow extends DocumentSourceRow {
   document_count: string;
 }
 
-const sourceColumns = [
+export const documentSourceColumns = [
   "id",
   "workspace_id",
   "kind",
@@ -91,6 +97,8 @@ const sourceColumns = [
   "metadata",
   "last_sync_status",
   "last_synced_at",
+  "recrawl_cadence",
+  "next_recrawl_at",
   "created_at",
   "updated_at",
 ] as const;
@@ -105,6 +113,8 @@ const qualifiedSourceColumns = [
   "document_sources.metadata",
   "document_sources.last_sync_status",
   "document_sources.last_synced_at",
+  "document_sources.recrawl_cadence",
+  "document_sources.next_recrawl_at",
   "document_sources.created_at",
   "document_sources.updated_at",
 ] as const;
@@ -116,7 +126,7 @@ export const toDocumentSourceSummary = (source: DocumentSourceRecord): DocumentS
   externalId: source.externalId,
 });
 
-const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord => ({
+export const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   kind: row.kind,
@@ -126,6 +136,8 @@ const mapDocumentSource = (row: DocumentSourceRow): DocumentSourceRecord => ({
   metadata: row.metadata ?? {},
   lastSyncStatus: row.last_sync_status,
   lastSyncedAt: row.last_synced_at ? new Date(row.last_synced_at) : null,
+  recrawlCadence: row.recrawl_cadence,
+  nextRecrawlAt: row.next_recrawl_at ? new Date(row.next_recrawl_at) : null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -141,7 +153,7 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
   async findByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<DocumentSourceRecord | null> {
     const row = await this.db
       .selectFrom("document_sources")
-      .select(sourceColumns)
+      .select(documentSourceColumns)
       .where("id", "=", sourceId)
       .where("workspace_id", "=", workspaceId)
       .executeTakeFirst();
@@ -197,7 +209,7 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
   }): Promise<DocumentSourceRecord[]> {
     const rows = await this.db
       .selectFrom("document_sources")
-      .select(sourceColumns)
+      .select(documentSourceColumns)
       .where("workspace_id", "=", input.workspaceId)
       .where("kind", "=", input.kind)
       // starts_with reads the prefix literally, where LIKE would treat `_` and `%` as wildcards.
@@ -242,7 +254,7 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
             updated_at: currentTimestamp(),
           })),
       )
-      .returning(sourceColumns)
+      .returning(documentSourceColumns)
       .executeTakeFirstOrThrow();
 
     return mapDocumentSource(row as DocumentSourceRow);
@@ -277,7 +289,7 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
       .set({ config: toJsonb(input.config), updated_at: currentTimestamp() })
       .where("id", "=", input.sourceId)
       .where("workspace_id", "=", input.workspaceId)
-      .returning(sourceColumns)
+      .returning(documentSourceColumns)
       .executeTakeFirst();
 
     if (!row) {

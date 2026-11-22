@@ -1,4 +1,5 @@
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
+import type { RecrawlCadence } from "../../websiteCrawler/public.js";
 import type { DocumentImageSummary } from "./documentImages.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
@@ -76,6 +77,9 @@ export interface WorkspaceDocumentSourceStatus {
   readonly config: Record<string, unknown>;
   readonly lastSyncStatus: string | null;
   readonly lastSyncedAt: Date | null;
+  /** How often a website source recrawls itself; `off` for every other kind. */
+  readonly recrawlCadence: RecrawlCadence;
+  readonly nextRecrawlAt: Date | null;
   readonly documentCount: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -363,10 +367,19 @@ export interface DocumentRepositoryPort {
     sourceId?: string | null;
     externalDocumentId: string;
   }): Promise<DocumentPageState | null>;
-  deleteMissingPagesBySourceAndExternalIds(input: {
+  /** Deletes exactly the given pages of the source that a crawl found gone, never one the operator kept. */
+  deleteMissingSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
+  /**
+   * Deletes the source's pages a crawl holds for review the way {@link deleteMissingSourcePages}
+   * does: the ones still held when it runs.
+   */
+  deleteHeldSourcePages(input: {
+    workspaceId: string;
+    sourceId: string;
   }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
 }
 

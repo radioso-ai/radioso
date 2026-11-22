@@ -15,6 +15,8 @@ describe("createConnectorSourceDirectory", () => {
         metadata: { connectorId: "wordpress" },
         lastSyncStatus: null,
         lastSyncedAt: null,
+        recrawlCadence: "off" as const,
+        nextRecrawlAt: null,
         createdAt: new Date("2026-06-01T00:00:00Z"),
         updatedAt: new Date("2026-06-01T00:00:00Z"),
       },

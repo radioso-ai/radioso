@@ -18,7 +18,12 @@ import {
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { useCopilotEntity } from '@/lib/copilot-context'
-import { decodeAttributeFilter, encodeAttributeFilter, type AttributeFilterChoice } from '@/lib/conversation-attributes'
+import {
+  ATTRIBUTE_FILTER_NOT_SET,
+  decodeAttributeFilter,
+  encodeAttributeFilter,
+  type AttributeFilterChoice,
+} from '@/lib/conversation-attributes'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
 import {
@@ -38,6 +43,7 @@ const ALL_AGENTS = '__all_agents__'
 const ALL_SITES = '__all_sites__'
 const ALL_CALLERS = '__all_callers__'
 const ALL_ATTRIBUTES = '__all_attributes__'
+const NOT_SET_LABEL = 'Not set'
 
 const OUTCOME_OPTIONS: Array<{ value: OutcomeFilter; label: string }> = [
   { value: 'all', label: 'Outcome: all' },
@@ -301,9 +307,11 @@ function AttributeFilterSelect({
   onFiltersChange: (next: ConversationFilterState) => void
 }) {
   const selected = filters.attribute
-  const selectedLabel = selected
-    ? choices.find((choice) => choice.name === selected.name)?.options.find((option) => option.key === selected.option)?.label
-    : undefined
+  const selectedLabel = selected?.option === ATTRIBUTE_FILTER_NOT_SET
+    ? NOT_SET_LABEL
+    : selected
+      ? choices.find((choice) => choice.name === selected.name)?.options.find((option) => option.key === selected.option)?.label
+      : undefined
   return (
     <Select
       value={selected ? encodeAttributeFilter(selected) : ALL_ATTRIBUTES}
@@ -323,6 +331,9 @@ function AttributeFilterSelect({
                 {option.archived ? `${option.label} (archived)` : option.label}
               </SelectItem>
             ))}
+            <SelectItem value={encodeAttributeFilter({ name: choice.name, option: ATTRIBUTE_FILTER_NOT_SET })}>
+              {NOT_SET_LABEL}
+            </SelectItem>
           </SelectGroup>
         ))}
       </SelectContent>
@@ -344,6 +355,8 @@ interface AllConversationsListPaneProps {
   siteOptions: ReturnType<typeof buildSiteOptions>
   /** Empty hides the attribute filter: it narrows only on the server, which only the 'all' variant asks. */
   attributeChoices: readonly AttributeFilterChoice[]
+  /** The attribute catalog failed to load for a reason other than permission. */
+  attributeFilterUnavailable?: boolean
   filters: ConversationFilterState
   onFiltersChange: (next: ConversationFilterState) => void
   now: Date
@@ -367,6 +380,7 @@ export function AllConversationsListPane({
   agentOptions,
   siteOptions,
   attributeChoices,
+  attributeFilterUnavailable = false,
   filters,
   onFiltersChange,
   now,
@@ -447,6 +461,8 @@ export function AllConversationsListPane({
           </Select>
           {attributeChoices.length > 0 ? (
             <AttributeFilterSelect choices={attributeChoices} filters={filters} onFiltersChange={onFiltersChange} />
+          ) : attributeFilterUnavailable ? (
+            <span className="self-center text-xs text-muted-foreground">Attribute filter unavailable</span>
           ) : null}
         </div>
       </div>

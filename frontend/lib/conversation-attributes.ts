@@ -21,6 +21,20 @@ export const buildAttributeFilterChoices = (variables: readonly ContextVariable[
       : [])
     .sort((left, right) => left.name.localeCompare(right.name))
 
+/**
+ * The option that filters to conversations with no value of the attribute in their own
+ * conversation scope. Option keys start with a letter, so no key can be this.
+ */
+export const ATTRIBUTE_FILTER_NOT_SET = '_not_set'
+
+/** How much of a value the Inbox shows before "Show all": a JSON value can run to 32 KB. */
+export const ATTRIBUTE_PREVIEW_CHARS = 160
+
+export const previewAttributeValue = (text: string): { text: string; truncated: boolean } =>
+  text.length > ATTRIBUTE_PREVIEW_CHARS
+    ? { text: `${text.slice(0, ATTRIBUTE_PREVIEW_CHARS)}…`, truncated: true }
+    : { text, truncated: false }
+
 // One Radix Select item value carries both halves; JSON keeps any character in an option key intact.
 export const encodeAttributeFilter = (filter: AttributeFilter): string => JSON.stringify([filter.name, filter.option])
 

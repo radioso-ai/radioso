@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import type { ContextVariable, ConversationAttribute } from '@/lib/api-types'
 import { attributeValueText, attributeWrittenText } from '@/components/dashboard/settings/attribute-copy'
-import { buildAttributeFilterChoices, decodeAttributeFilter, encodeAttributeFilter } from '@/lib/conversation-attributes'
+import {
+  ATTRIBUTE_FILTER_NOT_SET,
+  ATTRIBUTE_PREVIEW_CHARS,
+  buildAttributeFilterChoices,
+  decodeAttributeFilter,
+  encodeAttributeFilter,
+  previewAttributeValue,
+} from '@/lib/conversation-attributes'
 
 const variable = (overrides: Partial<ContextVariable>): ContextVariable => ({
   id: 'variable-1',
@@ -63,6 +70,12 @@ describe('attribute filter select values', () => {
     expect(decodeAttributeFilter(encodeAttributeFilter(filter))).toEqual(filter)
   })
 
+  it('carries Not set as the reserved option no option key can be', () => {
+    const filter = { name: 'topic', option: ATTRIBUTE_FILTER_NOT_SET }
+    expect(decodeAttributeFilter(encodeAttributeFilter(filter))).toEqual(filter)
+    expect(ATTRIBUTE_FILTER_NOT_SET).not.toMatch(/^[A-Za-z][A-Za-z0-9_]*$/)
+  })
+
   it('reads anything else, such as the "all" sentinel, as no filter', () => {
     expect(decodeAttributeFilter('__all_attributes__')).toBeNull()
     expect(decodeAttributeFilter('["topic"]')).toBeNull()
@@ -86,6 +99,20 @@ describe('attributeValueText', () => {
   it('shows text as written and JSON as compact JSON', () => {
     expect(attributeValueText(attribute({ valueType: 'string', value: 'Pro', option: undefined }))).toBe('Pro')
     expect(attributeValueText(attribute({ valueType: 'json', value: { items: 2 }, option: undefined }))).toBe('{"items":2}')
+  })
+})
+
+describe('previewAttributeValue', () => {
+  it('keeps a value up to the cap whole', () => {
+    const text = 'x'.repeat(ATTRIBUTE_PREVIEW_CHARS)
+    expect(previewAttributeValue(text)).toEqual({ text, truncated: false })
+  })
+
+  it('cuts a longer value to the cap and says so', () => {
+    const preview = previewAttributeValue('x'.repeat(ATTRIBUTE_PREVIEW_CHARS + 1))
+    expect(preview.truncated).toBe(true)
+    expect(preview.text.startsWith('x'.repeat(ATTRIBUTE_PREVIEW_CHARS))).toBe(true)
+    expect(preview.text.length).toBe(ATTRIBUTE_PREVIEW_CHARS + 1)
   })
 })
 

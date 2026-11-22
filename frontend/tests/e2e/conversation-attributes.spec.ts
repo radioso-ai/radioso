@@ -63,7 +63,18 @@ const detail = (id: string, preview: string, attributes: unknown[]) => ({
   attributes,
 });
 
+const longNote = `Wants ${"a gift wrap on every item, ".repeat(10)}and a note.`;
+
 const billingAttributes = [
+  {
+    name: "gift_note",
+    valueType: "json",
+    value: { note: longNote },
+    redacted: false,
+    scope: "conversation",
+    writtenBy: { kind: "api", ref: "credential-1" },
+    updatedAt: nowIso,
+  },
   {
     name: "health_note",
     valueType: "string",
@@ -140,35 +151,48 @@ const installMocks = async (page: Page) => {
   });
 };
 
-/** The merged history list, answering an attribute filter the way the backend does; records each filter it receives. */
-const installAttributeFilteredHistory = async (page: Page) => {
+/** Which conversations the backend's attribute filter keeps: billing holds topic "billing", shipping holds none. */
+const keptBy = (attribute: string | null, attributeOption: string | null) => (id: string) =>
+  !attribute || (attribute === "topic" && (attributeOption === "billing" ? id === billingId : attributeOption === "_not_set" && id === shippingId));
+
+/**
+ * The merged history list, answering an attribute filter the way the backend does; records each filter it receives.
+ * `refused` is a filter the backend now refuses with a 400, as it does once its attribute is deleted or made Private.
+ */
+const installAttributeFilteredHistory = async (page: Page, refused?: { attribute: string; attributeOption: string }) => {
   const filters: Array<{ attribute: string | null; attributeOption: string | null }> = [];
   await page.route((url) => url.pathname === "/backend/api/v1/history", async (route) => {
     const url = new URL(route.request().url());
     const attribute = url.searchParams.get("attribute");
     const attributeOption = url.searchParams.get("attributeOption");
     filters.push({ attribute, attributeOption });
+    if (refused && attribute === refused.attribute && attributeOption === refused.attributeOption) {
+      await route.fulfill({ status: 400, json: { error: { code: "bad_request", message: `No attribute is named ${attribute}` } } });
+      return;
+    }
     const items = conversations
-      .filter((conversation) => !attribute || (attribute === "topic" && attributeOption === "billing" && conversation.id === billingId))
+      .filter((conversation) => keptBy(attribute, attributeOption)(conversation.id))
       .map((conversation) => ({ kind: "chat", id: conversation.id, sortAt: nowIso, conversation }));
     await route.fulfill({ json: { items, total: items.length, nextCursor: null, hasMore: false } });
   });
   return filters;
 };
 
-const drawer = (page: Page) => page.getByRole("dialog", { name: "Conversation details" });
-
-const openDrawer = async (page: Page, preview: string) => {
+const openConversation = async (page: Page, preview: string) => {
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: new RegExp(preview) }).first().click();
-  await page.getByRole("button", { name: "Open in debug view" }).click();
 };
 
-test("the conversation drawer lists what each attribute holds, who set it, and keeps a Private value out", async ({ page }) => {
-  await installMocks(page);
-  await openDrawer(page, "I was charged twice this month");
+const pickAttributeFilter = async (page: Page, option: string) => {
+  await page.getByRole("combobox", { name: "Filter by attribute" }).click();
+  await page.getByRole("option", { name: option }).click();
+};
 
-  const attributes = drawer(page).getByRole("region", { name: "Attributes" });
+test("the reading pane lists what each attribute holds, who set it, and keeps a Private value out", async ({ page }) => {
+  await installMocks(page);
+  await openConversation(page, "I was charged twice this month");
+
+  const attributes = page.getByRole("region", { name: "Attributes" });
   await expect(attributes).toBeVisible();
   await expect(attributes.getByText("topic", { exact: true })).toBeVisible();
   await expect(attributes.getByText("Billing", { exact: true })).toBeVisible();
@@ -176,15 +200,20 @@ test("the conversation drawer lists what each attribute holds, who set it, and k
   await expect(attributes.getByText("Pro", { exact: true })).toBeVisible();
   await expect(attributes.getByText(/^Set by your website or API for this visitor · /)).toBeVisible();
   await expect(attributes.getByText("Private data", { exact: true })).toBeVisible();
-  if (screenshotDir) await attributes.screenshot({ path: `${screenshotDir}/attributes-drawer.png` });
+  // A long value shows a preview, and reads whole on request.
+  await expect(attributes.getByText(longNote, { exact: false })).toHaveCount(0);
+  await attributes.getByRole("button", { name: "Show all" }).click();
+  await expect(attributes.getByText(longNote, { exact: false })).toBeVisible();
+  await attributes.getByRole("button", { name: "Show less" }).click();
+  if (screenshotDir) await attributes.screenshot({ path: `${screenshotDir}/attributes-reading-pane.png` });
 });
 
-test("the conversation drawer shows no Attributes block for a conversation without any", async ({ page }) => {
+test("the reading pane shows no Attributes block for a conversation without any", async ({ page }) => {
   await installMocks(page);
-  await openDrawer(page, "Where is my parcel?");
+  await openConversation(page, "Where is my parcel?");
 
-  await expect(drawer(page).getByText("Let me look into that.")).toBeVisible();
-  await expect(drawer(page).getByRole("region", { name: "Attributes" })).toHaveCount(0);
+  await expect(page.getByText("Let me look into that.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Attributes" })).toHaveCount(0);
 });
 
 test("an operator narrows the Inbox to conversations whose attribute holds one option", async ({ page }) => {
@@ -205,9 +234,36 @@ test("an operator narrows the Inbox to conversations whose attribute holds one o
   await expect(page.getByRole("button", { name: /I was charged twice this month/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Where is my parcel\?/ })).toHaveCount(0);
 
-  await page.getByRole("combobox", { name: "Filter by attribute" }).click();
-  await page.getByRole("option", { name: "Attribute: all" }).click();
+  await pickAttributeFilter(page, "Attribute: all");
 
   await expect.poll(() => filters.at(-1)).toEqual({ attribute: null, attributeOption: null });
   await expect(page.getByRole("button", { name: /Where is my parcel\?/ })).toBeVisible();
+});
+
+test("an operator narrows the Inbox to conversations where an attribute is not set", async ({ page }) => {
+  await installMocks(page);
+  const filters = await installAttributeFilteredHistory(page);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+
+  await pickAttributeFilter(page, "Not set");
+
+  await expect.poll(() => filters.at(-1)).toEqual({ attribute: "topic", attributeOption: "_not_set" });
+  await expect(page.getByRole("combobox", { name: "Filter by attribute" })).toHaveText("topic: Not set");
+  await expect(page.getByRole("button", { name: /Where is my parcel\?/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /I was charged twice this month/ })).toHaveCount(0);
+});
+
+test("a filter the backend now refuses is dropped, and the Inbox lists every conversation", async ({ page }) => {
+  await installMocks(page);
+  const filters = await installAttributeFilteredHistory(page, { attribute: "topic", attributeOption: "billing" });
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+
+  await pickAttributeFilter(page, "Billing");
+
+  await expect.poll(() => filters.findIndex((filter) => filter.attributeOption === "billing")).toBeGreaterThan(-1);
+  await expect.poll(() => filters.at(-1)).toEqual({ attribute: null, attributeOption: null });
+  await expect(page.getByRole("combobox", { name: "Filter by attribute" })).toHaveText("Attribute: all");
+  await expect(page.getByRole("button", { name: /Where is my parcel\?/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /I was charged twice this month/ })).toBeVisible();
+  await expect(page.getByText("No attribute is named topic")).toHaveCount(0);
 });

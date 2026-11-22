@@ -16,6 +16,7 @@ import {
   type AgentContextVariableEnablement,
   type AgentContextVariableEnablementRecord,
   type ApplyContextVariableProposalInput,
+  type ApplyContextVariableProposalOptions,
   type ApplyContextVariableProposalResult,
   type ContextVariable,
   type ContextVariableRepositoryPort,
@@ -81,7 +82,7 @@ const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) =>
       [...enablements.values()].filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled).map((enablement) => enablement.agentId)),
     // In-memory analogue of the real repository's transaction: both version guards are checked
     // before either write is applied, so a failing guard never leaves a partial write behind.
-    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> => {
+    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput, _options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> => {
       let variableId = input.variableId;
 
       if (input.definition && variableId) {
@@ -576,9 +577,10 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     const applied = await adapter.applyIfVersionMatches(workspaceId, validated.targetRef, validated.payload, validated.versionToken);
     expect(applied.outcome).toBe("applied");
+    // A dashboard apply carries no reviewed receipt, so no commit hook is passed through.
     expect(contextVariableRepository.applyProposal).toHaveBeenCalledWith(expect.objectContaining({
       definition: expect.objectContaining({ valueType: "enum", options }),
-    }));
+    }), undefined);
   });
 
   it("keeps an enum's stored options through an edit that names none, and refuses one that drops an option", async () => {

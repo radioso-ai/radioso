@@ -7,6 +7,7 @@ import {
   validateExactContentItem,
 } from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
+import { CONTEXT_VARIABLE_SOURCES } from "../context-variables/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
@@ -70,7 +71,7 @@ const routineSnapshotSchema = routineDefinitionSchema
   .strip();
 const contextVariableEnablementSnapshotSchema = z.object({
   id: z.string().uuid(), agentId: z.string().uuid(), variableId: z.string().uuid(),
-  source: z.enum(["pushed", "browser", "resolver", "request", "classified"]), resolverSkillId: z.string().uuid().nullable(),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES), resolverSkillId: z.string().uuid().nullable(),
   maxAgeSeconds: z.number().int().nonnegative().nullable(), resolverTimeoutMs: z.number().int().positive().nullable(),
   surfacing: z.enum(["always", "on_reference", "operator_only"]), enabled: z.boolean(),
   createdAt: persistedDate, updatedAt: persistedDate,

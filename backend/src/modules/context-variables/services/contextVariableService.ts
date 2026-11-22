@@ -12,6 +12,7 @@ import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js
 import {
   RESERVED_CONTEXT_VARIABLE_PREFIX,
   classificationRefusal,
+  isClassifiedEnablement,
   isReservedContextVariableName,
   typeChangeWithValuesRefused,
   type ClassificationRefusal,
@@ -225,7 +226,7 @@ export class ContextVariableService {
           : conflict(`Resolver skill "${skillId}" is disabled on this agent`),
       );
     }
-    return options ? this.repository.applyProposal(input, options) : this.repository.applyProposal(input);
+    return this.repository.applyProposal(input, options);
   }
 
   /**
@@ -285,7 +286,7 @@ export class ContextVariableService {
     if (refusal) throw badRequest(classificationRefusalMessages[refusal], { code: "context_variable_not_classifiable", reason: refusal });
     if (enablement.enabled === false) return;
     const others = (await this.repository.listByAgent(workspaceId, agentId))
-      .filter((candidate) => candidate.enabled && candidate.source === "classified" && candidate.variableId !== variableId);
+      .filter((candidate) => isClassifiedEnablement(candidate) && candidate.variableId !== variableId);
     if (others.length >= CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent) {
       throw badRequest(
         `An agent can classify at most ${CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent} attributes (source "classified")`,

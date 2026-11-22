@@ -99,6 +99,10 @@ export interface AgentContextVariableEnablement {
   variable?: ContextVariable;
 }
 
+/** Whether an agent's enablement has the classifier fill its variable: enabled, with source `classified`. */
+export const isClassifiedEnablement = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
+  enablement.enabled && enablement.source === "classified";
+
 export interface ContextVariableScope {
   type: ContextVariableScopeType;
   id: string;

@@ -36,6 +36,7 @@ export {
   classificationRefusal,
   contextScopeLadder,
   frozenTestValueInput,
+  isClassifiedEnablement,
   mayOverwrite,
   readsStoredValue,
   resolvedVariableInput,

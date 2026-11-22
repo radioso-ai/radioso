@@ -2250,7 +2250,7 @@ describe("context variable proposal adapter", () => {
       agentId: contextVariableAgentId,
       variableId: null,
       definition: expect.objectContaining({ name: "loyalty_tier", valueType: "string" }),
-    }));
+    }), undefined);
   });
 
   it("reports stale, not a duplicate success, when a create apply is retried after the variable already exists", async () => {
@@ -2298,7 +2298,7 @@ describe("context variable proposal adapter", () => {
       definition: expect.objectContaining({ sensitivity: "sensitive" }),
       expectedVariableUpdatedAt: new Date(5),
       enablement: null,
-    }));
+    }), undefined);
 
     // A concurrent edit is now detected by the write's own predicate, not a pre-read the adapter
     // compares beforehand - simulate that by having the gated mutation itself refuse.
@@ -2325,7 +2325,7 @@ describe("context variable proposal adapter", () => {
       definition: null,
       enablement: expect.objectContaining({ source: "pushed", surfacing: "always" }),
       expectedEnablementUpdatedAt: null,
-    }));
+    }), undefined);
   });
 
   // applyProposal upserts all six enablement columns as a full replacement (see
@@ -2454,7 +2454,7 @@ describe("context variable proposal adapter", () => {
       variableId: null,
       definition: expect.objectContaining({ name: "loyalty_tier" }),
       enablement: expect.objectContaining({ source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-8333-444444444999" }),
-    }));
+    }), undefined);
   });
 
   it("refuses a proposal for an existing variable with neither a definition field nor an enablement", async () => {

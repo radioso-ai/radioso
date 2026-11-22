@@ -4,6 +4,7 @@ import type { AgentRevision } from "../../agents/public.js";
 import {
   CONTEXT_VALUE_WRITER_KINDS,
   frozenTestValueInput,
+  isClassifiedEnablement,
   planConversationWrite,
   type ContextValueWriter,
   type ContextVariable,
@@ -45,7 +46,7 @@ export interface TestChatAttributesPreview {
 
 const classifiedVariableIds = (revision: AgentRevision): string[] =>
   revision.snapshot.contextVariableEnablements
-    .filter((enablement) => enablement.enabled && enablement.source === "classified")
+    .filter(isClassifiedEnablement)
     .map((enablement) => enablement.variableId);
 
 const frozenValue = (variable: ContextVariable, value: string, writtenBy: ContextValueWriter): TestChatAttributeValue => {
@@ -154,7 +155,7 @@ export const testChatAttributeInputs = (
 ): ResolvedVariableInput[] => values.flatMap((value) => {
   if (samples.some((sample) => sample.contextVariableId === value.contextVariableId)) return [];
   const enablement = revision.snapshot.contextVariableEnablements.find(
-    (candidate) => candidate.variableId === value.contextVariableId && candidate.enabled && candidate.source === "classified",
+    (candidate) => candidate.variableId === value.contextVariableId && isClassifiedEnablement(candidate),
   );
   return enablement ? [frozenTestValueInput(value, enablement)] : [];
 });

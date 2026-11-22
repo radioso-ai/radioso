@@ -1,7 +1,7 @@
 import type { BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { AgentContextVariableEnablement } from "../../context-variables/public.js";
+import { isClassifiedEnablement, type AgentContextVariableEnablement } from "../../context-variables/public.js";
 import { contextClassificationRequest } from "../../contextClassification/public.js";
 import { isEligibleForFacetExtraction } from "./facetExtractionEligibility.js";
 import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
@@ -17,7 +17,7 @@ const classifiesAfterTurn = (input: {
   sensitiveSlotKeys: readonly string[];
 }): boolean =>
   input.sensitiveSlotKeys.length === 0
-  && (input.session.revisionContextVariableEnablements ?? []).some((enablement) => enablement.enabled && enablement.source === "classified")
+  && (input.session.revisionContextVariableEnablements ?? []).some(isClassifiedEnablement)
   && isEligibleForFacetExtraction({
     role: input.session.userMessage.role,
     source: input.session.userMessage.source,

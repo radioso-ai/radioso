@@ -454,9 +454,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
           enablement: payload.enablement,
           expectedEnablementUpdatedAt: decoded.enablementUpdatedAt,
         };
-        const result = onCommitted
-          ? await deps.contextVariables.applyProposal(proposal, { onCommitted })
-          : await deps.contextVariables.applyProposal(proposal);
+        const result = await deps.contextVariables.applyProposal(proposal, onCommitted ? { onCommitted } : undefined);
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId: result.variableId } };
       } catch (error) {
         // A reviewed execution reports only an owner's refusal as failed; anything else, its

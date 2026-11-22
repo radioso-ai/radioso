@@ -33,7 +33,7 @@ import type { IngestionSettingsReviewedPreparationDependencies } from "./ingesti
 import { createAgentSettingsReviewedPreparationTool } from "./agentSettingsReviewedPreparation.js";
 import type { AgentSettingsReviewedPreparationDependencies } from "./agentSettingsReviewedPreparation.js";
 import { createDirectiveReviewedPreparationTool } from "./directiveReviewedPreparation.js";
-import { createContextVariableReviewedPreparationTool } from "./contextVariableReviewedPreparation.js";
+import { createContextVariableReviewedPreparationTool, type ContextVariableReviewedPreparationDependencies } from "./contextVariableReviewedPreparation.js";
 import type { DirectiveReviewedPreparationDependencies } from "./directiveReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createPrivacySettingProposalCopilotTools } from "./privacySettingProposals.js";
@@ -114,6 +114,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & Omit<IngestionSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & Omit<AgentSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & Omit<DirectiveReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
+  & Omit<ContextVariableReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & ProductDocsCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies

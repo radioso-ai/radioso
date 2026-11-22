@@ -313,6 +313,18 @@ describe("RadiosoCrawlerProvider", () => {
     ]);
   });
 
+  it("records a sitemap the crawler could not read as a checkpoint event", async () => {
+    mocks.crawlSiteStream.mockImplementation(async ({ onSitemapUnread }: { onSitemapUnread: () => Promise<void> }) => {
+      await onSitemapUnread();
+      return { pages: 1, frontierExhausted: false };
+    });
+    const onCheckpointEvent = vi.fn().mockResolvedValue(undefined);
+
+    await new RadiosoCrawlerProvider().crawlStream({ url: "https://example.com", limit: 3, onCheckpointEvent }, async () => {});
+
+    expect(onCheckpointEvent.mock.calls).toEqual([[{ type: "sitemap_unread" }]]);
+  });
+
   it("does not turn caller cancellation into a yielded slice", async () => {
     const controller = new AbortController();
     mocks.crawlSiteStream.mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {

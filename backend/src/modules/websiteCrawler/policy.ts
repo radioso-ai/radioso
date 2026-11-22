@@ -16,6 +16,8 @@ export interface WebsiteCrawlCheckpoint {
   lastProcessedAt: string | null;
   /** Set once any slice of the crawl dropped a link at a limit; the crawl then never saw the whole site. */
   linksDroppedAtLimit?: boolean;
+  /** Set once any slice could not read the site's robots.txt or a sitemap it lists; the crawl then never saw the whole site. */
+  sitemapUnread?: boolean;
 }
 
 export const DEFAULT_WEBSITE_CRAWL_POLICY: WebsiteCrawlPolicy = {
@@ -35,6 +37,7 @@ export const emptyWebsiteCrawlCheckpoint = (): WebsiteCrawlCheckpoint => ({
   failed: 0,
   lastProcessedAt: null,
   linksDroppedAtLimit: false,
+  sitemapUnread: false,
 });
 
 const MAX_PATTERNS = 50;
@@ -133,5 +136,6 @@ export const normalizeWebsiteCrawlCheckpoint = (value: unknown): WebsiteCrawlChe
     failed: normalizeCount(record.failed),
     lastProcessedAt: typeof record.lastProcessedAt === "string" ? record.lastProcessedAt : null,
     linksDroppedAtLimit: record.linksDroppedAtLimit === true,
+    sitemapUnread: record.sitemapUnread === true,
   };
 };

@@ -79,6 +79,11 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         seedPendingUrls,
         includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
         signal: slice.signal,
+        onSitemapUnread: async () => {
+          await runCallback(async () => {
+            await request.onCheckpointEvent?.({ type: "sitemap_unread" });
+          });
+        },
         onCandidateUrl: async (decision) => {
           await runCallback(async () => {
             if (decision.reason === "page_limit_reached") {

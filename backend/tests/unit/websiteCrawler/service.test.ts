@@ -1635,6 +1635,38 @@ describe("website crawler service", () => {
     expect(checkpoints.at(-1)).toMatchObject({ linksDroppedAtLimit: true, processedCanonicalUrls: [] });
   });
 
+  it("records a sitemap a slice could not read in the checkpoint, and does not reconcile the crawl after it", async () => {
+    const checkpoints: Array<{ sitemapUnread?: boolean }> = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "sitemap_unread" });
+      return { provider: "stream-crawler", status: "completed", outcome: "yielded" };
+    });
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 5,
+      onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); },
+    });
+    expect(checkpoints.at(-1)).toMatchObject({ sitemapUnread: true });
+
+    const { service: lastSlice, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }));
+    const reviewMissingPages = vi.fn();
+    const { service: lastSliceWithStore } = reapingService(createProvider([pageA], { frontierExhausted: true }), {
+      missingPages: { reviewMissingPages, holdMissingPages: vi.fn() },
+    });
+    for (const slice of [lastSlice, lastSliceWithStore]) {
+      await slice.crawlAndPublish({
+        workspaceId: "workspace-1",
+        url: "https://example.com",
+        limit: 5,
+        checkpoint: { ...emptyWebsiteCrawlCheckpoint(), discoveredUrls: ["https://example.com/a"], sitemapUnread: true },
+      });
+    }
+
+    expect(reapMissingPages).not.toHaveBeenCalled();
+    expect(reviewMissingPages).not.toHaveBeenCalled();
+  });
+
   it("skips reaping when the checkpoint's queued URLs may have been cut at the checkpoint cap", async () => {
     const { service, reapMissingPages } = reapingService(createProvider([pageA], { frontierExhausted: true }));
 

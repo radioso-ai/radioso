@@ -205,8 +205,9 @@ export class WebsiteCrawlerService {
       if (usageLimitError && event.type === "processed") {
         return;
       }
-      if (event.type === "dropped") {
-        checkpoint.linksDroppedAtLimit = true;
+      if (event.type === "dropped" || event.type === "sitemap_unread") {
+        if (event.type === "dropped") checkpoint.linksDroppedAtLimit = true;
+        else checkpoint.sitemapUnread = true;
         await persistCheckpoint();
         return;
       }
@@ -591,6 +592,7 @@ export class WebsiteCrawlerService {
         failedPageCount: result.failed,
         frontierExhausted: frontierExhausted && !pagesPastLimit,
         linksDroppedAtLimit: checkpoint.linksDroppedAtLimit === true,
+        sitemapUnread: checkpoint.sitemapUnread === true,
         resumedCheckpointListsEveryUrl,
       });
       if (sawWholeSite) {

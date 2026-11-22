@@ -45,19 +45,22 @@ export const MISSING_PAGES_HELD_AUDIT_EVENT = "document.website_crawler.missing_
  * Whether a finished crawl saw the whole site within its scope, so that a page it did not see is
  * gone rather than unreached. Only then may it remove or hold missing pages. The crawl's last
  * slice must have stopped because nothing was left to fetch, no slice may have dropped a link at a
- * limit, no page may have failed, and the checkpoint it resumed from must list every URL.
+ * limit or failed to read a sitemap, no page may have failed, and the checkpoint it resumed from
+ * must list every URL.
  */
 export const crawlSawWholeSite = (crawl: {
   status: string | null;
   failedPageCount: number;
   frontierExhausted: boolean;
   linksDroppedAtLimit: boolean;
+  sitemapUnread: boolean;
   resumedCheckpointListsEveryUrl: boolean;
 }): boolean =>
   crawl.status === "completed" &&
   crawl.failedPageCount === 0 &&
   crawl.frontierExhausted &&
   !crawl.linksDroppedAtLimit &&
+  !crawl.sitemapUnread &&
   crawl.resumedCheckpointListsEveryUrl;
 
 /**

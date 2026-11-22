@@ -19,7 +19,9 @@ export type WebsiteCrawlCheckpointEvent =
   | { type: "processing"; url: string; canonicalUrl: string | null }
   | { type: "processed"; url: string; canonicalUrl: string | null }
   /** A link the crawl found but did not queue, because it reached a limit. */
-  | { type: "dropped"; url: string; canonicalUrl: string | null };
+  | { type: "dropped"; url: string; canonicalUrl: string | null }
+  /** The crawl could not read the site's robots.txt or a sitemap it lists, so it may not know every page. */
+  | { type: "sitemap_unread" };
 
 export interface WebsiteCrawlPage {
   sourceUrl: string;

@@ -38,12 +38,12 @@ export const registerConversationAttributeSchema = (registry: OpenAPIRegistry) =
     writtenBy: z.object({
       kind: z.enum(CONTEXT_VALUE_WRITER_KINDS),
       ref: z.string().nullable().openapi({
-        description: "What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator`, the version of the instructions for `classifier`.",
+        description: "What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator` (in the Inbox, through Ray or through an operator MCP client), the version of the instructions for `classifier`.",
       }),
     }).openapi({ description: "The value's last writer." }),
     updatedAt: z.string().datetime(),
     classified: z.boolean().openapi({
-      description: "True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting a teammate's value hands it back to the AI.",
+      description: "True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting the conversation's value hands it back to the AI.",
     }),
   }),
 );

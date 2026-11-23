@@ -3,7 +3,6 @@ import { ConversationAttributeReads } from "../../db/repositories/conversationAt
 import type { AuditEventInput } from "../../modules/audit/contracts/index.js";
 import {
   ConversationAttributeEditService,
-  ConversationAttributeService,
   type AttributeEditAudit,
   type ContextVariableRepositoryPort,
   type ConversationReclassification,
@@ -54,7 +53,6 @@ export const buildConversationAttributeEdits = (deps: {
   };
   return new ConversationAttributeEditService({
     reads,
-    attributes: new ConversationAttributeService(reads),
     values: deps.values,
     reclassification,
     audit: conversationAttributeEditAudit(deps.audit),

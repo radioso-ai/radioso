@@ -28,8 +28,8 @@ const eligibleProposal: CopilotMcpDisposition = {
 /**
  * A teammate's edit of a named conversation's attribute. A set writes the option it names and a reset
  * deletes the conversation's own value, so a lost-response retry lands on the state the first call
- * left: a repeated set changes nothing, and a repeated reset finds no value and neither audits nor
- * asks the AI again.
+ * left: a repeated set finds the teammate's option and neither writes nor audits, and a repeated
+ * reset finds no value and neither audits nor asks the AI again.
  */
 const conversationAttributeEdit: CopilotMcpDisposition = {
   status: "eligible",

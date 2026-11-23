@@ -74,6 +74,7 @@ export type {
   AttributeEditActor,
   AttributeEditAudit,
   ConversationAttributeEditReads,
+  EditedConversation,
   ConversationAttributeEdits,
   ConversationReclassification,
 } from "./conversationAttributeEdits.js";
@@ -83,7 +84,6 @@ export type {
   AgentContextVariableEnablement,
   ClassificationFitRefusal,
   ContextScopeKeys,
-  ConversationScopeKeys,
   ConversationScope,
   ContextValueWriter,
   ContextValueWriterKind,

@@ -1,10 +1,10 @@
-import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
+import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type {
   ContextVariable,
   ConversationAttributeEditReads,
   ConversationAttributeReadPort,
-  ConversationScopeKeys,
   ConversationScope,
+  EditedConversation,
   StoredConversationAttributeValue,
 } from "../../modules/context-variables/public.js";
 import { anyOf } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -23,18 +23,16 @@ import { readConversationClassification } from "./conversationClassifiedVariable
 export class ConversationAttributeReads implements ConversationAttributeReadPort, ConversationAttributeEditReads {
   constructor(
     private readonly db: Db,
-    private readonly revisions: Pick<AgentRevisionRuntimeReaderPort, "findRevision">,
+    private readonly revisions: AgentRevisionEnablementReader,
   ) {}
 
-  async readConversationKeys(workspaceId: string, conversationId: string): Promise<ConversationScopeKeys | null> {
-    const conversation = await this.db
-      .selectFrom("conversations")
-      .select(["id", "anonymous_session_id", "verified_customer_id"])
-      .where("workspace_id", "=", workspaceId)
-      .where("id", "=", conversationId)
-      .executeTakeFirst();
+  async readConversation(workspaceId: string, conversationId: string): Promise<EditedConversation | null> {
+    const conversation = await readConversationClassification(this.db, this.revisions, { workspaceId, conversationId });
     return conversation
-      ? { conversationId: conversation.id, chatSessionId: conversation.anonymous_session_id, verifiedCustomerId: conversation.verified_customer_id }
+      ? {
+        keys: { conversationId: conversation.conversationId, chatSessionId: conversation.chatSessionId, verifiedCustomerId: conversation.verifiedCustomerId },
+        classifiedVariableIds: new Set(conversation.classifiedVariableIds),
+      }
       : null;
   }
 

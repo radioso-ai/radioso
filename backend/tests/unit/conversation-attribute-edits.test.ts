@@ -6,13 +6,14 @@ import {
   type AttributeEditActor,
   type ConversationAttributeEditReads,
 } from "../../src/modules/context-variables/conversationAttributeEdits.js";
-import type { ConversationAttribute, ConversationAttributeReader } from "../../src/modules/context-variables/conversationAttributes.js";
-import type { ContextVariable } from "../../src/modules/context-variables/domain.js";
+import type { ConversationAttribute, StoredConversationAttributeValue } from "../../src/modules/context-variables/conversationAttributes.js";
+import type { ContextValueWriter, ContextVariable, ContextVariableScope, ContextVariableValue } from "../../src/modules/context-variables/domain.js";
 import { notFound } from "../../src/shared/domain/errors.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
 const actor: AttributeEditActor = { accountId: "account-1", userId: "user-1", surface: "inbox" };
+const writtenAt = new Date("2026-11-22T10:00:00.000Z");
 
 const variable = (overrides: Partial<ContextVariable> & Pick<ContextVariable, "id" | "name">): ContextVariable => ({
   workspaceId,
@@ -43,40 +44,58 @@ const attribute = (overrides: Partial<ConversationAttribute> = {}): Conversation
   redacted: false,
   scope: "conversation",
   writtenBy: { kind: "operator", ref: "user-1" },
-  updatedAt: new Date("2026-11-22T10:00:00.000Z"),
+  updatedAt: writtenAt,
   classified: false,
   ...overrides,
 });
 
+/** A stored value of `topic`: the conversation's own unless another scope is named. */
+const topicValue = (data: string, writtenBy: ContextValueWriter, scope: ContextVariableScope = { type: "conversation", id: conversationId }): StoredConversationAttributeValue => ({
+  variable: topic,
+  value: { id: `value-${scope.type}`, workspaceId, variableId: topic.id, scope, data, lastModified: writtenAt, writtenBy },
+});
+
+/**
+ * The edit service over in-memory ports. `held` is what the conversation's rungs hold, most specific
+ * first; the value writes keep it current, so a read after a write reads what the write left.
+ */
 const harness = (options: {
   classified?: string[];
   conversationExists?: boolean;
-  deleted?: boolean;
-  readBack?: ConversationAttribute[];
+  held?: StoredConversationAttributeValue[];
   reclassify?: () => Promise<void>;
 } = {}) => {
+  let held = [...(options.held ?? [])];
+  const ownValue = () => held.find((entry) => entry.value.scope.type === "conversation");
   const reads: ConversationAttributeEditReads = {
     findByName: async (workspace, name) => [topic, careNeed, plan].find((candidate) => workspace === workspaceId && candidate.name === name) ?? null,
-    readConversationKeys: async (workspace, id) => (options.conversationExists === false || workspace !== workspaceId || id !== conversationId
+    readConversation: vi.fn(async (workspace: string, id: string) => (options.conversationExists === false || workspace !== workspaceId || id !== conversationId
       ? null
-      : { conversationId, chatSessionId: "session-1", verifiedCustomerId: null }),
-    readClassifiedVariableIds: async () => new Set(options.classified ?? []),
-  };
-  const attributes: ConversationAttributeReader = {
-    read: vi.fn(async () => options.readBack ?? [attribute()]),
-    resolveFilter: vi.fn(),
+      : { keys: { conversationId, chatSessionId: "session-1", verifiedCustomerId: null }, classifiedVariableIds: new Set(options.classified ?? []) })),
+    readMostSpecificValues: vi.fn(async () => {
+      const own = ownValue();
+      return own ? [own] : held.slice(0, 1);
+    }),
   };
   const values = {
-    upsertValue: vi.fn(async () => null),
-    deleteValue: vi.fn(async () => options.deleted ?? true),
+    upsertValue: vi.fn(async (variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null> => {
+      const written = topicValue(data as string, writtenBy, scope);
+      held = [written, ...held.filter((entry) => entry.value.scope.type !== "conversation")];
+      return written.value;
+    }),
+    deleteValue: vi.fn(async () => {
+      const had = ownValue() !== undefined;
+      held = held.filter((entry) => entry.value.scope.type !== "conversation");
+      return had;
+    }),
   };
   const reclassification = { request: vi.fn(options.reclassify ?? (async () => undefined)) };
   const audit = { record: vi.fn(async () => undefined) };
   const metrics = { incrementCounter: vi.fn() };
   const logger = { warn: vi.fn() };
-  const service = new ConversationAttributeEditService({ reads, attributes, values, reclassification, audit, metrics, logger });
+  const service = new ConversationAttributeEditService({ reads, values, reclassification, audit, metrics, logger });
   const outcomes = () => metrics.incrementCounter.mock.calls.map(([, options]) => (options as { labels: Record<string, string> }).labels);
-  return { service, attributes, values, reclassification, audit, metrics, logger, outcomes };
+  return { service, reads, values, reclassification, audit, metrics, logger, outcomes };
 };
 
 describe("a teammate sets a conversation's attribute (#1884)", () => {
@@ -88,6 +107,52 @@ describe("a teammate sets a conversation's attribute (#1884)", () => {
     expect(values.upsertValue).toHaveBeenCalledWith("topic-id", { type: "conversation", id: conversationId }, "billing", { kind: "operator", ref: "user-1" });
     expect(result).toEqual({ attribute: attribute(), classificationQueued: false });
     expect(outcomes()).toEqual([{ action: "set", outcome: "written" }]);
+  });
+
+  it("changes nothing when a teammate already set that option: no write, no audit, outcome unchanged", async () => {
+    const { service, values, audit, outcomes } = harness({ held: [topicValue("billing", { kind: "operator", ref: "user-2" })] });
+
+    const result = await service.set({ workspaceId, conversationId, name: "topic", value: "billing", actor });
+
+    expect(values.upsertValue).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(result).toEqual({ attribute: attribute({ writtenBy: { kind: "operator", ref: "user-2" } }), classificationQueued: false });
+    expect(outcomes()).toEqual([{ action: "set", outcome: "unchanged" }]);
+  });
+
+  it.each([
+    ["the AI", { kind: "classifier", ref: "context-classification/1" }],
+    ["an API token", { kind: "api", ref: "credential-1" }],
+    ["a routine", { kind: "routine", ref: "booking:run-1" }],
+  ] as const)("makes the option %s set the team's, so the AI no longer changes it, and audits that", async (_writer, writtenBy) => {
+    const { service, values, audit, outcomes } = harness({ held: [topicValue("billing", writtenBy)] });
+
+    const result = await service.set({ workspaceId, conversationId, name: "topic", value: "billing", actor });
+
+    expect(values.upsertValue).toHaveBeenCalledWith("topic-id", { type: "conversation", id: conversationId }, "billing", { kind: "operator", ref: "user-1" });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ variableId: "topic-id", action: "set" }));
+    expect(result.attribute).toMatchObject({ value: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
+    expect(outcomes()).toEqual([{ action: "set", outcome: "written" }]);
+  });
+
+  it("sets the conversation's own option over a value kept for the visitor's session", async () => {
+    const { service, values, outcomes } = harness({ held: [topicValue("billing", { kind: "operator", ref: "user-2" }, { type: "session", id: "session-1" })] });
+
+    await service.set({ workspaceId, conversationId, name: "topic", value: "billing", actor });
+
+    expect(values.upsertValue).toHaveBeenCalled();
+    expect(outcomes()).toEqual([{ action: "set", outcome: "written" }]);
+  });
+
+  it("reads the conversation once per edit, and marks what its release classifies from that read", async () => {
+    const { service, reads } = harness({ classified: ["topic-id"], held: [topicValue("billing", { kind: "classifier", ref: "context-classification/1" })] });
+
+    const set = await service.set({ workspaceId, conversationId, name: "topic", value: "shipping", actor });
+    const reset = await service.reset({ workspaceId, conversationId, name: "topic", actor });
+
+    expect(set.attribute).toMatchObject({ value: "shipping", classified: true });
+    expect(reset).toEqual({ attribute: null, classificationQueued: true });
+    expect(reads.readConversation).toHaveBeenCalledTimes(2);
   });
 
   it("records a content-free audit event: the attribute's id, the conversation and the teammate, never the value", async () => {
@@ -172,7 +237,7 @@ describe("a teammate sets a conversation's attribute (#1884)", () => {
 
 describe("a teammate resets a conversation's attribute (#1884)", () => {
   it("deletes the conversation's value and asks the AI to fill it now when the conversation's agent classifies it", async () => {
-    const { service, values, reclassification, audit, outcomes } = harness({ classified: ["topic-id"], readBack: [] });
+    const { service, values, reclassification, audit, outcomes } = harness({ classified: ["topic-id"], held: [topicValue("shipping", { kind: "operator", ref: "user-2" })] });
 
     const result = await service.reset({ workspaceId, conversationId, name: "topic", actor });
 
@@ -184,16 +249,16 @@ describe("a teammate resets a conversation's attribute (#1884)", () => {
   });
 
   it("clears the value without asking the AI when nothing on the conversation classifies it, and reads what the visitor's rungs hold", async () => {
-    const inherited = attribute({ scope: "session", writtenBy: { kind: "api", ref: "credential-1" } });
-    const { service, reclassification } = harness({ readBack: [inherited] });
+    const inherited = topicValue("billing", { kind: "api", ref: "credential-1" }, { type: "session", id: "session-1" });
+    const { service, reclassification } = harness({ held: [topicValue("shipping", { kind: "api", ref: "credential-1" }), inherited] });
 
     await expect(service.reset({ workspaceId, conversationId, name: "topic", actor }))
-      .resolves.toEqual({ attribute: inherited, classificationQueued: false });
+      .resolves.toEqual({ attribute: attribute({ scope: "session", writtenBy: { kind: "api", ref: "credential-1" } }), classificationQueued: false });
     expect(reclassification.request).not.toHaveBeenCalled();
   });
 
   it("changes nothing, audits nothing and asks the AI nothing when the conversation holds no value of its own", async () => {
-    const { service, reclassification, audit, outcomes } = harness({ classified: ["topic-id"], deleted: false, readBack: [] });
+    const { service, reclassification, audit, outcomes } = harness({ classified: ["topic-id"] });
 
     await expect(service.reset({ workspaceId, conversationId, name: "topic", actor })).resolves.toEqual({ attribute: null, classificationQueued: false });
     expect(reclassification.request).not.toHaveBeenCalled();
@@ -202,7 +267,7 @@ describe("a teammate resets a conversation's attribute (#1884)", () => {
   });
 
   it("keeps the reset when the AI's run can't be queued, says so, and logs it", async () => {
-    const { service, logger } = harness({ classified: ["topic-id"], readBack: [], reclassify: async () => { throw new Error("queue unavailable"); } });
+    const { service, logger } = harness({ classified: ["topic-id"], held: [topicValue("shipping", { kind: "operator", ref: "user-2" })], reclassify: async () => { throw new Error("queue unavailable"); } });
 
     await expect(service.reset({ workspaceId, conversationId, name: "topic", actor })).resolves.toEqual({ attribute: null, classificationQueued: false });
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: "conversation_attribute_reclassification_failed" }), expect.any(String));

@@ -29,7 +29,9 @@ export const registerHistoryAttributePaths = (
     description: [
       "Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`).",
       "The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here.",
-      "A change records `context_value.changed` and a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value.",
+      "Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`.",
+      "Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe.",
+      "A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value.",
       refusals,
       "An option that is archived or not the attribute's is refused with `400`, naming the active option keys.",
       "Dashboard sessions only. Requires workspace.conversation.takeover.",

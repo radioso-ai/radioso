@@ -1,8 +1,14 @@
 import { AppError, badRequest, notFound } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { ConversationAttribute, ConversationAttributeReader } from "./conversationAttributes.js";
-import type { ContextValueWriter, ContextVariable, ConversationScopeKeys } from "./domain.js";
+import { contextValueChanged } from "./contextValueChangedEvent.js";
+import {
+  presentConversationAttributes,
+  type ConversationAttribute,
+  type ConversationAttributeReadPort,
+  type StoredConversationAttributeValue,
+} from "./conversationAttributes.js";
+import { conversationScopeLadder, type ContextValueWriter, type ContextVariable, type ConversationScopeKeys } from "./domain.js";
 import type { ContextVariableRepositoryPort } from "./repository.js";
 import { validateValue } from "./valueValidation.js";
 
@@ -31,14 +37,17 @@ export interface ConversationAttributeEditResult {
   readonly classificationQueued: boolean;
 }
 
-/** What an edit reads before it writes. */
-export interface ConversationAttributeEditReads {
-  /** The variable whose stored name is exactly `name`. */
-  findByName(workspaceId: string, name: string): Promise<ContextVariable | null>;
-  /** The keys of the conversation's own rungs; null when the workspace has no such conversation. */
-  readConversationKeys(workspaceId: string, conversationId: string): Promise<ConversationScopeKeys | null>;
+/** The conversation an edit is made on, read once: the keys of its own rungs and what its release classifies. */
+export interface EditedConversation {
+  readonly keys: ConversationScopeKeys;
   /** The variables the agent release the conversation runs classifies. */
-  readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>>;
+  readonly classifiedVariableIds: ReadonlySet<string>;
+}
+
+/** What an edit reads around its write. */
+export interface ConversationAttributeEditReads extends Pick<ConversationAttributeReadPort, "findByName" | "readMostSpecificValues"> {
+  /** The conversation, null when the workspace has no such conversation. */
+  readConversation(workspaceId: string, conversationId: string): Promise<EditedConversation | null>;
 }
 
 /** Asks the AI to fill a conversation's classified attributes now, rather than after a turn that may never come. */
@@ -98,18 +107,23 @@ const optionRefusal = (variable: ContextVariable, value: unknown): EditRefusal =
 
 const operatorWriter = (actor: AttributeEditActor): ContextValueWriter => ({ kind: "operator", ref: actor.userId });
 
+/** Whether the conversation's own value already is this option, set by a teammate: a set then changes nothing. */
+const heldByTeam = (current: ConversationAttribute | null, value: unknown): current is ConversationAttribute =>
+  current !== null && current.scope === "conversation" && current.writtenBy.kind === "operator" && !contextValueChanged(current.value, value);
+
 /**
  * Sets and resets a conversation's own value of an attribute for a teammate. A set writes the option
- * with the teammate as its writer, which the classifier never replaces. A reset deletes the
- * conversation's value: when the conversation's release classifies the attribute, it asks the AI to
- * fill it now, since the conversation may have ended. The value write records `context_value.changed`
- * in its own transaction; the audit event comes after it and names no value. Each edit is counted by
- * action and outcome, never by attribute or value.
+ * with the teammate as its writer, which the classifier never replaces: setting the option the AI,
+ * the host or a routine chose makes it the team's without changing it, and setting the one a
+ * teammate already set changes nothing. A reset deletes the conversation's value: when the
+ * conversation's release classifies the attribute, it asks the AI to fill it now, since the
+ * conversation may have ended. The value write records `context_value.changed` in its own
+ * transaction when the value changes; the audit event comes after it and names no value. Each edit
+ * is counted by action and outcome, never by attribute or value.
  */
 export class ConversationAttributeEditService implements ConversationAttributeEdits {
   constructor(private readonly deps: {
     reads: ConversationAttributeEditReads;
-    attributes: ConversationAttributeReader;
     values: Pick<ContextVariableRepositoryPort, "upsertValue" | "deleteValue">;
     reclassification: ConversationReclassification;
     audit: AttributeEditAudit;
@@ -119,35 +133,42 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
 
   set(input: Parameters<ConversationAttributeEdits["set"]>[0]): Promise<ConversationAttributeEditResult> {
     return this.counted("set", async () => {
-      const { variable, keys } = await this.target(input);
+      const { variable, conversation } = await this.target(input);
       if (!validateValue(variable, input.value).ok) throw optionRefusal(variable, input.value);
-      await this.deps.values.upsertValue(variable.id, { type: "conversation", id: input.conversationId }, input.value, operatorWriter(input.actor));
+      const current = await this.readAttribute(input, conversation);
+      if (heldByTeam(current, input.value)) return { outcome: "unchanged", result: { attribute: current, classificationQueued: false } };
+      const written = await this.deps.values.upsertValue(variable.id, { type: "conversation", id: input.conversationId }, input.value, operatorWriter(input.actor));
       await this.audit({ workspaceId: input.workspaceId, conversationId: input.conversationId, variableId: variable.id, action: "set", actor: input.actor });
-      return { outcome: "written", result: { attribute: await this.readBack(input, keys), classificationQueued: false } };
+      // The conversation's own value is the most specific rung, so what was written is what it reads.
+      const attribute = written
+        ? present([{ variable, value: written }], conversation)
+        : await this.readAttribute(input, conversation);
+      return { outcome: "written", result: { attribute, classificationQueued: false } };
     });
   }
 
   reset(input: Parameters<ConversationAttributeEdits["reset"]>[0]): Promise<ConversationAttributeEditResult> {
     return this.counted("reset", async () => {
-      const { variable, keys } = await this.target(input);
+      const { variable, conversation } = await this.target(input);
       const cleared = await this.deps.values.deleteValue(variable.id, { type: "conversation", id: input.conversationId }, operatorWriter(input.actor));
-      if (!cleared) return { outcome: "unchanged", result: { attribute: await this.readBack(input, keys), classificationQueued: false } };
+      if (!cleared) return { outcome: "unchanged", result: { attribute: await this.readAttribute(input, conversation), classificationQueued: false } };
       await this.audit({ workspaceId: input.workspaceId, conversationId: input.conversationId, variableId: variable.id, action: "reset", actor: input.actor });
-      const classified = await this.deps.reads.readClassifiedVariableIds(input.workspaceId, input.conversationId);
-      const classificationQueued = classified.has(variable.id) && await this.reclassify(input);
-      return { outcome: "cleared", result: { attribute: await this.readBack(input, keys), classificationQueued } };
+      const classificationQueued = conversation.classifiedVariableIds.has(variable.id) && await this.reclassify(input);
+      return { outcome: "cleared", result: { attribute: await this.readAttribute(input, conversation), classificationQueued } };
     });
   }
 
   private async target(input: { workspaceId: string; conversationId: string; name: string }) {
     const variable = editableVariable(await this.deps.reads.findByName(input.workspaceId, input.name), input.name);
-    const keys = await this.deps.reads.readConversationKeys(input.workspaceId, input.conversationId);
-    if (!keys) throw new EditRefusal("not_found", notFound("Conversation not found"));
-    return { variable, keys };
+    const conversation = await this.deps.reads.readConversation(input.workspaceId, input.conversationId);
+    if (!conversation) throw new EditRefusal("not_found", notFound("Conversation not found"));
+    return { variable, conversation };
   }
 
-  private async readBack(input: { workspaceId: string; name: string }, keys: ConversationScopeKeys): Promise<ConversationAttribute | null> {
-    return (await this.deps.attributes.read(input.workspaceId, keys)).find((attribute) => attribute.name === input.name) ?? null;
+  /** The attribute as the conversation reads it now, from the conversation read at the start of the edit. */
+  private async readAttribute(input: { workspaceId: string; name: string }, conversation: EditedConversation): Promise<ConversationAttribute | null> {
+    const stored = await this.deps.reads.readMostSpecificValues(input.workspaceId, conversationScopeLadder(conversation.keys));
+    return present(stored.filter((entry) => entry.variable.name === input.name), conversation);
   }
 
   private async reclassify(input: { workspaceId: string; conversationId: string }): Promise<boolean> {
@@ -199,3 +220,6 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
     });
   }
 }
+
+const present = (stored: readonly StoredConversationAttributeValue[], conversation: EditedConversation): ConversationAttribute | null =>
+  presentConversationAttributes(stored, conversation.classifiedVariableIds)[0] ?? null;

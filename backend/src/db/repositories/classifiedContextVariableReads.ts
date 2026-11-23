@@ -5,7 +5,7 @@ import {
   type ClassifiedVariableReader,
   type ContextVariable,
 } from "../../modules/context-variables/public.js";
-import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
+import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { contextVariableColumns, mapContextVariableRow, type ContextVariableRow } from "./contextVariableRepository.js";
 import { readLadderValues } from "./contextVariableValueReads.js";
@@ -21,7 +21,7 @@ import { readConversationClassification } from "./conversationClassifiedVariable
 export class ClassifiedContextVariableReads implements ClassifiedVariableReader {
   constructor(
     private readonly db: Db,
-    private readonly revisions: Pick<AgentRevisionRuntimeReaderPort, "findRevision">,
+    private readonly revisions: AgentRevisionEnablementReader,
   ) {}
 
   async readConversationTargets(input: { workspaceId: string; conversationId: string }): Promise<{ agentId: string; targets: ClassificationTarget[] } | null> {

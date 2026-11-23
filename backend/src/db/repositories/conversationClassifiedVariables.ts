@@ -1,5 +1,5 @@
 import { isClassifiedEnablement } from "../../modules/context-variables/public.js";
-import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
+import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /** A conversation's keys, the agent it is with, and the variables the release it is pinned to classifies. */
@@ -13,12 +13,13 @@ interface ConversationClassification {
 
 /**
  * Reads what a conversation's own release classifies, through the agents module's revision reader,
- * which owns the snapshot: the classifier fills what that release selects, the way its turns resolve
- * what it selects. Null when the conversation is gone; no variables when it is pinned to no release.
+ * which owns the snapshot and reads only the release's enablements: the classifier fills what that
+ * release selects, the way its turns resolve what it selects. Null when the conversation is gone; no
+ * variables when it is pinned to no release.
  */
 export const readConversationClassification = async (
   db: Db,
-  revisions: Pick<AgentRevisionRuntimeReaderPort, "findRevision">,
+  revisions: AgentRevisionEnablementReader,
   input: { workspaceId: string; conversationId: string },
 ): Promise<ConversationClassification | null> => {
   const conversation = await db
@@ -35,14 +36,14 @@ export const readConversationClassification = async (
     verifiedCustomerId: conversation.verified_customer_id,
   };
   if (!conversation.agent_id || !conversation.agent_revision_id) return { ...facts, classifiedVariableIds: [] };
-  const revision = await revisions.findRevision({
+  const enablements = await revisions.findRevisionEnablements({
     workspaceId: input.workspaceId,
     agentId: conversation.agent_id,
     revisionId: conversation.agent_revision_id,
   });
   return {
     ...facts,
-    classifiedVariableIds: (revision?.snapshot.contextVariableEnablements ?? [])
+    classifiedVariableIds: (enablements ?? [])
       .filter(isClassifiedEnablement)
       .map((enablement) => enablement.variableId),
   };

@@ -309,7 +309,7 @@ import type {
   ConversationAttributeEditReads,
   ConversationAttributeReadPort,
   ConversationScope,
-  ConversationScopeKeys,
+  EditedConversation,
   StoredConversationAttributeValue,
 } from "../../src/modules/context-variables/public.js";
 import {
@@ -690,10 +690,13 @@ class InMemoryConversationAttributeReads implements ConversationAttributeReadPor
     private readonly conversations: Pick<InMemoryConversationRepository, "findByIdAndWorkspaceId">,
   ) {}
 
-  async readConversationKeys(workspaceId: string, conversationId: string): Promise<ConversationScopeKeys | null> {
+  async readConversation(workspaceId: string, conversationId: string): Promise<EditedConversation | null> {
     const conversation = await this.conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
     return conversation
-      ? { conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId ?? null, verifiedCustomerId: conversation.verifiedCustomerId ?? null }
+      ? {
+        keys: { conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId ?? null, verifiedCustomerId: conversation.verifiedCustomerId ?? null },
+        classifiedVariableIds: await this.readClassifiedVariableIds(workspaceId, conversationId),
+      }
       : null;
   }
 
@@ -2311,7 +2314,6 @@ export const createTestDependencies = (overrides: {
   // enqueue is covered by tests/integration/conversation-attribute-edits.integration.test.ts.
   const conversationAttributeEdits = new ConversationAttributeEditService({
     reads: conversationAttributeReads,
-    attributes: new ConversationAttributeService(conversationAttributeReads),
     values: contextVariableRepository,
     reclassification: { request: async () => undefined },
     audit: conversationAttributeEditAudit(auditService),

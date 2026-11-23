@@ -56,13 +56,23 @@ describeIntegration("a teammate's edit of a conversation's attribute, against th
     return conversationId;
   };
 
-  /** The classifier as the job runs it, answering `key` for every attribute it is asked about. */
-  const classifierAnswering = (key: string) => new ConversationClassificationService({
+  /** The classifier as the job runs it, answering `key` for every attribute it is asked about, after `thinkMs`. */
+  const classifierAnswering = (key: string, thinkMs = 0) => new ConversationClassificationService({
     targets: new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)),
     excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },
     values: new ConversationValueWriterService({ repository: variables }),
-    inference: { create: async () => ({ complete: async () => ({ text: JSON.stringify({ attribute_1: { evidence: "What the visitor stated.", option_applies: true, key } }) }) }) },
+    inference: {
+      create: async () => ({
+        complete: async () => {
+          if (thinkMs > 0) await new Promise((resolve) => setTimeout(resolve, thinkMs));
+          return { text: JSON.stringify({ attribute_1: { evidence: "What the visitor stated.", option_applies: true, key } }) };
+        },
+      }),
+    },
   });
+
+  /** How long the classifier thinks in each race round, so its write lands before, during and after the teammate's. */
+  const raceRounds = [0, 0, 2, 4, 6, 8, 10, 15, 20, 30, 40, 60];
 
   const storedValue = (variableId: string, conversationId: string) => variables.readValue(variableId, { type: "conversation", id: conversationId });
   const valueEvents = (conversationId: string) => database.query<{ data: { value: unknown; writtenBy: string } }>(
@@ -137,6 +147,69 @@ describeIntegration("a teammate's edit of a conversation's attribute, against th
     await edits.set({ workspaceId, conversationId, name: topic.name, value: "shipping", actor });
 
     expect((await valueEvents(conversationId)).map((row) => row.data.value)).toEqual(["billing", "shipping"]);
+  });
+
+  it("keeps the AI's option as the team's when a teammate sets it, records no change for that, and a repeat changes nothing", async () => {
+    const topic = await createChoice();
+    const conversationId = await createConversationOn([topic.id]);
+    await classifierAnswering("billing").classifyNow({ workspaceId, conversationId });
+    const auditsOf = () => audit.record.mock.calls.filter((call: unknown[]) => JSON.stringify(call).includes(conversationId));
+
+    const pinned = await edits.set({ workspaceId, conversationId, name: topic.name, value: "billing", actor });
+    await classifierAnswering("shipping").classifyNow({ workspaceId, conversationId });
+    const repeated = await edits.set({ workspaceId, conversationId, name: topic.name, value: "billing", actor: { ...actor, userId: "user-2" } });
+
+    expect(pinned.attribute).toMatchObject({ value: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
+    expect(repeated.attribute).toMatchObject({ value: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
+    await expect(storedValue(topic.id, conversationId)).resolves.toMatchObject({ data: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
+    expect((await valueEvents(conversationId)).map((row) => [row.data.value, row.data.writtenBy])).toEqual([["billing", "classifier"]]);
+    expect(auditsOf()).toHaveLength(1);
+  });
+
+  // Each round races the two writers on a fresh conversation. Whichever commits first, the
+  // teammate's value stands under the overwrite rule, and the log holds exactly the changes the
+  // value went through: one event per stored change, none for the write the rule turned away.
+  it("races a teammate's set against the classifier: the teammate's option stands, each change recorded once", async () => {
+    const topic = await createChoice();
+    const conversations = await Promise.all(raceRounds.map(async (thinkMs) => {
+      const conversationId = await createConversationOn([topic.id]);
+      await Promise.all([
+        edits.set({ workspaceId, conversationId, name: topic.name, value: "shipping", actor }),
+        classifierAnswering("billing", thinkMs).classifyNow({ workspaceId, conversationId }),
+      ]);
+      return conversationId;
+    }));
+
+    for (const conversationId of conversations) {
+      await expect(storedValue(topic.id, conversationId)).resolves.toMatchObject({ data: "shipping", writtenBy: { kind: "operator", ref: "user-1" } });
+      const events = (await valueEvents(conversationId)).map((row) => [row.data.value, row.data.writtenBy]);
+      expect([
+        [["shipping", "operator"]],
+        [["billing", "classifier"], ["shipping", "operator"]],
+      ]).toContainEqual(events);
+    }
+  });
+
+  it("races a teammate keeping the AI's option against the AI changing it: the kept option stands, each change recorded once", async () => {
+    const topic = await createChoice();
+    const conversations = await Promise.all(raceRounds.map(async (thinkMs) => {
+      const conversationId = await createConversationOn([topic.id]);
+      await classifierAnswering("billing").classifyNow({ workspaceId, conversationId });
+      await Promise.all([
+        edits.set({ workspaceId, conversationId, name: topic.name, value: "billing", actor }),
+        classifierAnswering("shipping", thinkMs).classifyNow({ workspaceId, conversationId }),
+      ]);
+      return conversationId;
+    }));
+
+    for (const conversationId of conversations) {
+      await expect(storedValue(topic.id, conversationId)).resolves.toMatchObject({ data: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
+      const events = (await valueEvents(conversationId)).map((row) => [row.data.value, row.data.writtenBy]);
+      expect([
+        [["billing", "classifier"]],
+        [["billing", "classifier"], ["shipping", "classifier"], ["billing", "operator"]],
+      ]).toContainEqual(events);
+    }
   });
 
   it("clears without queueing the classifier when the conversation's release doesn't classify the attribute, and resets nothing twice", async () => {

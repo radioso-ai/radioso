@@ -110,7 +110,7 @@ const presentValue = (
 };
 
 /** Each attribute's most specific value, as the read port hands it, in name order. */
-const presentConversationAttributes = (
+export const presentConversationAttributes = (
   stored: readonly StoredConversationAttributeValue[],
   classified: ReadonlySet<string>,
 ): ConversationAttribute[] =>

@@ -87,6 +87,22 @@ describe("a teammate sets and resets a conversation's attribute from the Inbox (
     expect(JSON.stringify(editAudits(h))).not.toContain("billing");
   });
 
+  it("keeps an API-written option as the team's when a teammate sets it, and a repeated set changes and audits nothing", async () => {
+    const h = await seedWorkspace("attribute-edits-pin@example.com");
+    await request(h.app)
+      .put(`/api/v1/context-variables/${h.topicId}/values`)
+      .set(h.bearer)
+      .send({ scope: { type: "conversation", id: h.conversationId }, data: "billing" })
+      .expect(200);
+
+    const pinned = await setAttribute(h, "topic", "billing").expect(200);
+    const repeated = await setAttribute(h, "topic", "billing").expect(200);
+
+    expect(pinned.body.attribute).toMatchObject({ value: "billing", writtenBy: { kind: "operator", ref: h.userId } });
+    expect(repeated.body).toEqual(pinned.body);
+    expect(editAudits(h).map((event) => event.eventType)).toEqual(["conversation_attribute.set"]);
+  });
+
   it("hands a classified attribute back to the AI on reset, and resets nothing the second time", async () => {
     const h = await seedWorkspace("attribute-edits-reset-classified@example.com");
     await h.classify(h.topicId);

@@ -37,7 +37,6 @@ import {
 } from "../../shared/domain/dataSubjectAccess.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ConversationDataEraser,
@@ -48,7 +47,8 @@ import type {
 import { agentRevisionLockKey, withAgentDraftMutation } from "./agentDraftMutation.js";
 import { lockDefinition, refuseTypeChangeWithValues } from "./contextVariableRowLocks.js";
 import { readContextVariableValue, readMostSpecificValues } from "./contextVariableValueReads.js";
-import { ContextVariableValueWrites, optionsFromRow } from "./contextVariableValueWrites.js";
+import { ContextVariableValueWrites, optionsFromRow, type ContextValueEvents } from "./contextVariableValueWrites.js";
+import { redactContextValueEvents } from "./workspaceEventLogRepository.js";
 
 export interface ContextVariableRow {
   id: string;
@@ -240,15 +240,32 @@ const lockResolverSkillForEnablement = async (
   return !skill ? "missing" : skill.enabled ? "enabled" : "disabled";
 };
 
+/**
+ * An edit that makes a variable Private redacts the values its events already carry, in the edit's
+ * transaction. The edit holds the row locked for update, so a value write in flight, which
+ * key-shares it, commits its event first and is redacted with the rest, and a write after the edit
+ * reads the new sensitivity and records no value.
+ */
+const redactWhenMadePrivate = async (
+  trx: Db,
+  workspaceId: string,
+  locked: { id: string; sensitivity: ContextVariableSensitivity },
+  sensitivity: ContextVariableSensitivity | undefined,
+): Promise<void> => {
+  if (sensitivity !== "sensitive" || locked.sensitivity === "sensitive") return;
+  await redactContextValueEvents(trx, { workspaceId, variableId: locked.id });
+};
+
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   private readonly valueWrites: ContextVariableValueWrites;
 
   /**
-   * `valueEvents` records `context_value.changed` for each change of a conversation's value. The
-   * repository a turn's resolver caches through is built without it: a cached fetch from the host's
-   * own API is not a change an automation acts on.
+   * `valueEvents` records `context_value.changed` for each change of a conversation's value and
+   * wakes delivery once it commits. Composition passes null only for a repository whose writes are
+   * no change an automation acts on, such as the one a turn's resolver caches a fetch from the
+   * host's own API through.
    */
-  constructor(private readonly db: Db, valueEvents: WorkspaceEventRecorder | null = null) {
+  constructor(private readonly db: Db, valueEvents: ContextValueEvents | null) {
     this.valueWrites = new ContextVariableValueWrites(db, valueEvents);
   }
 
@@ -273,8 +290,9 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
     return this.db.transaction().execute(async (trx) => {
-      if (input.valueType !== undefined || input.options !== undefined) {
-        const locked = await lockDefinition(trx, workspaceId, id);
+      let locked: Awaited<ReturnType<typeof lockDefinition>> = null;
+      if (input.valueType !== undefined || input.options !== undefined || input.sensitivity !== undefined) {
+        locked = await lockDefinition(trx, workspaceId, id);
         if (!locked) return null;
         if (input.valueType !== undefined) await refuseTypeChangeWithValues(trx, locked, input.valueType);
         // The service checked the options against a read taken before this lock. An edit that
@@ -300,6 +318,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         .where("id", "=", id)
         .returning(contextVariableColumns)
         .executeTakeFirst();
+      if (row && locked) await redactWhenMadePrivate(trx, workspaceId, locked, input.sensitivity);
       return row ? mapContextVariableRow(row) : null;
     });
   }
@@ -664,6 +683,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           if (!row) {
             throw conflict("Context variable was updated by another writer; reload before saving again");
           }
+          await redactWhenMadePrivate(trx, input.workspaceId, locked, input.definition.sensitivity);
         } else {
           try {
             const created = await trx

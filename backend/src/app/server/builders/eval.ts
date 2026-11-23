@@ -99,7 +99,8 @@ export const buildEvalServices = (input: {
         input.repositories.agentRevisionRepository.findRevision(workspaceId, agentId, revisionId),
     },
     cases: evalRepository,
-    contextCatalog: new ContextVariableRepository(input.infrastructure.database.kysely),
+    // Reads the catalog only; it writes no value.
+    contextCatalog: new ContextVariableRepository(input.infrastructure.database.kysely, null),
     runner: evalRunService,
     audit: input.infrastructure.auditService,
     logger: input.logger,

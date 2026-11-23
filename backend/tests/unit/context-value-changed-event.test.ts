@@ -6,8 +6,8 @@ import {
 } from "../../src/modules/context-variables/contextValueChangedEvent.js";
 import { workspaceEventDataSchema } from "../../src/shared/domain/workspaceEventLog.js";
 
-const topic = { name: "topic", valueType: "enum" as const, sensitivity: "normal" as const };
-const careNeed = { name: "care_need", valueType: "enum" as const, sensitivity: "sensitive" as const };
+const topic = { id: "0b5f4c1e-2a3d-4e6f-8a9b-1c2d3e4f5a6b", name: "topic", valueType: "enum" as const, sensitivity: "normal" as const };
+const careNeed = { id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", name: "care_need", valueType: "enum" as const, sensitivity: "sensitive" as const };
 const subject = {
   conversationId: "6f1c1f9e-5d0b-4d55-9a53-2b7f3f1b7a10",
   agentId: null,
@@ -17,7 +17,7 @@ const subject = {
 };
 
 describe("the context_value.changed event a writer records (#1884)", () => {
-  it("names the attribute, its type, the conversation scope, the stored value and the kind of writer", () => {
+  it("names the attribute by id and name, its type, the conversation scope, the stored value and the kind of writer", () => {
     const draft = contextValueChangedEvent({
       workspaceId: "w-1",
       conversationId: subject.conversationId,
@@ -31,6 +31,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       workspaceId: "w-1",
       conversationId: subject.conversationId,
       detail: {
+        variableId: topic.id,
         variable: "topic",
         valueType: "enum",
         scope: "conversation",
@@ -41,6 +42,19 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       },
     });
     expect(() => workspaceEventDataSchema("context_value.changed").strict().parse({ ...subject, ...draft.detail })).not.toThrow();
+  });
+
+  it("requires the value, null when cleared or Private, so a payload that leaves it out is not one", () => {
+    const { value: _value, ...withoutValue } = contextValueChangedEvent({
+      workspaceId: "w-1",
+      conversationId: subject.conversationId,
+      variable: topic,
+      value: null,
+      writtenBy: { kind: "operator", ref: "user-1" },
+    }).detail;
+
+    expect(() => workspaceEventDataSchema("context_value.changed").parse({ ...subject, ...withoutValue, value: null })).not.toThrow();
+    expect(() => workspaceEventDataSchema("context_value.changed").parse({ ...subject, ...withoutValue })).toThrow();
   });
 
   it("records a cleared value as null", () => {

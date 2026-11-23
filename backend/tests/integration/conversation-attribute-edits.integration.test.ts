@@ -21,7 +21,7 @@ const option = (key: string): ContextVariableOption => ({ key, label: key, descr
 
 describeIntegration("a teammate's edit of a conversation's attribute, against the classifier (Postgres, #1884)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const variables = new ContextVariableRepository(database.kysely, postgresWorkspaceEventRecorder);
+  const variables = new ContextVariableRepository(database.kysely, { recorder: postgresWorkspaceEventRecorder, delivery: { requestDelivery: () => undefined } });
   const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as AppLogger;
   const queue = new DefaultBackgroundJobQueue({ writer: new BackgroundJobRepository(database.kysely), wake: new NoopBackgroundJobWake(), logger });
   const audit = { record: vi.fn(async () => undefined) };

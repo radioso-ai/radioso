@@ -25,8 +25,10 @@ import {
   logRowAfter,
   snapshotHorizon,
   snapshotHorizonSpan,
+  toJsonb,
   toSanitizedJsonb,
 } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { JsonValue } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
@@ -124,6 +126,21 @@ export const postgresDocumentEventEraser: DocumentEventEraser = {
       .where((eb) => sql<boolean>`${jsonbKeyText(eb.ref("data"), "documentId")} = ANY(${sql.val([...input.documentIds])}::text[])`)
       .execute();
   },
+};
+
+/**
+ * Redacts the values an attribute that has become Private recorded, in the transaction that made it
+ * Private: its `context_value.changed` events stay in the log, each now as a Private value records
+ * it, `value: null` and `redacted: true`.
+ */
+export const redactContextValueEvents = async (db: Db, input: { workspaceId: string; variableId: string }): Promise<void> => {
+  await db
+    .updateTable("workspace_events")
+    .set((eb) => ({ data: sql<JsonValue>`${eb.ref("data")} || ${toJsonb({ value: null, redacted: true })}` }))
+    .where("workspace_id", "=", input.workspaceId)
+    .where("type", "=", "context_value.changed")
+    .where((eb) => eb(jsonbKeyText(eb.ref("data"), "variableId"), "=", input.variableId))
+    .execute();
 };
 
 const storedEventColumns = [

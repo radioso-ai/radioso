@@ -29,7 +29,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("ContextVariableRepository.applyProposal conflict translation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const agentRepository = new AgentRepository(database.kysely);
 
   const accountId = randomUUID();

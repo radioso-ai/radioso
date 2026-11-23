@@ -686,7 +686,8 @@ export const buildChatServices = (input: {
     ),
     input.logger,
   );
-  const contextVariableRepository = new ContextVariableRepository(input.database.kysely);
+  // The resolver caches a fetch from the host's own API: no change an automation acts on, so no event.
+  const contextVariableRepository = new ContextVariableRepository(input.database.kysely, null);
   const contextVariableResolver = new ContextVariableResolverService({
     repository: contextVariableRepository,
     resolver: new SkillBackedContextResolver({

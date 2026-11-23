@@ -27,7 +27,7 @@ const option = (key: string): ContextVariableOption => ({
 
 describeIntegration("a conversation's attributes and the attribute filter (Postgres, #1884)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const variables = new ContextVariableRepository(database.kysely);
+  const variables = new ContextVariableRepository(database.kysely, null);
   const attributes = new ConversationAttributeService(new ConversationAttributeReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)));
   const accountId = randomUUID();
   const workspaceId = randomUUID();

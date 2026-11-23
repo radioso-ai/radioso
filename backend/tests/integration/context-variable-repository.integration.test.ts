@@ -13,7 +13,7 @@ const apiWriter = { kind: "api" as const, ref: null };
 
 describeIntegration("ContextVariableRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ContextVariableRepository(database.kysely);
+  const repository = new ContextVariableRepository(database.kysely, null);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

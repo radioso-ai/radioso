@@ -117,6 +117,7 @@ interface WorkspaceEventDetails {
     deadline: string | null;
   };
   "context_value.changed": {
+    variableId: string;
     variable: string;
     valueType: typeof CONTEXT_VALUE_EVENT_VALUE_TYPES[number];
     scope: typeof CONTEXT_VALUE_EVENT_SCOPES[number];
@@ -157,12 +158,14 @@ const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObje
     deadline: z.string().datetime().nullable(),
   }),
   "context_value.changed": z.object({
-    variable: z.string().describe("The attribute's name, as `GET /api/v1/context-variables` lists it."),
+    variableId: z.string().uuid().describe("The attribute's id, as `GET /api/v1/context-variables` lists it. It stays the same when the attribute is renamed."),
+    variable: z.string().describe("The attribute's name when the value changed, as `GET /api/v1/context-variables` lists it."),
     valueType: z.enum(CONTEXT_VALUE_EVENT_VALUE_TYPES).describe("The attribute's type. A Choice attribute is `enum`, and its value is an option's key."),
     scope: z.enum(CONTEXT_VALUE_EVENT_SCOPES).describe("Where the value is kept. Version 1 records the values kept for the conversation."),
-    value: z.unknown().describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."),
-    redacted: z.boolean().describe("True for a Private attribute, whose value is never sent, whether it was set or cleared."),
-    writtenBy: z.enum(CONTEXT_VALUE_EVENT_WRITERS).describe("Who changed it: `classifier` (the AI), `operator` (a teammate in the Inbox or through Ray), `api` (an API token or the dashboard's values API) or `routine`."),
+    // Present and null for a cleared or Private value: refusing `undefined` makes the field required.
+    value: z.unknown().refine((value) => value !== undefined).describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."),
+    redacted: z.boolean().describe("True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded."),
+    writtenBy: z.enum(CONTEXT_VALUE_EVENT_WRITERS).describe("Who changed it: `classifier` (the AI), `operator` (a teammate, in the Inbox, through Ray or through an operator MCP client), `api` (an API token or the dashboard's values API) or `routine`."),
     routineId: z.string().nullable().describe("The routine that wrote the value when `writtenBy` is `routine`; null otherwise."),
   }),
   "document.processed": z.object({}),

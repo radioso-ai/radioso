@@ -516,7 +516,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     slackBackgroundJobs: backgroundJobs.queue,
   });
   const connectorManagementService = new ConnectorManagementService({ database: infrastructure.database, registry: connectorRegistry });
-  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely, workspaceEventRecorder);
+  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely, { recorder: workspaceEventRecorder, delivery: workspaceEventDelivery.wake });
   const contextClassification = buildContextClassification({ infrastructure, repositories, contextVariableRepository, resolver: llmCapabilityResolver, logger });
   const conversationAttributeEdits = buildConversationAttributeEdits({ db: infrastructure.database.kysely, values: contextVariableRepository, queue: backgroundJobs.queue, audit: infrastructure.auditService, metrics: infrastructure.metricsRegistry, logger });
   const contextVariableService = new ContextVariableService({

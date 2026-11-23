@@ -55,7 +55,7 @@ const routineIdOf = (writer: ContextValueWriter): string | null => {
 export const contextValueChangedEvent = (input: {
   workspaceId: string;
   conversationId: string;
-  variable: Pick<ContextVariable, "name" | "valueType" | "sensitivity">;
+  variable: Pick<ContextVariable, "id" | "name" | "valueType" | "sensitivity">;
   value: unknown;
   writtenBy: ContextValueWriter;
 }): ContextValueChangedDraft => {
@@ -65,6 +65,7 @@ export const contextValueChangedEvent = (input: {
     workspaceId: input.workspaceId,
     conversationId: input.conversationId,
     detail: {
+      variableId: input.variable.id,
       variable: input.variable.name,
       valueType: input.variable.valueType,
       scope: "conversation",

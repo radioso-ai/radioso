@@ -3842,7 +3842,7 @@ export interface paths {
         get?: never;
         /**
          * Set a conversation's attribute
-         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. A change records `context_value.changed` and a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
+         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
          */
         put: operations["setHistoryConversationAttribute"];
         post?: never;
@@ -10235,12 +10235,12 @@ export interface components {
             writtenBy: {
                 /** @enum {string} */
                 kind: "api" | "operator" | "routine" | "classifier";
-                /** @description What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator`, the version of the instructions for `classifier`. */
+                /** @description What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator` (in the Inbox, through Ray or through an operator MCP client), the version of the instructions for `classifier`. */
                 ref: string | null;
             };
             /** Format: date-time */
             updatedAt: string;
-            /** @description True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting a teammate's value hands it back to the AI. */
+            /** @description True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting the conversation's value hands it back to the AI. */
             classified: boolean;
         };
         ChatConversationDetail: {
@@ -12302,7 +12302,12 @@ export interface components {
                  * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
                  */
                 visitorId: string | null;
-                /** @description The attribute's name, as `GET /api/v1/context-variables` lists it. */
+                /**
+                 * Format: uuid
+                 * @description The attribute's id, as `GET /api/v1/context-variables` lists it. It stays the same when the attribute is renamed.
+                 */
+                variableId: string;
+                /** @description The attribute's name when the value changed, as `GET /api/v1/context-variables` lists it. */
                 variable: string;
                 /**
                  * @description The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
@@ -12315,11 +12320,11 @@ export interface components {
                  */
                 scope: "conversation";
                 /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute. */
-                value?: unknown;
-                /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. */
+                value: unknown;
+                /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded. */
                 redacted: boolean;
                 /**
-                 * @description Who changed it: `classifier` (the AI), `operator` (a teammate in the Inbox or through Ray), `api` (an API token or the dashboard's values API) or `routine`.
+                 * @description Who changed it: `classifier` (the AI), `operator` (a teammate, in the Inbox, through Ray or through an operator MCP client), `api` (an API token or the dashboard's values API) or `routine`.
                  * @enum {string}
                  */
                 writtenBy: "api" | "operator" | "routine" | "classifier";

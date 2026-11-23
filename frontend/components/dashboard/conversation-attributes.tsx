@@ -18,7 +18,7 @@ interface ConversationAttributeEditing {
   workspaceId: string
   conversationId: string
   /** The edit's result, as the conversation now reads the attribute; null when nothing holds it. */
-  onChange: (name: string, changed: ConversationAttribute | null) => void
+  onChange: (name: string, changed: ConversationAttribute | null, options: { classificationQueued: boolean }) => void
 }
 
 /** Editing for a conversation detail that says the signed-in teammate may edit its attributes; null otherwise. */
@@ -104,7 +104,7 @@ function useAttributeEditor(editing: ConversationAttributeEditing | null) {
       const change = key === null
         ? await chatApi.resetHistoryConversationAttribute(conversationId, name)
         : await chatApi.setHistoryConversationAttribute(conversationId, name, key)
-      onChange(name, change.attribute ?? null)
+      onChange(name, change.attribute ?? null, { classificationQueued: change.classificationQueued })
     } catch {
       setFailedFor(conversationId)
     } finally {

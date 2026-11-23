@@ -32,7 +32,7 @@ interface Props {
 }
 
 let shown: ConversationAttribute[] | undefined
-let applyChange: (name: string, changed: ConversationAttribute | null) => void = () => undefined
+let applyChange: (name: string, changed: ConversationAttribute | null, options?: { classificationQueued?: boolean }) => void = () => undefined
 function Probe({ conversationId, loaded, messages, hasPolled }: Props) {
   const live = useLiveConversationAttributes({ conversationId, loaded, tail: { messages, hasPolled } })
   useEffect(() => {
@@ -127,5 +127,45 @@ describe('useLiveConversationAttributes', () => {
 
     expect(api.getHistoryConversation).not.toHaveBeenCalled()
     expect(shown).toBe(other)
+  })
+
+  it('keeps an edit over a detail that started loading before it, until a read started after it returns', async () => {
+    await render({})
+    const edited = { ...attribute('shipping'), writtenBy: { kind: 'operator' as const, ref: 'user-1' } }
+    await act(async () => applyChange('topic', edited))
+
+    const staleDetail = [attribute('billing')]
+    await render({ loaded: staleDetail })
+    expect(shown).toEqual([edited])
+
+    await render({ loaded: staleDetail, messages: [message('m1')], hasPolled: true })
+    await render({ loaded: staleDetail, messages: [message('m1'), message('m2')], hasPolled: true })
+    api.getHistoryConversation.mockResolvedValue({ attributes: [attribute('returns')] })
+    await advance(3_000)
+    expect(shown).toEqual([attribute('returns')])
+  })
+
+  it('shows nothing while the detail is still loading, even after an edit', async () => {
+    await render({ loaded: undefined })
+    await act(async () => applyChange('topic', attribute('shipping')))
+    expect(shown).toBeUndefined()
+  })
+
+  it('reads again on the usual schedule after an edit that queued the AI, and stops once another conversation opens', async () => {
+    await render({})
+    const reset = null
+    await act(async () => applyChange('topic', reset, { classificationQueued: true }))
+    expect(shown).toEqual([])
+
+    await advance(3_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledWith('conversation-1', { limit: 1 })
+    expect(shown).toEqual([attribute('shipping')])
+    await advance(10_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledTimes(2)
+
+    await act(async () => applyChange('topic', null, { classificationQueued: true }))
+    await render({ conversationId: 'conversation-2', loaded: [attribute('returns')] })
+    await advance(30_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledTimes(2)
   })
 })

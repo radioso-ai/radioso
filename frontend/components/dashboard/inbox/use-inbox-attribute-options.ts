@@ -1,7 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { getApiErrorStatus } from '@/lib/api-error'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import { buildAttributeFilterChoices, type AttributeFilterChoice } from '@/lib/conversation-attributes'
@@ -15,42 +18,41 @@ export interface InboxAttributeOptions {
   reload: () => void
 }
 
-interface Loaded {
-  workspaceId: string
+interface Catalog {
   choices: AttributeFilterChoice[]
   unavailable: boolean
 }
 
-/** The workspace's Choice attributes for the Inbox's attribute filter, kept to the workspace that read them. */
+const NO_CHOICES: AttributeFilterChoice[] = []
+// Attributes change rarely, so the Inbox filter and every open conversation share one read.
+const CATALOG_STALE_TIME_MS = 60_000
+
+const readCatalog = async (): Promise<Catalog> => {
+  try {
+    const response = await contextVariablesApi.listCatalog()
+    return { choices: buildAttributeFilterChoices(response.contextVariables), unavailable: false }
+  } catch (error) {
+    // An operator who may not read attributes simply has no attribute filter.
+    return { choices: NO_CHOICES, unavailable: getApiErrorStatus(error) !== 403 }
+  }
+}
+
+/** The workspace's Choice attributes for the Inbox's attribute filter and the Attributes block, cached per workspace. */
 export const useInboxAttributeOptions = ({ workspaceId, enabled }: { workspaceId: string; enabled: boolean }): InboxAttributeOptions => {
-  const [loaded, setLoaded] = useState<Loaded | null>(null)
-  const [readCount, setReadCount] = useState(0)
+  const policy = useDashboardQueryPolicy()
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: dashboardQueryKeys.attributes.catalog(workspaceId),
+    queryFn: readCatalog,
+    enabled: enabled && Boolean(workspaceId) && policy.queriesEnabled,
+    staleTime: CATALOG_STALE_TIME_MS,
+    refetchInterval: false,
+  })
 
-  useEffect(() => {
-    if (!enabled || !workspaceId) {
-      return
-    }
-    let cancelled = false
+  const reload = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.attributes.catalog(workspaceId) })
+  }, [queryClient, workspaceId])
 
-    void contextVariablesApi.listCatalog()
-      .then((response) => {
-        if (!cancelled) {
-          setLoaded({ workspaceId, choices: buildAttributeFilterChoices(response.contextVariables), unavailable: false })
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          // An operator who may not read attributes simply has no attribute filter.
-          setLoaded({ workspaceId, choices: [], unavailable: getApiErrorStatus(error) !== 403 })
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [enabled, workspaceId, readCount])
-
-  const reload = useCallback(() => setReadCount((count) => count + 1), [])
-  const current = enabled && loaded?.workspaceId === workspaceId ? loaded : null
-  return { choices: current?.choices ?? [], unavailable: current?.unavailable ?? false, reload }
+  const current = enabled ? query.data : undefined
+  return { choices: current?.choices ?? NO_CHOICES, unavailable: current?.unavailable ?? false, reload }
 }

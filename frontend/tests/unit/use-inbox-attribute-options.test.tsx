@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 const api = vi.hoisted(() => ({ listCatalog: vi.fn() }))
 vi.mock('@/lib/api-context-variables', () => ({ contextVariablesApi: api }))
 
+import { DashboardQueryProvider } from '@/components/providers/dashboard-query-provider'
 import { useInboxAttributeOptions, type InboxAttributeOptions } from '@/components/dashboard/inbox/use-inbox-attribute-options'
 import type { ContextVariable } from '@/lib/api-types'
 
@@ -24,11 +25,23 @@ const choice = (name: string) => ({
   updatedAt: '2026-11-01T00:00:00.000Z',
 }) as ContextVariable
 
+const interest = {
+  open: ({ onLifecycle }: { onLifecycle(signal: 'ready'): void }) => {
+    onLifecycle('ready')
+    return { close: vi.fn() }
+  },
+} as never
+
 let options: InboxAttributeOptions
 function Probe({ workspaceId }: { workspaceId: string }) {
   const value = useInboxAttributeOptions({ workspaceId, enabled: true })
   useEffect(() => { options = value })
   return null
+}
+
+/** Two readers of one workspace, as the Inbox filter and the Attributes block are. */
+function Pair({ workspaceId }: { workspaceId: string }) {
+  return <><Probe workspaceId={workspaceId} /><Probe workspaceId={workspaceId} /></>
 }
 
 const flush = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
@@ -40,7 +53,9 @@ beforeAll(() => {
 describe('useInboxAttributeOptions', () => {
   let container: HTMLDivElement
   let root: Root
-  const render = (workspaceId: string) => act(async () => { root.render(<Probe workspaceId={workspaceId} />) })
+  const render = (workspaceId: string) => act(async () => { root.render(
+    <DashboardQueryProvider key={workspaceId} workspaceId={workspaceId} interest={interest}><Probe workspaceId={workspaceId} /></DashboardQueryProvider>,
+  ) })
 
   beforeEach(() => {
     api.listCatalog.mockReset()
@@ -85,5 +100,16 @@ describe('useInboxAttributeOptions', () => {
     await flush()
 
     expect(options.choices.map((entry) => entry.name)).toEqual(['urgency'])
+  })
+
+  it('reads the catalog once for every reader in the workspace', async () => {
+    api.listCatalog.mockResolvedValue({ contextVariables: [choice('topic')] })
+    await act(async () => {
+      root.render(<DashboardQueryProvider workspaceId="workspace-1" interest={interest}><Pair workspaceId="workspace-1" /></DashboardQueryProvider>)
+    })
+    await flush()
+
+    expect(api.listCatalog).toHaveBeenCalledTimes(1)
+    expect(options.choices.map((entry) => entry.name)).toEqual(['topic'])
   })
 })

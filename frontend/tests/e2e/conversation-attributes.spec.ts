@@ -292,7 +292,7 @@ const topicAttribute = (overrides: Record<string, unknown>) => ({
 });
 
 /** Answers the Inbox's attribute edits the way the backend does, and records each one. */
-const installAttributeEdits = async (page: Page) => {
+const installAttributeEdits = async (page: Page, { resetQueuesClassification = false } = {}) => {
   const edits: Array<{ method: string; name: string; value?: unknown }> = [];
   await page.route(new RegExp(`/backend/api/v1/history/chat/${billingId}/attributes/[^/?]+$`), async (route) => {
     const request = route.request();
@@ -317,7 +317,7 @@ const installAttributeEdits = async (page: Page) => {
       return;
     }
     edits.push({ method: "DELETE", name });
-    await route.fulfill({ json: { attribute: null, classificationQueued: name === "topic" } });
+    await route.fulfill({ json: { attribute: null, classificationQueued: resetQueuesClassification && name === "topic" } });
   });
   return edits;
 };
@@ -333,7 +333,8 @@ test("a teammate sets an attribute the AI chose, then hands it back to the AI", 
   await openConversation(page, "I was charged twice this month");
   const attributes = page.getByRole("region", { name: "Attributes" });
 
-  await attributes.getByRole("button", { name: "Change topic" }).click();
+  const trigger = attributes.getByRole("button", { name: "Change topic" });
+  await trigger.click();
   // Only the active options are offered; an archived one names stored values but can't be set.
   await expect(page.getByRole("menuitemradio", { name: "Shipping" })).toHaveCount(0);
   if (screenshotDir) await page.screenshot({ path: `${screenshotDir}/attributes-edit-menu.png` });
@@ -342,8 +343,11 @@ test("a teammate sets an attribute the AI chose, then hands it back to the AI", 
   await expect.poll(() => edits).toEqual([{ method: "PUT", name: "topic", value: "returns" }]);
   await expect(attributes.getByText("Returns", { exact: true })).toBeVisible();
   await expect(attributes.getByText(/^Set by your team · /)).toBeVisible();
+  await expect(trigger).toBeFocused();
 
-  await attributes.getByRole("button", { name: "Change topic" }).click();
+  // A teammate's own value is not offered to keep as the team's again.
+  await trigger.click();
+  await expect(page.getByText("keeps it as your team's value")).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Reset to automatic" }).click();
 
   await expect.poll(() => edits.at(-1)).toEqual({ method: "DELETE", name: "topic" });
@@ -396,4 +400,61 @@ test("a teammate who may not take conversations over reads the attributes withou
   await expect(attributes.getByText("Billing", { exact: true })).toBeVisible();
   await expect(attributes.getByRole("button", { name: "Change topic" })).toHaveCount(0);
   await expect(attributes.getByRole("button", { name: "Set attribute" })).toHaveCount(0);
+});
+
+test("a teammate keeps the AI's choice as the team's, and a value the website wrote can be cleared", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const region = topicAttribute({
+    name: "region", value: "eu", option: { label: "Europe", archived: false },
+    writtenBy: { kind: "api", ref: "credential-1" }, classified: false,
+  });
+  await installDashboardApiMocks(page, {
+    historyItems: { items: [{ kind: "chat", id: billingId, sortAt: nowIso, conversation: conversations[0] }], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [billingId]: editable([region, topicAttribute({})]) },
+    contextVariables: editCatalog,
+  });
+  const edits = await installAttributeEdits(page);
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await attributes.getByRole("button", { name: "Change region" }).click();
+  await expect(page.getByRole("menuitem", { name: "Clear" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const trigger = attributes.getByRole("button", { name: "Change topic" });
+  await trigger.click();
+  await expect(page.getByText("Choosing the current option keeps it as your team's value")).toBeVisible();
+  await page.getByRole("menuitemradio", { name: "Billing" }).click();
+
+  await expect.poll(() => edits).toEqual([{ method: "PUT", name: "topic", value: "billing" }]);
+  await expect(attributes.getByText(/^Set by your team · /)).toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
+test("a reset shows the value the AI fills in afterwards, without a new message", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyItems: { items: [{ kind: "chat", id: billingId, sortAt: nowIso, conversation: conversations[0] }], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [billingId]: editable([topicAttribute({ writtenBy: { kind: "operator", ref: "user-1" } })]) },
+    contextVariables: editCatalog,
+  });
+  const edits = await installAttributeEdits(page, { resetQueuesClassification: true });
+  let reset = false;
+  page.on("request", (request) => { if (request.method() === "DELETE") reset = true; });
+  await page.route(new RegExp(`/backend/api/v1/history/chat/${billingId}\\?.*limit=1`), async (route) => {
+    if (!reset) return route.fallback();
+    await route.fulfill({
+      json: editable([topicAttribute({ value: "returns", option: { label: "Returns", archived: false } })]),
+    });
+  });
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await attributes.getByRole("button", { name: "Change topic" }).click();
+  await page.getByRole("menuitem", { name: "Reset to automatic" }).click();
+  await expect.poll(() => edits).toEqual([{ method: "DELETE", name: "topic" }]);
+  await expect(attributes.getByText("Billing", { exact: true })).toHaveCount(0);
+
+  await expect(attributes.getByText("Returns", { exact: true })).toBeVisible({ timeout: 8_000 });
+  await expect(attributes.getByText(/^Set by the AI · /)).toBeVisible();
 });

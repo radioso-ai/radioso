@@ -44,10 +44,14 @@ describe('attributeResetAction', () => {
     expect(attributeResetAction(attribute({ classified: false }))).toBe('clear')
   })
 
-  it('offers nothing for a value the AI, the website or a routine set, or one kept for the visitor', () => {
+  it('offers the same for a value the website or a routine wrote', () => {
+    expect(attributeResetAction(attribute({ classified: true, writtenBy: { kind: 'api', ref: 'credential-1' } }))).toBe('reset')
+    expect(attributeResetAction(attribute({ classified: false, writtenBy: { kind: 'api', ref: 'credential-1' } }))).toBe('clear')
+    expect(attributeResetAction(attribute({ writtenBy: { kind: 'routine', ref: 'routine-1:run-1' } }))).toBe('clear')
+  })
+
+  it('offers nothing for a value the AI wrote, one kept for the visitor, or a Private one', () => {
     expect(attributeResetAction(attribute({ classified: true, writtenBy: { kind: 'classifier', ref: null } }))).toBeNull()
-    expect(attributeResetAction(attribute({ classified: true, writtenBy: { kind: 'api', ref: 'credential-1' } }))).toBeNull()
-    expect(attributeResetAction(attribute({ writtenBy: { kind: 'routine', ref: 'routine-1:run-1' } }))).toBeNull()
     expect(attributeResetAction(attribute({ classified: true, scope: 'session' }))).toBeNull()
     expect(attributeResetAction(attribute({ redacted: true }))).toBeNull()
   })

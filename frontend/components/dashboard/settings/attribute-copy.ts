@@ -60,6 +60,7 @@ export const attributeEditCopy = {
   setAttribute: 'Set attribute',
   setFor: 'For this conversation',
   overridesVisitor: "Replaces the visitor's value here",
+  keepAsTeams: "Choosing the current option keeps it as your team's value",
   reset: 'Reset to automatic',
   clear: 'Clear',
   failed: "Couldn't save the attribute",

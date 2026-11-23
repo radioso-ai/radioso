@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+
 import { ChevronDown, Plus, RotateCcw, X } from 'lucide-react'
 
 import { attributeEditCopy } from '@/components/dashboard/settings/attribute-copy'
@@ -37,10 +39,21 @@ export function AttributeRowMenu({
   onReset: () => void
 }) {
   const current = attribute.scope === 'conversation' && typeof attribute.value === 'string' ? attribute.value : ''
+  // Choosing the option the conversation holds keeps it as the team's, unless a teammate already wrote it.
+  const trigger = useRef<HTMLButtonElement>(null)
+  const edited = useRef(false)
+  // The trigger is disabled while the edit saves, which drops focus; it comes back when the edit ends.
+  useEffect(() => {
+    if (!disabled && edited.current) {
+      edited.current = false
+      trigger.current?.focus()
+    }
+  }, [disabled])
+  const pinnable = current !== '' && attribute.writtenBy.kind !== 'operator'
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="size-6" disabled={disabled} aria-label={attributeEditCopy.editLabel(attribute.name)}>
+        <Button ref={trigger} variant="ghost" size="icon-sm" className="size-6" disabled={disabled} aria-label={attributeEditCopy.editLabel(attribute.name)}>
           <ChevronDown className="size-3.5" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
@@ -48,15 +61,16 @@ export function AttributeRowMenu({
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {attribute.scope === 'conversation' ? attributeEditCopy.setFor : attributeEditCopy.overridesVisitor}
         </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={current} onValueChange={(key) => { if (key !== current) onSet(key) }}>
+        <DropdownMenuRadioGroup value={current} onValueChange={(key) => { if (key !== current || pinnable) { edited.current = true; onSet(key) } }}>
           {options.map((option) => (
             <DropdownMenuRadioItem key={option.key} value={option.key}>{option.label}</DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {pinnable ? <p className="px-2 pb-1.5 text-xs text-muted-foreground">{attributeEditCopy.keepAsTeams}</p> : null}
         {resetAction ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onReset}>
+            <DropdownMenuItem onSelect={() => { edited.current = true; onReset() }}>
               {resetAction === 'reset' ? <RotateCcw aria-hidden /> : <X aria-hidden />}
               {resetAction === 'reset' ? attributeEditCopy.reset : attributeEditCopy.clear}
             </DropdownMenuItem>

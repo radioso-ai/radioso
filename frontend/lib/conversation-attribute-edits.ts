@@ -14,12 +14,12 @@ export interface SettableAttribute {
 }
 
 /**
- * How a teammate undoes their own value of the conversation's attribute: `reset` hands an attribute
- * the conversation's agent fills back to the AI, `clear` removes it where nothing fills it. A value
- * the AI, the website or a routine set, or one kept for the visitor, has no undo here.
+ * How a teammate undoes the conversation's value of an attribute: `reset` hands an attribute the
+ * conversation's agent fills back to the AI, `clear` removes it where nothing fills it. Any value
+ * the conversation holds can be undone except the AI's own, one kept for the visitor, or a Private one.
  */
 export const attributeResetAction = (attribute: ConversationAttribute): 'reset' | 'clear' | null => {
-  if (attribute.redacted || attribute.scope !== 'conversation' || attribute.writtenBy.kind !== 'operator') return null
+  if (attribute.redacted || attribute.scope !== 'conversation' || attribute.writtenBy.kind === 'classifier') return null
   return attribute.classified ? 'reset' : 'clear'
 }
 

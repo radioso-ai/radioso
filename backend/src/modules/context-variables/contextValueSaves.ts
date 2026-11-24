@@ -45,7 +45,7 @@ export interface ConversationSaveContext {
 }
 
 /** Reads a conversation's save context; a conversation that is gone keeps nothing and has no person. */
-export interface ConversationSaveContextReader {
+interface ConversationSaveContextReader {
   read(trx: Db, input: { workspaceId: string; conversationId: string }): Promise<ConversationSaveContext>;
 }
 
@@ -111,7 +111,8 @@ const saveOrderKey = (request: ContextValueSaveRequest): string => `${request.va
  * commits or not at all. A person save goes to the customer the conversation's row is bound to, and
  * only an attribute the conversation's release keeps is written. Saves run by attribute and scope,
  * so two turns of one person lock its rows in one order. Each is counted by writer kind and outcome
- * (`failed` for a thrown one, which fails the caller's transaction), never by variable or value.
+ * (`failed` for a thrown one, which fails the caller's transaction), never by variable or value, as
+ * it runs: a save its caller's transaction later rolls back stays counted.
  * The outcomes come back in the order of `saves`.
  */
 export class ContextValueSaves implements ContextValueSaver {

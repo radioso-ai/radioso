@@ -21,8 +21,11 @@
 -- and no existing slot names a target. The wait for each lock is bounded to three seconds; a deploy
 -- that hits the bound rolls back and a retry is safe.
 --
--- Rollback is app-only: the previous release runs on this schema, ignores the two slot columns,
--- and reads a boolean, number or date variable as an unknown type it never writes.
+-- Rollback is app-only: the previous release runs on this schema and ignores the two slot columns.
+-- It knows only the three older types, though, and its readers that parse a variable's type against
+-- that closed list fail on a boolean, number or date variable: Ray's and the operator MCP's
+-- `conversation_transcript`, attribute tools and attribute proposals. Before a rollback, delete
+-- those variables, or accept those tools failing.
 SET LOCAL lock_timeout = '3s';
 
 ALTER TABLE context_variables

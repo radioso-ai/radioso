@@ -142,6 +142,7 @@ export function AgentRevisionTestChat({
   actionsContainer,
   titleContainer,
   route,
+  routeRevisits,
   onNavigate,
   testExecutionHref,
 }: {
@@ -158,6 +159,8 @@ export function AgentRevisionTestChat({
   titleContainer?: HTMLElement | null;
   /** What the URL currently names: the chat view (optionally with a saved test's id) or history. */
   route: TestChatRoute;
+  /** Bumps when Back or Forward lands on the entry `route` already names, so what is loaded is checked against it again. */
+  routeRevisits: number;
   /** Writes a navigation decision into browser history; agent-view owns the history mechanics. */
   onNavigate: (next: TestChatRoute, how: TestChatNavigation) => void;
   /** The dashboard link that opens one saved test, for sharing it. */
@@ -1190,11 +1193,7 @@ export function AgentRevisionTestChat({
             executionEpoch,
           )
         ) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Unable to refresh this in-progress private test.",
-          );
+          setError(errorMessage(cause, "Unable to refresh this in-progress private test."));
         }
       }
     },
@@ -1291,7 +1290,7 @@ export function AgentRevisionTestChat({
     };
     // `onNavigate` reaches through `onNavigateRef`, so a parent re-render (routeState changes on
     // every navigation) cannot re-fire this mid-fetch.
-  }, [agentId, route.view, routeId, ready]);
+  }, [agentId, route.view, routeId, routeRevisits, ready]);
 
   const loadedId = execution?.executionId;
   const previousLoadedIdRef = useRef(loadedId);

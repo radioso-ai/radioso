@@ -2,6 +2,7 @@
 const meta = {
   index: 'Overview',
   'call-radioso': 'Call Radioso from n8n, Zapier and Make',
+  n8n: 'Use Radioso in n8n',
   'webhook-skills': 'Send data to an automation',
   'api-request-skills': 'Call a REST API from a routine',
   'n8n-ai-agents': 'n8n AI agents over MCP',

@@ -491,7 +491,10 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
 - The values of the fields the consent covered are erased from the
   conversation's routine state, a routine that already finished included.
 - Every value the routine [saved to an attribute](#save-a-field-to-an-attribute)
-  for the conversation or its verified person is deleted.
+  while it ran in this conversation is deleted, whether it went to the
+  conversation or to its verified person. A value the routine saved to the same
+  person from another conversation stays, since that conversation's own consent
+  covers it.
 - Each message that carried one of them keeps `[redacted]` as its text and
   reads **Withheld after consent was withdrawn** in the conversation, for you
   and for the visitor. Radioso's copies of that message are withheld with it:
@@ -592,7 +595,7 @@ so their next conversation reads it too. A conversation with no verified person
 saves nothing for that field, and the routine ends as it would anyway.
 
 The picker offers the attributes this agent keeps a value of, set by your
-website or API or by the AI, that aren't treated as proof, and whose type fits
+website or API, that aren't treated as proof, and whose type fits
 the field: a text or email field saves to a Text attribute, and a number, Yes/no
 or date field to its own type. A sensitive field saves only to a Private
 attribute, and two fields of one routine can't save to the same attribute and
@@ -602,15 +605,25 @@ diagnostic.
 
 The value is saved with the reply that ends the routine, so the two commit
 together or not at all. A routine that gets stuck or ends on a declined consent
-saves nothing. A change the visitor makes afterwards to a field marked
-**Editable after completion** saves the new value too. A routine's value
-replaces one the AI picked; after that, the last writer wins among the routine,
-your team and your API. The saved value's `writtenBy` is `routine`, and a
-conversation value's change is a `context_value.changed` event naming the
-routine. Inspect the ending turn to see what each save did: **Slots filled**
-lists each field with its attribute, scope and outcome, such as `written`,
-`unchanged` or `no_person_key`, and never the value. Test Chat runs a routine
-without saving to attributes.
+saves nothing. When the visitor changes a field marked **Editable after
+completion**, only the fields they changed are saved again, so a newer value
+your team or your API wrote to another field's attribute stays.
+
+Each save checks the attribute as it is at that moment, and that the agent
+release the conversation runs on keeps its value. The last writer wins among
+the routine, your team and your API, with one exception: when the attribute
+already holds the same value from your team or your API, the value stays
+theirs, so a consent withdrawn later leaves it in place. The saved value's
+`writtenBy` is `routine`, and a conversation value's change is a
+`context_value.changed` event naming the routine. A value saved for the
+verified person records no event, so automations see conversation values only.
+
+Inspect the ending turn to see what each save did. The routine's stage lists
+each field with its attribute, scope and outcome, such as `written`,
+`unchanged` or `no_person_key`, and never the value; an ending reached after an
+approval step and a change made after completion show theirs the same way.
+Test Chat and Ray's test turns run a routine without saving: each save shows as
+`not_saved_in_test`.
 
 ## Set branches, approvals, and endings
 
@@ -833,10 +846,13 @@ from a test that kept skills off.
 - A routine never starts at all: check that its pill reads **Live**, not
   **Draft**.
 - A field's value never reaches its attribute: inspect the ending turn's
-  **Slots filled**. `no_person_key` means the conversation had no verified
+  routine stage. `no_person_key` means the conversation had no verified
   person; `refused_type`, `refused_trust` or `refused_sensitive` mean the
   attribute's type, proof setting or Private setting changed after the routine
-  was published; `gone` means the attribute was deleted.
+  was published; `gone` means the attribute was deleted or renamed;
+  `not_enabled` means the agent release the conversation runs on doesn't keep
+  the attribute's value, so turn it on and publish; `withdrawn` means a consent
+  of the routine was withdrawn in the conversation.
 - A team notice shows `—` where a value belongs: the ending's subject or intro
   references a value the routine did not collect on that path. Collect it in an
   earlier step, or drop it from the notice text.

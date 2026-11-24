@@ -434,7 +434,10 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
 - The values of the fields the consent covered are erased from the
   conversation's routine state, a routine that already finished included.
 - Every value the routine [saved to an attribute](#save-a-field-to-an-attribute)
-  for the conversation or its verified person is deleted.
+  while it ran in this conversation is deleted, whether it went to the
+  conversation or to its verified person. A value the routine saved to the same
+  person from another conversation stays, since that conversation's own consent
+  covers it.
 - Each message that carried one of them keeps `[redacted]` as its text and
   reads **Withheld after consent was withdrawn** in the conversation, for you
   and for the visitor. Radioso's copies of that message are withheld with it:
@@ -549,7 +552,7 @@ Saving and publishing check the target against the agent's attributes:
 | Code | What it means |
 |---|---|
 | `save_to_unknown_attribute` | The agent has no enabled attribute of that name. |
-| `save_to_attribute_not_stored` | The agent doesn't keep the attribute's value: its **Set by** must be your website or API (`pushed`) or the AI (`classified`). |
+| `save_to_attribute_not_stored` | The agent doesn't keep the attribute's value: turn it on for the agent with **Set by** your website or API (`pushed`). |
 | `save_to_type_mismatch` | The attribute's type doesn't take the field's value. A text or email field saves to Text (`string`); a number, Yes/no or date field saves to its own type. An `item` field saves to none. |
 | `save_to_attribute_signed` | The attribute is treated as proof. A visitor typed the value, so it never is. |
 | `save_to_sensitive_slot_not_private` | The field is **Sensitive** and the attribute isn't Private. |
@@ -557,24 +560,44 @@ Saving and publishing check the target against the agent's attributes:
 
 The value is saved with the reply that ends the routine, in the same
 transaction, so the two commit together or not at all. A routine that gets
-stuck or ends on a declined consent saves nothing, and Test Chat runs a routine
-without saving. A change the visitor makes afterwards to a field marked
-**Editable after completion** saves the new value too. Each save checks the
-attribute as it is at that moment, since its definition can change after the
-routine was published. A routine's value replaces one the AI picked; after
-that, the last writer wins among the routine, your team and your API. The
-saved value's `writtenBy` is `{ "kind": "routine", "ref": "<routineId>:<executionId>" }`,
-and a conversation value's change is a `context_value.changed` event whose
-`routineId` names the routine.
+stuck or ends on a declined consent saves nothing. Test Chat and Ray's test
+turns run a routine without saving: their trace lists each save with the
+outcome `not_saved_in_test`, and the value stays out of it.
 
-The ending turn's trace lists each save on the routine stage as `saves`: the
-field, the attribute, the scope, and an outcome, never the value. The outcomes
-are `written`, `unchanged`, `kept`, `no_person_key` (no verified person),
-`gone` (the attribute was deleted), and `refused_type`, `refused_trust` or
-`refused_sensitive` when the attribute's type, proof setting or Private setting
-no longer fits. The turn inspector shows them under **Slots filled**, and the
-`radioso_context_value_writes_total{writer="routine", outcome}` counter counts
-them.
+When the visitor changes a field marked **Editable after completion**, only the
+fields they changed are saved again. A newer value your team or your API wrote
+to another field's attribute stays.
+
+Each save checks the attribute as it is at that moment, since its definition can
+change after the routine was published, and checks that the agent release the
+conversation runs on keeps the attribute's value. The last writer wins among the
+routine, your team and your API, with one exception: when the attribute already
+holds the same value from your team or your API, the value stays theirs, so a
+consent withdrawn later leaves it in place. The saved value's `writtenBy` is
+`{ "kind": "routine", "ref": "<routineId>:<executionId>@<conversationId>" }`. A
+conversation value's change is a `context_value.changed` event whose `routineId`
+names the routine. A value saved for the verified person records no event, so
+an automation listening for `context_value.changed` sees conversation values
+only.
+
+The ending turn's trace lists each save on the routine's stage as `saves`: the
+field, the attribute, the scope, and an outcome, never the value. The turn
+inspector shows them on that stage, including an ending reached after an
+approval step and a change made after completion.
+
+| Outcome | What happened |
+|---|---|
+| `written` | The attribute holds the visitor's value. |
+| `unchanged` | The attribute already held the value: from this run, or from your team or your API, who keep it. |
+| `no_person_key` | The field saves to the verified person, and the conversation has none. |
+| `gone` | No attribute has that name any more: it was deleted or renamed. |
+| `not_enabled` | The agent release the conversation runs on doesn't keep the attribute's value. |
+| `withdrawn` | A consent of the routine was withdrawn in this conversation, so the routine saves nothing here. |
+| `not_saved_in_test` | Test Chat or a Ray test turn ran the routine, and nothing was saved. |
+| `refused_type`, `refused_trust`, `refused_sensitive` | The attribute's type, proof setting or Private setting no longer fits the field. |
+
+The `radioso_context_value_writes_total{writer="routine", outcome}` counter
+counts every outcome except `withdrawn` and `not_saved_in_test`.
 
 #### Read the visitor's context
 

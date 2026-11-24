@@ -560,7 +560,9 @@ session did. A value a resolver cached, or one stored before writers were
 recorded, reads as `api` with a `ref` of `null`. A value the AI set has `kind`
 `classifier`, and its `ref` names the version of the instructions it was chosen
 with, such as `context-classification/1`. A value a routine saved when it
-ended has `kind` `routine` and a `ref` of `<routineId>:<executionId>`; see
+ended has `kind` `routine` and a `ref` of
+`<routineId>:<executionId>@<conversationId>`, naming the run and the
+conversation it ran in; see
 [Save a field to an attribute](/guides/authoring-routines#save-a-field-to-an-attribute).
 
 Conversation-scope values are deleted with their conversation, and a data
@@ -591,7 +593,9 @@ for this conversation by your team, your API or a routine can be undone:
 **Reset to automatic** hands the attribute back to the AI when the agent fills
 it, and the block shows the AI's value within seconds; where nothing fills it,
 **Clear** removes it. **Set attribute** sets a Choice attribute the
-conversation holds no value of. Other types and Private attributes stay
+conversation holds no value of. A value of any other type can't be changed
+here, but **Clear** removes the conversation's own value, so a wrong Number or
+Date a routine saved doesn't stay. A Private attribute stays
 read-only, so a teammate never overwrites a value they can't read. A Yes/no
 value reads "Yes" or "No".
 
@@ -640,13 +644,14 @@ conversation's agent fills the attribute, and `attributesEditable` is `true`
 when the signed-in teammate may change them.
 
 `PUT /api/v1/history/chat/{conversationId}/attributes/{name}` with
-`{ "value": "shipping" }` sets an option, and `DELETE` on the same path resets
-it. Both take a signed-in session with the takeover permission and answer
+`{ "value": "shipping" }` sets an option of a Choice attribute, and `DELETE` on
+the same path resets the conversation's own value of an attribute of any type.
+Both take a signed-in session with the takeover permission and answer
 `{ "attribute": …, "classificationQueued": true }`, where `attribute` is what
-the conversation reads afterwards, or `null`. A Private attribute, or one that
-is not a Choice, returns `400` `attribute_not_editable` with `details.reason`
-`private` or `not_choice`; an option the attribute lacks returns `400` naming
-its option keys. Setting the option a teammate already set changes nothing, so
+the conversation reads afterwards, or `null`. A Private attribute returns `400`
+`attribute_not_editable` with `details.reason` `private`, and so does a `PUT`
+on an attribute that is not a Choice, with `not_choice`; an option the
+attribute lacks returns `400` naming its option keys. Setting the option a teammate already set changes nothing, so
 a retried request is safe; setting the option the AI, your API or a routine set
 makes it your team's without changing it.
 

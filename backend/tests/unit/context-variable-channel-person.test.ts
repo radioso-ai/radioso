@@ -10,7 +10,13 @@ import {
   type ContextVariableValue,
 } from "../../src/modules/context-variables/public.js";
 import type { ContextVariableResolverRepositoryPort } from "../../src/modules/context-variables/repository.js";
-import { channelPersonKeyId, whatsAppNumberKey, type ChannelPersonKey } from "../../src/shared/domain/channelPersonKey.js";
+import {
+  channelPersonKeyId,
+  readWhatsAppNumber,
+  requireChannelPersonKeyId,
+  whatsAppNumberKey,
+  type ChannelPersonKey,
+} from "../../src/shared/domain/channelPersonKey.js";
 
 const workspaceId = "workspace-1";
 const agentId = "agent-1";
@@ -32,7 +38,38 @@ describe("whatsAppNumberKey", () => {
     expect(whatsAppNumberKey("customer-1")).toBeNull();
     expect(whatsAppNumberKey("+1 555 01x 0101")).toBeNull();
     expect(whatsAppNumberKey("12345")).toBeNull();
-    expect(whatsAppNumberKey("1".repeat(21))).toBeNull();
+    expect(whatsAppNumberKey("1".repeat(16))).toBeNull();
+  });
+
+  it("refuses a number written with a trunk or international call prefix, which no wa_id starts with", () => {
+    for (const prefixed of ["0039 333 1234567", "+0039 333 1234567", "07700 900123", "00 1 555 010 0101"]) {
+      expect(whatsAppNumberKey(prefixed)).toBeNull();
+    }
+  });
+});
+
+describe("readWhatsAppNumber", () => {
+  it("reads a number's digits, country code first", () => {
+    expect(readWhatsAppNumber(" +1 (555) 010-0101 ")).toEqual({ digits: "15550100101" });
+  });
+
+  it("says to write the country code first for a number with a leading 0 or 00", () => {
+    for (const prefixed of ["0039 333 1234567", "07700 900123", "+0039 333 1234567"]) {
+      expect(readWhatsAppNumber(prefixed)).toEqual({ refusal: expect.stringMatching(/country code/u), writtenAsNumber: true });
+    }
+  });
+
+  it("says how long a number is for one that is too short or too long, and marks only what is written as a number", () => {
+    expect(readWhatsAppNumber("+1234")).toEqual({ refusal: expect.stringMatching(/15 digits/u), writtenAsNumber: true });
+    expect(readWhatsAppNumber("12345")).toEqual({ refusal: expect.stringMatching(/15 digits/u), writtenAsNumber: false });
+    expect(readWhatsAppNumber("customer-1")).toEqual({ refusal: expect.any(String), writtenAsNumber: false });
+  });
+
+  it("refuses an unreadable key with a 400 that says how to write one, wherever a key is stored", () => {
+    expect(() => requireChannelPersonKeyId("whatsapp_contact", "0039 333 1234567")).toThrow(expect.objectContaining({
+      statusCode: 400, message: expect.stringMatching(/country code/u),
+    }));
+    expect(requireChannelPersonKeyId("whatsapp_contact", "+1 555 010 0101")).toBe("15550100101");
   });
 });
 

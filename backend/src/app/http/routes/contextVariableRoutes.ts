@@ -8,7 +8,6 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { channelPersonKeyId, isChannelPersonKeyKind, whatsAppNumberKey } from "../../../shared/domain/channelPersonKey.js";
 import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
 import {
   CONTEXT_VARIABLE_SCOPE_TYPES,
@@ -60,19 +59,12 @@ const agentContextVariableParamsSchema = z.object({
   variableId: z.string().uuid(),
 });
 
-/** A `conversation` scope is keyed by the conversation's id, a `whatsapp_contact` scope by a WhatsApp number. */
+/** A `conversation` scope is keyed by the conversation's id. A channel's person key is read by the service, which refuses one that is not a key. */
 const conversationScopeIdIssue = (scope: { type: string; id: string }, ctx: z.RefinementCtx, path: string): void => {
   if (scope.type === "conversation" && !z.string().uuid().safeParse(scope.id).success) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "A conversation scope id is the conversation's id" });
   }
-  if (scope.type === "whatsapp_contact" && whatsAppNumberKey(scope.id) === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "A whatsapp_contact scope id is a WhatsApp number, country code first" });
-  }
 };
-
-/** A scope as the store keeps it: a WhatsApp number as its digits, however the caller wrote it. */
-const storedScope = (scope: ContextVariableScope): ContextVariableScope =>
-  isChannelPersonKeyKind(scope.type) ? { type: scope.type, id: channelPersonKeyId(scope.type, scope.id) ?? scope.id } : scope;
 
 const contextVariableValueQuerySchema = z.object({
   scopeType: z.enum(CONTEXT_VARIABLE_SCOPE_TYPES),
@@ -333,7 +325,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
         const value = await dependencies.contextVariableService.upsertValue(
           workspaceId,
           id,
-          storedScope(req.body.scope),
+          req.body.scope,
           req.body.data,
           apiWriterFor(authPrincipal),
         );
@@ -349,7 +341,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       const { workspaceId } = res.locals as { workspaceId: string };
       const { id } = parseParams(contextVariableParamsSchema, req.params);
       const query = parseQuery(contextVariableValueQuerySchema, req.query);
-      const scope = storedScope({ type: query.scopeType, id: query.scopeId });
+      const scope = { type: query.scopeType, id: query.scopeId };
       const value = await dependencies.contextVariableService.readValue(workspaceId, id, scope);
       if (!value) {
         throw notFound("Context variable value not found");
@@ -369,7 +361,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId, authPrincipal } = res.locals as { workspaceId: string; authPrincipal?: AuthenticatedPrincipal };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        const deleted = await dependencies.contextVariableService.deleteValue(workspaceId, id, storedScope(req.body.scope), apiWriterFor(authPrincipal));
+        const deleted = await dependencies.contextVariableService.deleteValue(workspaceId, id, req.body.scope, apiWriterFor(authPrincipal));
         if (!deleted) {
           throw notFound("Context variable value not found");
         }

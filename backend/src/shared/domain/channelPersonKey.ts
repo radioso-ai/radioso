@@ -1,3 +1,5 @@
+import { badRequest } from "./errors.js";
+
 /**
  * A person key a channel attests (#1884): who a conversation is with, as the channel that carries it
  * knows them, where the channel's provider vouches for it. WhatsApp's is the sender's number, which
@@ -22,17 +24,37 @@ export const isChannelPersonKeyKind = (value: string): value is ChannelPersonKey
 
 /** What a person may type into a number besides its digits: spaces, dashes, dots and brackets. */
 const NUMBER_FORMATTING = /[\s\-.()]/gu;
-/** A number in international form, country code first. E.164 allows 15 digits; `wa_id` keeps up to 32 characters. */
-const NUMBER_DIGITS = /^\d{6,20}$/u;
+/** A number in international form as E.164 writes it: a country code, which never starts with 0, and at most 15 digits in all. */
+const INTERNATIONAL_NUMBER = /^[1-9]\d{5,14}$/u;
+/** Digits, with or without a leading `+`, once the formatting is gone. */
+const WRITTEN_AS_NUMBER = /^\+?\d+$/u;
+
+const NUMBER_REFUSALS = {
+  prefixed: "A WhatsApp number starts with its country code: write it as +<country code><number>, without a leading 0 or 00.",
+  malformed: "A WhatsApp number is its country code and number, 6 to 15 digits in all: write it as +<country code><number>.",
+} as const;
 
 /**
- * A WhatsApp number the way `wa_id` stores it: its digits, country code first, with no `+`. Null for
- * anything that is not one. A number written with a national trunk prefix (`0…`) instead of its
- * country code is not the number `wa_id` holds, and matches nothing.
+ * A typed WhatsApp number as `wa_id` stores it: its digits, country code first, with no `+`. Or why it
+ * is not one, said so a person can write it again: a number written with a trunk or international
+ * call prefix (`0…`, `00…`) instead of its country code is not the number `wa_id` holds.
+ * `writtenAsNumber` says the input was a phone number in form, a `+` or a leading `0` and digits.
  */
+export const readWhatsAppNumber = (raw: string): { digits: string } | { refusal: string; writtenAsNumber: boolean } => {
+  const written = raw.trim().replace(NUMBER_FORMATTING, "");
+  const digits = written.replace(/^\+/u, "");
+  if (INTERNATIONAL_NUMBER.test(digits)) return { digits };
+  const prefixed = WRITTEN_AS_NUMBER.test(written) && digits.startsWith("0");
+  return {
+    refusal: prefixed ? NUMBER_REFUSALS.prefixed : NUMBER_REFUSALS.malformed,
+    writtenAsNumber: WRITTEN_AS_NUMBER.test(written) && (written.startsWith("+") || prefixed),
+  };
+};
+
+/** A WhatsApp number as `wa_id` stores it (`readWhatsAppNumber`); null for anything that is not one. */
 export const whatsAppNumberKey = (raw: string): string | null => {
-  const digits = raw.trim().replace(NUMBER_FORMATTING, "").replace(/^\+/u, "");
-  return NUMBER_DIGITS.test(digits) ? digits : null;
+  const read = readWhatsAppNumber(raw);
+  return "digits" in read ? read.digits : null;
 };
 
 /** A channel person key's id in the form its channel stores it; null when `raw` is not one. */
@@ -40,6 +62,21 @@ export const channelPersonKeyId = (kind: ChannelPersonKeyKind, raw: string): str
   switch (kind) {
     case "whatsapp_contact":
       return whatsAppNumberKey(raw);
+  }
+};
+
+/**
+ * A channel person key's id in the form its channel stores it, for a value a caller keeps or reads
+ * under one: the one place a key a person typed is read. Refuses one that is not a key of its kind
+ * (400), saying how to write it.
+ */
+export const requireChannelPersonKeyId = (kind: ChannelPersonKeyKind, raw: string): string => {
+  switch (kind) {
+    case "whatsapp_contact": {
+      const read = readWhatsAppNumber(raw);
+      if ("digits" in read) return read.digits;
+      throw badRequest(read.refusal);
+    }
   }
 };
 

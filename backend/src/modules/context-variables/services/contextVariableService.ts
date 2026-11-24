@@ -8,6 +8,7 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../repository.js";
+import { isChannelPersonKeyKind, requireChannelPersonKeyId } from "../../../shared/domain/channelPersonKey.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
   RESERVED_CONTEXT_VARIABLE_PREFIX,
@@ -59,6 +60,14 @@ interface ContextVariableServiceOptions {
  * Module-owned definition and enablement boundary. HTTP and Ray both call this
  * service so persisted configuration has one ownership and validation path.
  */
+/**
+ * A value's scope as the store keys it: a channel person key as its channel stores it, so a WhatsApp
+ * number however it was typed names the number its conversations read. Refuses (400) a key that is
+ * not one of its kind.
+ */
+const storedValueScope = (scope: ContextVariableScope): ContextVariableScope =>
+  isChannelPersonKeyKind(scope.type) ? { type: scope.type, id: requireChannelPersonKeyId(scope.type, scope.id) } : scope;
+
 export class ContextVariableService {
   private readonly repository: ContextVariableRepositoryPort;
   private readonly agentReader: ContextVariableAgentReaderPort;
@@ -183,19 +192,19 @@ export class ContextVariableService {
         actualBytes: size,
       });
     }
-    const saved = await this.repository.upsertValue(variableId, scope, data, writtenBy);
+    const saved = await this.repository.upsertValue(variableId, storedValueScope(scope), data, writtenBy);
     if (!saved) throw conflict("The stored context variable value was kept: it was set by a writer this one does not replace");
     return saved;
   }
 
   async readValue(workspaceId: string, variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
     await this.requireVariable(workspaceId, variableId);
-    return this.repository.readValue(variableId, scope);
+    return this.repository.readValue(variableId, storedValueScope(scope));
   }
 
   async deleteValue(workspaceId: string, variableId: string, scope: ContextVariableScope, deletedBy: ContextValueWriter): Promise<boolean> {
     await this.requireVariable(workspaceId, variableId);
-    return this.repository.deleteValue(variableId, scope, deletedBy);
+    return this.repository.deleteValue(variableId, storedValueScope(scope), deletedBy);
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput, options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> {

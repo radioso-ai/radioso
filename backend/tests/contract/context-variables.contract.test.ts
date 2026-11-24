@@ -459,6 +459,17 @@ describe("context variable HTTP API", () => {
         .send({ scope: { type: "whatsapp_contact", id }, data: "gold" })
         .expect(400);
     }
+    // A leading 0 or 00 is a dialling prefix no WhatsApp id starts with: the refusal says to write the country code.
+    for (const id of ["0015550100101", "0555 010 0101"]) {
+      const refused = await request(app).put(values).set("Authorization", `Bearer ${session.token}`)
+        .send({ scope: { type: "whatsapp_contact", id }, data: "gold" })
+        .expect(400);
+      expect(refused.body.error.message).toMatch(/country code/u);
+    }
+    const refusedRead = await request(app).get(values).query({ scopeType: "whatsapp_contact", scopeId: "0015550100101" })
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(400);
+    expect(refusedRead.body.error.message).toMatch(/country code/u);
     // Obviously fake: the reserved 555-01xx range.
     const put = await request(app).put(values).set("Authorization", `Bearer ${session.token}`)
       .send({ scope: { type: "whatsapp_contact", id: "+1 (555) 010-0101" }, data: "gold" })

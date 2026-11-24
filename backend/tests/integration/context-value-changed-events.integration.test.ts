@@ -253,7 +253,7 @@ describeIntegration("context_value.changed, recorded by each writer of a convers
     const valueWrites = new ContextVariableValueWrites(database.kysely, { recorder, delivery });
     await database.kysely.transaction().execute(async (trx) => {
       const definition = await valueWrites.lockDefinitionNamedIn(trx, workspaceId, "topic");
-      await valueWrites.storeIn(trx, { definition: definition!, scope, data: "billing", writtenBy: routineValueWriter("booking", randomUUID()), routineId: "booking" });
+      await valueWrites.storeIn(trx, { definition: definition!, scope, data: "billing", writtenBy: routineValueWriter("booking", randomUUID(), conversationId), routineId: "booking" });
     });
     await variables.upsertValue(topic.id, scope, "shipping", operator);
 

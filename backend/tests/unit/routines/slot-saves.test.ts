@@ -45,4 +45,20 @@ describe("routineSlotSaves", () => {
   it("skips a slot the run never filled", () => {
     expect(routineSlotSaves(routine, ended("complete", { guests: 2 })).map((save) => save.slotKey)).toEqual(["guests"]);
   });
+
+  it("re-saves only the fields a correction to the ended run changed, so a newer value of another field stays", () => {
+    const endedRun = { ...ended("complete", values), executionId: "execution-1" };
+    const corrected = { ...endedRun, variables: { ...values, email: "guest.two@example.example" } };
+
+    expect(routineSlotSaves(routine, corrected, endedRun)).toEqual([
+      { slotKey: "email", contextVariable: "contact_email", scope: "person", value: "guest.two@example.example", sensitive: false },
+    ]);
+  });
+
+  it("saves every field of a run that ended this turn, whatever an earlier run of the routine held", () => {
+    const earlierRun = { ...ended("complete", values), executionId: "execution-1" };
+    const newRun = { ...ended("complete", values), executionId: "execution-2" };
+
+    expect(routineSlotSaves(routine, newRun, earlierRun).map((save) => save.slotKey)).toEqual(["guests", "email", "injury"]);
+  });
 });

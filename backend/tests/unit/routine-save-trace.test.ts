@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
-import { withRoutineSaveTrace } from "../../src/modules/chat/services/routines/routineSaveTrace.js";
+import type { CapturedRoutineTransition } from "../../src/modules/chat/services/routines/deferredRoutineStore.js";
+import {
+  withRoutineSavesUnwritten,
+  withRoutineSaveTrace,
+  withUnwrittenRoutineSavesOnTrace,
+} from "../../src/modules/chat/services/routines/routineSaveTrace.js";
 
 const saves = [
   { slotKey: "guests", contextVariable: "party_size", scope: "conversation" as const, outcome: "written" },
@@ -41,5 +46,55 @@ describe("withRoutineSaveTrace", () => {
 
     expect(withRoutineSaveTrace(event, "r-1", saves)).toBe(event);
     expect(withRoutineSaveTrace(event, "r-2", [])).toBe(event);
+  });
+});
+
+const endingTransition = (): CapturedRoutineTransition => ({
+  kind: "save",
+  state: { sessionId: "c-1", routineId: "r-1", executionId: "e-1", path: [], variables: { guests: 4 }, status: "completed" },
+  slotSaves: [
+    { slotKey: "guests", contextVariable: "party_size", scope: "conversation", value: 4, sensitive: false },
+    { slotKey: "email", contextVariable: "contact_email", scope: "person", value: "ada@guests.example", sensitive: false },
+  ],
+});
+
+const routineStage = () => ({ id: "routine:r-1", kind: "routine_resume", outputs: { routineId: "r-1" }, subTrace: { namespace: "routine", version: 1, payload: { routineId: "r-1", steps: [] } } });
+
+describe("withRoutineSavesUnwritten", () => {
+  it("persists the transition without its saves and traces each target as not saved, never a value", () => {
+    const transition = endingTransition();
+
+    const { transition: persisted, auditEvent: traced } = withRoutineSavesUnwritten(transition, auditEvent([routineStage()]));
+
+    expect(persisted).toMatchObject({ kind: "save", state: { routineId: "r-1" } });
+    expect(persisted).not.toHaveProperty("slotSaves");
+    expect(stagesOf(traced)[0]).toMatchObject({ subTrace: { payload: { saves: [
+      { slotKey: "guests", contextVariable: "party_size", scope: "conversation", outcome: "not_saved_in_test" },
+      { slotKey: "email", contextVariable: "contact_email", scope: "person", outcome: "not_saved_in_test" },
+    ] } } });
+    expect(JSON.stringify(traced)).not.toContain("ada@guests.example");
+  });
+
+  it("leaves a turn whose routine saves nothing as it was", () => {
+    const event = auditEvent([routineStage()]);
+    const transition: CapturedRoutineTransition = { kind: "clear", sessionId: "c-1" };
+
+    expect(withRoutineSavesUnwritten(transition, event)).toEqual({ transition, auditEvent: event });
+    expect(withRoutineSavesUnwritten(null, event)).toEqual({ transition: null, auditEvent: event });
+  });
+});
+
+describe("withUnwrittenRoutineSavesOnTrace", () => {
+  it("shows a Test Chat turn's saves on its trace as not saved", () => {
+    const turnTrace = { version: 1, spine: { traceId: "t-1", stages: [routineStage()] } };
+
+    const traced = withUnwrittenRoutineSavesOnTrace(turnTrace, endingTransition());
+
+    expect(traced.spine.stages[0]).toMatchObject({ subTrace: { payload: { saves: [
+      expect.objectContaining({ contextVariable: "party_size", outcome: "not_saved_in_test" }),
+      expect.objectContaining({ contextVariable: "contact_email", outcome: "not_saved_in_test" }),
+    ] } } });
+    expect(withUnwrittenRoutineSavesOnTrace(turnTrace, null)).toBe(turnTrace);
+    expect(withUnwrittenRoutineSavesOnTrace(undefined, endingTransition())).toBeUndefined();
   });
 });

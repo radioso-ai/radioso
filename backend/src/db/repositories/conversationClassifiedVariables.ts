@@ -1,4 +1,4 @@
-import { isClassifiedEnablement } from "../../modules/context-variables/public.js";
+import { isClassifiedEnablement, keepsStoredValue, type ConversationSaveContext } from "../../modules/context-variables/public.js";
 import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -12,16 +12,15 @@ interface ConversationClassification {
 }
 
 /**
- * Reads what a conversation's own release classifies, through the agents module's revision reader,
- * which owns the snapshot and reads only the release's enablements: the classifier fills what that
- * release selects, the way its turns resolve what it selects. Null when the conversation is gone; no
- * variables when it is pinned to no release.
+ * A conversation's row and the enablements of the release it is pinned to, read through the agents
+ * module's revision reader, which owns the snapshot and reads only the release's enablements. Null
+ * when the conversation is gone; no enablements when it is pinned to no release.
  */
-export const readConversationClassification = async (
+const readConversationRelease = async (
   db: Db,
   revisions: AgentRevisionEnablementReader,
   input: { workspaceId: string; conversationId: string },
-): Promise<ConversationClassification | null> => {
+) => {
   const conversation = await db
     .selectFrom("conversations")
     .select(["id", "agent_id", "agent_revision_id", "anonymous_session_id", "verified_customer_id"])
@@ -29,22 +28,51 @@ export const readConversationClassification = async (
     .where("id", "=", input.conversationId)
     .executeTakeFirst();
   if (!conversation) return null;
-  const facts = {
+  const enablements = conversation.agent_id && conversation.agent_revision_id
+    ? await revisions.findRevisionEnablements({
+      workspaceId: input.workspaceId,
+      agentId: conversation.agent_id,
+      revisionId: conversation.agent_revision_id,
+    }) ?? []
+    : [];
+  return { conversation, enablements };
+};
+
+/**
+ * Reads what a conversation's own release classifies: the classifier fills what that release
+ * selects, the way its turns resolve what it selects. Null when the conversation is gone; no
+ * variables when it is pinned to no release.
+ */
+export const readConversationClassification = async (
+  db: Db,
+  revisions: AgentRevisionEnablementReader,
+  input: { workspaceId: string; conversationId: string },
+): Promise<ConversationClassification | null> => {
+  const release = await readConversationRelease(db, revisions, input);
+  if (!release) return null;
+  const { conversation, enablements } = release;
+  return {
     conversationId: conversation.id,
     agentId: conversation.agent_id,
     chatSessionId: conversation.anonymous_session_id,
     verifiedCustomerId: conversation.verified_customer_id,
+    classifiedVariableIds: enablements.filter(isClassifiedEnablement).map((enablement) => enablement.variableId),
   };
-  if (!conversation.agent_id || !conversation.agent_revision_id) return { ...facts, classifiedVariableIds: [] };
-  const enablements = await revisions.findRevisionEnablements({
-    workspaceId: input.workspaceId,
-    agentId: conversation.agent_id,
-    revisionId: conversation.agent_revision_id,
-  });
+};
+
+/**
+ * What a save for a conversation reads of it (#1884), in the saving turn's transaction: the customer
+ * its row is bound to, and the attributes its release keeps, so a save never writes an attribute the
+ * release dropped or a person the row is not bound to. A conversation that is gone keeps nothing.
+ */
+export const readConversationSaveContext = async (
+  db: Db,
+  revisions: AgentRevisionEnablementReader,
+  input: { workspaceId: string; conversationId: string },
+): Promise<ConversationSaveContext> => {
+  const release = await readConversationRelease(db, revisions, input);
   return {
-    ...facts,
-    classifiedVariableIds: (enablements ?? [])
-      .filter(isClassifiedEnablement)
-      .map((enablement) => enablement.variableId),
+    verifiedCustomerId: release?.conversation.verified_customer_id ?? null,
+    keptVariableIds: new Set((release?.enablements ?? []).filter(keepsStoredValue).map((enablement) => enablement.variableId)),
   };
 };

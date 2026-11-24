@@ -17,8 +17,10 @@ export type SaveTargetDefinition = Pick<
 >;
 
 /**
- * What a save did. `no_person_key`: it named the person of a conversation that has no verified
- * person. `gone`: no attribute has the name any more. `kept` cannot happen for a writer the
+ * What a save did. `no_person_key`: it named the person of a conversation bound to no verified
+ * person. `gone`: no attribute has the name any more. `not_enabled`: the conversation's release does
+ * not keep the attribute's value. `unchanged`: the attribute already held the value, from the same
+ * writer or from a teammate or the host, who keep it. `kept` cannot happen for a writer the
  * overwrite rule lets replace anything, and is reported for any other.
  */
 export type ContextValueSaveOutcome =
@@ -27,9 +29,25 @@ export type ContextValueSaveOutcome =
   | "kept"
   | "no_person_key"
   | "gone"
+  | "not_enabled"
   | "refused_type"
   | "refused_trust"
   | "refused_sensitive";
+
+/**
+ * What a save reads of its conversation, in the caller's transaction: the verified customer its row
+ * is bound to, the one every reader of a person value and a consent withdrawal key on, and the
+ * attributes the release it is pinned to keeps (`keepsStoredValue`).
+ */
+export interface ConversationSaveContext {
+  readonly verifiedCustomerId: string | null;
+  readonly keptVariableIds: ReadonlySet<string>;
+}
+
+/** Reads a conversation's save context; a conversation that is gone keeps nothing and has no person. */
+export interface ConversationSaveContextReader {
+  read(trx: Db, input: { workspaceId: string; conversationId: string }): Promise<ConversationSaveContext>;
+}
 
 /** One value to save for a conversation, by the attribute's name. */
 export interface ContextValueSaveRequest {
@@ -76,7 +94,7 @@ const visitorValueRefusal = (
 export interface ContextValueSaver {
   saveAll(trx: Db, input: {
     workspaceId: string;
-    conversation: { id: string; verifiedCustomerId: string | null };
+    conversationId: string;
     writtenBy: ContextValueWriter;
     /** The routine whose values these are, named on each change event; null for any other writer. */
     routineId: string | null;
@@ -84,31 +102,42 @@ export interface ContextValueSaver {
   }): Promise<ContextValueSaveOutcome[]>;
 }
 
+/** A save's place in the order saves take their locks: by attribute name, then scope. */
+const saveOrderKey = (request: ContextValueSaveRequest): string => `${request.variableName}\u0000${request.scope}`;
+
 /**
  * Saves values a visitor gave, a routine's slot values at its ending, by attribute name, in a
  * transaction the caller owns, so the values and their change events commit with what the caller
- * commits or not at all. Each is counted by writer kind and outcome (`failed` for a thrown one,
- * which fails the caller's transaction), never by variable or value. The outcomes come back in the
- * order of `saves`.
+ * commits or not at all. A person save goes to the customer the conversation's row is bound to, and
+ * only an attribute the conversation's release keeps is written. Saves run by attribute and scope,
+ * so two turns of one person lock its rows in one order. Each is counted by writer kind and outcome
+ * (`failed` for a thrown one, which fails the caller's transaction), never by variable or value.
+ * The outcomes come back in the order of `saves`.
  */
 export class ContextValueSaves implements ContextValueSaver {
   constructor(private readonly deps: {
     store: ContextValueSaveStore;
+    conversations: ConversationSaveContextReader;
     metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   }) {}
 
   async saveAll(trx: Db, input: Parameters<ContextValueSaver["saveAll"]>[1]): Promise<ContextValueSaveOutcome[]> {
-    const outcomes: ContextValueSaveOutcome[] = [];
-    for (const request of input.saves) {
+    if (input.saves.length === 0) return [];
+    const context = await this.deps.conversations.read(trx, { workspaceId: input.workspaceId, conversationId: input.conversationId });
+    const ordered = input.saves
+      .map((request, index) => ({ request, index, key: saveOrderKey(request) }))
+      .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : left.index - right.index));
+    const outcomes: ContextValueSaveOutcome[] = new Array<ContextValueSaveOutcome>(input.saves.length);
+    for (const { request, index } of ordered) {
       let outcome: ContextValueSaveOutcome;
       try {
-        outcome = await this.save(trx, input, request);
+        outcome = await this.save(trx, input, context, request);
       } catch (error) {
         countContextValueWrite(this.deps.metrics, input.writtenBy.kind, "failed");
         throw error;
       }
       countContextValueWrite(this.deps.metrics, input.writtenBy.kind, outcome);
-      outcomes.push(outcome);
+      outcomes[index] = outcome;
     }
     return outcomes;
   }
@@ -116,12 +145,14 @@ export class ContextValueSaves implements ContextValueSaver {
   private async save(
     trx: Db,
     input: Parameters<ContextValueSaver["saveAll"]>[1],
+    context: ConversationSaveContext,
     request: ContextValueSaveRequest,
   ): Promise<ContextValueSaveOutcome> {
-    const scope = conversationSaveScope(request.scope, { conversationId: input.conversation.id, verifiedCustomerId: input.conversation.verifiedCustomerId });
+    const scope = conversationSaveScope(request.scope, { conversationId: input.conversationId, verifiedCustomerId: context.verifiedCustomerId });
     if (!scope) return "no_person_key";
     const definition = await this.deps.store.lockDefinitionNamedIn(trx, input.workspaceId, request.variableName);
     if (!definition) return "gone";
+    if (!context.keptVariableIds.has(definition.id)) return "not_enabled";
     const refusal = visitorValueRefusal(definition, request);
     if (refusal) return refusal;
     return this.deps.store.storeIn(trx, { definition, scope, data: request.data, writtenBy: input.writtenBy, routineId: input.routineId });

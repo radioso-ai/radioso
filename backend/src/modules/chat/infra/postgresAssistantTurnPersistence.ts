@@ -15,7 +15,7 @@ import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEve
 import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
-import { saveRoutineSlotValues } from "./routineSlotSaveWrites.js";
+import { saveRoutineSlotValues, turnRoutineValueWriterRef } from "./routineSlotSaveWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
@@ -501,6 +501,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       ...withdrawnCoverage(withdrawn, transition),
       at: latest.withdrawnAt,
       among: [reply.id, ...(input.visitorMessageId ? [input.visitorMessageId] : [])],
+      // Only what this turn's run saved: an earlier run's values went with the withdrawal itself.
+      savedByRuns: [turnRoutineValueWriterRef(transition, input.conversationId)].filter((ref) => ref !== null),
     });
     if (!messageIds.includes(reply.id)) {
       return reply;

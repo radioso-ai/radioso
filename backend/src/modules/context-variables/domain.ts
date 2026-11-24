@@ -111,6 +111,10 @@ export interface AgentContextVariableEnablement {
 export const isClassifiedEnablement = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
   enablement.enabled && enablement.source === "classified";
 
+/** Whether an enablement keeps the variable's value in the value store for the agent, so a save may write it. */
+export const keepsStoredValue = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
+  enablement.enabled && readsStoredValue(enablement.source);
+
 export interface ContextVariableScope {
   type: ContextVariableScopeType;
   id: string;
@@ -127,17 +131,32 @@ export interface ContextVariableValue {
 }
 
 /**
- * The writer of a value a routine run saved: `routineId:executionId`, or the routine's id alone for a
- * run with none. Consent withdrawal finds the values a routine wrote by this reference.
+ * The writer of a value a routine run saved: `<routineId>:<executionId>@<conversationId>`, or
+ * `<routineId>@<conversationId>` for a run with no execution id. The conversation is the one the run
+ * ran in, whichever scope the value went to, so a consent withdrawal in that conversation finds the
+ * run's person values too and no other conversation's (`routineWriterMatch`).
  */
-export const routineValueWriter = (routineId: string, executionId: string | null): ContextValueWriter => ({
+export const routineValueWriter = (routineId: string, executionId: string | null, conversationId: string): ContextValueWriter => ({
   kind: "routine",
-  ref: executionId ? `${routineId}:${executionId}` : routineId,
+  ref: `${executionId ? `${routineId}:${executionId}` : routineId}@${conversationId}`,
 });
 
-/** Whether `writer` is a run of routine `routineId`, by the reference `routineValueWriter` gives it. */
-export const writtenByRoutine = (writer: ContextValueWriter, routineId: string): boolean =>
-  writer.kind === "routine" && writer.ref !== null && (writer.ref === routineId || writer.ref.startsWith(`${routineId}:`));
+/**
+ * How a reference `routineValueWriter` gave names routine `routineId` run in `conversationId`: it
+ * starts with one of `prefixes` and ends with `suffix`. Neither an execution id nor a conversation id
+ * holds `:` or `@`.
+ */
+export const routineWriterMatch = (routineId: string, conversationId: string): { prefixes: [string, string]; suffix: string } => ({
+  prefixes: [`${routineId}:`, `${routineId}@`],
+  suffix: `@${conversationId}`,
+});
+
+/**
+ * Whether a stored value keeps its writer when another writer saves the same value: a teammate's or
+ * the host's does, so a later consent withdrawal never takes a value a person set. A routine's or
+ * the classifier's passes to the new writer.
+ */
+export const keepsWriterOfEqualValue = (kind: ContextValueWriterKind): boolean => kind === "operator" || kind === "api";
 
 /**
  * The overwrite rule. The classifier fills a value only when none is stored or it wrote the stored

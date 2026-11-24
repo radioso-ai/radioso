@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { Routine, RoutineState, RoutineTerminalKind } from "@radioso/conversation-contract";
 
 import type { RoutineSlotSaveScope } from "./domain.js";
@@ -23,15 +25,20 @@ const SAVING_TERMINALS: ReadonlySet<RoutineTerminalKind> = new Set(["complete", 
 
 /**
  * What a run saves when it ends: each filled slot that names an attribute, in declared order. Not at
- * slot fill, since a slot can still be corrected and consent may still be missing; a correction to
- * an ended run ends it again and saves the corrected value.
+ * slot fill, since a slot can still be corrected and consent may still be missing. A correction to
+ * an ended run ends it again: given the run as it had ended (`endedBefore`, the same execution), it
+ * saves only the fields the correction changed, so a value the host or a teammate set since for
+ * another field stays.
  */
-export const routineSlotSaves = (routine: Routine, state: RoutineState): RoutineSlotSave[] => {
+export const routineSlotSaves = (routine: Routine, state: RoutineState, endedBefore?: RoutineState): RoutineSlotSave[] => {
   const terminalKind = state.metadata?.terminalKind as RoutineTerminalKind | undefined;
   if (state.status !== "completed" || !terminalKind || !SAVING_TERMINALS.has(terminalKind)) return [];
+  const corrected = endedBefore?.status === "completed" && endedBefore.routineId === state.routineId
+    && endedBefore.executionId !== undefined && endedBefore.executionId === state.executionId;
   return (routine.slots ?? []).flatMap((slot) => {
     const value = state.variables[slot.key];
     if (!slot.saveTo || value === undefined || value === null) return [];
+    if (corrected && isDeepStrictEqual(endedBefore?.variables[slot.key], value)) return [];
     return [{
       slotKey: slot.key,
       contextVariable: slot.saveTo.contextVariable,

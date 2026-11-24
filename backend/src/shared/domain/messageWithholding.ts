@@ -71,6 +71,12 @@ export interface WithheldMessages {
    * structure, which outlives the values: they are read from the routine's state, which expires.
    */
   readonly withdrawnRoutineSlots: readonly WithdrawnRoutineSlots[];
+  /**
+   * Only the attribute values these routine runs saved, by the writer reference each save records;
+   * every run's of a withdrawn routine in the conversation when absent. A turn that raced a
+   * withdrawal names its own run, so it never takes values an earlier run saved.
+   */
+  readonly savedByRuns?: readonly string[];
 }
 
 /** One module's copies of message text, withheld with the messages they copy, bound to the withholding's transaction. */
@@ -97,6 +103,8 @@ export interface MessageWithholdingTarget {
   readonly at: Date;
   /** Only among these messages; any of the conversation's when absent. */
   readonly among?: readonly string[];
+  /** See {@link WithheldMessages.savedByRuns}. */
+  readonly savedByRuns?: readonly string[];
 }
 
 /** A withholding's writes, bound to one transaction: the message rows, and every module's copies. */
@@ -133,6 +141,7 @@ export const withholdMessagesWithCopies = async (
     messageIds,
     valueTexts: target.valueTexts,
     withdrawnRoutineSlots: target.withdrawnRoutineSlots,
+    ...(target.savedByRuns ? { savedByRuns: target.savedByRuns } : {}),
   };
   for (const copies of scope.messageCopies) {
     rowsByOwner[copies.owner] = (rowsByOwner[copies.owner] ?? 0) + await copies.withhold(withheld);

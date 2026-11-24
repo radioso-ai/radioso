@@ -72,6 +72,7 @@ import {
 import { attachRetrievalActivityTrace, getChatTurnRoute } from "./turnRouteTrace.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
+import { withRoutineSavesUnwritten } from "./routines/routineSaveTrace.js";
 import { sensitiveMessageMarks, sensitiveSlotKeysForTurn, withSensitiveTurnMarker, type SensitiveMessageMarks } from "./routines/sensitiveTurnMarker.js";
 import { notRecordedAnswerCoverage } from "./answerCoverage/notRecordedAnswerCoverage.js";
 import { routineConsentTurnEvents } from "./routines/routineConsentTurn.js";
@@ -185,8 +186,6 @@ export interface AssistantTurnPersistencePort {
     workspaceId: string;
     accountId?: string | null;
     conversationId: string;
-    /** The conversation's verified customer this turn, the person a routine's person save goes to (#1884). */
-    verifiedCustomerId?: string | null;
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
@@ -772,20 +771,21 @@ export class ChatTurnLifecycle {
       });
     }
     if (this.assistantTurnPersistence) {
+      // A turn that writes no attributes still shows where its routine's saves would have gone (#1884).
+      const saving = capabilities.routineValueSaves === "write" ? { transition: input.routineStateTransition, auditEvent } : withRoutineSavesUnwritten(input.routineStateTransition, auditEvent);
       const persisted = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        verifiedCustomerId: input.session.conversation.verifiedCustomerId ?? null,
         actions,
-        routineStateTransition: input.routineStateTransition,
+        routineStateTransition: saving.transition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         answerCoverageRequestMessageId: input.session.userMessage.id,
         ...sensitiveMessageMarks({ ...input, sensitiveSlotKeys }),
         routineConsent: routineConsentTurnEvents(input.session, input.consentEvents),
         assistantMessage: presentation.assistantMessage,
-        auditEvent,
+        auditEvent: saving.auditEvent,
         ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,

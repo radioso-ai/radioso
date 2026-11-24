@@ -30,6 +30,11 @@ export interface TurnExecutionCapabilities {
    * the rolling conversation summary, and a caller-supplied audit event.
    */
   readonly turnBookkeeping: "record" | "skip";
+  /**
+   * What an ending routine's attribute saves do: write the values, or only show on the turn's trace
+   * where each would have gone (`not_saved_in_test`), never a value.
+   */
+  readonly routineValueSaves: "write" | "trace_only";
 }
 
 const CAPABILITIES_BY_MODE: Record<TurnExecutionMode, TurnExecutionCapabilities> = {
@@ -40,6 +45,7 @@ const CAPABILITIES_BY_MODE: Record<TurnExecutionMode, TurnExecutionCapabilities>
     turnActions: "enqueue",
     humanOwnedWaitingMessage: "generate",
     turnBookkeeping: "record",
+    routineValueSaves: "write",
   },
   // A safe-test turn keeps conversation-local state (routines, the reply) so follow-up
   // turns stay representative, and drops what a customer or operator would act on.
@@ -50,6 +56,7 @@ const CAPABILITIES_BY_MODE: Record<TurnExecutionMode, TurnExecutionCapabilities>
     turnActions: "drop",
     humanOwnedWaitingMessage: "generate",
     turnBookkeeping: "skip",
+    routineValueSaves: "trace_only",
   },
   // A review turn answers a recorded customer message for a person or a channel policy
   // to publish later. It writes no conversation state the published reply would depend
@@ -61,6 +68,7 @@ const CAPABILITIES_BY_MODE: Record<TurnExecutionMode, TurnExecutionCapabilities>
     turnActions: "drop",
     humanOwnedWaitingMessage: "skip",
     turnBookkeeping: "skip",
+    routineValueSaves: "trace_only",
   },
 };
 

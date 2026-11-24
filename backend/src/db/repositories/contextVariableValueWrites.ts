@@ -5,6 +5,7 @@ import {
   type ContextValueSaveStore,
   contextValueChanged,
   contextValueChangedEvent,
+  keepsWriterOfEqualValue,
   mayOverwrite,
   validateValue,
   type ContextValueWriter,
@@ -205,8 +206,9 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
    * the same locks, overwrite rule and change event as `upsertValue`, so they commit or roll back
    * with what the caller commits. The caller has checked the value against `definition` under its
    * lock, and its commit wakes delivery. A value its writer already stored, same writer and same
-   * value, is `unchanged` and writes nothing; the same value from another writer rewrites only the
-   * provenance and records no event.
+   * value, is `unchanged` and writes nothing, as is a value a teammate or the host already set
+   * (`keepsWriterOfEqualValue`); the same value from any other writer rewrites only the provenance
+   * and records no event.
    */
   async storeIn(trx: Db, write: Parameters<ContextValueSaveStore["storeIn"]>[1]): Promise<"written" | "unchanged" | "kept"> {
     const { definition, data, writtenBy } = write;
@@ -216,7 +218,7 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
       ? await lockConversationValue(trx, definition.id, conversationId)
       : await readStoredValue(trx, definition.id, scope);
     const sameWriter = previous?.writtenBy.kind === writtenBy.kind && previous.writtenBy.ref === writtenBy.ref;
-    if (previous && sameWriter && !contextValueChanged(previous.data, data)) return "unchanged";
+    if (previous && !contextValueChanged(previous.data, data) && (sameWriter || keepsWriterOfEqualValue(previous.writtenBy.kind))) return "unchanged";
     if (!await upsertRow(trx, definition, scope, data, writtenBy)) return "kept";
     if (conversationId && contextValueChanged(previous?.data, data)) {
       await this.recordChange(trx, { definition, conversationId, value: data, writtenBy, routineId: write.routineId });

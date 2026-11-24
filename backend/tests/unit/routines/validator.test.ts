@@ -527,6 +527,44 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     ]);
   });
 
+  it("binds a boolean, number or date attribute only to an input of its own kind, a date to text too", () => {
+    const inputs = [
+      { key: "flagToBoolean", type: "boolean" as const },
+      { key: "flagToText", type: "text" as const },
+      { key: "countToNumber", type: "number" as const },
+      { key: "countToText", type: "text" as const },
+      { key: "dayToDate", type: "date" as const },
+      { key: "dayToText", type: "text" as const },
+      { key: "dayToNumber", type: "number" as const },
+    ];
+    const variableOf: Record<string, string> = { flag: "vip", count: "party_size", day: "arrival" };
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0],
+        metadata: {
+          inputBindings: Object.fromEntries(inputs.map((input) => [
+            input.key,
+            { kind: "contextVariableRef", contextVariable: variableOf[input.key.split("To")[0]] },
+          ])),
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", inputs.map((input) => ({ ...input, required: false })))),
+      availableContextVariables: new Map([
+        ["vip", { valueType: "boolean" }],
+        ["party_size", { valueType: "number" }],
+        ["arrival", { valueType: "date" }],
+      ]),
+    });
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.location)).toEqual([
+      "step:lookup.inputBindings.flagToText",
+      "step:lookup.inputBindings.countToText",
+      "step:lookup.inputBindings.dayToNumber",
+    ]);
+  });
+
   it("refuses a Choice attribute bound to a choice input that does not accept every one of its keys", () => {
     const bound = (enumValues: string[]) => validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),

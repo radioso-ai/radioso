@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { ConversationTrace, ReplyDraft, RoutineActionRequest, RoutineConsentEvent } from "@radioso/conversation-contract";
 import {
@@ -72,6 +72,7 @@ import {
 import { attachRetrievalActivityTrace, getChatTurnRoute } from "./turnRouteTrace.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import { describeRoutineTurn } from "./routines/routineTurnDescription.js";
+import { withRoutineSavesUnwritten } from "./routines/routineSaveTrace.js";
 import { sensitiveMessageMarks, sensitiveSlotKeysForTurn, withSensitiveTurnMarker, type SensitiveMessageMarks } from "./routines/sensitiveTurnMarker.js";
 import { notRecordedAnswerCoverage } from "./answerCoverage/notRecordedAnswerCoverage.js";
 import { routineConsentTurnEvents } from "./routines/routineConsentTurn.js";
@@ -79,6 +80,7 @@ import type { RoutineConsentTurnEvents } from "../../../shared/domain/routineCon
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { turnBackgroundJobs } from "./turnBackgroundJobs.js";
+import { actionIdempotencyKey } from "./actions/actionIdempotencyKey.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ToolImageSource } from "../../toolImages/contracts/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
@@ -167,16 +169,6 @@ export interface ChatActionOutboxPort {
     skillName?: string | null;
   }): Promise<{ id: string; duplicate: boolean }>;
 }
-
-// Content-addressed idempotency key so a retried turn that re-emits the same request
-// (same conversation + action type + payload) enqueues it once.
-export const actionIdempotencyKey = (
-  conversationId: string,
-  type: string,
-  payload: Record<string, unknown>,
-): string =>
-  `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
-
 
 class RoutineActionAuthorizationError extends Error {
   constructor(
@@ -779,19 +771,21 @@ export class ChatTurnLifecycle {
       });
     }
     if (this.assistantTurnPersistence) {
+      // A turn that writes no attributes still shows where its routine's saves would have gone (#1884).
+      const saving = capabilities.routineValueSaves === "write" ? { transition: input.routineStateTransition, auditEvent } : withRoutineSavesUnwritten(input.routineStateTransition, auditEvent);
       const persisted = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
         actions,
-        routineStateTransition: input.routineStateTransition,
+        routineStateTransition: saving.transition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         answerCoverageRequestMessageId: input.session.userMessage.id,
         ...sensitiveMessageMarks({ ...input, sensitiveSlotKeys }),
         routineConsent: routineConsentTurnEvents(input.session, input.consentEvents),
         assistantMessage: presentation.assistantMessage,
-        auditEvent,
+        auditEvent: saving.auditEvent,
         ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,

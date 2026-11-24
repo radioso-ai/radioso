@@ -24,7 +24,7 @@ const parseParams = (params: unknown) => {
 };
 
 /**
- * A teammate sets a conversation's Choice attribute, or resets it, from the Inbox (#1884). Both take
+ * A teammate sets a conversation's Choice attribute, or resets any it can see, from the Inbox (#1884). Both take
  * the takeover permission rather than the agent-management one the values API needs: answering in
  * the Inbox is what they belong to. Both call the one edit service Ray and operator MCP call.
  */

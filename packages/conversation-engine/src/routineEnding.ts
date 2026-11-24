@@ -165,6 +165,22 @@ export const completedRunSentValues = (routine: Routine, state: RoutineState): b
   return landed.kind !== "terminal" || endingSends(routine, landed);
 };
 
+const RECORDED_TERMINAL_KINDS: ReadonlySet<string> = new Set<RoutineTerminalKind>(["complete", "handoff", "action", "stuck", "consent_declined"]);
+
+/**
+ * How a completed run ended: the kind its ending recorded in `metadata`, or, for a host that keeps
+ * no `metadata` on the record, the kind of the authored terminal its `path` landed on. A run that got
+ * stuck or was declined consent ends on the step it was on, never on a terminal, so such a record
+ * names no kind; nor does a run that has not ended.
+ */
+export const endedRunTerminalKind = (routine: Routine, state: RoutineState): RoutineTerminalKind | null => {
+  if (state.status !== "completed") return null;
+  const recorded = state.metadata?.terminalKind;
+  if (typeof recorded === "string" && RECORDED_TERMINAL_KINDS.has(recorded)) return recorded as RoutineTerminalKind;
+  const landed = routine.steps.find((step) => step.id === state.path.at(-1));
+  return landed ? terminalKindFor(landed) : null;
+};
+
 /** What the turn that reaches an ending did on its way there, as the runner holds it. */
 interface EndingTurnWalk {
   traceSteps: readonly RoutineTraceStepEntry[];

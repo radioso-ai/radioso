@@ -443,7 +443,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
           consentKey: "health",
           recordId: seeded.recordId,
           withheldMessageCount: 5,
-          rowsByOwner: { "audit": 2, "answer-coverage": 2, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2, "workspace-events": 2 },
+          rowsByOwner: { "audit": 2, "answer-coverage": 2, "context-values": 0, "email-channel": 1, "visitor-images": 1, "conversation-summary": 2, "workspace-events": 2 },
         }),
       }]);
       expect(JSON.stringify(audits)).not.toContain("sore knee");

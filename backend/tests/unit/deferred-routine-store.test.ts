@@ -107,6 +107,28 @@ describe("DeferredRoutineStore", () => {
     expect(store.getTransition()).not.toHaveProperty("ending");
   });
 
+  it("saves only the fields a correction to an ended run changed, by the run it read as ended (#1884)", async () => {
+    const booking: Routine = {
+      id: "booking",
+      rootStepId: "ask_guests",
+      steps: [],
+      transitions: [],
+      slots: [
+        { id: "s1", key: "guests", type: "number", required: true, saveTo: { contextVariable: "party_size", scope: "conversation" } },
+        { id: "s2", key: "email", type: "email", required: true, saveTo: { contextVariable: "contact_email", scope: "person" } },
+      ],
+    } as unknown as Routine;
+    const ended = state({ routineId: "booking", executionId: "execution-1", status: "completed", metadata: { terminalKind: "complete" }, variables: { guests: 4, email: "ada@guests.example" } });
+    const inner = { ...innerStore(), loadCompleted: vi.fn(async () => [ended]) };
+    const store = new DeferredRoutineStore(inner, undefined, [booking]);
+
+    await store.loadCompleted({ sessionId: "conv_1" });
+    await store.save({ ...ended, variables: { guests: 4, email: "ada.two@guests.example" } });
+
+    expect(store.getTransition()).toMatchObject({ kind: "save", slotSaves: [{ slotKey: "email", value: "ada.two@guests.example" }] });
+    expect(store.getTransition()).not.toMatchObject({ slotSaves: [{ slotKey: "guests" }] });
+  });
+
   it("reads through loadActive but defers save until commit", async () => {
     const inner = innerStore();
     const deferred = new DeferredRoutineStore(inner);

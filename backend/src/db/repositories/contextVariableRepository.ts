@@ -256,6 +256,15 @@ const redactWhenMadePrivate = async (
   await redactContextValueEvents(trx, { workspaceId, variableId: locked.id });
 };
 
+/**
+ * Whether an update changes what a value write checks against the definition (its type, options,
+ * sensitivity or trust tier), and so takes the definition's row lock, which waits for every write
+ * holding its key share: a save never commits a value the definition it checked no longer allows,
+ * such as a visitor's value into an attribute made proof meanwhile.
+ */
+export const updateLocksDefinition = (input: ContextVariableUpdateRecord): boolean =>
+  input.valueType !== undefined || input.options !== undefined || input.sensitivity !== undefined || input.trustTier !== undefined;
+
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   private readonly valueWrites: ContextVariableValueWrites;
 
@@ -291,7 +300,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
     return this.db.transaction().execute(async (trx) => {
       let locked: Awaited<ReturnType<typeof lockDefinition>> = null;
-      if (input.valueType !== undefined || input.options !== undefined || input.sensitivity !== undefined) {
+      if (updateLocksDefinition(input)) {
         locked = await lockDefinition(trx, workspaceId, id);
         if (!locked) return null;
         if (input.valueType !== undefined) await refuseTypeChangeWithValues(trx, locked, input.valueType);

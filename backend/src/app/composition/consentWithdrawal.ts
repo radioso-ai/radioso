@@ -5,6 +5,7 @@ import { AnswerCoverageWithholder } from "../../db/repositories/answerCoverageRe
 import { AuditEventRepository, ConversationAuditWithholder } from "../../db/repositories/auditEventRepository.js";
 import { BackgroundJobRepository } from "../../db/repositories/backgroundJobRepository.js";
 import { ConsentWithdrawalRepository } from "../../db/repositories/consentWithdrawalRepository.js";
+import { ContextValueConsentWithholder } from "../../db/repositories/contextValueConsentWithholder.js";
 import { ConversationSummaryWithholder } from "../../db/repositories/conversationSummaryRepository.js";
 import { WorkspaceEventValueWithholder } from "../../db/repositories/workspaceEventLogRepository.js";
 import { conversationSummaryRefreshRequest } from "../../modules/chat/composition.js";
@@ -39,6 +40,8 @@ const defaultMessageCopyWithholders: readonly MessageCopyWithholderBinding[] = [
   (trx) => new ConversationSummaryWithholder(trx, new BackgroundJobRepository(trx), conversationSummaryRefreshRequest),
   // The workspace event log's copies of a withdrawn value: the events that state one are removed.
   (trx) => new WorkspaceEventValueWithholder(trx),
+  // The attribute values a withdrawn routine saved, for the conversation and its verified customer.
+  (trx) => new ContextValueConsentWithholder(trx),
 ];
 
 /**

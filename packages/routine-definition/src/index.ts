@@ -2,9 +2,12 @@ import { z } from "zod";
 
 import { routineConsentEditingSchema, routineConsentSchema } from "./consent.js";
 import { presentBindingOf, routineStepPresentSchema } from "./presentBinding.js";
+import { routineSlotSaveToSchema } from "./saveTo.js";
 
 export * from "./consent.js";
 export * from "./presentBinding.js";
+export * from "./saveTo.js";
+export * from "./validationCodes.js";
 
 export const ROUTINE_DEFINITION_LIMITS = {
   name: 200,
@@ -51,64 +54,6 @@ export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equal
 export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as const;
 const routineTerminalKinds = ["complete", "handoff"] as const;
 const routineCompletionExportTriggerKinds = routineTerminalKinds;
-export const routineValidationCodes = [
-  "unreachable_step",
-  "missing_terminal",
-  "dangling_action_reference",
-  "dangling_step_reference",
-  "unbounded_back_edge",
-  "missing_action_follow_up",
-  "declared_unused_slot",
-  "referenced_undeclared_slot",
-  "unregistered_action_type",
-  "unknown_skill",
-  "action_capability_denied",
-  "invalid_webhook_destination_ref",
-  "unknown_webhook_destination",
-  "attempt_limit_without_fallback",
-  "outcome_guard_on_non_tool_step",
-  "structured_guard_missing_parameter",
-  "field_guard_unknown_reference",
-  "field_guard_incompatible_type",
-  "completion_export_missing_destination",
-  "approval_step_llm_edge",
-  "approval_step_no_decision_edge",
-  "approval_step_unknown_option",
-  "approval_step_unreachable_option",
-  "unsatisfiable_required_input",
-  "input_type_mismatch",
-  "unknown_input_binding",
-  "unknown_variable_ref",
-  "unknown_context_variable",
-  "context_variable_option_not_accepted",
-  "variable_name_collision",
-  "node_id_collision",
-  "exposure_tool_name_invalid",
-  "exposure_tool_name_reserved",
-  "exposure_tool_name_duplicate",
-  "exposure_tool_name_changed",
-  "exposure_requires_ungated_activation",
-  "operator_notice_skill_unavailable",
-  "operator_notice_reply_to_slot_invalid",
-  "consent_slot_unknown",
-  "consent_slot_not_sensitive",
-  "consent_slot_not_collected",
-  "consent_slot_covered_twice",
-  "consent_key_duplicate",
-  "consent_missing_default_variant",
-  "consent_text_invalid",
-  "sensitive_slot_without_consent",
-  "consent_step_mixes_fields",
-  "consent_step_needs_default_exit",
-  "present_step_not_chat",
-  "present_source_not_earlier_tool",
-  "present_source_unreachable",
-  "present_slot_not_item",
-  "present_selection_mismatch",
-  "item_slot_without_presenting_step",
-  "referenced_variable_not_guaranteed",
-  "referenced_list_variable",
-] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
 const identifierPattern = routineIdentifierPattern;
@@ -244,6 +189,8 @@ const routineSlotSchemaFor = <TDescription extends z.ZodTypeAny>(description: TD
   // compile/persist boundary and by the column default, so stored rows and published
   // snapshots authored before the field existed parse to the same shape.
   sensitivity: z.enum(routineSlotSensitivities).optional(),
+  // Optional for the same reason: absent means the value stays in the routine.
+  saveTo: routineSlotSaveToSchema.optional(),
 }).strict();
 
 export const routineSlotSchema = routineSlotSchemaFor(
@@ -981,9 +928,9 @@ export const routineAdvisories = (definition: {
   })));
   return advisories;
 };
-export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
+export type RoutineSlotSaveTo = z.infer<typeof routineSlotSaveToSchema>;
 export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
 export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;

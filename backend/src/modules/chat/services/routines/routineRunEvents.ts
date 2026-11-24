@@ -1,6 +1,6 @@
 import type { Routine, RoutineState } from "@radioso/conversation-contract";
 
-import { endedRunValues } from "../../../routines/public.js";
+import { endedRunTerminalKind, endedRunValues, routineSlotSaves, type RoutineSlotSave } from "../../../routines/public.js";
 import { ROUTINE_EVENT_OUTCOMES, type RoutineEventOutcome } from "../../../../shared/domain/workspaceEventLog.js";
 
 /**
@@ -17,8 +17,9 @@ export interface EndedRoutineRun {
   sensitiveSlotKeys: string[];
 }
 
-const outcomeOf = (state: RoutineState): RoutineEventOutcome => {
-  const kind = state.metadata?.terminalKind;
+/** The run's ending kind, read from its path when the store kept no `metadata` (a correction to an ended run). */
+const outcomeOf = (routine: Routine, state: RoutineState): RoutineEventOutcome => {
+  const kind = endedRunTerminalKind(routine, state);
   return ROUTINE_EVENT_OUTCOMES.find((outcome) => outcome === kind) ?? "complete";
 };
 
@@ -32,7 +33,7 @@ const endingOf = (routine: Routine, state: RoutineState): EndedRoutineRun | unde
     ? {
         routineId: state.routineId,
         executionId: state.executionId ?? null,
-        outcome: outcomeOf(state),
+        outcome: outcomeOf(routine, state),
         ...endedRunValues(routine, state.variables),
       }
     : undefined;
@@ -40,18 +41,23 @@ const endingOf = (routine: Routine, state: RoutineState): EndedRoutineRun | unde
 /**
  * The fields a save transition carries for the event log: the run's `ending` when it ended, and the
  * routine's `declaredSlotKeys` when it declares any, so an action the run queued this turn reaches
- * the log with the routine's slots only, never a tool output or a stray key.
+ * the log with the routine's slots only, never a tool output or a stray key. `slotSaves` are the
+ * slot values the ended run saves to attributes (#1884), present when it saves any; `endedBefore`
+ * is the run as it had already ended, when this save corrects it.
  */
 export const routineRunEventFields = (
   routines: readonly Routine[] | undefined,
   state: RoutineState,
-): { ending?: EndedRoutineRun; declaredSlotKeys?: string[] } => {
+  endedBefore?: RoutineState,
+): { ending?: EndedRoutineRun; declaredSlotKeys?: string[]; slotSaves?: RoutineSlotSave[] } => {
   const routine = routines?.find((candidate) => candidate.id === state.routineId);
   if (!routine) return {};
   const ending = endingOf(routine, state);
   const declaredSlotKeys = (routine.slots ?? []).map((slot) => slot.key);
+  const slotSaves = routineSlotSaves(routine, state, endedBefore);
   return {
     ...(ending ? { ending } : {}),
     ...(declaredSlotKeys.length > 0 ? { declaredSlotKeys } : {}),
+    ...(slotSaves.length > 0 ? { slotSaves } : {}),
   };
 };

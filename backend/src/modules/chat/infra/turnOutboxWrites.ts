@@ -4,7 +4,8 @@ import type { PendingDecisionCreateInput } from "../../../db/repositories/pendin
 import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
-import { actionIdempotencyKey, type AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
+import { actionIdempotencyKey } from "../services/actions/actionIdempotencyKey.js";
+import type { AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js";
 import { contactRequestCreatedEvent, declaredSlotValues, decisionPendingEvent, routineCompletedEvent } from "../services/workspaceEventLogDrafts.js";
 

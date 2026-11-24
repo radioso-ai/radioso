@@ -1,5 +1,6 @@
 import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
 
+import type { RoutineSlotSave } from "../../../routines/public.js";
 import { routineRunEventFields, type EndedRoutineRun } from "./routineRunEvents.js";
 
 /**
@@ -9,6 +10,8 @@ import { routineRunEventFields, type EndedRoutineRun } from "./routineRunEvents.
  * slots in the state; absent when the producer cannot tell, which persistence reads as asking.
  * `ending` is the ended run the workspace event log records (#1851), when the save ends one, and
  * `declaredSlotKeys` the routine's slots, which an action the run queued reaches the log with.
+ * `slotSaves` are the slot values the ended run saves to attributes (#1884), in the turn's
+ * transaction; they hold the run's own values, sensitive ones too, and go nowhere else.
  */
 export type CapturedRoutineTransition =
   | {
@@ -18,6 +21,7 @@ export type CapturedRoutineTransition =
     asksConsent?: boolean;
     ending?: EndedRoutineRun;
     declaredSlotKeys?: string[];
+    slotSaves?: RoutineSlotSave[];
   }
   | { kind: "clear"; sessionId: string; startedFrom?: RoutineState };
 
@@ -45,6 +49,8 @@ export const asksConsentField = (routines: readonly Routine[] | undefined, routi
 export class DeferredRoutineStore implements ConversationRoutineStore {
   private transition: CapturedRoutineTransition | null = null;
   private startedFrom: RoutineState | null | undefined;
+  /** The ended runs the turn read, one of which a post-completion correction saves again. */
+  private endedRuns: readonly RoutineState[] = [];
 
   constructor(
     private readonly inner: ConversationRoutineStore,
@@ -65,8 +71,17 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
     return this.startedFrom ? { startedFrom: this.startedFrom } : {};
   }
 
-  loadCompleted(input: { sessionId: string }): ReturnType<NonNullable<ConversationRoutineStore["loadCompleted"]>> {
-    return this.inner.loadCompleted?.(input) ?? Promise.resolve([]);
+  async loadCompleted(input: { sessionId: string }): Promise<RoutineState[]> {
+    const ended = await (this.inner.loadCompleted?.(input) ?? Promise.resolve([]));
+    this.endedRuns = ended;
+    return ended;
+  }
+
+  /** The run as it had ended, when `state` saves an ended run again; a correction re-saves only what it changed. */
+  private endedBefore(state: RoutineState): RoutineState | undefined {
+    return state.executionId === undefined
+      ? undefined
+      : this.endedRuns.find((ended) => ended.routineId === state.routineId && ended.executionId === state.executionId);
   }
 
   async save(state: RoutineState): Promise<void> {
@@ -75,7 +90,7 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
       state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId },
       ...this.startedFromField(),
       ...asksConsentField(this.routines, state.routineId),
-      ...routineRunEventFields(this.routines, state),
+      ...routineRunEventFields(this.routines, state, this.endedBefore(state)),
     };
   }
 

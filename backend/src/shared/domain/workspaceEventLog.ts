@@ -63,7 +63,7 @@ export type RoutineEventOutcome = typeof ROUTINE_EVENT_OUTCOMES[number];
  * the kind of writer. Listed here because the published contract sits below the modules; the
  * context-variables module checks at compile time that its own lists match.
  */
-export const CONTEXT_VALUE_EVENT_VALUE_TYPES = ["string", "json", "enum"] as const;
+export const CONTEXT_VALUE_EVENT_VALUE_TYPES = ["string", "json", "enum", "boolean", "number", "date"] as const;
 const CONTEXT_VALUE_EVENT_SCOPES = ["conversation"] as const;
 export const CONTEXT_VALUE_EVENT_WRITERS = ["api", "operator", "routine", "classifier"] as const;
 
@@ -163,7 +163,7 @@ const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObje
     valueType: z.enum(CONTEXT_VALUE_EVENT_VALUE_TYPES).describe("The attribute's type. A Choice attribute is `enum`, and its value is an option's key."),
     scope: z.enum(CONTEXT_VALUE_EVENT_SCOPES).describe("Where the value is kept. Version 1 records the values kept for the conversation."),
     // Present and null for a cleared or Private value: refusing `undefined` makes the field required.
-    value: z.unknown().refine((value) => value !== undefined).describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."),
+    value: z.unknown().refine((value) => value !== undefined).describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute."),
     redacted: z.boolean().describe("True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded."),
     writtenBy: z.enum(CONTEXT_VALUE_EVENT_WRITERS).describe("Who changed it: `classifier` (the AI), `operator` (a teammate, in the Inbox, through Ray or through an operator MCP client), `api` (an API token or the dashboard's values API) or `routine`."),
     routineId: z.string().nullable().describe("The routine that wrote the value when `writtenBy` is `routine`; null otherwise."),

@@ -51,6 +51,38 @@ test("agent attribute settings create, enable, and update surfacing", async ({ p
   ).toBe(true);
 });
 
+test("an operator creates Yes/no, Number and Date attributes, each stored as its own type (#1884)", async ({ page }) => {
+  const contextVariableRequests: ContextVariableRequestFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { contextVariableRequests });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`);
+  await expect(page.getByRole("heading", { name: "Attributes", level: 1 })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Compiling")).toHaveCount(0, { timeout: 15000 });
+
+  for (const [name, typeLabel, valueType] of [["wants_newsletter", "Yes/no", "boolean"], ["party_size", "Number", "number"], ["arrival", "Date", "date"]] as const) {
+    await page.getByRole("button", { name: "Add attribute" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add attribute" });
+    await dialog.getByLabel("Name", { exact: true }).fill(name);
+    await dialog.getByLabel("Type", { exact: true }).click();
+    await page.getByRole("option", { name: typeLabel, exact: true }).click();
+    await dialog.getByRole("button", { name: "Add attribute" }).click();
+
+    // The next round opens a new dialog; wait for this one to close so its locators can't match it.
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(`@${name}`, { exact: true })).toBeVisible();
+    await expect.poll(() =>
+      contextVariableRequests.some((request) =>
+        request.method === "POST" &&
+        request.path === "/context-variables" &&
+        JSON.stringify(request.body).includes(`"name":"${name}"`) &&
+        JSON.stringify(request.body).includes(`"valueType":"${valueType}"`)
+      )
+    ).toBe(true);
+  }
+});
+
 test("an operator creates a choice attribute with described options, then archives one", async ({ page }) => {
   const contextVariableRequests: ContextVariableRequestFixture[] = [];
 

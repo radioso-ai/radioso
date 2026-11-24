@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import {
   CONTEXT_VALUE_WRITER_KINDS,
+  type ContextValueSaveStore,
   contextValueChanged,
   contextValueChangedEvent,
+  keepsWriterOfEqualValue,
   mayOverwrite,
   validateValue,
   type ContextValueWriter,
@@ -12,8 +14,10 @@ import {
   type ContextVariableOption,
   type ContextVariableScope,
   type ContextVariableSensitivity,
+  type ContextVariableTrustTier,
   type ContextVariableValue,
   type ContextVariableValueType,
+  type SaveTargetDefinition,
 } from "../../modules/context-variables/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import type { WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
@@ -33,6 +37,12 @@ const replaceableWriterKinds = (incoming: ContextValueWriterKind): ContextValueW
 
 type ValueDefinition = Pick<ContextVariable, "id" | "workspaceId" | "name" | "valueType" | "options" | "sensitivity">;
 
+/** A value as stored, with who last wrote it; `undefined` stands for none. */
+interface StoredValue {
+  readonly data: unknown;
+  readonly writtenBy: ContextValueWriter;
+}
+
 /**
  * Where a change of a conversation's value is recorded: the log, in the write's own transaction,
  * then a delivery wake once it has committed, so subscriptions hear of it before the periodic sweep.
@@ -42,6 +52,26 @@ export interface ContextValueEvents {
   readonly delivery: WorkspaceEventDeliveryWake;
 }
 
+const definitionColumns = ["id", "workspace_id", "name", "value_type", "options", "sensitivity", "trust_tier"] as const;
+
+const mapDefinition = (row: {
+  id: string;
+  workspace_id: string;
+  name: string;
+  value_type: string;
+  options: unknown;
+  sensitivity: string;
+  trust_tier: string;
+}): SaveTargetDefinition => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  name: row.name,
+  valueType: row.value_type as ContextVariableValueType,
+  options: optionsFromRow(row.options),
+  sensitivity: row.sensitivity as ContextVariableSensitivity,
+  trustTier: row.trust_tier as ContextVariableTrustTier,
+});
+
 /**
  * The definition a value write is checked against and its event names, key-shared until the write
  * commits. A type change locks the row for update before it looks for values, so it waits for this
@@ -50,19 +80,12 @@ export interface ContextValueEvents {
 const lockValueDefinition = async (trx: Db, variableId: string): Promise<ValueDefinition> => {
   const row = await trx
     .selectFrom("context_variables")
-    .select(["workspace_id", "name", "value_type", "options", "sensitivity"])
+    .select(definitionColumns)
     .where("id", "=", variableId)
     .forKeyShare()
     .executeTakeFirst();
   if (!row) throw notFound("Context variable not found");
-  return {
-    id: variableId,
-    workspaceId: row.workspace_id,
-    name: row.name,
-    valueType: row.value_type as ContextVariableValueType,
-    options: optionsFromRow(row.options),
-    sensitivity: row.sensitivity as ContextVariableSensitivity,
-  };
+  return mapDefinition(row);
 };
 
 /**
@@ -72,16 +95,61 @@ const lockValueDefinition = async (trx: Db, variableId: string): Promise<ValueDe
  * value included, and a change is recorded once. That holds at READ COMMITTED, Postgres's default
  * and the pool's: each statement after the lock sees what the writer before it committed.
  */
-const lockConversationValue = async (trx: Db, variableId: string, conversationId: string): Promise<unknown> => {
+const lockConversationValue = async (trx: Db, variableId: string, conversationId: string): Promise<StoredValue | undefined> => {
   await transactionAdvisoryLock(`context-variable-value:${variableId}:${conversationId}`).execute(trx);
+  return readStoredValue(trx, variableId, { type: "conversation", id: conversationId });
+};
+
+const readStoredValue = async (trx: Db, variableId: string, scope: ContextVariableScope): Promise<StoredValue | undefined> => {
   const row = await trx
     .selectFrom("context_variable_values")
-    .select("data")
+    .select(["data", "written_by_kind", "written_by_ref"])
     .where("variable_id", "=", variableId)
-    .where("scope_type", "=", "conversation")
-    .where("scope_id", "=", conversationId)
+    .where("scope_type", "=", scope.type)
+    .where("scope_id", "=", storedScopeId(scope))
     .executeTakeFirst();
-  return row ? row.data : undefined;
+  return row
+    ? { data: row.data, writtenBy: { kind: row.written_by_kind as ContextValueWriterKind, ref: row.written_by_ref } }
+    : undefined;
+};
+
+/**
+ * Inserts or replaces a value under the overwrite rule, decided against the stored row in the same
+ * statement, so a write racing this one cannot slip between a read of the stored writer and the
+ * update. Null when the stored value is kept.
+ */
+const upsertRow = async (
+  trx: Db,
+  definition: ValueDefinition,
+  scope: ContextVariableScope,
+  data: unknown,
+  writtenBy: ContextValueWriter,
+): Promise<ContextVariableValue | null> => {
+  const row = await trx
+    .insertInto("context_variable_values")
+    .values({
+      id: randomUUID(),
+      workspace_id: definition.workspaceId,
+      variable_id: definition.id,
+      scope_type: scope.type,
+      scope_id: storedScopeId(scope),
+      data: toJsonb(data),
+      last_modified: currentTimestamp(),
+      written_by_kind: writtenBy.kind,
+      written_by_ref: writtenBy.ref,
+    })
+    .onConflict((oc) =>
+      oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
+        workspace_id: eb.ref("excluded.workspace_id"),
+        data: eb.ref("excluded.data"),
+        last_modified: currentTimestamp(),
+        written_by_kind: eb.ref("excluded.written_by_kind"),
+        written_by_ref: eb.ref("excluded.written_by_ref"),
+      })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
+    )
+    .returning(contextVariableValueColumns)
+    .executeTakeFirst();
+  return row ? mapContextVariableValueRow(row) : null;
 };
 
 /**
@@ -93,7 +161,7 @@ const lockConversationValue = async (trx: Db, variableId: string, conversationId
  * workspace's is a default. `events` is null only where composition says a write is no change an
  * automation acts on.
  */
-export class ContextVariableValueWrites {
+export class ContextVariableValueWrites implements ContextValueSaveStore {
   constructor(
     private readonly db: Db,
     private readonly events: ContextValueEvents | null,
@@ -109,40 +177,53 @@ export class ContextVariableValueWrites {
       // A conversation is keyed by its own id, in the form every reader compares against.
       const conversationId = scope.type === "conversation" ? await requireConversation(trx, definition.workspaceId, scope.id) : null;
       const previous = conversationId ? await lockConversationValue(trx, variableId, conversationId) : undefined;
-
-      const row = await trx
-        .insertInto("context_variable_values")
-        .values({
-          id: randomUUID(),
-          workspace_id: definition.workspaceId,
-          variable_id: variableId,
-          scope_type: scope.type,
-          scope_id: conversationId ?? scope.id,
-          data: toJsonb(data),
-          last_modified: currentTimestamp(),
-          written_by_kind: writtenBy.kind,
-          written_by_ref: writtenBy.ref,
-        })
-        .onConflict((oc) =>
-          oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
-            workspace_id: eb.ref("excluded.workspace_id"),
-            data: eb.ref("excluded.data"),
-            last_modified: currentTimestamp(),
-            written_by_kind: eb.ref("excluded.written_by_kind"),
-            written_by_ref: eb.ref("excluded.written_by_ref"),
-          // Decided against the stored row in the same statement, so a write racing this one cannot
-          // slip between a read of the stored writer and the update.
-          })).where("context_variable_values.written_by_kind", "in", replaceableWriterKinds(writtenBy.kind)),
-        )
-        .returning(contextVariableValueColumns)
-        .executeTakeFirst();
-      if (!row) return { result: null, recorded: null };
-      const value = mapContextVariableValueRow(row);
-      if (conversationId && contextValueChanged(previous, value.data)) {
-        return { result: value, recorded: await this.recordChange(trx, { definition, conversationId, value: value.data, writtenBy }) };
+      const value = await upsertRow(trx, definition, conversationId ? { type: "conversation", id: conversationId } : scope, data, writtenBy);
+      if (!value) return { result: null, recorded: null };
+      if (conversationId && contextValueChanged(previous?.data, value.data)) {
+        return { result: value, recorded: await this.recordChange(trx, { definition, conversationId, value: value.data, writtenBy, routineId: null }) };
       }
       return { result: value, recorded: null };
     }));
+  }
+
+  /**
+   * The workspace's variable named `name`, key-shared for the rest of the caller's transaction, as a
+   * save reads it; null when none has the name.
+   */
+  async lockDefinitionNamedIn(trx: Db, workspaceId: string, name: string): Promise<SaveTargetDefinition | null> {
+    const row = await trx
+      .selectFrom("context_variables")
+      .select(definitionColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("name", "=", name)
+      .forKeyShare()
+      .executeTakeFirst();
+    return row ? mapDefinition(row) : null;
+  }
+
+  /**
+   * The transaction-joining write: stores a value in a transaction the caller owns, a chat turn's, with
+   * the same locks, overwrite rule and change event as `upsertValue`, so they commit or roll back
+   * with what the caller commits. The caller has checked the value against `definition` under its
+   * lock, and its commit wakes delivery. A value its writer already stored, same writer and same
+   * value, is `unchanged` and writes nothing, as is a value a teammate or the host already set
+   * (`keepsWriterOfEqualValue`); the same value from any other writer rewrites only the provenance
+   * and records no event.
+   */
+  async storeIn(trx: Db, write: Parameters<ContextValueSaveStore["storeIn"]>[1]): Promise<"written" | "unchanged" | "kept"> {
+    const { definition, data, writtenBy } = write;
+    const conversationId = write.scope.type === "conversation" ? await requireConversation(trx, definition.workspaceId, write.scope.id) : null;
+    const scope: ContextVariableScope = conversationId ? { type: "conversation", id: conversationId } : write.scope;
+    const previous = conversationId
+      ? await lockConversationValue(trx, definition.id, conversationId)
+      : await readStoredValue(trx, definition.id, scope);
+    const sameWriter = previous?.writtenBy.kind === writtenBy.kind && previous.writtenBy.ref === writtenBy.ref;
+    if (previous && !contextValueChanged(previous.data, data) && (sameWriter || keepsWriterOfEqualValue(previous.writtenBy.kind))) return "unchanged";
+    if (!await upsertRow(trx, definition, scope, data, writtenBy)) return "kept";
+    if (conversationId && contextValueChanged(previous?.data, data)) {
+      await this.recordChange(trx, { definition, conversationId, value: data, writtenBy, routineId: write.routineId });
+    }
+    return "written";
   }
 
   /** Deletes the value; whether a row went. `deletedBy` is the writer the change is recorded against. */
@@ -184,7 +265,7 @@ export class ContextVariableValueWrites {
       const conversationId = await requireConversation(trx, definition.workspaceId, scope.id);
       await lockConversationValue(trx, variableId, conversationId);
       if (!await deleteRow(trx, conversationId)) return { result: false, recorded: null };
-      return { result: true, recorded: await this.recordChange(trx, { definition, conversationId, value: null, writtenBy: deletedBy }) };
+      return { result: true, recorded: await this.recordChange(trx, { definition, conversationId, value: null, writtenBy: deletedBy, routineId: null }) };
     }));
   }
 
@@ -194,6 +275,7 @@ export class ContextVariableValueWrites {
     conversationId: string;
     value: unknown;
     writtenBy: ContextValueWriter;
+    routineId: string | null;
   }): Promise<string | null> {
     if (!this.events) return null;
     await this.events.recorder.record(trx, contextValueChangedEvent({
@@ -202,6 +284,7 @@ export class ContextVariableValueWrites {
       variable: change.definition,
       value: change.value,
       writtenBy: change.writtenBy,
+      routineId: change.routineId,
     }));
     return change.definition.workspaceId;
   }

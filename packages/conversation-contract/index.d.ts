@@ -934,7 +934,7 @@ export interface RoutineState {
   metadata?: Record<string, unknown>;
 }
 
-export type * from "./routineGraph.js";
+export * from "./routineGraph.js";
 
 /**
  * A slot value as a reader that expects a scalar reads it: an `item` value reads as its title,

@@ -1,7 +1,7 @@
 ---
 title: "Set up AI-filled attributes through MCP"
 description: "Create a Choice attribute, have the AI fill it from the conversation, check it in Test Chat, publish, and read what it chose, from an MCP client connected to Ray."
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 ---
 
 import { Steps } from 'nextra/components'
@@ -79,13 +79,29 @@ The list holds each attribute's value for the conversation, the visitor's chat s
 
 ### Correct a choice
 
-When the AI picked the wrong option, `set_conversation_attribute` with the conversation's id, `"name": "topic"` and `"value": "shipping"` sets it, as an option key, the way a teammate does from the Inbox. The value becomes the conversation's own with `writtenBy.kind` `operator`, and the AI leaves it alone from then on. Setting the option the AI already picked keeps it the same way, and repeating a set changes nothing, so a retry is safe. `reset_conversation_attribute` with the conversation's id and the name hands it back: the AI is asked to fill it again, and the result says `classificationQueued: true`. Both need the permission to take conversations over, refuse a Private attribute or one that is not a Choice, and return the attribute as `conversation_transcript` reads it next, or `null` when nothing holds a value. A set of an option the attribute lacks is refused with its option keys.
+When the AI picked the wrong option, `set_conversation_attribute` with the conversation's id, `"name": "topic"` and `"value": "shipping"` sets it, as an option key, the way a teammate does from the Inbox. The value becomes the conversation's own with `writtenBy.kind` `operator`, and the AI leaves it alone from then on. Setting the option the AI already picked keeps it the same way, and repeating a set changes nothing, so a retry is safe. `reset_conversation_attribute` with the conversation's id and the name hands it back: the AI is asked to fill it again, and the result says `classificationQueued: true`. Both need the permission to take conversations over and refuse a Private attribute. A set also refuses an attribute that is not a Choice, while a reset clears the conversation's own value of any type, such as a wrong Number a routine saved. Both return the attribute as `conversation_transcript` reads it next, or `null` when nothing holds a value. A set of an option the attribute lacks is refused with its option keys.
 
 </Steps>
 
 ## Change an attribute later
 
 `kind: "edit"` changes an existing definition and, like a create, applies at once to every agent; its review lists them as `usedBy`, each with `uses` set to `draft`, `published` or `both`, because customers on the published release see the change too. A type change on an attribute that already has values is refused.
+
+## Have a routine save a field to an attribute
+
+The AI fills Choice attributes only. A Text, Yes/no (`boolean`), Number, Date or JSON attribute is set by your API, your team, or a routine that collects the value. For a routine to save to one, the agent has to keep its value: create it with `prepare_context_variable` (`"valueType": "number"`, say, for a `party_size`), then enable it with `"enablement": { "source": "pushed", "surfacing": "on_reference" }`.
+
+Then name it on the routine's field. `propose_routine_edit` sets it on an existing field:
+
+```json
+{
+  "agentId": "5b0f6a3e-2c1d-4f7a-9e8b-0c4d2a1b3f60",
+  "routineId": "0c9e7d1a-4b2f-4e6a-8d3c-1f5a2b7e9c40",
+  "changes": { "slots": [{ "key": "guests", "saveTo": { "contextVariable": "party_size", "scope": "conversation" } }] }
+}
+```
+
+`"scope": "person"` saves to the visitor's verified customer instead, and `"saveTo": null` stops saving. A new routine from `prepare_routine_structure` carries `saveTo` on its slots. `routine_definition` shows each field's `saveTo`, and `validate_routine` reports a target the agent can't save to with a `save_to_*` diagnostic, such as `save_to_type_mismatch` for a number field saved to a Text attribute. Publish the agent, and each conversation that finishes the routine holds the value; `conversation_transcript` lists it with `writtenBy.kind` `routine`. See [Save a field to an attribute](/guides/authoring-routines#save-a-field-to-an-attribute) for when a value is saved.
 
 ## Read next
 

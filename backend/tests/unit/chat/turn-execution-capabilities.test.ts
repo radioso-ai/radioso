@@ -31,6 +31,7 @@ const EXPECTED_CAPABILITIES: Record<TurnExecutionMode, TurnExecutionCapabilities
     turnActions: "enqueue",
     humanOwnedWaitingMessage: "generate",
     turnBookkeeping: "record",
+    routineValueSaves: "write",
   },
   safe_test: {
     routines: "activate",
@@ -39,6 +40,7 @@ const EXPECTED_CAPABILITIES: Record<TurnExecutionMode, TurnExecutionCapabilities
     turnActions: "drop",
     humanOwnedWaitingMessage: "generate",
     turnBookkeeping: "skip",
+    routineValueSaves: "trace_only",
   },
   review: {
     routines: "skip",
@@ -47,6 +49,7 @@ const EXPECTED_CAPABILITIES: Record<TurnExecutionMode, TurnExecutionCapabilities
     turnActions: "drop",
     humanOwnedWaitingMessage: "skip",
     turnBookkeeping: "skip",
+    routineValueSaves: "trace_only",
   },
 };
 

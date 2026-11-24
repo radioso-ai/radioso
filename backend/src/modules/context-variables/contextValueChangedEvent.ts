@@ -36,21 +36,12 @@ export const contextValueChanged = (previous: unknown, next: unknown): boolean =
   !isDeepStrictEqual(previous, next);
 
 /**
- * The routine a routine-written value came from. A routine writes under `routineId:executionId`,
- * and an execution id holds no colon, so the routine id is everything before the last one.
- */
-const routineIdOf = (writer: ContextValueWriter): string | null => {
-  if (writer.kind !== "routine" || !writer.ref) return null;
-  const separator = writer.ref.lastIndexOf(":");
-  return separator > 0 ? writer.ref.slice(0, separator) : writer.ref;
-};
-
-/**
  * The `context_value.changed` event for a conversation's value, as the writer that changed it records
  * it in its own transaction. `value: null` is a cleared value. A Private attribute's event never
  * carries its value, set or cleared, so a reader can't tell one from the other by the payload. The
  * writer's reference stays out, other than a routine's id, which consent withdrawal removes the
- * events of: a token id or a teammate's user id is not the automation's to read.
+ * events of: a token id or a teammate's user id is not the automation's to read. The routine's id
+ * comes from the writer that saved the value, never read back out of its reference.
  */
 export const contextValueChangedEvent = (input: {
   workspaceId: string;
@@ -58,6 +49,8 @@ export const contextValueChangedEvent = (input: {
   variable: Pick<ContextVariable, "id" | "name" | "valueType" | "sensitivity">;
   value: unknown;
   writtenBy: ContextValueWriter;
+  /** The routine whose value it is; null for any other writer. */
+  routineId: string | null;
 }): ContextValueChangedDraft => {
   const redacted = input.variable.sensitivity === "sensitive";
   return {
@@ -72,7 +65,7 @@ export const contextValueChangedEvent = (input: {
       value: redacted ? null : input.value,
       redacted,
       writtenBy: input.writtenBy.kind,
-      routineId: routineIdOf(input.writtenBy),
+      routineId: input.writtenBy.kind === "routine" ? input.routineId : null,
     },
   };
 };

@@ -1,5 +1,5 @@
 import type { RoutineItemValue, RoutineSlotType, RoutineTraceRejectedSlot } from "@radioso/conversation-contract";
-import { ROUTINE_ITEM_VALUE_LIMITS } from "@radioso/conversation-contract";
+import { isIsoCalendarDate, ROUTINE_ITEM_VALUE_LIMITS } from "@radioso/conversation-contract";
 
 /**
  * The one structural rule set for a routine slot value against its declared type (#1374).
@@ -27,24 +27,8 @@ type SlotValueCheck =
 // Domain labels are dot-separated with no dots inside a label, so the domain part has exactly
 // one parse and the check stays linear on long inputs.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u;
-// ISO calendar date (YYYY-MM-DD). Protocol syntax, not a keyword list.
-const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
 // A plain decimal as the model writes a count ("2", "-3.5"); no exponents, radix prefixes, or units.
 const DECIMAL_PATTERN = /^-?\d+(?:\.\d+)?$/u;
-
-const isIsoCalendarDate = (value: string): boolean => {
-  const match = ISO_DATE_PATTERN.exec(value);
-  if (!match) {
-    return false;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day;
-};
 
 const accepted = (value: string | number | boolean | RoutineItemValue): SlotValueCheck => ({ ok: true, value });
 const rejected = (reason: SlotValueRejection): SlotValueCheck => ({ ok: false, reason });

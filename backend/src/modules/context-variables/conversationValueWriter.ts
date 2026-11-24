@@ -17,6 +17,18 @@ import { validateValue } from "./valueValidation.js";
 
 export const CONTEXT_VALUE_WRITES_TOTAL = "radioso_context_value_writes_total";
 
+/** Counts one write by writer kind and outcome, never by variable or value. Every writer that is not an HTTP caller counts here. */
+export const countContextValueWrite = (
+  metrics: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  writer: ContextValueWriterKind,
+  outcome: string,
+): void => {
+  metrics?.incrementCounter(CONTEXT_VALUE_WRITES_TOTAL, {
+    help: "Writes to an attribute's value by writer kind and outcome.",
+    labels: { writer, outcome },
+  });
+};
+
 /**
  * What a write to a conversation's value did. A refused or kept write is not an error: no caller
  * sees it. `gone`: the conversation or the variable was erased since the caller read it.
@@ -116,10 +128,7 @@ export class ConversationValueWriterService implements ConversationValueWriter {
   }
 
   private count(writer: ContextValueWriterKind, outcome: ConversationValueWriteOutcome | "failed"): void {
-    this.deps.metrics?.incrementCounter(CONTEXT_VALUE_WRITES_TOTAL, {
-      help: "Writes to a conversation's attribute value by writer kind and outcome.",
-      labels: { writer, outcome },
-    });
+    countContextValueWrite(this.deps.metrics, writer, outcome);
   }
 
   private async apply(input: Parameters<ConversationValueWriter["write"]>[0]): Promise<ConversationValueWriteOutcome> {

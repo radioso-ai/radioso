@@ -22,6 +22,7 @@ import { BackgroundJobRepository } from "../../../src/db/repositories/background
 import type { AgentContextVariableEnablement } from "../../../src/modules/context-variables/public.js";
 import { DefaultBackgroundJobQueue, NoopBackgroundJobWake } from "../../../src/shared/background-jobs/index.js";
 import { ChatService, type ChatGateway } from "../../../src/modules/chat/services/chatService.js";
+import { createRoutineValueSaves } from "../../../src/app/composition/routineValueSaves.js";
 import { buildChatTurnRuntime } from "../../../src/modules/chat/services/chatTurnRuntime.js";
 import { MissingFallbackReplyComposer } from "../../../src/modules/chat/services/fallbackReplyComposer.js";
 import { legacyAgentWithoutWorkspace } from "../../../src/modules/chat/services/legacyWorkspaceAgent.js";
@@ -109,24 +110,27 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
     const agentId = randomUUID();
     const revisionId = randomUUID();
     const conversationId = randomUUID();
+    const contextVariableEnablements = input.contextVariableEnablements?.(agentId) ?? [];
     await database.query("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Classes')", [agentId, workspace.id]);
+    // The stored release holds the enablements a turn's attribute saves read (#1884); the rest of
+    // the snapshot is served from memory below.
     await database.query(
       `INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation, published_at, published_version)
-       VALUES ($1, $2, $3, '{}'::jsonb, 1, now(), 1)`,
-      [revisionId, agentId, workspace.id],
+       VALUES ($1, $2, $3, $4::jsonb, 1, now(), 1)`,
+      [revisionId, agentId, workspace.id, JSON.stringify({ contextVariableEnablements })],
     );
     const [visitor] = await database.query<{ id: string }>(
       "INSERT INTO visitors (workspace_id, visitor_key, conversation_count) VALUES ($1, $2, 1) RETURNING id",
       [workspace.id, `visitor-${randomUUID()}`],
     );
     await database.query(
-      "INSERT INTO conversations (id, workspace_id, agent_id, visitor_id, source_channel) VALUES ($1, $2, $3, $4, $5)",
-      [conversationId, workspace.id, agentId, visitor.id, input.sourceChannel ?? "website_embed"],
+      "INSERT INTO conversations (id, workspace_id, agent_id, agent_revision_id, visitor_id, source_channel) VALUES ($1, $2, $3, $4, $5, $6)",
+      [conversationId, workspace.id, agentId, revisionId, visitor.id, input.sourceChannel ?? "website_embed"],
     );
 
     const revision = {
       id: revisionId,
-      snapshot: { customInstruction: "", directives: [], routines: [definition], contextVariableEnablements: input.contextVariableEnablements?.(agentId) ?? [] },
+      snapshot: { customInstruction: "", directives: [], routines: [definition], contextVariableEnablements },
       sourceDraftGeneration: 1,
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
@@ -206,11 +210,18 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
         backgroundJobs,
         createRoutineConsentTelemetry({ logger, metricsRegistry: metrics }),
         bindConsentMessageWithholding,
+        undefined,
+        undefined,
+        createRoutineValueSaves({ db: database.kysely, delivery: { requestDelivery: () => undefined }, metrics }),
       ),
     });
 
-    const send = async (query: string, inputMetadata?: UserMessageInputMetadata) =>
-      chat.answer({ workspaceId: workspace.id, agentId, conversationId, query, stream: false, ...(inputMetadata ? { inputMetadata } : {}) });
+    /** A visitor's turn; `turn` carries a verified identity or a test turn's mode, as a caller sends them. */
+    const send = async (
+      query: string,
+      inputMetadata?: UserMessageInputMetadata,
+      turn: { verifiedCustomerId?: string; executionMode?: "live" | "safe_test" } = {},
+    ) => chat.answer({ workspaceId: workspace.id, agentId, conversationId, query, stream: false, ...(inputMetadata ? { inputMetadata } : {}), ...turn });
     // What the chat shows after a page reload: the conversation as its history reads it.
     const reloaded = async () => (await new ChatHistoryService(
       new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),

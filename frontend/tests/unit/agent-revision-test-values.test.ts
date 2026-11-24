@@ -33,4 +33,25 @@ describe('revision test value validation', () => {
       { contextVariableId: 'json-b', value: null },
     ])
   })
+
+  it('sends a Yes/no sample as a boolean, a number as a number and a date as written', () => {
+    const typed = [
+      { id: 'flag', name: 'VIP', valueType: 'boolean' as const },
+      { id: 'count', name: 'Party size', valueType: 'number' as const },
+      { id: 'day', name: 'Arrival', valueType: 'date' as const },
+    ]
+    expect(validateTestValueInputs(typed, { flag: 'false', count: '4', day: '2026-11-24' })).toEqual({
+      values: [
+        { contextVariableId: 'flag', value: false },
+        { contextVariableId: 'count', value: 4 },
+        { contextVariableId: 'day', value: '2026-11-24' },
+      ],
+      errors: {},
+    })
+  })
+
+  it('refuses a number sample that is not a number', () => {
+    const result = validateTestValueInputs([{ id: 'count', name: 'Party size', valueType: 'number' as const }], { count: 'four' })
+    expect(result).toEqual({ values: [], errors: { count: 'Party size must be a number.' } })
+  })
 })

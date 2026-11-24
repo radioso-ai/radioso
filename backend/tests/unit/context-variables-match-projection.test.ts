@@ -33,6 +33,16 @@ describe("projectContextForMatching", () => {
     });
   });
 
+  it("hands a condition a Yes/no, number or date attribute as its plain JSON value", () => {
+    const { snapshot } = resolveContextForTurn(null, [
+      { name: "member", value: false, surfacing: "on_reference" },
+      { name: "party_size", value: 4, surfacing: "on_reference" },
+      { name: "arrival", value: "2026-11-24", surfacing: "on_reference" },
+    ]);
+
+    expect(projectContextForMatching(snapshot, roomyBound).context).toEqual({ member: false, party_size: 4, arrival: "2026-11-24" });
+  });
+
   it("carries the redaction marker through instead of a sensitive value", () => {
     const projection = projectContextForMatching({ customer_email: REDACTED_VALUE }, bound);
 

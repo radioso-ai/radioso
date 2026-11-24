@@ -1,4 +1,10 @@
-import type { AgentContextVariableEnablement, ContextVariableValueType } from "./domain.js";
+import {
+  readsStoredValue,
+  type AgentContextVariableEnablement,
+  type ContextVariableSensitivity,
+  type ContextVariableTrustTier,
+  type ContextVariableValueType,
+} from "./domain.js";
 import { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
 
 /**
@@ -9,6 +15,13 @@ export interface AvailableContextVariable {
   valueType: ContextVariableValueType;
   /** An `enum` variable's keys, archived ones included: every key one of its values can hold. */
   optionKeys?: readonly string[];
+  /**
+   * Present when the agent keeps the variable's value in the store (`pushed` or `classified`), the
+   * only kind a routine may save a slot's value to, with what a save is checked against: whether
+   * the value counts as proof and whether it is Private. Absent for a built-in and for a value a
+   * resolver, the browser or the request supplies.
+   */
+  stored?: { trustTier: ContextVariableTrustTier; sensitivity: ContextVariableSensitivity };
 }
 
 /**
@@ -37,10 +50,11 @@ export function resolveAvailableContextVariables(
       continue;
     }
     // Written after the built-ins so agent-scoped definitions win on name collision.
-    const { valueType, options } = enablement.variable;
+    const { valueType, options, trustTier, sensitivity } = enablement.variable;
     available.set(enablement.variable.name, {
       valueType,
       ...(valueType === "enum" && options ? { optionKeys: options.map((option) => option.key) } : {}),
+      ...(readsStoredValue(enablement.source) ? { stored: { trustTier, sensitivity } } : {}),
     });
   }
 

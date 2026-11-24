@@ -182,4 +182,20 @@ export interface RoutineRunTrace {
   /** Present alongside `slotValues` when the filled-slot count exceeded the bound. */
   omittedSlotCount?: number;
   steps: RoutineTraceStepEntry[];
+  /**
+   * What the host did with each filled slot the ended run saves to an attribute (#1884), written
+   * by the host that stores the run's ending, never by the engine; absent when none was saved.
+   */
+  saves?: RoutineTraceSave[];
+}
+
+/**
+ * One slot an ended run saves to an attribute: the slot's key, the attribute's name, the scope and
+ * the outcome (`written`, `unchanged`, `no_person_key`, a refusal...). Never the value.
+ */
+export interface RoutineTraceSave {
+  slotKey: string;
+  contextVariable: string;
+  scope: "conversation" | "person";
+  outcome: string;
 }

@@ -30,6 +30,33 @@ describe("validateValue", () => {
     expect(validateValue(topic, "legacy_plan")).toEqual({ ok: false, code: "archived_option" });
     expect(validateValue(topic, { key: "billing" })).toEqual({ ok: false, code: "type_mismatch" });
   });
+
+  it("accepts a JSON boolean for a boolean variable and nothing that only reads like one", () => {
+    const flag = { valueType: "boolean" as const, options: null };
+    expect(validateValue(flag, true)).toEqual({ ok: true });
+    expect(validateValue(flag, false)).toEqual({ ok: true });
+    expect(validateValue(flag, "true")).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(flag, 1)).toEqual({ ok: false, code: "type_mismatch" });
+  });
+
+  it("accepts a finite JSON number for a number variable", () => {
+    const count = { valueType: "number" as const, options: null };
+    expect(validateValue(count, 3)).toEqual({ ok: true });
+    expect(validateValue(count, -2.5)).toEqual({ ok: true });
+    expect(validateValue(count, "3")).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(count, Number.POSITIVE_INFINITY)).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(count, Number.NaN)).toEqual({ ok: false, code: "type_mismatch" });
+  });
+
+  it("accepts an ISO calendar date for a date variable, never a time or an impossible day", () => {
+    const day = { valueType: "date" as const, options: null };
+    expect(validateValue(day, "2026-11-24")).toEqual({ ok: true });
+    expect(validateValue(day, "2028-02-29")).toEqual({ ok: true });
+    expect(validateValue(day, "2026-02-30")).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(day, "2026-11-24T10:00:00Z")).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(day, "24/11/2026")).toEqual({ ok: false, code: "type_mismatch" });
+    expect(validateValue(day, 20261124)).toEqual({ ok: false, code: "type_mismatch" });
+  });
 });
 
 describe("validateOptions", () => {

@@ -50,7 +50,7 @@ export const registerConversationAttributeSchema = (registry: OpenAPIRegistry) =
 
 /** Whether the caller may set and reset the conversation's attributes, on the detail that lists them. */
 export const attributesEditableSchema = z.boolean().optional().openapi({
-  description: "With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset one with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API.",
+  description: "With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset any attribute that is not Private with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API.",
 });
 
 /** What a teammate's set or reset of a conversation's attribute leaves the conversation reading. */

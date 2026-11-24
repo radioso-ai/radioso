@@ -503,6 +503,18 @@ export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, s
   return sensitive || key === undefined ? next : dropFieldFromConsents(next, key)
 }
 
+// The attribute a field's value is saved to when the routine ends (#1884), or none. No save target
+// is the absence of the field, as a saved slot reads back, so clearing it leaves the document as it was.
+export const setSlotSaveTo = (doc: RoutineBlockDoc, stableSlotId: string, saveTo: RoutineBlockSlot['saveTo'] | null): RoutineBlockDoc => ({
+  ...copy(doc),
+  information: doc.information.map((slot) => {
+    const field = copy(slot)
+    if (slot.stableSlotId !== stableSlotId) return field
+    delete field.saveTo
+    return saveTo ? { ...field, saveTo: { ...saveTo } } : field
+  }),
+})
+
 // A place a field is named, and whether a Sets variable of the same name can stand in for the field
 // there: an instruction, an input binding and a field guard read any routine variable by name, and
 // a Sets row is that variable's own declaration.

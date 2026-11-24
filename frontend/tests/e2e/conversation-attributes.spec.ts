@@ -465,3 +465,31 @@ test("a reset shows the value the AI fills in afterwards, without a new message"
   await expect(attributes.getByText("Returns", { exact: true })).toBeVisible({ timeout: 8_000 });
   await expect(attributes.getByText(/^Set by the AI · /)).toBeVisible();
 });
+
+test("a teammate clears a Number a routine saved, and has no menu on a Private value", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const partySize = topicAttribute({
+    name: "party_size", valueType: "number", value: 4, option: null,
+    writtenBy: { kind: "routine", ref: "booking" }, classified: false,
+  });
+  const note = topicAttribute({
+    name: "health_note", valueType: "string", value: null, option: null, redacted: true,
+    writtenBy: { kind: "routine", ref: "booking" }, classified: false,
+  });
+  await installDashboardApiMocks(page, {
+    historyItems: { items: [{ kind: "chat", id: billingId, sortAt: nowIso, conversation: conversations[0] }], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [billingId]: editable([partySize, note]) },
+    contextVariables: editCatalog,
+  });
+  const edits = await installAttributeEdits(page);
+  await openConversation(page, "I was charged twice this month");
+  const attributes = page.getByRole("region", { name: "Attributes" });
+
+  await expect(attributes.getByRole("button", { name: "Change health_note" })).toHaveCount(0);
+  await attributes.getByRole("button", { name: "Change party_size" }).click();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Clear" }).click();
+
+  await expect.poll(() => edits).toEqual([{ method: "DELETE", name: "party_size" }]);
+  await expect(attributes.getByRole("button", { name: "Change party_size" })).toHaveCount(0);
+});

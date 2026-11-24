@@ -355,3 +355,86 @@ it("lets an Operator MCP client read, set, and check the field a routine ending'
     expect.objectContaining({ code: "operator_notice_reply_to_slot_invalid", location: "step:booked.operatorNotice.replyToSlot" }),
   ]));
 });
+
+it("lets an Operator MCP client draft a routine whose field saves to an attribute, change where it saves, and publish it", async () => {
+  const { app, dependencies } = createTestApp();
+  const { workspaceId, accountId, userId } = await issueTestSession(app, "save-to-owner@example.com");
+  const agentId = (await dependencies.agentService.listExisting(workspaceId))[0].id;
+  for (const [name, valueType] of [["party_size", "number"], ["booking_note", "string"]] as const) {
+    const variable = await dependencies.contextVariableService.create({
+      workspaceId, name, description: null, valueType, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    });
+    await dependencies.contextVariableService.upsertEnablement({ workspaceId, agentId, variableId: variable.id, source: "pushed", surfacing: "on_reference", enabled: true });
+  }
+  const mcpContext = {
+    workspaceId,
+    accountId,
+    operatorUserId: userId,
+    surface: "mcp" as const,
+    operatorMcpGrantId: randomUUID(),
+    operatorMcpClientId: "save-to-client",
+    currentAuthorization: { hasAllPermissions: async () => true },
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+  const invoke = async (name: string, input: Record<string, unknown>) => {
+    const found = dependencies.copilotToolCatalog.find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`Expected ${name} in the copilot catalog`);
+    expect(found.mcpDisposition?.status).toBe("eligible");
+    return found.createTool({ ...mcpContext, operatorMcpInvocationId: randomUUID() }).invoke(input, {} as never);
+  };
+  const execute = async (prepared: { proposalId: string; reviewDigest: string; confirmation?: { requirement: string } }) => {
+    if (prepared.confirmation?.requirement === "signed_in_approval") {
+      await expect(dependencies.operatorCopilotService.approveReviewedProposal({
+        workspaceId, accountId, operatorUserId: userId, proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest,
+      })).resolves.toEqual({ status: "approved" });
+    }
+    return invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as Promise<{ status: string }>;
+  };
+  const draft = {
+    name: "book-a-table",
+    enabled: true,
+    activation: { triggerDescription: "A guest wants to book a table", gateRef: null, priority: 10, reentryMode: "once_per_conversation" },
+    slots: [{ stableSlotId: "slot_guests", key: "guests", type: "number", required: true, description: null, ordinal: 0, saveTo: { contextVariable: "party_size", scope: "conversation" } }],
+    steps: [{ stableStepId: "ask_guests", kind: "chat", instruction: "Ask how many guests: {{slot.guests}}.", toolRef: null, ordinal: 0, metadata: {} }],
+    transitions: [{ fromStep: "ask_guests", toRef: "booked", guardKind: "default", guardText: null, ordinal: 0 }],
+    terminals: [{ stableStepId: "booked", kind: "complete", instruction: null, ordinal: 0 }],
+  };
+
+  // A field that saves to an attribute of another type is refused before anything is drafted.
+  await expect(invoke("prepare_routine_structure", {
+    kind: "create", agentId, draft: { ...draft, slots: [{ ...draft.slots[0], saveTo: { contextVariable: "booking_note", scope: "conversation" } }] },
+  })).rejects.toMatchObject({
+    statusCode: 422,
+    details: { diagnostics: [expect.objectContaining({ code: "save_to_type_mismatch", location: "slot:guests.saveTo" })] },
+  });
+
+  const created = await invoke("prepare_routine_structure", { kind: "create", agentId, draft }) as { proposalId: string; reviewDigest: string; confirmation: { requirement: string } };
+  expect((await execute(created)).status).toBe("applied");
+  const [routine] = await dependencies.routineDefinitionService.list(workspaceId, agentId);
+  const savedTo = async () => {
+    const read = await invoke("routine_definition", { agentId, routineId: routine.id }) as {
+      routine: { editable: { fields: Array<{ key: string; saveTo: unknown }> } };
+    };
+    return read.routine.editable.fields.find((field) => field.key === "guests")?.saveTo;
+  };
+  expect(await savedTo()).toEqual({ contextVariable: "party_size", scope: "conversation" });
+
+  // Save it to the guest's person instead, with a routine edit proposal.
+  const proposal = await invoke("propose_routine_edit", {
+    agentId,
+    routineId: routine.id,
+    changes: { slots: [{ key: "guests", saveTo: { contextVariable: "party_size", scope: "person" } }] },
+  }) as { proposalId: string };
+  await expect(dependencies.operatorCopilotService.applyProposal({
+    workspaceId, accountId, operatorUserId: userId, surface: "dashboard", proposalId: proposal.proposalId,
+  })).resolves.toMatchObject({ status: "applied" });
+  expect(await savedTo()).toEqual({ contextVariable: "party_size", scope: "person" });
+  await expect(invoke("validate_routine", { agentId, routineId: routine.id })).resolves.toMatchObject({ ok: true });
+
+  const publication = await invoke("prepare_agent_publication", { agentId }) as { proposalId: string; reviewDigest: string; confirmation: { requirement: string } };
+  expect((await execute(publication)).status).toBe("applied");
+  const published = await invoke("agent_publication_state", { agentId }) as { publishedRevisionId: string | null };
+  expect(published.publishedRevisionId).not.toBeNull();
+  const revision = await dependencies.agentRevisionService.detail(workspaceId, agentId, published.publishedRevisionId!);
+  expect(JSON.stringify(revision)).toContain("\"saveTo\":{\"contextVariable\":\"party_size\",\"scope\":\"person\"}");
+});

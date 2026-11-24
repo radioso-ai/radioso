@@ -6,6 +6,7 @@ import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/pu
 import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
+import { safeSaveTargetValidationMessages, saveTargetDiagnostics } from "./saveTargetValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
@@ -110,6 +111,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   context_variable_option_not_accepted: "A Choice attribute is bound to a skill input that does not accept every one of its option keys.",
   ...safeConsentValidationMessages,
   ...safePresentBindingValidationMessages,
+  ...safeSaveTargetValidationMessages,
 };
 
 const replyToSlotInvalidMessage = (
@@ -154,6 +156,12 @@ export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
   availableContextVariables?: ReadonlyMap<string, AvailableContextVariable>;
+  /**
+   * The attributes a slot's save target (#1884) is checked against when they are not
+   * `availableContextVariables`: the publish gate passes the candidate's own, so a release never
+   * saves to an attribute it does not keep, without re-running the other context-variable rules.
+   */
+  saveTargetAttributes?: ReadonlyMap<string, AvailableContextVariable>;
   /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
@@ -225,14 +233,21 @@ const isContextVariableTypeCompatibleWithInput = (
   valueType: ContextVariableValueType,
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
-  if (valueType === "json") {
-    return true;
+  switch (valueType) {
+    case "json":
+      return true;
+    // An enum value is an option key: text, or a choice from an enum input.
+    case "enum":
+      return inputType === "text" || inputType === "enum";
+    case "boolean":
+    case "number":
+      return inputType === valueType;
+    // An ISO calendar date is also text.
+    case "date":
+      return inputType === "date" || inputType === "text";
+    case "string":
+      return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
   }
-  // An enum value is an option key: text, or a choice from an enum input.
-  if (valueType === "enum") {
-    return inputType === "text" || inputType === "enum";
-  }
-  return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
 };
 
 /**
@@ -891,6 +906,7 @@ export const validateRoutineDefinition = (
     diagnostics.push(...consentDiagnostics(definition, context.agentDefaultLocale));
   }
   diagnostics.push(...presentBindingDiagnostics(definition));
+  diagnostics.push(...saveTargetDiagnostics(definition, context.saveTargetAttributes ?? context.availableContextVariables));
 
   // Slice 3 seam: validate referenced action types against the action registry and
   // per-agent capability policy before publish.

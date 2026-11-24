@@ -38,9 +38,13 @@ export {
   CONVERSATION_SCOPE_TYPES,
   frozenTestValueInput,
   isClassifiedEnablement,
+  keepsStoredValue,
   mayOverwrite,
   readsStoredValue,
   resolvedVariableInput,
+  keepsWriterOfEqualValue,
+  routineValueWriter,
+  routineWriterMatch,
   typeChangeWithValuesRefused,
 } from "./domain.js";
 export {
@@ -60,6 +64,13 @@ export type {
   ConversationValueWriter,
   StoredConversationValue,
 } from "./conversationValueWriter.js";
+export { ContextValueSaves } from "./contextValueSaves.js";
+export type {
+  ContextValueSaver,
+  ContextValueSaveStore,
+  ConversationSaveContext,
+  SaveTargetDefinition,
+} from "./contextValueSaves.js";
 export { ATTRIBUTE_FILTER_NOT_SET, ConversationAttributeService } from "./conversationAttributes.js";
 export type {
   ConversationAttribute,
@@ -85,6 +96,7 @@ export type {
   ClassificationFitRefusal,
   ContextScopeKeys,
   ConversationScope,
+  ConversationSaveScope,
   ContextValueWriter,
   ContextValueWriterKind,
   ContextVariable,

@@ -211,6 +211,11 @@ export interface RoutineSlotSchema {
   mutable?: boolean;
   /** Absent means `normal`. A sensitive slot's value is masked in every copy the engine hands out. */
   sensitivity?: ValueSensitivity;
+  /**
+   * The attribute the host writes the slot's value to when the routine ends, and its scope. The
+   * engine carries it and never reads it.
+   */
+  saveTo?: { contextVariable: string; scope: "conversation" | "person" };
 }
 
 /**
@@ -282,3 +287,10 @@ export interface RoutineStepReask {
    */
   replyUnreadable?: boolean;
 }
+
+/**
+ * Whether `value` is an ISO calendar date (YYYY-MM-DD) that names a real day: `2028-02-29` is one,
+ * `2026-02-30` is not. The one date rule a slot value, a routine tool call's input and an
+ * attribute's value share.
+ */
+export declare function isIsoCalendarDate(value: string): boolean;

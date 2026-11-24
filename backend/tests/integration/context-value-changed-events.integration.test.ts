@@ -5,13 +5,14 @@ import { afterAll, beforeEach, expect, it } from "vitest";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
+import { ContextVariableValueWrites } from "../../src/db/repositories/contextVariableValueWrites.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import {
   postgresWorkspaceEventRecorder,
   WorkspaceEventValueWithholder,
 } from "../../src/db/repositories/workspaceEventLogRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
-import { ConversationValueWriterService, type ContextVariableOption } from "../../src/modules/context-variables/public.js";
+import { ConversationValueWriterService, routineValueWriter, type ContextVariableOption } from "../../src/modules/context-variables/public.js";
 import { workspaceEventDataSchema, type WorkspaceEventRecorder } from "../../src/shared/domain/workspaceEventLog.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -248,7 +249,12 @@ describeIntegration("context_value.changed, recorded by each writer of a convers
   it("leaves the log when the consent of the routine that wrote it is withdrawn", async () => {
     const { workspaceId, conversationId, topic } = await seed();
     const scope = { type: "conversation" as const, id: conversationId };
-    await variables.upsertValue(topic.id, scope, "billing", { kind: "routine", ref: `booking:${randomUUID()}` });
+    // A routine's value is written only by its ending's save, in the turn's transaction, naming the routine.
+    const valueWrites = new ContextVariableValueWrites(database.kysely, { recorder, delivery });
+    await database.kysely.transaction().execute(async (trx) => {
+      const definition = await valueWrites.lockDefinitionNamedIn(trx, workspaceId, "topic");
+      await valueWrites.storeIn(trx, { definition: definition!, scope, data: "billing", writtenBy: routineValueWriter("booking", randomUUID(), conversationId), routineId: "booking" });
+    });
     await variables.upsertValue(topic.id, scope, "shipping", operator);
 
     const withheld = await new WorkspaceEventValueWithholder(database.kysely).withhold({

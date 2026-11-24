@@ -1,3 +1,5 @@
+import { isIsoCalendarDate } from "@radioso/conversation-contract";
+
 import type { AgentToolDescriptor, AgentToolInputProperty } from "./agentToolDescriptor.js";
 
 export type RoutineInvocationInputValue = string | number | boolean;
@@ -39,19 +41,6 @@ type RoutineInvocationValidation =
 // Structural format checks mirroring the engine's slot-correction gate
 // (`conversation-engine/src/slotCorrection.ts`): protocol syntax, not vocabulary.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u;
-const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
-
-const isIsoCalendarDate = (value: string): boolean => {
-  const match = ISO_DATE_PATTERN.exec(value);
-  if (!match) {
-    return false;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

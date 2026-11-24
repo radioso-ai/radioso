@@ -115,6 +115,7 @@ import type {
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 import { sensitiveSlotKeysForTurn } from "./routines/sensitiveTurnMarker.js";
+import { withUnwrittenRoutineSavesOnTrace } from "./routines/routineSaveTrace.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 
 const DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY: ClarificationPolicy = {
@@ -941,6 +942,8 @@ export class WorkbenchReplayRunner {
     // `includeSlotValues` (Test Chat) gets a preview. Eval replay persists its trace to
     // append-only evidence no conversation erasure reaches, so it gets none.
     const handoffPreview = input.input.includeSlotValues === true ? this.operatorNoticePreviewFor(input) : undefined;
+    // A replay writes no attribute, so its trace shows where the routine's saves would have gone (#1884).
+    const turnTrace = withUnwrittenRoutineSavesOnTrace(tracePresentation.turnTrace, input.routineStateTransition);
     return {
       answer: input.presentation.answer,
       messageId: input.replyMessageId,
@@ -953,9 +956,7 @@ export class WorkbenchReplayRunner {
       ...(input.presentation.replyBlocks?.toolImages ? { toolImages: input.presentation.replyBlocks.toolImages } : {}),
       messageReplyBlocks: messageReplyBlocks(input.presentation),
       groundingSummary: input.presentation.groundingSummary,
-      turnTrace: handoffPreview && tracePresentation.turnTrace
-        ? { ...tracePresentation.turnTrace, handoffPreview }
-        : tracePresentation.turnTrace,
+      turnTrace: handoffPreview && turnTrace ? { ...turnTrace, handoffPreview } : turnTrace,
       actions: input.actions,
       pendingDecisionTransition: input.pendingDecisionTransition,
       handoff: input.handoff,

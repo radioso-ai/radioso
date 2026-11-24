@@ -219,6 +219,7 @@ describe("agent bundle routes", () => {
         required: true,
         description: null,
         ordinal: 0,
+        saveTo: { contextVariable: "plan_tier", scope: "conversation" },
       }],
       steps: [{
         stableStepId: "step_collect_topic",
@@ -253,6 +254,7 @@ describe("agent bundle routes", () => {
     expect(exported.body.routines).toHaveLength(1);
     expect(exported.body.routines[0].name).toBe("answer-with-context");
     expect(exported.body.routines[0].definition).not.toHaveProperty("agentId");
+    expect(exported.body.routines[0].definition.slots[0].saveTo).toEqual({ contextVariable: "plan_tier", scope: "conversation" });
     expect(exported.body.agentSkills).toContainEqual(expect.objectContaining({
       name: "knowledge_lookup",
       capability: "retrieve",
@@ -288,6 +290,20 @@ describe("agent bundle routes", () => {
     expect(reExported.body.routines).toEqual(exported.body.routines);
     expect(reExported.body.contextVariables).toEqual(exported.body.contextVariables);
     expect(reExported.body.agentSkills).toEqual(exported.body.agentSkills);
+
+    // Without the attribute its field saves to, the routine arrives out of service, saying why.
+    const withoutAttribute = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(session))
+      .send({ ...exported.body, contextVariables: [] })
+      .expect(201);
+    expect(withoutAttribute.body.unresolved).toEqual([expect.objectContaining({
+      kind: "routine_invalid",
+      element: "routine:answer-with-context",
+      detail: expect.stringContaining("plan_tier"),
+    })]);
+    const parked = await dependencies.routineDefinitionService.list(workspaceId, withoutAttribute.body.agentId);
+    expect(parked.map((routine) => [routine.enabled, routine.slots?.[0]?.saveTo])).toEqual([[false, { contextVariable: "plan_tier", scope: "conversation" }]]);
   });
 
   it("round-trips a skill-bound directive and reports the config that stayed home", async () => {

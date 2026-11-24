@@ -6,8 +6,12 @@ import type { SameType } from "../../shared/types/sameType.js";
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 import type { FrozenTestValue } from "./testValues.js";
 
-/** Every type a variable's value can have. Each surface that names a type takes it from here. */
-export const CONTEXT_VARIABLE_VALUE_TYPES = ["string", "json", "enum"] as const;
+/**
+ * Every type a variable's value can have. Each surface that names a type takes it from here. A value
+ * is stored as JSON: a string, any JSON, an option key, a boolean, a finite number, or an ISO calendar
+ * date (`YYYY-MM-DD`).
+ */
+export const CONTEXT_VARIABLE_VALUE_TYPES = ["string", "json", "enum", "boolean", "number", "date"] as const;
 export type ContextVariableValueType = typeof CONTEXT_VARIABLE_VALUE_TYPES[number];
 export type ContextVariableTrustTier = "unverified" | "signed";
 /** The same authored sensitivity a routine slot carries, with the same masking rule. */
@@ -107,6 +111,10 @@ export interface AgentContextVariableEnablement {
 export const isClassifiedEnablement = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
   enablement.enabled && enablement.source === "classified";
 
+/** Whether an enablement keeps the variable's value in the value store for the agent, so a save may write it. */
+export const keepsStoredValue = (enablement: Pick<AgentContextVariableEnablement, "enabled" | "source">): boolean =>
+  enablement.enabled && readsStoredValue(enablement.source);
+
 export interface ContextVariableScope {
   type: ContextVariableScopeType;
   id: string;
@@ -121,6 +129,34 @@ export interface ContextVariableValue {
   lastModified: Date;
   writtenBy: ContextValueWriter;
 }
+
+/**
+ * The writer of a value a routine run saved: `<routineId>:<executionId>@<conversationId>`, or
+ * `<routineId>@<conversationId>` for a run with no execution id. The conversation is the one the run
+ * ran in, whichever scope the value went to, so a consent withdrawal in that conversation finds the
+ * run's person values too and no other conversation's (`routineWriterMatch`).
+ */
+export const routineValueWriter = (routineId: string, executionId: string | null, conversationId: string): ContextValueWriter => ({
+  kind: "routine",
+  ref: `${executionId ? `${routineId}:${executionId}` : routineId}@${conversationId}`,
+});
+
+/**
+ * How a reference `routineValueWriter` gave names routine `routineId` run in `conversationId`: it
+ * starts with one of `prefixes` and ends with `suffix`. Neither an execution id nor a conversation id
+ * holds `:` or `@`.
+ */
+export const routineWriterMatch = (routineId: string, conversationId: string): { prefixes: [string, string]; suffix: string } => ({
+  prefixes: [`${routineId}:`, `${routineId}@`],
+  suffix: `@${conversationId}`,
+});
+
+/**
+ * Whether a stored value keeps its writer when another writer saves the same value: a teammate's or
+ * the host's does, so a later consent withdrawal never takes a value a person set. A routine's or
+ * the classifier's passes to the new writer.
+ */
+export const keepsWriterOfEqualValue = (kind: ContextValueWriterKind): boolean => kind === "operator" || kind === "api";
 
 /**
  * The overwrite rule. The classifier fills a value only when none is stored or it wrote the stored
@@ -209,6 +245,25 @@ export const CONVERSATION_SCOPE_TYPES = ["conversation", "session", "customer"] 
 // A rung added to conversationScopeLadder fails tsc here until it is listed, and every schema built on the list follows.
 const conversationScopeTypesListed: SameType<typeof CONVERSATION_SCOPE_TYPES[number], ConversationScopeType> = true;
 void conversationScopeTypesListed;
+
+/**
+ * The scopes a save for one conversation names, as a routine slot's save target does: the
+ * conversation itself, or the person the conversation is with.
+ */
+export type ConversationSaveScope = "conversation" | "person";
+
+/**
+ * Where a save for one conversation is kept: the conversation's own scope, or the conversation's
+ * person key, its verified customer. Null for the person of a conversation that has none: no other
+ * scope stands in for a person.
+ */
+export const conversationSaveScope = (
+  scope: ConversationSaveScope,
+  keys: { conversationId: string; verifiedCustomerId: string | null },
+): ContextVariableScope | null => {
+  if (scope === "conversation") return { type: "conversation", id: keys.conversationId };
+  return keys.verifiedCustomerId ? { type: "customer", id: keys.verifiedCustomerId } : null;
+};
 
 /** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
 export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [

@@ -4,9 +4,11 @@ import { sql, type Transaction } from "kysely";
 
 import { assertCandidateSnapshotIsRunnable, DEFAULT_AGENT_LOCALE_FALLBACK, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentContextVariableUsersReader, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
+import { resolveAvailableContextVariables, type AvailableContextVariable } from "../../modules/context-variables/public.js";
 import { currentTimestamp, toSanitizedJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db, DB } from "../../shared/infra/kysely/types.js";
 import { agentRevisionLockKey } from "./agentDraftMutation.js";
+import { contextVariableColumns, mapContextVariableRow, type ContextVariableRow } from "./contextVariableRepository.js";
 
 const mapRevision = (row: {
   id: string;
@@ -44,6 +46,28 @@ const liveAgentDefaultLocale = async (
     ? (settings as Record<string, unknown>).assistantDefaultLocale
     : undefined;
   return typeof locale === "string" && locale.trim().length > 0 ? locale : DEFAULT_AGENT_LOCALE_FALLBACK;
+};
+
+/**
+ * The attributes a candidate's own enablements keep, by their definitions as they are now: what a
+ * routine field's save target (#1884) is checked against at release, read on the release's
+ * transaction. A release whose routines save nothing has nothing to check, and reads nothing.
+ */
+const saveTargetAttributes = async (
+  trx: Transaction<DB>,
+  workspaceId: string,
+  snapshot: AgentRevisionSnapshot,
+): Promise<ReadonlyMap<string, AvailableContextVariable>> => {
+  if (!snapshot.routines.some((routine) => routine.slots.some((slot) => slot.saveTo))) return new Map();
+  const enabled = snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled);
+  const rows = enabled.length === 0
+    ? []
+    : await trx.selectFrom("context_variables").select(contextVariableColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "in", enabled.map((enablement) => enablement.variableId))
+      .execute();
+  const variables = new Map(rows.map((row) => [row.id, mapContextVariableRow(row as ContextVariableRow)]));
+  return resolveAvailableContextVariables(enabled.map((enablement) => ({ ...enablement, variable: variables.get(enablement.variableId) })));
 };
 
 /**
@@ -173,6 +197,7 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort, Age
       assertCandidateSnapshotIsRunnable(parsedSnapshot, {
         agentDefaultLocale: await liveAgentDefaultLocale(trx, workspaceId, agentId),
         publishedSnapshot: await publishedSnapshot(trx, workspaceId, agentId, agent?.published_revision_id ?? null),
+        saveTargetAttributes: await saveTargetAttributes(trx, workspaceId, parsedSnapshot),
       });
       let existingQuery = trx.selectFrom("agent_revisions")
         .select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "created_at", "published_at", "published_version"])
@@ -201,9 +226,11 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort, Age
         trx.selectFrom("agent_revisions").select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "published_at"]).where("id", "=", input.revisionId).where("agent_id", "=", input.agentId).where("workspace_id", "=", input.workspaceId).executeTakeFirst(),
       ]);
       if (!agent || !draft || !revision || revision.published_at !== null || draft.generation !== input.expectedDraftGeneration || agent.published_revision_id !== input.expectedPublishedRevisionId || revision.source_draft_generation !== draft.generation || revision.source_base_published_revision_id !== draft.base_published_revision_id) return "conflict";
-      assertCandidateSnapshotIsRunnable(parseAgentRevisionSnapshot(revision.snapshot), {
+      const candidateSnapshot = parseAgentRevisionSnapshot(revision.snapshot);
+      assertCandidateSnapshotIsRunnable(candidateSnapshot, {
         agentDefaultLocale: await liveAgentDefaultLocale(trx, input.workspaceId, input.agentId),
         publishedSnapshot: await publishedSnapshot(trx, input.workspaceId, input.agentId, agent.published_revision_id),
+        saveTargetAttributes: await saveTargetAttributes(trx, input.workspaceId, candidateSnapshot),
       });
       const publicationId = randomUUID(); const publishedAt = currentTimestamp();
       const latest = await trx.selectFrom("agent_revisions").select("published_version").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("published_version", "is not", null).orderBy("published_version", "desc").executeTakeFirst();

@@ -116,6 +116,18 @@ describe('routine form transforms', () => {
     expect(formToRoutineDraft(routineToForm(sensitive)).slots).toEqual(sensitive.slots)
   })
 
+  it('carries the attribute a field saves to through the form round-trip, and leaves a field that saves nowhere without it (#1884)', () => {
+    const saving: RoutineDefinition = {
+      ...routine,
+      slots: [
+        { ...routine.slots[0], saveTo: { contextVariable: 'contact_email', scope: 'person' } },
+        { stableSlotId: 'slot_note', key: 'note', type: 'text', required: false, description: null, ordinal: 1 },
+      ],
+    }
+
+    expect(formToRoutineDraft(routineToForm(saving)).slots).toEqual(saving.slots)
+  })
+
   it('carries a disabled routine through the form round-trip instead of losing it to the schema default', () => {
     // The enabled-reset bug: a plain content save must not carry the routine back to enabled
     // just because the form never mentioned the field.
@@ -151,6 +163,7 @@ describe('routine form transforms', () => {
       description: '  Email address  ',
       mutable: true,
       sensitive: false,
+      saveTo: null,
     }]
     form.steps[0] = {
       ...form.steps[0],
@@ -609,8 +622,8 @@ const anchoredForm = (): RoutineFormState => ({
   enabled: true,
   activation: { triggerDescription: 'Visitor asks for a quote', priority: '0', reentryMode: 'always' },
   slots: [
-    { stableSlotId: 'slot_email', key: 'email', type: 'email', required: true, description: '', mutable: false, sensitive: false },
-    { stableSlotId: 'slot_name', key: 'customer name', type: 'text', required: false, description: '', mutable: false, sensitive: false },
+    { stableSlotId: 'slot_email', key: 'email', type: 'email', required: true, description: '', mutable: false, sensitive: false, saveTo: null },
+    { stableSlotId: 'slot_name', key: 'customer name', type: 'text', required: false, description: '', mutable: false, sensitive: false, saveTo: null },
   ],
   steps: [
     {

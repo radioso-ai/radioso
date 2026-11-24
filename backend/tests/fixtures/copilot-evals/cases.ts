@@ -435,6 +435,34 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "routine-field-save-to-proposal",
+    name: "Keeping a collected field on the conversation becomes a save target on that field",
+    description: "Proposal shape: saving a field's value to an attribute goes to propose_routine_edit as `saveTo: {contextVariable, scope}` on that field, naming the attribute the operator gave, never a bare name or a redraft (#1884).",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "In the Order status routine, when it ends, save the order number the visitor gives to the Order reference attribute of the conversation.",
+    requires: ["routine"],
+    plan: [
+      { tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      {
+        tool: "propose_routine_edit",
+        input: {
+          agentId: COPILOT_EVAL_AGENT_ID,
+          routineId: COPILOT_EVAL_ROUTINE_ID,
+          changes: { slots: [{ key: "order_number", saveTo: { contextVariable: "Order reference", scope: "conversation" } }] },
+        },
+      },
+    ],
+    finalMessage: "I drafted an edit that saves the order number to the Order reference attribute when the routine ends, for you to review.",
+    assertions: [
+      { type: "tool_call_order", tools: ["routine_definition", "propose_routine_edit"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      { type: "tool_not_called", tool: "propose_routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "routine-exposure-proposal",
     name: "\"Let agents start returns directly\" becomes a tool exposure, not a wording edit",
     description: "Tool selection among the routine write tools: offering a routine to calling AI agents as a named tool goes to propose_routine_exposure, never to a wording edit or a redraft (spec 1290 AS-10).",

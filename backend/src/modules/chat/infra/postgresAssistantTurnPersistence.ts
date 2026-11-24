@@ -15,6 +15,7 @@ import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEve
 import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import type { AssistantTurnPersistenceReceipt, AssistantTurnPersistencePort } from "../services/chatTurnLifecycle.js";
 import { enqueueActions, recordTurnWorkspaceEvents, savePendingDecision } from "./turnOutboxWrites.js";
+import { saveRoutineSlotValues, turnRoutineValueWriterRef } from "./routineSlotSaveWrites.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../services/cutReplyMessage.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
@@ -25,6 +26,7 @@ import type { RoutineConsentCommitted, RoutineConsentWritten } from "../../../sh
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { BackgroundJobQueue, BackgroundJobRequest, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
 import type { ToolImageRowWriter } from "../../toolImages/contracts/index.js";
+import type { ContextValueSaver } from "../../context-variables/public.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -303,6 +305,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // Asks, once the turn has committed, for the workspace's event subscriptions to be delivered:
     // what the turn recorded, and the conversation's start, which its first turn follows.
     private readonly eventDeliveryWake?: WorkspaceEventDeliveryWake,
+    // Saves the slot values an ending routine saves to attributes, in the turn's transaction (#1884).
+    private readonly routineValueSaves?: ContextValueSaver,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
@@ -409,7 +413,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         UPDATE conversations SET updated_at = now() WHERE id = ${input.conversationId} AND workspace_id = ${input.workspaceId}
       `.execute(db);
 
-      await insertAuditEvent(db, input.auditEvent);
+      // Before the audit event, whose routine trace records what each save did.
+      await insertAuditEvent(db, await saveRoutineSlotValues(db, this.routineValueSaves, input));
       if (input.ownershipAuditEvent) {
         await insertAuditEvent(db, input.ownershipAuditEvent);
       }
@@ -496,6 +501,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       ...withdrawnCoverage(withdrawn, transition),
       at: latest.withdrawnAt,
       among: [reply.id, ...(input.visitorMessageId ? [input.visitorMessageId] : [])],
+      // Only what this turn's run saved: an earlier run's values went with the withdrawal itself.
+      savedByRuns: [turnRoutineValueWriterRef(transition, input.conversationId)].filter((ref) => ref !== null),
     });
     if (!messageIds.includes(reply.id)) {
       return reply;

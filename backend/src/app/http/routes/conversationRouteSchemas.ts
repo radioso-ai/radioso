@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contextVariableNameSchema } from "@radioso/routine-definition";
 
 import { parseActivityCursor } from "../../../modules/conversationActivity/contracts/index.js";
 
@@ -9,7 +10,7 @@ export const conversationParamsSchema = z.object({
 /** One attribute of a conversation, by its name as stored, matched exactly (#1884). */
 export const conversationAttributeParamsSchema = z.object({
   conversationId: z.string().uuid(),
-  name: z.string().min(1).max(120),
+  name: contextVariableNameSchema,
 });
 
 /** A teammate's value for a conversation's Choice attribute: one of its active option keys. */

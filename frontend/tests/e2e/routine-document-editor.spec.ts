@@ -1107,3 +1107,69 @@ test("reloading an unsaved new routine recovers its draft", async ({ page }) => 
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Not saved yet");
   await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/new$`));
 });
+
+test("saves an information field to an attribute the operator picks, for the person, and stops saving it (#1884)", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const attribute = (id: string, name: string, valueType: "string" | "number") => ({
+    id, workspaceId: "workspace-1", name, description: null, valueType, options: null, trustTier: "unverified" as const,
+    sensitivity: "normal" as const, defaultSurfacing: "on_reference" as const, createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
+  });
+  const enablement = (variableId: string) => ({
+    id: `enablement-${variableId}`, agentId: defaultAgentId, variableId, source: "pushed" as const, resolverSkillId: null, maxAgeSeconds: null,
+    resolverTimeoutMs: null, surfacing: "on_reference" as const, enabled: true, createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
+  });
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    contextVariables: [attribute("var-email", "contact_email", "string"), attribute("var-party", "party_size", "number")],
+    contextVariableEnablements: [enablement("var-email"), enablement("var-party")],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Request a callback");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor wants a callback.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the @email");
+  await page.getByRole("option", { name: /Create variable “email”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const savedTo = () => routineUpdates
+    .filter((update) => update.method === "POST" || update.method === "PATCH")
+    .at(-1)?.body?.slots?.find((slot) => slot.key === "email");
+
+  // A text field is offered the Text attribute only, and saves to the one the operator picks.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "email", exact: true }).click();
+  await documentEditor.getByRole("combobox", { name: "Slot email save to" }).click();
+  await expect(page.getByRole("option", { name: "party_size" })).toHaveCount(0);
+  await page.getByRole("option", { name: "contact_email" }).click();
+  await documentEditor.getByRole("combobox", { name: "Slot email save for" }).click();
+  await page.getByRole("option", { name: "The verified person" }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor.getByRole("button", { name: "email", exact: true })).toContainText("saves to contact_email for the person");
+  await expect.poll(() => savedTo()?.saveTo, { timeout: 15_000 }).toEqual({ contextVariable: "contact_email", scope: "person" });
+
+  await page.reload();
+  const reloadedEditor = page.getByRole("article", { name: "Routine document editor" });
+  await reloadedEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await expect(reloadedEditor.getByRole("button", { name: "email", exact: true })).toContainText("saves to contact_email for the person");
+
+  await reloadedEditor.getByRole("button", { name: "email", exact: true }).click();
+  await reloadedEditor.getByRole("combobox", { name: "Slot email save to" }).click();
+  await page.getByRole("option", { name: "Don't save" }).click();
+  await reloadedEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => savedTo(), { timeout: 15_000 }).not.toHaveProperty("saveTo");
+  await expect(reloadedEditor.getByRole("button", { name: "email", exact: true })).not.toContainText("saves to");
+});

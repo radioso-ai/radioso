@@ -3882,13 +3882,13 @@ export interface paths {
         get?: never;
         /**
          * Set a conversation's attribute
-         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
+         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
          */
         put: operations["setHistoryConversationAttribute"];
         post?: never;
         /**
          * Reset a conversation's attribute
-         * @description Deletes the value this conversation holds for a Choice attribute, whoever wrote it. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session or verified customer holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
+         * @description Deletes the value this conversation holds for an attribute of any type that is not Private, whoever wrote it: a teammate's, the AI's, an API token's or a routine's. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session or verified customer holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
          */
         delete: operations["resetHistoryConversationAttribute"];
         options?: never;
@@ -7216,6 +7216,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7347,6 +7357,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7454,7 +7474,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable" | "save_to_unknown_attribute" | "save_to_attribute_not_stored" | "save_to_type_mismatch" | "save_to_attribute_signed" | "save_to_sensitive_slot_not_private" | "save_to_duplicate_target";
                 location: string;
                 message: string;
             }[];
@@ -7489,6 +7509,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7647,6 +7677,16 @@ export interface components {
                     mutable?: boolean;
                     /** @enum {string} */
                     sensitivity?: "normal" | "sensitive";
+                    /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                    saveTo?: {
+                        /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                        contextVariable: string;
+                        /**
+                         * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                         * @enum {string}
+                         */
+                        scope: "conversation" | "person";
+                    };
                 }[];
                 steps: {
                     stableStepId: string;
@@ -8146,6 +8186,16 @@ export interface components {
                     mutable?: boolean;
                     /** @enum {string} */
                     sensitivity?: "normal" | "sensitive";
+                    /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                    saveTo?: {
+                        /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                        contextVariable: string;
+                        /**
+                         * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                         * @enum {string}
+                         */
+                        scope: "conversation" | "person";
+                    };
                 }[];
                 steps: {
                     stableStepId: string;
@@ -10258,7 +10308,7 @@ export interface components {
             /** @description The attribute's name, as in `{{context.<name>}}`. */
             name: string;
             /** @enum {string} */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`. */
             value?: unknown;
             /** @description The option an `enum` value names, archived or not. Absent for other types, for a redacted value, and for a key no option has. */
@@ -10332,7 +10382,7 @@ export interface components {
             };
             /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
             attributes?: components["schemas"]["ConversationAttribute"][];
-            /** @description With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset one with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API. */
+            /** @description With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset any attribute that is not Private with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API. */
             attributesEditable?: boolean;
         };
         ChatConversationTail: {
@@ -11087,7 +11137,7 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description The options of an `enum` variable; null for every other type. */
             options: components["schemas"]["ContextVariableOption"][] | null;
             /** @enum {string} */
@@ -11105,10 +11155,10 @@ export interface components {
             name: string;
             description?: string | null;
             /**
-             * @description The type of every value. It cannot change while the variable has values.
+             * @description The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.
              * @enum {string}
              */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
             options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
@@ -11122,10 +11172,10 @@ export interface components {
             name?: string;
             description?: string | null;
             /**
-             * @description The type of every value. It cannot change while the variable has values.
+             * @description The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.
              * @enum {string}
              */
-            valueType?: "string" | "json" | "enum";
+            valueType?: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
             options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
@@ -11199,7 +11249,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
             /** Format: date-time */
             lastModified: string;
@@ -11213,7 +11263,7 @@ export interface components {
         };
         ContextVariableValueUpsertRequest: {
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
         };
         ContextVariableValueDeleteRequest: {
@@ -12437,13 +12487,13 @@ export interface components {
                  * @description The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
                  * @enum {string}
                  */
-                valueType: "string" | "json" | "enum";
+                valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
                 /**
                  * @description Where the value is kept. Version 1 records the values kept for the conversation.
                  * @enum {string}
                  */
                 scope: "conversation";
-                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute. */
+                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute. */
                 value: unknown;
                 /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded. */
                 redacted: boolean;
@@ -30695,7 +30745,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationAttributeChange"];
                 };
             };
-            /** @description Request validation failed, or an attribute a teammate doesn't edit */
+            /** @description Request validation failed, or a Private attribute */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -7,7 +7,7 @@ import {
   validateExactContentItem,
 } from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
-import { CONTEXT_VARIABLE_SOURCES } from "../context-variables/public.js";
+import { CONTEXT_VARIABLE_SOURCES, type AvailableContextVariable } from "../context-variables/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
@@ -199,13 +199,24 @@ export const equalScopedAuthoringSnapshots = (
  * `publishedSnapshot` is the agent's currently published revision, when it has one: the
  * routines module's cross-snapshot exposure rules freeze a routine's tool name from the
  * revision that first published it, so the candidate is checked against what calling agents
- * already see. Both real callers pass it; a unit test of the other rules may leave it out. */
+ * already see. Both real callers pass it; a unit test of the other rules may leave it out.
+ *
+ * `saveTargetAttributes` are the attributes the candidate's own enablements keep, read as they are
+ * now: a field's save target (#1884) is checked against them, so a release never saves to an
+ * attribute it disabled or stopped keeping. Both real callers pass them. */
 export const assertCandidateSnapshotIsRunnable = (
   snapshot: AgentRevisionSnapshot,
-  options: { agentDefaultLocale?: string; publishedSnapshot?: AgentRevisionSnapshot | null } = {},
+  options: {
+    agentDefaultLocale?: string;
+    publishedSnapshot?: AgentRevisionSnapshot | null;
+    saveTargetAttributes?: ReadonlyMap<string, AvailableContextVariable>;
+  } = {},
 ): void => {
   // Consents are checked against the agent's language as it is now, like the greeting below.
-  const consentValidationContext = options.agentDefaultLocale === undefined ? {} : { agentDefaultLocale: options.agentDefaultLocale };
+  const consentValidationContext = {
+    ...(options.agentDefaultLocale === undefined ? {} : { agentDefaultLocale: options.agentDefaultLocale }),
+    ...(options.saveTargetAttributes ? { saveTargetAttributes: options.saveTargetAttributes } : {}),
+  };
   // A disabled routine cannot activate, so it cannot break a conversation: parking a
   // half-finished flow must not block the agent's release. Directive scope closure below
   // still spans every routine, because a tag naming a parked routine is still a real one.

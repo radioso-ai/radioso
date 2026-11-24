@@ -3,12 +3,14 @@ import { z } from "zod";
 import {
   routineConsentStoredSchema,
   routineReentryModes,
+  routineSlotSaveScopes,
   type RoutineApprovalOption,
   type RoutineDefinition,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
   type RoutineGuardKind,
   type RoutineReentryMode,
+  type RoutineSlotSaveTo,
   type RoutineSlotType,
   type RoutineStepKind,
   type RoutineTerminalKind,
@@ -55,6 +57,13 @@ const readNumber = (record: Record<string, unknown>, key: string): number =>
 
 const readBoolean = (record: Record<string, unknown>, key: string): boolean =>
   typeof record[key] === "boolean" ? record[key] : false;
+
+/** A slot's save target from its two columns, which are set together or not at all. */
+const saveToOf = (slot: Record<string, unknown>): { saveTo?: RoutineSlotSaveTo } => {
+  const contextVariable = readNullableString(slot, "saveToContextVariable");
+  const scope = routineSlotSaveScopes.find((candidate) => candidate === slot.saveToScope);
+  return contextVariable && scope ? { saveTo: { contextVariable, scope } } : {};
+};
 
 const readOperatorNotice = (
   terminal: Record<string, unknown>,
@@ -168,6 +177,8 @@ export const mapRoutineDefinitionRow = (row: RoutineDefinitionRow): RoutineDefin
     // Like `mutable`, only the non-default value is carried, so a normal slot reads back in the
     // shape it had before the column existed and published snapshots stay unchanged.
     ...(readNullableString(slot, "sensitivity") === "sensitive" ? { sensitivity: "sensitive" as const } : {}),
+    // Present only when the slot saves its value, so a slot without a target reads back as before.
+    ...saveToOf(slot),
   })),
   steps: asArray(row.steps).map((step) => {
     // captureKey/options are only valid on approval steps; the domain rejects them on any

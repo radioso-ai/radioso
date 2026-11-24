@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { context, dependencies, routine } from "./copilot-tools-test-helpers.js";
+import { realCatalog } from "./realCatalogTestSupport.js";
 
 describe("copilot routine readers", () => {
   it("lists routine identities and portability metadata without duplicating content", async () => {
@@ -105,7 +106,7 @@ describe("copilot routine readers", () => {
       stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: false, operatorNotice: null }],
       endingsTruncated: false,
-      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false }],
+      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false, saveTo: null }],
       fieldsTruncated: false,
       consents: [],
     });
@@ -154,7 +155,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
 
     expect(result.routine.editable.fields).toEqual([
-      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive", mutable: false },
+      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive", mutable: false, saveTo: null },
     ]);
   });
 
@@ -168,7 +169,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
 
     expect(result.routine.editable.fields).toEqual([
-      { key: "email", type: "email", required: true, description: "Where to reach them", sensitivity: "normal", mutable: true },
+      { key: "email", type: "email", required: true, description: "Where to reach them", sensitivity: "normal", mutable: true, saveTo: null },
     ]);
   });
 
@@ -549,5 +550,31 @@ describe("copilot routine name resolution", () => {
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
 
     expect(await tool.describeEntity!({ routineTitle: "support-intake" }, context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))).toMatchObject({ kind: "ambiguous" });
+  });
+});
+
+describe("propose_routine_edit and a field's save target (#1884)", () => {
+  const routineEdit = realCatalog().find((descriptor) => descriptor.name === "propose_routine_edit")!;
+  const routineId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  it("spells out the save target's shape, which the transport renders as a bare object, with room under the MCP cap", () => {
+    expect(routineEdit.description).toContain('saveTo?: {contextVariable, scope: "conversation"|"person"} | null');
+    expect(routineEdit.description.length).toBeLessThanOrEqual(1_900);
+  });
+
+  it("takes a proposal that saves a field to an attribute by its name, or stops saving it", () => {
+    const changes = { slots: [
+      { key: "guests", saveTo: { contextVariable: "Party size", scope: "conversation" } },
+      { key: "email", saveTo: { contextVariable: "contact_email", scope: "person" } },
+      { key: "note", saveTo: null },
+    ] };
+
+    expect(routineEdit.inputSchema.safeParse({ routineId, changes }).success).toBe(true);
+  });
+
+  it("refuses a save target given as a bare name or with a scope it does not know", () => {
+    for (const saveTo of ["party_size", { contextVariable: "party_size" }, { contextVariable: "party_size", scope: "customer" }]) {
+      expect(routineEdit.inputSchema.safeParse({ routineId, changes: { slots: [{ key: "guests", saveTo }] } }).success).toBe(false);
+    }
   });
 });

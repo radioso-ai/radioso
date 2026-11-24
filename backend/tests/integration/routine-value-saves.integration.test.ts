@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, expect, it, vi } from "vitest";
 
 import { createConsentWithdrawal } from "../../src/app/composition/consentWithdrawal.js";
 import { withWorkspaceEvents } from "../../src/app/composition/workspaceEventLog.js";
@@ -14,7 +14,16 @@ import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/worksp
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { DeferredRoutineStore } from "../../src/modules/chat/services/routines/deferredRoutineStore.js";
-import { ContextValueSaves } from "../../src/modules/context-variables/public.js";
+import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
+import {
+  ContextValueSaves,
+  ContextVariableResolverService,
+  contextScopeLadder,
+  projectContextForMatching,
+  resolveContextForTurn,
+  routineContextRenderer,
+  type AgentContextVariableEnablement,
+} from "../../src/modules/context-variables/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -246,6 +255,32 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
     // Last writer wins: a later run of the routine replaces the teammate's value.
     await persistence.completeAssistantTurn(await turnEnding(seeded, { id: conversation.id, verifiedCustomerId: null }, ended(conversation.id, "complete", { guests: 5 })));
     expect(await partySize()).toMatchObject({ data: 5, written_by_kind: "routine" });
+  });
+
+  it("hands what a routine saved to a later turn's directive condition and {{context.<name>}}, and a person's value to their next conversation", async () => {
+    const seeded = await seedWorkspace();
+    const customerId = `customer-${randomUUID()}`;
+    const booking = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed", verifiedCustomerId: customerId });
+    await persistence.completeAssistantTurn(await turnEnding(seeded, { id: booking.id, verifiedCustomerId: customerId }, ended(booking.id, "complete")));
+    const repository = new ContextVariableRepository(database.kysely, null);
+    const now = new Date().toISOString();
+    const enablements = Object.values(seeded.variableIds).map((variableId) => ({
+      id: randomUUID(), agentId: seeded.agentId, variableId, source: "pushed", resolverSkillId: null, maxAgeSeconds: null,
+      resolverTimeoutMs: null, surfacing: "on_reference", enabled: true, createdAt: now, updatedAt: now,
+    }) as unknown as AgentContextVariableEnablement);
+    const nextTurn = async (conversationId: string) => resolveContextForTurn(null, await new ContextVariableResolverService({ repository, resolver: { resolve: vi.fn() } })
+      .resolveForEnablements(seeded.workspaceId, seeded.agentId, enablements, contextScopeLadder({ conversationId, chatSessionId: null, verifiedCustomerId: customerId, agentId: seeded.agentId, workspaceId: seeded.workspaceId })));
+
+    const sameConversation = await nextTurn(booking.id);
+    expect(projectContextForMatching(sameConversation.snapshot).context).toMatchObject({ party_size: 4, contact_email: "ada@guests.example" });
+    expect(routineContextRenderer.render({ name: "party_size", stagedContext: sameConversation.staged }))
+      .toBe('<context_variable name="party_size">4</context_variable>');
+
+    // The person's value follows them; the conversation's stays with the booking.
+    const later = await conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, sourceChannel: "website_embed", verifiedCustomerId: customerId });
+    const laterContext = projectContextForMatching((await nextTurn(later.id)).snapshot).context;
+    expect(laterContext.contact_email).toBe("ada@guests.example");
+    expect(laterContext).not.toHaveProperty("party_size");
   });
 
   it("deletes the values a routine saved, and their change events, when its consent is withdrawn", async () => {

@@ -3,7 +3,7 @@ import type { ChannelPersonDataEraser } from "../../../../shared/domain/conversa
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 
 /** A sender's number change Meta reported on a signed webhook: the number they left, and the business number it came to. */
-export interface WhatsAppNumberChange {
+interface WhatsAppNumberChange {
   readonly previousNumber: string;
   readonly phoneNumberId: string | null;
 }

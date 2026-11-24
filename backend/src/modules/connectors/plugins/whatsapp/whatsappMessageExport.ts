@@ -1,7 +1,7 @@
 import { exportTimestamp, type DataSubjectExportRecord } from "../../../../shared/domain/dataSubjectAccess.js";
 
 /** One row of the WhatsApp transport's message log, as a data subject's export reads it. */
-export interface WhatsAppLoggedMessage {
+interface WhatsAppLoggedMessage {
   readonly wamid: string;
   readonly waId: string;
   readonly direction: string;
@@ -45,7 +45,7 @@ const inboundContent = (message: JsonObject): DataSubjectExportRecord => {
     return text ? { text } : {};
   }
   if (type && MEDIA_TYPES.has(type) && isObject(message[type])) {
-    const media = message[type] as JsonObject;
+    const media = message[type];
     const id = textOf(media.id);
     const filename = textOf(media.filename);
     const caption = textOf(media.caption);

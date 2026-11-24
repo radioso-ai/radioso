@@ -63,7 +63,7 @@ export const defaultVerifiedCustomerDataErasers: readonly VerifiedCustomerDataEr
 ];
 
 /** Every module's eraser for the rows it keys by a channel's person key: a WhatsApp number's values and message log. */
-export const defaultChannelPersonDataErasers: readonly ChannelPersonDataEraserBinding[] = [
+const defaultChannelPersonDataErasers: readonly ChannelPersonDataEraserBinding[] = [
   (trx) => new ContextVariableValueEraser(trx),
   (trx) => new WhatsAppMessageLogEraser(trx, new ContextVariableValueEraser(trx)),
 ];

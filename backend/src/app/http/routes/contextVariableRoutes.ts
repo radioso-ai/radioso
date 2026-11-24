@@ -8,7 +8,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
+import type { ContextValueWriter } from "../../../modules/context-variables/public.js";
 import {
   CONTEXT_VARIABLE_SCOPE_TYPES,
   CONTEXT_VARIABLE_SOURCES,

@@ -78,6 +78,9 @@ import type {
   DocumentSourceRecord,
   DocumentSourceRepositoryPort,
 } from "../../src/db/repositories/documentSourceRepository.js";
+import type { DueWebsiteRecrawl, WebsiteRecrawlRepositoryPort } from "../../src/db/repositories/websiteRecrawlRepository.js";
+import type { WebsiteHeldPageStore, WebsiteMissingPageStore } from "../../src/modules/websiteCrawler/missingPages.js";
+import type { RecrawlCadence } from "../../src/modules/websiteCrawler/public.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -188,6 +191,7 @@ import type {
   HistoryItemsRepositoryPort,
   HistoryItemsSourceRecord,
 } from "../../src/db/repositories/historyItemsRepository.js";
+import type { ConversationAttributeFilter } from "../../src/modules/context-variables/public.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
 import type {
   ConversationMessageSummary,
@@ -2834,6 +2838,8 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
       metadata: input.metadata ?? {},
       lastSyncStatus: null,
       lastSyncedAt: null,
+      recrawlCadence: "off",
+      nextRecrawlAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -2889,11 +2895,17 @@ export class InMemoryDocumentSourceRepository implements DocumentSourceRepositor
 
 export class InMemoryDocumentRepository implements DocumentRepositoryPort {
   readonly items = new Map<string, DocumentRecord>();
+  private heldPages?: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument" | "isKept">;
 
   constructor(private jobRepository?: InMemoryDocumentProcessingJobRepository) {}
 
   setJobRepository(jobRepository: InMemoryDocumentProcessingJobRepository): void {
     this.jobRepository = jobRepository;
+  }
+
+  /** The held-pages table `deleteHeldSourcePages` reads, as Postgres joins it. */
+  setHeldPages(heldPages: Pick<InMemoryWebsiteMissingPageStore, "pendingPageIds" | "forgetDocument" | "isKept">): void {
+    this.heldPages = heldPages;
   }
 
   async countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }) {
@@ -3703,20 +3715,20 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteMissingPagesBySourceAndExternalIds(input: {
+  async deleteMissingSourcePages(input: {
     workspaceId: string;
     sourceId: string;
-    keepExternalDocumentIds: string[];
+    documentIds: readonly string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    const keep = new Set(input.keepExternalDocumentIds.filter((value) => Boolean(value)));
+    const listed = new Set(input.documentIds);
     let deletedCount = 0;
     let deletedContentBytes = 0;
     for (const [id, doc] of this.items.entries()) {
       if (
         doc.workspaceId === input.workspaceId &&
         doc.sourceId === input.sourceId &&
-        doc.externalDocumentId &&
-        !keep.has(doc.externalDocumentId)
+        listed.has(id) &&
+        !this.heldPages?.isKept(id)
       ) {
         deletedContentBytes += doc.contentSizeBytes ?? 0;
         this.items.delete(id);
@@ -3724,6 +3736,97 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       }
     }
     return { deletedCount, deletedContentBytes };
+  }
+
+  async deleteHeldSourcePages(input: {
+    workspaceId: string;
+    sourceId: string;
+  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    let deletedCount = 0;
+    let deletedContentBytes = 0;
+    for (const id of this.heldPages?.pendingPageIds(input) ?? []) {
+      const doc = this.items.get(id);
+      if (doc && doc.workspaceId === input.workspaceId && doc.sourceId === input.sourceId) {
+        deletedContentBytes += doc.contentSizeBytes ?? 0;
+        this.items.delete(id);
+        this.heldPages?.forgetDocument(id);
+        deletedCount += 1;
+      }
+    }
+    return { deletedCount, deletedContentBytes };
+  }
+}
+
+/** `setRecrawlSchedule` over the in-memory sources; the sweep's claim is exercised against Postgres. */
+export class InMemoryWebsiteRecrawlRepository implements WebsiteRecrawlRepositoryPort {
+  constructor(private readonly sources: InMemoryDocumentSourceRepository) {}
+
+  async setRecrawlSchedule(input: {
+    workspaceId: string;
+    sourceId: string;
+    recrawlCadence: RecrawlCadence;
+    nextRecrawlAt: Date | null;
+  }): Promise<DocumentSourceRecord | null> {
+    const source = await this.sources.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source || source.kind !== "website") return null;
+    const updated = { ...source, recrawlCadence: input.recrawlCadence, nextRecrawlAt: input.nextRecrawlAt, updatedAt: new Date() };
+    this.sources.items.set(updated.id, updated);
+    return updated;
+  }
+
+  async claimDueRecrawls(): Promise<DueWebsiteRecrawl[]> {
+    return [];
+  }
+}
+
+/** Held and kept missing pages, keyed by document id. `hold` seeds pages a scheduled crawl held. */
+export class InMemoryWebsiteMissingPageStore implements WebsiteMissingPageStore, WebsiteHeldPageStore {
+  readonly pages = new Map<string, { workspaceId: string; sourceId: string; decision: "pending" | "kept" }>();
+
+  hold(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): void {
+    for (const documentId of input.documentIds) {
+      if (!this.pages.has(documentId)) this.pages.set(documentId, { workspaceId: input.workspaceId, sourceId: input.sourceId, decision: "pending" });
+    }
+  }
+
+  async reviewMissingPages(): Promise<{ livePageCountBeforeCrawl: number; missingPages: [] }> {
+    return { livePageCountBeforeCrawl: 0, missingPages: [] };
+  }
+
+  async holdMissingPages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<number> {
+    const before = this.pages.size;
+    this.hold(input);
+    return this.pages.size - before;
+  }
+
+  pendingPageIds(input: { workspaceId: string; sourceId: string }): string[] {
+    return [...this.pages.entries()]
+      .filter(([, page]) => page.workspaceId === input.workspaceId && page.sourceId === input.sourceId && page.decision === "pending")
+      .map(([documentId]) => documentId);
+  }
+
+  async keepHeldPages(input: { workspaceId: string; sourceId: string }): Promise<number> {
+    const held = this.pendingPageIds(input);
+    for (const documentId of held) this.pages.set(documentId, { ...this.pages.get(documentId)!, decision: "kept" });
+    return held.length;
+  }
+
+  async countHeldPages(input: { workspaceId: string; sourceIds: readonly string[] }): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    for (const page of this.pages.values()) {
+      if (page.workspaceId === input.workspaceId && page.decision === "pending" && input.sourceIds.includes(page.sourceId)) {
+        counts.set(page.sourceId, (counts.get(page.sourceId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  forgetDocument(documentId: string): void {
+    this.pages.delete(documentId);
+  }
+
+  isKept(documentId: string): boolean {
+    return this.pages.get(documentId)?.decision === "kept";
   }
 }
 
@@ -4467,6 +4570,13 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     this.ownershipReader = ownershipReader;
   }
 
+  private holdsValue: ConversationValueMatcher = () => false;
+
+  /** Lets the list read the conversations' attribute values, which another store keeps. */
+  setAttributeValueMatcher(holdsValue: ConversationValueMatcher): void {
+    this.holdsValue = holdsValue;
+  }
+
   async getOrCreateByAnonymousSession(input: {
     workspaceId: string;
     agentId: string;
@@ -4578,10 +4688,12 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
       agentId?: string | null;
+      attribute?: ConversationAttributeFilter;
     } = { limit: 50, offset: 0 },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const workspaceConversations = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId && (!input.agentId || item.agentId === input.agentId))
+      .filter((item) => !input.attribute || this.holdsValue(input.attribute, item.id))
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
@@ -5046,10 +5158,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     workspaceId: string,
     conversationId: string,
     limit: number,
-    options: { roles?: readonly MessageRecord["role"][] } = {},
+    options: { roles?: readonly MessageRecord["role"][]; answeredOnly?: boolean } = {},
   ): Promise<MessageRecord[]> {
-    return [...(this.items.get(conversationId) ?? [])]
-      .filter((message) => message.workspaceId === workspaceId && (!options.roles || options.roles.includes(message.role)))
+    const messages = (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId);
+    const answeredUntil = Math.max(...messages.filter((message) => message.role === "assistant").map((message) => message.createdAt.getTime()));
+    return [...messages]
+      .filter((message) => !options.roles || options.roles.includes(message.role))
+      .filter((message) => !options.answeredOnly || message.createdAt.getTime() <= answeredUntil)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .slice(-limit);
   }
@@ -5550,15 +5665,19 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
   }
 }
 
+/** Whether a conversation's own value of the filter's variable is the filter's key; the attribute filter of the history lists. */
+export type ConversationValueMatcher = (filter: ConversationAttributeFilter, conversationId: string) => boolean;
+
 export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPort {
   constructor(
     private readonly conversationRepository: InMemoryConversationRepository,
     _auditEventRepository: InMemoryAuditEventRepository,
+    private readonly holdsValue: ConversationValueMatcher = () => false,
   ) {}
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string; attribute?: ConversationAttributeFilter } = { limit: 50, offset: 0 },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     // Matches the title only; the Postgres repository also matches the first user message.
@@ -5566,6 +5685,7 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
     const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
       .filter((conversation) => conversation.workspaceId === workspaceId && (!input.agentId || conversation.agentId === input.agentId))
       .filter((conversation) => !search || (conversation.title ?? "").toLowerCase().includes(search))
+      .filter((conversation) => !input.attribute || this.holdsValue(input.attribute, conversation.id))
       .map((conversation) => ({
         kind: "chat" as const,
         id: conversation.id,

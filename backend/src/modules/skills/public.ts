@@ -45,6 +45,7 @@ export {
 } from "./routineAuthoringPolicy.js";
 export {
   RoutineInvocableSkillNamesService,
+  routineInvocableSkillNamesByKind,
   routineNameDispatchedSkillKinds,
   type RoutineInvocableSkillNames,
 } from "./routineInvocableSkillNames.js";

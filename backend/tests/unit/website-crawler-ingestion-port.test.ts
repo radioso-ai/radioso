@@ -23,7 +23,7 @@ class IngestionServiceStub {
     this.tag(input.sourceId);
   }
 
-  async reapMissingPages(_input: { workspaceId: string; sourceId: string; keepExternalDocumentIds: string[] }) {
+  async reapMissingPages(_input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }) {
     return { deletedCount: this.resolvedSources.length, deletedContentBytes: 0 };
   }
 
@@ -43,7 +43,7 @@ describe("website crawler ingestion port", () => {
       .resolves.toEqual({ documentId: "stub-About", status: "queued" });
     await expect(updateSourceSyncState!({ workspaceId: "workspace-1", sourceId: "source-1", status: "success" }))
       .resolves.toBeUndefined();
-    await expect(reapMissingPages!({ workspaceId: "workspace-1", sourceId: "source-1", keepExternalDocumentIds: [] }))
+    await expect(reapMissingPages!({ workspaceId: "workspace-1", sourceId: "source-1", documentIds: [] }))
       .resolves.toEqual({ deletedCount: 1, deletedContentBytes: 0 });
   });
 
@@ -56,7 +56,7 @@ describe("website crawler ingestion port", () => {
     await expect(port.reapMissingPages!({
       workspaceId: "workspace-1",
       sourceId: "source-1",
-      keepExternalDocumentIds: [],
+      documentIds: [],
     })).resolves.toEqual({ deletedCount: 1, deletedContentBytes: 0 });
   });
 });

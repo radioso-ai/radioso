@@ -63,8 +63,6 @@ export {
 export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
-  readNotifyContactDelivery,
-  resolveEffectiveContactDelivery,
 } from "./domain.js";
 export {
   AgentService,
@@ -143,6 +141,8 @@ export {
   type AgentRevisionState,
   type PublicationResult,
 } from "./agentRevision.js";
+export { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
+export type { AgentContextVariableUsersReader } from "./contextVariableUsers.js";
 export {
   AgentRevisionRuntimeResolver,
   agentNotPublished,
@@ -170,3 +170,4 @@ export {
 export * from "./copilotPrimitiveRegistry.js";
 export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";
 export { agentDraftChange, writesAgentDraft } from "./agentDraftChange.js";
+export { readNotifyContactDelivery, resolveEffectiveContactDelivery } from "./contactHumanSkill.js";

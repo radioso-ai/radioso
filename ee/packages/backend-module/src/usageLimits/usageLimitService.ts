@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { findPlan, PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
+import { findPlan, PLAN_CATALOG, type Plan, type PlanRecrawlCadence, type UsageCountKind } from "@radioso/plan-catalog";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
@@ -25,6 +25,7 @@ import {
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { currentPeriodStart, nextPeriodStart } from "./period.js";
 import { claimGraceExhaustedSafely, claimLevelsCrossed, clearAlertClaims } from "./alerts/alertClaims.js";
+import { addKindTenths, bumpConversationReplies, meteredInAnswers, recordUncappedTenths, refundKindTenths } from "./usageMeter.js";
 
 // Re-exported for existing importers (e.g. staffConsole/organizationDirectoryService.ts):
 // conversationUsageLevel.ts is the one owner of this unit now that reserveTenths' grace
@@ -32,6 +33,7 @@ import { claimGraceExhaustedSafely, claimLevelsCrossed, clearAlertClaims } from 
 export { TENTHS_PER_CONVERSATION };
 
 const CREDIT_GRANT_LIFETIME_MONTHS = 12;
+type PlanLimitLookup = { accountId?: string | null; workspaceId: string };
 
 export interface UsageLimitProfile {
   key: string;
@@ -257,20 +259,15 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     return balanceTenths;
   }
 
-  async getNotificationEmailDailyLimit(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<number | null> {
-    const accountId = await this.resolveAccountId(input);
-    if (!accountId) return null;
-    const profile = await this.findProfileForAccount(accountId);
-    return profile ? findPlan(profile.key)?.dailyNotificationEmails ?? null : null;
+  async getNotificationEmailDailyLimit(input: PlanLimitLookup): Promise<number | null> {
+    return (await this.findCatalogPlan(input))?.dailyNotificationEmails ?? null;
   }
 
-  async getPublicChatMessagesPerMinute(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<number | null> {
+  async getFastestRecrawlCadence(input: PlanLimitLookup): Promise<PlanRecrawlCadence | null> {
+    return (await this.findCatalogPlan(input))?.fastestRecrawlCadence ?? null;
+  }
+
+  async getPublicChatMessagesPerMinute(input: PlanLimitLookup): Promise<number | null> {
     const accountId = await this.resolveAccountId(input);
     if (!accountId) return null;
     const profile = await this.findProfileForAccount(accountId);
@@ -408,7 +405,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
         used: Math.max(answerCounter?.used_count ?? 0, persistedAnswerCount),
         // A conversation-metered profile ignores monthlyAnswerLimit (see
         // UsageLimitProfile.monthlyConversationLimit), so that cap is not enforced.
-        limit: typeof profile?.monthlyConversationLimit === "number" ? null : profile?.monthlyAnswerLimit ?? null,
+        limit: meteredInAnswers(profile) ? profile.monthlyAnswerLimit : null,
       },
       storedDocuments: {
         used: storedDocumentCount,
@@ -447,17 +444,11 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     }
 
     const profile = await this.findProfileForAccount(accountId);
-    if (!profile) {
-      return noopReservation;
-    }
-    if (typeof profile.monthlyConversationLimit === "number") {
+    if (!meteredInAnswers(profile)) {
       return this.reserveConversationUnits(accountId, profile, input);
     }
 
     const limit = profile.monthlyAnswerLimit;
-    if (typeof limit !== "number") {
-      return noopReservation;
-    }
 
     const periodStart = currentPeriodStart(this.now());
     await this.db
@@ -519,11 +510,12 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
   /**
    * One unit for everything. A customer conversation pays once per block of
    * `repliesPerConversation` replies; operator work pays per call at its
-   * weight; prepaid credits absorb whatever runs past the plan limit.
+   * weight; prepaid credits absorb whatever runs past the plan limit. An
+   * account without a conversation limit is recorded the same way, never refused.
    */
   private async reserveConversationUnits(
     accountId: string,
-    profile: UsageLimitProfile,
+    profile: UsageLimitProfile | null,
     input: { usage: AnswerUsageKind; conversationId?: string | null },
   ): Promise<UsageLimitReservation> {
     const weight = usageWeight(input.usage);
@@ -532,25 +524,28 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     }
     const now = this.now();
     const periodStart = currentPeriodStart(now);
-    const limitTenths = (profile.monthlyConversationLimit ?? 0) * TENTHS_PER_CONVERSATION;
+    const repliesPerConversation = profile?.repliesPerConversation ?? PLAN_CATALOG.repliesPerConversation;
 
     let releaseReply: (() => Promise<void>) | null = null;
     if (weight.perConversationBlock && input.conversationId) {
-      const conversationId = input.conversationId;
-      const replyCount = await this.bumpConversationReplies(accountId, periodStart, conversationId, 1);
+      const reply = { accountId, periodStart, conversationId: input.conversationId };
+      const replyCount = await bumpConversationReplies(this.db, { ...reply, delta: 1 });
       releaseReply = async () => {
-        await this.bumpConversationReplies(accountId, periodStart, conversationId, -1);
+        await bumpConversationReplies(this.db, { ...reply, delta: -1 });
       };
       // Reply 1 opens the first block, reply 11 the second, and so on. Every
       // other reply sits inside a block that has already been paid for.
-      if ((replyCount - 1) % profile.repliesPerConversation !== 0) {
+      if ((replyCount - 1) % repliesPerConversation !== 0) {
         return { commit: async () => {}, release: releaseReply };
       }
     }
 
+    const conversationLimit = profile?.monthlyConversationLimit;
     let unit: UsageLimitReservation;
     try {
-      unit = await this.reserveTenths(accountId, profile, periodStart, weight.kind, weight.tenths, limitTenths, now);
+      unit = profile && typeof conversationLimit === "number"
+        ? await this.reserveTenths(accountId, profile, periodStart, weight.kind, weight.tenths, conversationLimit * TENTHS_PER_CONVERSATION, now)
+        : await recordUncappedTenths(this.db, { accountId, periodStart, kind: weight.kind, tenths: weight.tenths });
     } catch (error) {
       if (releaseReply) {
         await releaseReply();
@@ -567,31 +562,6 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
         }
       },
     };
-  }
-
-  private async bumpConversationReplies(
-    accountId: string,
-    periodStart: string,
-    conversationId: string,
-    delta: 1 | -1,
-  ): Promise<number> {
-    const row = await this.db
-      .insertInto("ee_usage_limit_conversation_replies")
-      .values({
-        account_id: accountId,
-        period_start: sql<string>`${periodStart}::date`,
-        conversation_id: conversationId,
-        reply_count: delta > 0 ? 1 : 0,
-      })
-      .onConflict((oc) =>
-        oc.columns(["account_id", "period_start", "conversation_id"]).doUpdateSet({
-          reply_count: sql<number>`greatest(ee_usage_limit_conversation_replies.reply_count + ${delta}, 0)`,
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .returning("reply_count")
-      .executeTakeFirstOrThrow();
-    return row.reply_count;
   }
 
   /**
@@ -701,16 +671,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
             .where("account_id", "=", accountId)
             .execute();
         }
-        await trx
-          .insertInto("ee_usage_limit_unit_kind_counters")
-          .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
-          .onConflict((oc) =>
-            oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
-              used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
-              updated_at: sql<Date>`now()`,
-            }),
-          )
-          .execute();
+        await addKindTenths(trx, { accountId, periodStart, kind, tenths });
       });
     } catch (error) {
       // The refusing transaction above rolled back without committing anything, so the
@@ -762,13 +723,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
               .where("account_id", "=", accountId)
               .execute();
           }
-          await trx
-            .updateTable("ee_usage_limit_unit_kind_counters")
-            .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
-            .where("account_id", "=", accountId)
-            .where("period_start", "=", sql<string>`${periodStart}::date`)
-            .where("kind", "=", kind)
-            .execute();
+          await refundKindTenths(trx, { accountId, periodStart, kind, tenths });
         });
       },
     };
@@ -1111,10 +1066,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountId}, 0))`.execute(db);
   }
 
-  private async resolveAccountId(input: {
-    accountId?: string | null;
-    workspaceId: string;
-  }): Promise<string | null> {
+  private async resolveAccountId(input: PlanLimitLookup): Promise<string | null> {
     if (input.accountId) {
       return input.accountId;
     }
@@ -1125,6 +1077,13 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCa
       .where("id", "=", input.workspaceId)
       .executeTakeFirst();
     return workspace?.account_id ?? null;
+  }
+
+  /** The catalog plan of the workspace's account; null without one, or for a profile the catalog does not list. */
+  private async findCatalogPlan(input: PlanLimitLookup): Promise<Plan | null> {
+    const accountId = await this.resolveAccountId(input);
+    const profile = accountId ? await this.findProfileForAccount(accountId) : null;
+    return profile ? findPlan(profile.key) ?? null : null;
   }
 
   private async findProfileForAccount(accountId: string): Promise<UsageLimitProfile | null> {

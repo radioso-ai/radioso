@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 
-import { assertCandidateSnapshotIsRunnable, DEFAULT_AGENT_LOCALE_FALLBACK, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
+import { assertCandidateSnapshotIsRunnable, DEFAULT_AGENT_LOCALE_FALLBACK, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentContextVariableUsersReader, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import { currentTimestamp, toSanitizedJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db, DB } from "../../shared/infra/kysely/types.js";
@@ -72,8 +72,34 @@ const liveAgentSkillsSnapshot = (
 ): Promise<AgentRevisionSnapshot["agentSkills"]> =>
   new AgentSkillRepository(trx).listByAgent(workspaceId, agentId);
 
-export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
+export class AgentRevisionRepository implements AgentRevisionRepositoryPort, AgentContextVariableUsersReader {
   constructor(private readonly db: Db) {}
+  /**
+   * One read over every agent's draft and published snapshot. The containment test is the
+   * snapshot schema's own shape (`contextVariableEnablements[].variableId`, `.enabled`), owned here.
+   */
+  async listContextVariableUsers(input: { workspaceId: string; variableId: string; limit: number }): ReturnType<AgentContextVariableUsersReader["listContextVariableUsers"]> {
+    const enabled = JSON.stringify([{ variableId: input.variableId, enabled: true }]);
+    const rows = await this.db.selectFrom("agents as a")
+      .leftJoin("agent_drafts as d", (join) => join.onRef("d.agent_id", "=", "a.id").onRef("d.workspace_id", "=", "a.workspace_id"))
+      .leftJoin("agent_revisions as r", (join) => join.onRef("r.id", "=", "a.published_revision_id").onRef("r.agent_id", "=", "a.id").onRef("r.workspace_id", "=", "a.workspace_id"))
+      .select([
+        "a.id as id", "a.name as name",
+        sql<boolean>`coalesce(d.snapshot -> 'contextVariableEnablements' @> ${enabled}::jsonb, false)`.as("in_draft"),
+        sql<boolean>`coalesce(r.snapshot -> 'contextVariableEnablements' @> ${enabled}::jsonb, false)`.as("in_published"),
+      ])
+      .where("a.workspace_id", "=", input.workspaceId)
+      .where(sql<boolean>`(d.snapshot -> 'contextVariableEnablements' @> ${enabled}::jsonb OR r.snapshot -> 'contextVariableEnablements' @> ${enabled}::jsonb)`)
+      .orderBy("a.name").orderBy("a.id")
+      .limit(input.limit + 1)
+      .execute();
+    return {
+      users: rows.slice(0, input.limit).map((row) => ({
+        agentId: row.id, agentName: row.name, uses: row.in_draft && row.in_published ? "both" : row.in_draft ? "draft" : "published",
+      })),
+      truncated: rows.length > input.limit,
+    };
+  }
   async initializeDraft(workspaceId: string, agentId: string, customInstruction: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);

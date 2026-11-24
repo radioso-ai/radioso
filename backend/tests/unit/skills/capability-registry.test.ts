@@ -61,13 +61,21 @@ describe("SkillCapabilityRegistry", () => {
       expect(descriptor.inputSchema).toBeDefined();
       expect(descriptor.outcomeVocabulary.length).toBeGreaterThan(0);
       expect(descriptor.supportedInvocationModes).toContain("routine_named");
-      expect(descriptor.supportedInvocationModes).toContain("agent_selectable");
+      // API requests run from routines only: routines collect their inputs and branch on their outputs.
+      if (descriptor.id !== "api_request") {
+        expect(descriptor.supportedInvocationModes).toContain("agent_selectable");
+      }
       expect(descriptor.defaultInvocationMode ?? descriptor.supportedInvocationModes[0]).toBeTypeOf("string");
       expect(descriptor.executorAdapter).toEqual(expect.any(String));
     }
     expect(registry.get("notify")?.requiresTarget).toBe(false);
     expect(registry.get("retrieve")?.requiresTarget).toBe(false);
     expect(registry.get("email")?.requiresTarget).toBe(true);
+    expect(registry.get("api_request")).toMatchObject({
+      requiresTarget: true,
+      targetKind: "api_connection",
+      supportedInvocationModes: ["routine_named"],
+    });
   });
 
   it("enforces supported invocation modes by capability", () => {

@@ -7,8 +7,15 @@ import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/d
 import { parseSourceDocumentMetadata } from "../../../modules/documents/domain/sourceDocumentMetadata.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import type { WorkspaceDocumentSourceStatus } from "../../../modules/documents/contracts/index.js";
+import type { ActiveRecrawlCadence } from "../../../modules/websiteCrawler/public.js";
 
-export interface WebsiteSourceCrawlSettings {
+/** What a website source's presentation adds about its recrawl, read once per request. */
+interface WebsiteRecrawlPresentation {
+  fastestRecrawlCadence: ActiveRecrawlCadence;
+  heldPageCounts: ReadonlyMap<string, number>;
+}
+
+interface WebsiteSourceCrawlSettings {
   url: string | null;
   limit: number;
   includeUrlPatterns: string[];
@@ -16,7 +23,7 @@ export interface WebsiteSourceCrawlSettings {
   preserveContentLinks: boolean;
 }
 
-export const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceCrawlSettings => {
+const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceCrawlSettings => {
   const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
     ? (config.policy as Record<string, unknown>)
     : {};
@@ -39,7 +46,7 @@ export const toCrawlSettings = (config: Record<string, unknown>): WebsiteSourceC
   };
 };
 
-export const buildSyntheticManualDocumentSource = (
+const buildSyntheticManualDocumentSource = (
   workspaceId: string,
   documentCount: number,
 ): DocumentSourceListRecord => ({
@@ -52,14 +59,17 @@ export const buildSyntheticManualDocumentSource = (
   metadata: {},
   lastSyncStatus: null,
   lastSyncedAt: null,
+  recrawlCadence: "off",
+  nextRecrawlAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   documentCount,
 });
 
 export const presentDocumentSource = (
-  source: Pick<DocumentSourceRecord, "id" | "kind" | "name" | "externalId" | "config" | "lastSyncStatus" | "lastSyncedAt" | "createdAt" | "updatedAt">,
-  documentCount = 0,
+  source: Pick<DocumentSourceRecord, "id" | "kind" | "name" | "externalId" | "config" | "lastSyncStatus" | "lastSyncedAt" | "recrawlCadence" | "nextRecrawlAt" | "createdAt" | "updatedAt">,
+  documentCount: number,
+  recrawl: WebsiteRecrawlPresentation,
 ) => ({
   id: source.id,
   kind: source.kind,
@@ -72,20 +82,29 @@ export const presentDocumentSource = (
   documentCount,
   documentEnrichmentOverride: parseDocumentSourceEnrichmentOverride(source.config.documentEnrichmentOverride),
   documentMetadata: parseSourceDocumentMetadata(source.config),
-  ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
+  ...(source.kind === "website"
+    ? {
+        crawlSettings: toCrawlSettings(source.config),
+        recrawlCadence: source.recrawlCadence,
+        nextRecrawlAt: source.nextRecrawlAt?.toISOString() ?? null,
+        heldPageCount: recrawl.heldPageCounts.get(source.id) ?? 0,
+        fastestRecrawlCadence: recrawl.fastestRecrawlCadence,
+      }
+    : {}),
 });
 
 export const presentDocumentSourceList = (
   workspaceId: string,
   sources: ReadonlyArray<DocumentSourceListRecord | WorkspaceDocumentSourceStatus>,
   documentsWithoutSourceCount: number,
+  recrawl: WebsiteRecrawlPresentation,
 ) => {
   const allSources = documentsWithoutSourceCount > 0
     ? [...sources, buildSyntheticManualDocumentSource(workspaceId, documentsWithoutSourceCount)]
     : sources;
 
   return {
-    sources: allSources.map((source) => presentDocumentSource(source, source.documentCount)),
+    sources: allSources.map((source) => presentDocumentSource(source, source.documentCount, recrawl)),
   };
 };
 

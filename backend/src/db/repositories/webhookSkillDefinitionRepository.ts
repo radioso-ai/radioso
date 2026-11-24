@@ -1,9 +1,11 @@
+import { writeAgentSkillIntoDraft } from "../../modules/agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
 
 import type {
   WebhookSkillDefinitionSummary,
 } from "../../modules/webhookSkills/domain.js";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface WebhookSkillDefinitionRecord {
@@ -62,17 +64,33 @@ const webhookSkillColumns = [
   "updated_at",
 ] as const;
 
-const mapRecord = (row: WebhookSkillDefinitionRow): WebhookSkillDefinitionRecord => ({
+/** A webhook skill read from its `agent_skills` row, live or as a release froze it. */
+export const webhookSkillDefinitionFromSkill = (skill: ConversationSkillRow): WebhookSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as WebhookSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    workspaceId: skill.workspaceId,
+    agentId: skill.agentId,
+    destinationId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    boundPayload: config?.boundPayload ?? {},
+    exposedPayload: config?.exposedPayload ?? {},
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: WebhookSkillDefinitionRow): WebhookSkillDefinitionRecord => webhookSkillDefinitionFromSkill({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
-  destinationId: row.target_id,
   skillName: row.skill_name,
-  boundPayload: row.config?.boundPayload ?? {},
-  exposedPayload: row.config?.exposedPayload ?? {},
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export interface WebhookSkillDefinitionRepositoryPort {
@@ -88,7 +106,6 @@ export interface WebhookSkillDefinitionRepositoryPort {
   ): Promise<WebhookSkillDefinitionRecord | null>;
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
   countByDestination(workspaceId: string, destinationId: string): Promise<number>;
-  listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
 const selectWebhookSkills = (db: Db) =>
@@ -102,22 +119,24 @@ export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionR
       boundPayload: input.boundPayload ?? {},
       exposedPayload: input.exposedPayload ?? {},
     };
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        workspace_id: input.workspaceId,
-        skill_name: input.skillName,
-        kind: "webhook",
-        enabled: input.enabled ?? true,
-        target_type: "webhook_destination",
-        target_id: input.destinationId,
-        config: toJsonb(config),
-      })
-      .returning(webhookSkillColumns)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as WebhookSkillDefinitionRow);
+    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          workspace_id: input.workspaceId,
+          skill_name: input.skillName,
+          kind: "webhook",
+          enabled: input.enabled ?? true,
+          target_type: "webhook_destination",
+          target_id: input.destinationId,
+          config: toJsonb(config),
+        })
+        .returning(webhookSkillColumns)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as WebhookSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<WebhookSkillDefinitionRecord | null> {
@@ -160,31 +179,35 @@ export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionR
       ...("boundPayload" in input ? { boundPayload: input.boundPayload ?? {} } : {}),
       ...("exposedPayload" in input ? { exposedPayload: input.exposedPayload ?? {} } : {}),
     };
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        ...(input.enabled != null ? { enabled: input.enabled } : {}),
-        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
-        updated_at: currentTimestamp(),
-      }))
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "webhook")
-      .returning(webhookSkillColumns)
-      .executeTakeFirst();
-    return row ? mapRecord(row as WebhookSkillDefinitionRow) : null;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          ...(input.enabled != null ? { enabled: input.enabled } : {}),
+          config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "webhook")
+        .returning(webhookSkillColumns)
+        .executeTakeFirst();
+      return row ? mapRecord(row as WebhookSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("workspace_id", "=", workspaceId)
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "webhook")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return writeAgentSkillIntoDraft(this.db, { workspaceId, agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "webhook")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 
   async countByDestination(workspaceId: string, destinationId: string): Promise<number> {
@@ -197,18 +220,5 @@ export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionR
       .where("target_id", "=", destinationId)
       .executeTakeFirst();
     return Number(row?.count ?? 0);
-  }
-
-  async listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]> {
-    const rows = await this.db
-      .selectFrom("agent_skills")
-      .select("skill_name")
-      .where("kind", "=", "webhook")
-      .where("workspace_id", "=", workspaceId)
-      .where("target_type", "=", "webhook_destination")
-      .where("target_id", "=", destinationId)
-      .orderBy("skill_name", "asc")
-      .execute();
-    return rows.map((row) => row.skill_name);
   }
 }

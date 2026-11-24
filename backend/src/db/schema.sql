@@ -36,6 +36,45 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
+-- Name: agent_skill_target_uses(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.agent_skill_target_uses(p_workspace_id uuid, p_target_type text, p_target_id text) RETURNS TABLE(agent_id uuid, agent_name text, skill_name text, in_draft boolean, in_published_release boolean)
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT
+    agent.id,
+    COALESCE(NULLIF(agent.internal_name, ''), agent.name),
+    uses.skill_name,
+    bool_or(uses.in_draft),
+    bool_or(NOT uses.in_draft)
+  FROM (
+    SELECT draft_skill.agent_id, draft_skill.skill_name, TRUE AS in_draft
+    FROM agent_skills draft_skill
+    WHERE draft_skill.workspace_id = p_workspace_id
+      AND draft_skill.target_type = p_target_type
+      AND lower(draft_skill.target_id) = lower(p_target_id)
+    UNION ALL
+    SELECT published_agent.id, released_skill ->> 'skillName', FALSE
+    FROM agents published_agent
+    JOIN agent_revisions published_release ON published_release.id = published_agent.published_revision_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(published_release.snapshot -> 'agentSkills') = 'array'
+        THEN published_release.snapshot -> 'agentSkills'
+        ELSE '[]'::jsonb
+      END
+    ) AS released_skill
+    WHERE published_agent.workspace_id = p_workspace_id
+      AND released_skill ->> 'targetType' = p_target_type
+      AND lower(released_skill ->> 'targetId') = lower(p_target_id)
+  ) uses
+  JOIN agents agent ON agent.id = uses.agent_id
+  GROUP BY agent.id, agent.internal_name, agent.name, uses.skill_name
+  ORDER BY 2, 3, 1;
+$$;
+
+
+--
 -- Name: agent_skill_target_uuid(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -52,6 +91,22 @@ $$;
 
 
 --
+-- Name: block_agent_skill_api_connection_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_api_connection_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'api_connection', OLD.id, 'API connection', 'agent_skills_api_request_target_fk'
+  );
+  RETURN OLD;
+END;
+$$;
+
+
+--
 -- Name: block_agent_skill_customer_email_connection_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -63,22 +118,9 @@ BEGIN
     RETURN OLD;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'customer_email'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'customer_email_connection'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'customer email connection % is referenced by agent skills', OLD.id
-      USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_customer_email_target_fk';
-  END IF;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'customer_email_connection', OLD.id, 'customer email connection', 'agent_skills_customer_email_target_fk'
+  );
   RETURN OLD;
 END;
 $$;
@@ -92,23 +134,56 @@ CREATE FUNCTION public.block_agent_skill_mcp_connection_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'mcp_connection', OLD.id, 'MCP connection', 'agent_skills_external_mcp_target_fk'
+  );
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: block_agent_skill_slack_installation_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_slack_installation_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'slack_installation', OLD.id, 'Slack installation', 'agent_skills_slack_target_fk'
+  );
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: block_agent_skill_target_delete(uuid, text, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.block_agent_skill_target_delete(p_workspace_id uuid, p_target_type text, p_target_id uuid, p_target_label text, p_constraint text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  use_list TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = p_workspace_id) THEN
+    RETURN;
   END IF;
 
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'external_mcp'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'mcp_connection'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'MCP connection % is referenced by agent skills', OLD.id
+  SELECT string_agg(
+    format('%s on %s%s', uses.skill_name, uses.agent_name, CASE WHEN uses.in_draft THEN '' ELSE ' (published release)' END),
+    ', '
+  )
+  INTO use_list
+  FROM agent_skill_target_uses(p_workspace_id, p_target_type, p_target_id::text) uses;
+
+  IF use_list IS NOT NULL THEN
+    RAISE EXCEPTION '% % is referenced by agent skills: %', p_target_label, p_target_id, use_list
       USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_external_mcp_target_fk';
+            CONSTRAINT = p_constraint;
   END IF;
-  RETURN OLD;
 END;
 $$;
 
@@ -121,22 +196,9 @@ CREATE FUNCTION public.block_agent_skill_webhook_destination_delete() RETURNS tr
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
-    RETURN OLD;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM agent_skills
-    WHERE kind = 'webhook'
-      AND workspace_id = OLD.workspace_id
-      AND target_type = 'webhook_destination'
-      AND target_id = OLD.id::text
-  ) THEN
-    RAISE EXCEPTION 'webhook destination % is referenced by agent skills', OLD.id
-      USING ERRCODE = '23503',
-            CONSTRAINT = 'agent_skills_webhook_target_fk';
-  END IF;
+  PERFORM block_agent_skill_target_delete(
+    OLD.workspace_id, 'webhook_destination', OLD.id, 'webhook destination', 'agent_skills_webhook_target_fk'
+  );
   RETURN OLD;
 END;
 $$;
@@ -307,6 +369,26 @@ BEGIN
       RAISE EXCEPTION 'slack skill % references unknown Slack installation %', NEW.id, NEW.target_id
         USING ERRCODE = '23503',
               CONSTRAINT = 'agent_skills_slack_target_fk';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.kind = 'api_request' THEN
+    IF NEW.target_type IS DISTINCT FROM 'api_connection' OR NEW.target_id IS NULL THEN
+      RAISE EXCEPTION 'api_request skill % must target an API connection', NEW.id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_api_request_target_fk';
+    END IF;
+    target_uuid := agent_skill_target_uuid(NEW.target_id, 'api_connection');
+    SELECT TRUE INTO target_exists
+    FROM api_connections
+    WHERE id = target_uuid
+      AND workspace_id = NEW.workspace_id
+    FOR KEY SHARE;
+    IF target_exists IS NOT TRUE THEN
+      RAISE EXCEPTION 'api_request skill % references unknown API connection %', NEW.id, NEW.target_id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_api_request_target_fk';
     END IF;
     RETURN NEW;
   END IF;
@@ -655,7 +737,7 @@ CREATE TABLE public.agent_context_variables (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT agent_context_variables_check CHECK ((((source = 'resolver'::text) AND (resolver_skill_id IS NOT NULL)) OR ((source <> 'resolver'::text) AND (resolver_skill_id IS NULL)))),
     CONSTRAINT agent_context_variables_check1 CHECK (((source = 'resolver'::text) OR ((max_age_seconds IS NULL) AND (resolver_timeout_ms IS NULL)))),
-    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text, 'request'::text]))),
+    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text, 'request'::text, 'classified'::text]))),
     CONSTRAINT agent_context_variables_surfacing_check CHECK ((surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text])))
 );
 
@@ -804,7 +886,7 @@ CREATE TABLE public.agent_skills (
     invocation_mode text DEFAULT 'routine_named'::text NOT NULL,
     CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_skills_invocation_mode_check CHECK ((invocation_mode = ANY (ARRAY['default_answer'::text, 'routine_named'::text, 'agent_selectable'::text]))),
-    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text])))
+    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text, 'api_request'::text])))
 );
 
 
@@ -1020,6 +1102,29 @@ CREATE TABLE public.answer_coverage_reaction_traces (
     CONSTRAINT answer_coverage_reaction_traces_decision_check CHECK ((decision = ANY (ARRAY['matched'::text, 'applied'::text, 'offered'::text, 'activated'::text, 'skipped'::text, 'suppressed'::text]))),
     CONSTRAINT answer_coverage_reaction_traces_evaluation_index_check CHECK ((evaluation_index >= 0)),
     CONSTRAINT answer_coverage_reaction_traces_evaluation_state_check CHECK ((evaluation_state = ANY (ARRAY['evaluated'::text, 'not_applicable'::text, 'suppressed'::text])))
+);
+
+
+--
+-- Name: api_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.api_connections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    name text NOT NULL,
+    base_url text NOT NULL,
+    auth_scheme text DEFAULT 'none'::text NOT NULL,
+    auth_header_name text,
+    credential_ciphertext text,
+    default_headers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT api_connections_auth_check CHECK ((((auth_scheme = 'none'::text) AND (credential_ciphertext IS NULL) AND (auth_header_name IS NULL)) OR ((auth_scheme = ANY (ARRAY['bearer'::text, 'basic'::text])) AND (credential_ciphertext IS NOT NULL) AND (auth_header_name IS NULL)) OR ((auth_scheme = 'header'::text) AND (credential_ciphertext IS NOT NULL) AND (auth_header_name IS NOT NULL)))),
+    CONSTRAINT api_connections_auth_scheme_check CHECK ((auth_scheme = ANY (ARRAY['none'::text, 'bearer'::text, 'header'::text, 'basic'::text]))),
+    CONSTRAINT api_connections_base_url_check CHECK (((base_url ~* '^https://'::text) OR (base_url ~* '^http://(([a-z0-9-]+\.)*localhost|127\.0\.0\.1|\[::1\]|host\.docker\.internal)(:[0-9]+)?(/|$)'::text))),
+    CONSTRAINT api_connections_default_headers_check CHECK ((jsonb_typeof(default_headers) = 'object'::text)),
+    CONSTRAINT api_connections_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL))
 );
 
 
@@ -2157,7 +2262,10 @@ CREATE TABLE public.context_variable_values (
     scope_id text NOT NULL,
     data jsonb NOT NULL,
     last_modified timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['session'::text, 'customer'::text, 'agent'::text, 'workspace'::text])))
+    written_by_kind text DEFAULT 'api'::text NOT NULL,
+    written_by_ref text,
+    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['conversation'::text, 'session'::text, 'customer'::text, 'agent'::text, 'workspace'::text]))),
+    CONSTRAINT context_variable_values_written_by_kind_check CHECK ((written_by_kind = ANY (ARRAY['api'::text, 'operator'::text, 'routine'::text, 'classifier'::text])))
 );
 
 
@@ -2176,10 +2284,12 @@ CREATE TABLE public.context_variables (
     default_surfacing text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    options jsonb,
     CONSTRAINT context_variables_default_surfacing_check CHECK ((default_surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text]))),
+    CONSTRAINT context_variables_options_check CHECK (((value_type = 'enum'::text) = ((options IS NOT NULL) AND (jsonb_typeof(options) = 'array'::text)))),
     CONSTRAINT context_variables_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT context_variables_trust_tier_check CHECK ((trust_tier = ANY (ARRAY['unverified'::text, 'signed'::text]))),
-    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text])))
+    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text, 'enum'::text])))
 );
 
 
@@ -2548,7 +2658,10 @@ CREATE TABLE public.document_sources (
     last_sync_status text,
     last_synced_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    recrawl_cadence text DEFAULT 'off'::text NOT NULL,
+    next_recrawl_at timestamp with time zone,
+    CONSTRAINT document_sources_recrawl_cadence_check CHECK ((recrawl_cadence = ANY (ARRAY['off'::text, 'monthly'::text, 'weekly'::text, 'daily'::text])))
 );
 
 
@@ -4498,7 +4611,24 @@ CREATE TABLE public.website_crawl_jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     policy_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     checkpoint_json jsonb DEFAULT '{}'::jsonb NOT NULL,
-    resume_requested_at timestamp with time zone
+    resume_requested_at timestamp with time zone,
+    crawl_trigger text DEFAULT 'manual'::text NOT NULL,
+    CONSTRAINT website_crawl_jobs_crawl_trigger_check CHECK ((crawl_trigger = ANY (ARRAY['manual'::text, 'scheduled'::text])))
+);
+
+
+--
+-- Name: website_source_missing_pages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.website_source_missing_pages (
+    document_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    source_id uuid NOT NULL,
+    missing_since timestamp with time zone DEFAULT now() NOT NULL,
+    decision text DEFAULT 'pending'::text NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT website_source_missing_pages_decision_check CHECK ((decision = ANY (ARRAY['pending'::text, 'kept'::text])))
 );
 
 
@@ -5302,6 +5432,14 @@ ALTER TABLE ONLY public.answer_coverage_reaction_traces
 
 ALTER TABLE ONLY public.answer_coverage_reaction_traces
     ADD CONSTRAINT answer_coverage_reaction_traces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: api_connections api_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_connections
+    ADD CONSTRAINT api_connections_pkey PRIMARY KEY (id);
 
 
 --
@@ -7017,6 +7155,14 @@ ALTER TABLE ONLY public.website_crawl_jobs
 
 
 --
+-- Name: website_source_missing_pages website_source_missing_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_pkey PRIMARY KEY (document_id);
+
+
+--
 -- Name: workspace_embedding_profiles workspace_embedding_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8710,6 +8856,13 @@ CREATE INDEX idx_agents_workspace_id ON public.agents USING btree (workspace_id)
 
 
 --
+-- Name: idx_api_connections_workspace_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_api_connections_workspace_lower_name ON public.api_connections USING btree (workspace_id, lower(name));
+
+
+--
 -- Name: idx_api_credentials_expiry_warning_scan; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8822,6 +8975,20 @@ CREATE INDEX idx_context_identity_nonces_workspace_expires ON public.context_ide
 
 
 --
+-- Name: idx_context_variable_values_variable_scope_data; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_variable_scope_data ON public.context_variable_values USING btree (variable_id, scope_type, data) WHERE ((jsonb_typeof(data) = 'string'::text) AND (octet_length((data #>> '{}'::text[])) <= 120));
+
+
+--
+-- Name: idx_context_variable_values_workspace_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_workspace_scope ON public.context_variable_values USING btree (workspace_id, scope_type, scope_id);
+
+
+--
 -- Name: idx_context_variable_values_workspace_variable_scope; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8903,6 +9070,13 @@ CREATE UNIQUE INDEX idx_document_processing_jobs_embedding_profile ON public.doc
 --
 
 CREATE UNIQUE INDEX idx_document_processing_jobs_revision_phase ON public.document_processing_jobs USING btree (document_id, document_revision, kind) WHERE (kind <> 'embedding_profile'::text);
+
+
+--
+-- Name: idx_document_sources_due_recrawl; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_document_sources_due_recrawl ON public.document_sources USING btree (next_recrawl_at) WHERE ((kind = 'website'::text) AND (recrawl_cadence <> 'off'::text));
 
 
 --
@@ -9463,6 +9637,13 @@ CREATE INDEX idx_website_crawl_jobs_stale_processing ON public.website_crawl_job
 --
 
 CREATE INDEX idx_website_crawl_jobs_workspace_created ON public.website_crawl_jobs USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_website_source_missing_pages_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_website_source_missing_pages_source ON public.website_source_missing_pages USING btree (workspace_id, source_id, decision);
 
 
 --
@@ -11041,6 +11222,13 @@ CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind
 
 
 --
+-- Name: api_connections trg_api_connections_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_api_connections_block_agent_skill_reference BEFORE DELETE ON public.api_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_api_connection_delete();
+
+
+--
 -- Name: chunks trg_chunks_temporal_dates; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11073,6 +11261,13 @@ CREATE TRIGGER trg_mcp_connections_fill_workspace_from_agent BEFORE INSERT ON pu
 --
 
 CREATE TRIGGER trg_routine_completion_export_destination BEFORE INSERT OR UPDATE OF definition_id, enabled, destination_ref ON public.routine_completion_export FOR EACH ROW EXECUTE FUNCTION public.enforce_published_routine_completion_export_destination();
+
+
+--
+-- Name: slack_installations trg_slack_installations_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_slack_installations_block_agent_skill_reference BEFORE DELETE ON public.slack_installations FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_slack_installation_delete();
 
 
 --
@@ -11591,6 +11786,14 @@ ALTER TABLE ONLY public.answer_coverage_reaction_traces
 
 ALTER TABLE ONLY public.answer_coverage_reaction_traces
     ADD CONSTRAINT answer_coverage_reaction_traces_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_connections api_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_connections
+    ADD CONSTRAINT api_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -13671,6 +13874,30 @@ ALTER TABLE ONLY public.website_crawl_jobs
 
 ALTER TABLE ONLY public.website_crawl_jobs
     ADD CONSTRAINT website_crawl_jobs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.document_sources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: website_source_missing_pages website_source_missing_pages_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.website_source_missing_pages
+    ADD CONSTRAINT website_source_missing_pages_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

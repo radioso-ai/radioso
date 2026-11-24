@@ -16,7 +16,7 @@ const enablement = (overrides: Partial<AgentContextVariableEnablement> & { name?
   createdAt: '2026-09-21T00:00:00.000Z',
   updatedAt: '2026-09-21T00:00:00.000Z',
   ...(overrides.name
-    ? { variable: { id: `var_${overrides.name}`, workspaceId: 'ws_1', name: overrides.name, description: null, valueType: 'json', trustTier: 'unverified', sensitivity: 'normal', defaultSurfacing: 'on_reference', createdAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z' } }
+    ? { variable: { id: `var_${overrides.name}`, workspaceId: 'ws_1', name: overrides.name, description: null, valueType: 'json', options: null, trustTier: 'unverified', sensitivity: 'normal', defaultSurfacing: 'on_reference', createdAt: '2026-09-21T00:00:00.000Z', updatedAt: '2026-09-21T00:00:00.000Z' } }
     : {}),
   ...overrides,
 })

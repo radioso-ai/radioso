@@ -255,6 +255,21 @@ The `elevenlabs` key is the one Radioso creates and maintains an agent's ElevenL
 
 If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `503 encryption_not_configured` and `GET` reports `"encryptionConfigured": false`. The bootstrap command generates a key automatically; operators can also produce one with `openssl rand -base64 32`.
 
+## API connections
+
+API connections hold the base URL and credential an `api_request` skill calls. They are workspace-scoped and need a dashboard sign-in: reads require `workspace.settings.read`, writes require `workspace.settings.manage`, and machine credentials are refused. A read returns `credentialMask`, the last four characters behind asterisks (for `basic`, the username followed by `:****`), and never the credential. A `PATCH` that changes the base URL's origin, the auth scheme or the auth header name must send a new `credential` in the same request; otherwise it answers `400 credential_required`. A connection a skill uses cannot be deleted, whether the skill is in an agent's draft or only in its published release; the route answers `409 api_connection_in_use` and the message names each agent and skill.
+
+```text
+GET /api/v1/settings/api-connections
+POST /api/v1/settings/api-connections
+GET /api/v1/settings/api-connections/:connectionId
+PATCH /api/v1/settings/api-connections/:connectionId
+DELETE /api/v1/settings/api-connections/:connectionId
+POST /api/v1/settings/api-connections/:connectionId/test-request
+```
+
+`test-request` sends one real request exactly as a skill would, so a method other than `GET` acts on the target. It returns the HTTP status, duration, outcome, the declared outputs, any missing required outputs, and the response body as parsed JSON cut to 16 KB. The full field reference is in [Call a REST API from a routine](/automation/api-request-skills).
+
 ## Webhook destinations
 
 Webhook destinations are named endpoints that routines can reference by stable id.
@@ -299,8 +314,14 @@ secret. Rotation also returns the new plaintext secret once.
 Destination URLs must use HTTPS and must pass the same public-host SSRF policy used
 by outbound contact webhooks. Local HTTP endpoints are not accepted by default.
 
-Deleting a destination is blocked while a routine's completion export references
-it. The error names the routine so you can remove or change the reference first.
+Deleting a destination is blocked while the latest version of an enabled routine
+exports to it, or while a webhook skill in an agent's draft or published release
+posts to it. The route answers `409 webhook_destination_in_use`, and the message
+names each routine, agent and skill so you can remove or change the reference
+first. A skill that only the published release still uses clears once you
+publish the agent. The routine check reads each routine's latest version, so a
+conversation still running an earlier published version of a routine can find
+its export destination gone; that delivery is skipped.
 
 When a routine reaches a terminal included in its completion export trigger set,
 Radioso dispatches `webhook.send` and posts a JSON body to the destination URL

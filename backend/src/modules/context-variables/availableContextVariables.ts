@@ -7,11 +7,14 @@ import { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
  */
 export interface AvailableContextVariable {
   valueType: ContextVariableValueType;
+  /** An `enum` variable's keys, archived ones included: every key one of its values can hold. */
+  optionKeys?: readonly string[];
 }
 
 /**
  * Merges the built-in context variables with an agent's enabled, joined enablements into the
- * name -> value-type map that authoring-time validation resolves references against.
+ * name -> value-type map that authoring-time validation resolves references against, with an enum
+ * variable's option keys.
  *
  * Business rules encoded here:
  * - Only enablements with `enabled === true` contribute.
@@ -34,7 +37,11 @@ export function resolveAvailableContextVariables(
       continue;
     }
     // Written after the built-ins so agent-scoped definitions win on name collision.
-    available.set(enablement.variable.name, { valueType: enablement.variable.valueType });
+    const { valueType, options } = enablement.variable;
+    available.set(enablement.variable.name, {
+      valueType,
+      ...(valueType === "enum" && options ? { optionKeys: options.map((option) => option.key) } : {}),
+    });
   }
 
   return available;

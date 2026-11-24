@@ -76,8 +76,16 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT",
   },
   {
+    source: "routine-step-sources-tool-results.md",
+    exportName: "DEFAULT_ROUTINE_STEP_SOURCES_TOOL_RESULTS_PROMPT",
+  },
+  {
     source: "routine-step-ending.md",
     exportName: "DEFAULT_ROUTINE_STEP_ENDING_PROMPT",
+  },
+  {
+    source: "routine-step-tool-results.md",
+    exportName: "DEFAULT_ROUTINE_STEP_TOOL_RESULTS_PROMPT",
   },
   {
     source: "routine-next-step.md",

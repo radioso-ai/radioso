@@ -21,6 +21,7 @@ import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDat
 import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
+import { noSkillTargetUses } from "../../support/skillTargetUses.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -156,6 +157,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey: { current: encryptionKey, previous: [] },
+      skillTargetUses: noSkillTargetUses,
     });
     const saved = await installationService.saveInstallation({
       workspaceId,
@@ -279,6 +281,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey: { current: encryptionKey, previous: [] },
+      skillTargetUses: noSkillTargetUses,
     });
     const saved = await installationService.saveInstallation({
       workspaceId,
@@ -424,6 +427,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey: { current: encryptionKey, previous: [] },
+      skillTargetUses: noSkillTargetUses,
     });
     const saved = await installationService.saveInstallation({
       workspaceId,

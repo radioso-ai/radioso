@@ -32,6 +32,10 @@ export const chatApi = {
     sourceOrigin?: string
     outcome?: 'in_progress' | 'completed' | 'handed_off'
     callerKind?: 'human' | 'agent'
+    // A Choice attribute's name and one of its option keys, sent together: conversations
+    // whose own value is that option.
+    attribute?: string
+    attributeOption?: string
   }, signal?: AbortSignal): Promise<HistoryItemsResponse> {
     const filters = {
       limit: input?.limit,
@@ -40,6 +44,8 @@ export const chatApi = {
       sourceOrigin: input?.sourceOrigin,
       outcome: input?.outcome,
       callerKind: input?.callerKind,
+      attribute: input?.attribute,
+      attributeOption: input?.attributeOption,
     }
     // A text search travels in the request body: request logs record a URL's query string, and
     // operators type visitors' words into this search.

@@ -59,7 +59,7 @@ import {
 import { stepForReply } from "./stepReferences.js";
 import { projectStep, stagedContextForSkillResult } from "./routineStepContext.js";
 import { isAuthoredLlmExit, isCompilerSlotGate, isDefaultTransition, isLlmTransition } from "./routineTransitions.js";
-import { pickedItemTraceEntry, resolveItemSlots, routinePick, type RoutineItemPickObserver } from "./itemSelection.js";
+import { checkStepSlotValues, pickedItemTraceEntry, resolveItemSlots, routinePick, type RoutineItemPickObserver } from "./itemSelection.js";
 
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
@@ -276,7 +276,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (!decision.variables) {
         return decision;
       }
-      const checked = checkDeclaredSlotValues(routine, resolveItemSlots(routine, decision.variables, state, turn, selectInput.currentStep), consentGate.blocked);
+      const checked = checkStepSlotValues(routine, decision.variables, state, turn, selectInput.currentStep, consentGate.blocked);
       lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];
       return { ...decision, variables: checked.values };
     };

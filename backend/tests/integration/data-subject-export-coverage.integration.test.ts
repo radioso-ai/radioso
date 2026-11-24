@@ -82,6 +82,20 @@ const coverage: Record<string, ExportCoverage> = {
 };
 
 /**
+ * `context_variable_values` is one exported table, but its generic `scope_id` names a conversation,
+ * a chat session, a person or the operator's own configuration, as its `scope_type` says. Every
+ * scope type the table accepts needs the section that exports it or a reason it stays out, so a
+ * scope type added to the table fails here until the exporter reaches it.
+ */
+const contextValueScopeExport: Record<string, ExportCoverage> = {
+  conversation: { kind: "exported", section: "context_values" },
+  session: { kind: "exported", section: "context_values" },
+  customer: { kind: "exported", section: "context_values" },
+  agent: excluded("The operator's own configuration for an agent, the same for every visitor."),
+  workspace: excluded("The operator's own configuration for the workspace, the same for every visitor."),
+};
+
+/**
  * Tables keyed by a subject in a way no column name shows: customer-scoped context values carry the
  * verified customer id in a generic `scope_id`.
  */
@@ -139,6 +153,20 @@ describeIntegration("data subject export schema coverage", () => {
   it("gives every table holding conversation or visitor data a section or a reason", () => {
     const uncovered = [...referencingTables, ...SUBJECT_KEYED_TABLES].filter((table) => !coverage[table]).sort();
     expect(uncovered).toEqual([]);
+  });
+
+  it("gives every scope a context value can be kept under an export section or a reason", async () => {
+    const [constraint] = await database.query<{ definition: string }>(
+      "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'context_variable_values_scope_type_check'",
+    );
+    const scopeTypes = [...(constraint?.definition ?? "").matchAll(/'([a-z_]+)'::text/gu)].map((match) => match[1]);
+    expect(scopeTypes).toContain("conversation");
+    expect(scopeTypes.filter((scopeType) => !contextValueScopeExport[scopeType]).sort()).toEqual([]);
+    expect(Object.keys(contextValueScopeExport).filter((scopeType) => !scopeTypes.includes(scopeType))).toEqual([]);
+    const sections = registeredSections();
+    const unregistered = Object.values(contextValueScopeExport)
+      .flatMap((entry) => (entry.kind === "exported" && !sections.has(entry.section) ? [entry.section] : []));
+    expect(unregistered).toEqual([]);
   });
 
   it("names only sections a registered exporter writes, and every registered section", () => {

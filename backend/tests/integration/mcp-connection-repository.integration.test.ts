@@ -142,36 +142,6 @@ describeIntegration("McpConnectionRepository (Postgres)", () => {
     expect(await repository.listUsedByAgent(otherWorkspaceId, listAgentId)).toEqual([]);
   });
 
-  it("reports each agent using a connection once, by the name operators know it by", async () => {
-    const usageWorkspaceId = randomUUID();
-    const namedAgentId = randomUUID();
-    const relabelledAgentId = randomUUID();
-    await insertWorkspace(usageWorkspaceId);
-    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,'Billing')`, [
-      namedAgentId,
-      usageWorkspaceId,
-    ]);
-    await database.query(`INSERT INTO agents (id, workspace_id, name, internal_name) VALUES ($1,$2,'Nico','Sales IT')`, [
-      relabelledAgentId,
-      usageWorkspaceId,
-    ]);
-    const shared = await create(usageWorkspaceId);
-    const other = await create(usageWorkspaceId);
-    await bindSkill(namedAgentId, usageWorkspaceId, shared.id);
-    await bindSkill(namedAgentId, usageWorkspaceId, shared.id);
-    await bindSkill(relabelledAgentId, usageWorkspaceId, shared.id);
-    await bindSkill(namedAgentId, usageWorkspaceId, other.id);
-
-    expect(await repository.listAgentUsage(usageWorkspaceId, shared.id)).toEqual([
-      { connectionId: shared.id, agentId: namedAgentId, agentName: "Billing" },
-      { connectionId: shared.id, agentId: relabelledAgentId, agentName: "Sales IT" },
-    ]);
-    expect((await repository.listAgentUsage(usageWorkspaceId)).map((row) => row.connectionId).sort()).toEqual(
-      [shared.id, shared.id, other.id].sort(),
-    );
-    expect(await repository.listAgentUsage(otherWorkspaceId, shared.id)).toEqual([]);
-  });
-
   it("keeps the connection when an agent using it is deleted", async () => {
     const departingAgentId = randomUUID();
     await database.query(`INSERT INTO agents (id, workspace_id) VALUES ($1,$2)`, [departingAgentId, workspaceId]);

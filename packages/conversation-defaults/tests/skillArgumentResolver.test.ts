@@ -20,6 +20,21 @@ describe("resolveSkillArguments", () => {
     });
   });
 
+  it("marks a context argument the host verified as verified_context, and only that one", () => {
+    const resolved = resolveSkillArguments(
+      {
+        email: { kind: "contextVariableRef", contextVariable: "customer_email" },
+        page: { kind: "contextVariableRef", contextVariable: "page_title" },
+        typed: { kind: "variableRef", ref: "customer_email" },
+      },
+      { customer_email: "typed@example.com" },
+      { customer_email: "signed@example.com", page_title: "Orders" },
+      new Set(["customer_email"]),
+    );
+
+    expect(resolved.origins).toEqual({ email: "verified_context", page: "context", typed: "slot" });
+  });
+
   it("counts a routine variable a skill output fills as a slot, since extraction can write any variable name", () => {
     const resolved = resolveSkillArguments(
       { body: { kind: "variableRef", ref: "draftHtml" } },

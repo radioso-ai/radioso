@@ -26,8 +26,8 @@ describe("directoryMeterText", () => {
     ).toBe("3 / 50 conv");
   });
 
-  it("shows unlimited only for an unmetered organization", () => {
-    expect(directoryMeterText(row())).toBe("0 / unlimited");
+  it("reads an uncapped organization's conversation meter as unlimited", () => {
+    expect(directoryMeterText(row({ monthlyConversations: { used: 45.5, limit: null } }))).toBe("45.5 / unlimited conv");
   });
 
   it("thousand-separates both sides of the meter", () => {

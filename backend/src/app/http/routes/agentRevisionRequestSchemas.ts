@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { itemSelectionSchema } from "../../../shared/domain/chatInputMetadata.js";
 import { userTimeZoneSchema } from "../schemas/timeZoneSchemas.js";
 import { visitorImageIdsSchema } from "../schemas/visitorImageSchemas.js";
 
@@ -44,9 +45,15 @@ export const sendTestExecutionMessageSchema = testExecutionTurnSchema.extend({
   imageIds: visitorImageIdsSchema.optional().describe(
     "Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo.",
   ),
+  selection: itemSelectionSchema.optional().describe(
+    "The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed.",
+  ),
 }).strict().superRefine((body, context) => {
   if (body.message === undefined && body.imageIds === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "message is required unless imageIds is present" });
+  }
+  if (body.selection && (body.message === undefined || body.imageIds !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["selection"], message: "selection is sent with the card's title as message, and no photos" });
   }
 });
 export const retryTestExecutionSideSchema = testExecutionTurnSchema.strict();

@@ -2,6 +2,8 @@ import { sql, type RawBuilder } from "kysely";
 
 import type { AuditEventRecord } from "./auditEventRepository.js";
 import type { ConversationRecord } from "./conversationRepository.js";
+import { conversationHoldsValue } from "./contextVariableValueReads.js";
+import type { ConversationAttributeFilter } from "../../modules/context-variables/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { visibleMessageTextSql } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
@@ -69,6 +71,9 @@ const buildSourceOriginFilter = (sourceOrigin: string | undefined, column: RawBu
 
 const buildCallerKindFilter = (callerKind: CallerKind | undefined, column: RawBuilder<unknown>): RawBuilder<unknown> =>
   callerKind ? sql`AND ${column} = ${callerKind}` : sql``;
+
+const buildAttributeFilter = (attribute: ConversationAttributeFilter | undefined, idColumn: RawBuilder<unknown>): RawBuilder<unknown> =>
+  attribute ? sql`AND ${conversationHoldsValue(attribute, idColumn)}` : sql``;
 
 /**
  * Mirrors `deriveConversationOutcome` (`frontend/lib/conversation-outcome.ts`) in SQL: an
@@ -138,20 +143,22 @@ export type HistoryItemsSourceRecord =
       event: AuditEventRecord;
     };
 
+/** The filters of the merged history list; each narrows it to conversations. */
+export interface HistoryItemsFilters {
+  /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
+  q?: string;
+  agentId?: string;
+  sourceOrigin?: string;
+  outcome?: ConversationOutcomeFilter;
+  callerKind?: CallerKind;
+  /** The conversation's own value of a Choice attribute. */
+  attribute?: ConversationAttributeFilter;
+}
+
 export interface HistoryItemsRepositoryPort {
   listPageByWorkspaceId(
     workspaceId: string,
-    input: {
-      limit: number;
-      offset?: number;
-      sourceScope?: ConversationSourceScope;
-      /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
-      q?: string;
-      agentId?: string;
-      sourceOrigin?: string;
-      outcome?: ConversationOutcomeFilter;
-      callerKind?: CallerKind;
-    },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } & HistoryItemsFilters,
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }>;
 }
 
@@ -190,16 +197,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: {
-      limit: number;
-      offset?: number;
-      sourceScope?: ConversationSourceScope;
-      q?: string;
-      agentId?: string;
-      sourceOrigin?: string;
-      outcome?: ConversationOutcomeFilter;
-      callerKind?: CallerKind;
-    },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } & HistoryItemsFilters,
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
@@ -218,6 +216,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
     const countCallerKindFilter = buildCallerKindFilter(input.callerKind, sql`conversations.caller_kind`);
     const rowOutcomeFilter = buildOutcomeFilter(input.outcome, sql`c.id`, sql`c.workspace_id`, sql`c.updated_at`);
     const countOutcomeFilter = buildOutcomeFilter(input.outcome, sql`conversations.id`, sql`conversations.workspace_id`, sql`conversations.updated_at`);
+    const rowAttributeFilter = buildAttributeFilter(input.attribute, sql`c.id`);
+    const countAttributeFilter = buildAttributeFilter(input.attribute, sql`conversations.id`);
     // The Inbox's All lens is a conversation feed. Document-search audit events remain
     // available through the dedicated document-search history surface, but must not consume
     // rows or pagination in this operator-facing conversation list.
@@ -261,6 +261,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ${rowSourceOriginFilter}
            ${rowCallerKindFilter}
            ${rowOutcomeFilter}
+           ${rowAttributeFilter}
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT ${sourceLimit}
        ),
@@ -271,6 +272,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ${countSourceOriginFilter}
            ${countCallerKindFilter}
            ${countOutcomeFilter}
+           ${countAttributeFilter}
          )::text AS total_count
        ),
        paged AS (

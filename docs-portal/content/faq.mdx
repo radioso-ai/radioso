@@ -1,0 +1,53 @@
+---
+title: "Frequently asked questions"
+description: "Short answers to the questions people ask first about Radioso, each linking to the page that goes deeper."
+last_updated: 2026-11-20
+---
+
+# Frequently asked questions
+
+These are the questions people ask first, answered in a few sentences each. Every answer links to the page that goes deeper.
+
+## Can I self-host Radioso?
+
+Yes. You can run Radioso on your own servers, and the whole product is open source. `./run-dev.sh` starts the dashboard, API, document worker, and database on one machine with Docker, as [Run locally in 5 minutes](/quickstarts/run-locally) walks through. For a production deployment, see [Deployment](/operators/deployment), and for backups, upgrades, and worker incidents, see [Self-hosting operations](/operators/self-hosting-operations).
+
+## Is Radioso open source, or is there a paid tier?
+
+Every product feature is open source under the Apache License 2.0, so a self-hosted install has all of them. Radioso Enterprise Edition, the `ee/` folder, holds what is needed to run Radioso as a cloud service for many separate organizations: organization creation, plans and billing, usage limits, managed models, Google sign-in, observability, and a staff console. It also holds the dashboard switch that hides "Answers by Radioso" in the widget. That folder is source-available and needs a commercial license. [Radioso Cloud](https://app.radioso.ai) is the hosted service, and its plans are on the [pricing page](https://radioso.ai/pricing).
+
+## How do I set up Radioso?
+
+On Radioso Cloud, sign up at [app.radioso.ai](https://app.radioso.ai), create a workspace, and follow [Start here](/operators/start-here). To run it yourself, start with [Run locally in 5 minutes](/quickstarts/run-locally). Either way, the next steps are the same: [upload a document and get a grounded answer](/quickstarts/first-answer), then [create your first agent](/quickstarts/first-agent).
+
+## How do I put a Radioso agent on my website?
+
+Paste one script tag into your site. Turn on **Website widget** under the agent's **Channels**, then **Web chat**, copy the snippet, and add it to your pages. [Embed on your website](/quickstarts/website-embed) covers the snippet and the origin check, and [Install the widget on a site builder](/guides/install-on-site-builders) shows where each site builder takes it. The WordPress sync plugin and [Publish and open an agent](/guides/publish-an-agent) are separate: they feed content in or publish discovery files, and do not add a chat to your pages.
+
+## Does Radioso work with Shopify?
+
+The chat widget installs on a Shopify store through the theme: you paste the script tag into `layout/theme.liquid`, as [Install the widget on a site builder](/guides/install-on-site-builders#shopify) explains. The same page covers Wix, Webflow, Squarespace, WordPress, and Google Tag Manager. Radioso has no Shopify catalogue connector. To answer from your storefront's content, add it as a website source, as described in [Document upload](/guides/document-upload). To look up something live, such as an order, a webhook skill can call an HTTP API your store or backend exposes, as in [Send data to an automation](/automation/webhook-skills).
+
+## Can I make the widget match my brand?
+
+Yes. Colors, logo, button text, corner, and interface wording are widget settings in the dashboard, and an edit reaches visitors within about a minute and a half without touching the snippet on your site. The agent's greeting and its suggested questions live on the agent's **Profile** and go live when you publish the agent. See [Customize the website widget](/guides/customize-the-widget).
+
+## Can Radioso take actions, or is it just a chatbot?
+
+An agent can act. Skills let it call your systems, post to Slack, email a customer, send data to a webhook, or call tools on your own MCP server. A routine carries a request across several turns until the job is done. [What agents can do](/why-radioso/capabilities) lists them, and [Make your agent act](/quickstarts/make-it-act) builds one.
+
+## Can a Radioso agent check availability and take bookings?
+
+Yes. A routine collects the date, party size, and contact details, then a skill step checks availability in your booking system over its HTTP API or its MCP server. The visitor can tap a free time shown as a card, and an approval step can bring a teammate in before the booking is confirmed. The last skill step writes the booking into your system. [Use cases](/why-radioso/use-cases#take-a-booking-and-get-it-signed-off) walks through the whole flow.
+
+## How does a handoff to a person work?
+
+A routine reaches a handoff ending, or an agent with **Hand off on retrieval miss** turned on can't find support for an answer. The conversation then lands in the dashboard **Inbox**, the AI stays quiet, and a teammate replies as a person until they hand it back. See [Human takeover](/operators/human-takeover).
+
+## What happens when Radioso can't answer?
+
+The agent says so instead of guessing. An answer comes from your documents with citations, and when nothing supports a claim, the agent says it can't confirm it. You can also have the agent hand the conversation to a person in that case. See [Grounded answers](/why-radioso/grounded-answers) and [Human takeover](/operators/human-takeover).
+
+## Where do I find pricing?
+
+On the [Radioso pricing page](https://radioso.ai/pricing). Plans and prices live there so they stay current.

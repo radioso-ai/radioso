@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-16
+last_updated: 2026-11-22
 ---
 
 # Agents and skills
@@ -13,7 +13,7 @@ Authoring and execution are different. Agent skills are created through the agen
 ## Draft revisions and private tests
 
 Agent behavior is saved in a private draft. A successful directive, routine,
-context-variable, or agent-setting write advances the draft generation; it does
+skill, context-variable, or agent-setting write advances the draft generation; it does
 not change the revision used by new visitor conversations. The dashboard then
 materializes one immutable candidate for that generation, lets you test it, and
 publishes it as a separate action.
@@ -40,6 +40,30 @@ to the draft. It returns `400 bad_request` with the field-level issues in
 with it `false`, the content is saved as written and the issues come back in the
 response's `validation` object. Like every draft write, a successful `PUT`
 advances the draft generation.
+
+Skills are part of the draft as well. Adding, editing, switching, or deleting a
+skill, through `/api/v1/agents/{agentId}/skills` or a per-kind skill route,
+changes the draft: while the draft's skills differ from the published release,
+`revision-state` reports `draft_dirty`, Test Chat runs the draft, and visitors
+get the change once you publish. Until then a conversation runs the skills of
+the release it started on, so switching a skill off or changing its settings
+reaches no running conversation before you publish. The MCP connections, API
+connections, webhook destinations, and mailboxes a skill uses are workspace
+settings and apply at once.
+
+Because visitors run the published release's skills, deleting one of those
+targets, or disconnecting the Slack installation a skill posts through, answers
+`409` while a skill in the agent's draft or in its published release uses it.
+The message names each agent and skill. When only the published release still
+uses the target, remove or retarget the skill in the draft, publish the agent,
+and delete again. Releases that only earlier conversations still run are not
+counted, so a skill in such a conversation can find its target gone.
+
+`GET .../revisions/{revisionId}` lists each skill the revision adds, removes, or
+changes against its base release under `scopedChanges.agentSkills`, by
+`skillName`. A skill's settings stay out of that list; `settingsChanged` says
+whether they changed. The agent's default-answer `retrieve` skill holds its
+retrieval settings, which apply as soon as you save them, so it is not listed.
 
 `POST .../publish` requires the draft generation, the expected published
 revision, and an idempotency key. A stale request returns `409
@@ -89,6 +113,13 @@ same `turnId`, `attemptId` and `imageIds`, replays its answer like any other;
 the same turn with other photos is refused with `409`. Read a photo back with
 `GET /api/v1/agents/{agentId}/test-executions/{executionId}/images/{imageId}` in
 a dashboard session. See [Let visitors send photos](/guides/image-input#try-photos-in-test-chat).
+
+A test message can pick a card a routine step showed. Send the card's title as
+`message` with `selection`, the `{ messageId, blockId, itemKey }` of the answer
+that showed it, and no photos. A side whose own answer showed that card takes it
+as a pick from the stored card, as live chat does, and fills the step's `item`
+value; another side, such as the other version in a comparison, runs `message`
+as typed.
 
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
 private Test Chat history. An execution is listed once it has a user message,
@@ -293,9 +324,11 @@ from its address, with an 8 MB cap, re-encoded to WebP at 320 and 640 pixels
 wide, and served from `/api/v1/public/reply-images/{imageId}/{width}` like the
 pictures of an answer's documents. A job copies the pictures a few seconds after
 the reply is stored, within 20 seconds each. A browser that asks for a picture
-first gets it copied on the spot within 6 seconds; while the server is already
-copying four pictures it answers `404` at once, the card shows without its
-picture, and the job copies it. JPEG, PNG, WebP, GIF and AVIF are read; an SVG,
+first gets it copied on the spot: the server copies four at a time and holds
+each request until its picture is ready, for up to 6 seconds, so a carousel's
+pictures arrive together. A picture not ready by then answers `404`, as does
+one asked for while the server already has many waiting; the card shows without
+its picture, and the job copies it for the next time the conversation is opened. JPEG, PNG, WebP, GIF and AVIF are read; an SVG,
 a page that is not a picture, a private address or a link that has expired
 leaves the card without a picture. The copies are deleted with the
 conversation, and one no stored reply carries goes after a day. A data-subject
@@ -439,7 +472,9 @@ Every agent has three built-in answer skills: **Clarification answer**, **Retrie
 - `invocationMode`
 - `enabled`
 
-Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, `notify`, and `api_request`.
+
+An `api_request` skill calls a REST API through a workspace API connection: its target is `{ "kind": "api_connection", "id": "<connectionId>" }`, and its only invocation mode is `routine_named`, so routines run it and directives or the agent's own tool choice cannot. Create the connection under `/api/v1/settings/api-connections` (see [Settings](/api/settings#api-connections)); [Call a REST API from a routine](/automation/api-request-skills) covers the skill config, typed outputs and outcomes.
 
 A `mcp_tool` skill (and the `external_mcp` directive binding below) is Radioso calling out to *someone else's* MCP server as a tool. That's the opposite direction from [Radioso's own MCP server](/guides/mcp-server), which a client like Cursor or Claude Desktop connects into.
 
@@ -473,27 +508,65 @@ The main tuning fields are:
 
 ## Context variables
 
-Context variables are workspace declarations that an agent may enable per agent.
-They are separate from skills. A skill is something the assistant can do; a
-context variable is data the turn may resolve and use.
+Context variables are the API's name for the attributes the dashboard shows:
+workspace definitions of typed facts about a conversation or a visitor, which
+an agent may enable per agent. They are separate from skills. A skill is
+something the assistant can do; a context variable is data the turn may
+resolve and use.
 
-The catalog endpoints create and update host-defined variable declarations:
+The catalog endpoints create and update the definitions:
 
 - `name`
 - `description`
-- `valueType`: `string` or `json`
+- `valueType`: `string`, `enum`, or `json`. A variable that has a value keeps
+  its type; a `PATCH` that changes it returns `409` with the code
+  `context_variable_has_values`.
+- `options`: required for `enum` and refused for other types. Each option is
+  `{ "key", "label", "description", "archived" }`; `description` and
+  `archived` are optional on input. Keys use letters, digits and underscores,
+  start with a letter, never change, and differ from each other by more than
+  case. A `PATCH` that sends `options` sends
+  the full list with every existing key: set `archived: true` to retire an
+  option, keeping at least one active. When another edit adds an option while
+  yours is saved, yours returns `409`; read the variable again and resend the
+  list. Up to 50 options, with descriptions up to
+  300 characters.
 - `trustTier`: `unverified` or `signed`
 - `sensitivity`: `normal` or `sensitive`
 - `defaultSurfacing`: `always`, `on_reference`, or `operator_only`
 
+```json
+{
+  "name": "topic",
+  "description": "What the conversation is about.",
+  "valueType": "enum",
+  "options": [
+    { "key": "billing", "label": "Billing", "description": "Invoices, refunds and payment methods." },
+    { "key": "shipping", "label": "Shipping" }
+  ],
+  "trustTier": "unverified",
+  "sensitivity": "normal",
+  "defaultSurfacing": "on_reference"
+}
+```
+
 The per-agent enablement endpoints choose how a catalog variable is wired for
 one agent:
 
-- `source`: `pushed` or `resolver`
+- `source`: `pushed`, `resolver`, or `classified`
 - `surfacing`: `always`, `on_reference`, or `operator_only`
 - `enabled`
 
-The dashboard exposes the `pushed` source. Resolver-backed variables
+`classified` has the AI pick one of an `enum` variable's options from the
+conversation after each reply and store it in the `conversation` scope, with
+`writtenBy.kind` `classifier`. It never replaces a value your API or a teammate
+set for this visitor or conversation (`conversation`, `session` or `customer`
+scope); an `agent` or `workspace` value is a default, which applies until the
+AI picks a value. It takes an `enum` variable that is neither `sensitive` nor `signed`, at
+most 8 per agent; any other is refused with `400` and a message naming the
+reason. Use `surfacing: on_reference` to keep the value out of the answer.
+
+The dashboard exposes the `pushed` and `classified` sources. Resolver-backed variables
 are part of the API contract; the operator UI does not configure them. A
 resolver enablement also supplies `resolverSkillId`, which must name an enabled
 skill on the same agent. Disabling that skill disables its resolver enablements;
@@ -512,10 +585,20 @@ Host backends push runtime values through
 }
 ```
 
+The value matches the variable's type: a string for `string`, the key of an
+active option for `enum`, any JSON for `json`. A `conversation` scope takes the
+conversation's id and works on every channel; an id that names no conversation
+of the workspace returns `404`.
+
 Values resolve from most specific to least specific scope:
-`session`, `customer`, `agent`, then `workspace`. Use the narrowest scope that
-matches the data. For example, a cart usually belongs to a session or customer;
-a market-wide promotion may belong to an agent or workspace.
+`conversation`, `session`, `customer`, `agent`, then `workspace`. Use the
+narrowest scope that matches the data. For example, a conversation's topic
+belongs to the conversation, a cart to a session or customer, and a
+market-wide promotion to an agent or workspace.
+
+Each value carries `writtenBy`, its last writer. A value written through this
+endpoint reads `{ "kind": "api", "ref": "<id>" }`, where `ref` is the API
+credential's id, or the teammate's user id for a dashboard session.
 
 ## Contact requests
 
@@ -803,6 +886,7 @@ Each `kind` names one thing to go fix, and where:
 - `skill_target_unbound`: the skill's connection — a webhook, an MCP server, a mailbox — holds a credential and stayed in the source workspace. Point the skill at a connection here, then enable it.
 - `skill_capability_unknown`: the bundle names a capability this deployment doesn't register. The skill wasn't created, so anything that called it stays unbound.
 - `context_variable_missing`: no context variable with this name exists in the destination workspace. Create it, then re-enable the enablement on the agent.
+- `context_variable_not_classifiable`: the enablement has the AI fill the attribute (`source: "classified"`), but the destination workspace's attribute of that name is not a Choice attribute, is Private, or is treated as proof, or the agent already has the AI fill 8 attributes. The enablement is not written; the `detail` names the reason. Change the attribute, or enable it on the agent with another source.
 - `resolver_skill_missing`: the enablement's resolver skill isn't on the imported agent — often because that skill itself hit `skill_capability_unknown`. Re-enable the variable once the skill exists.
 - `routine_invalid`: the routine could not be written into the destination workspace. A completion export pointing at a webhook destination that only exists in the source workspace is the usual cause. The `detail` names the reason; create what it names, then add the routine through the routine endpoints.
 - `document_source_unresolved`: the source agent answered from a specific set of documents. Document ids don't carry across workspaces, so the imported agent starts with no sources selected — pick its sources under Knowledge.

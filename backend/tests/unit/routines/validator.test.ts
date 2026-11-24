@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { agentSkillToAuthoringDescriptor } from "../../../src/modules/skills/authoringDescriptor.js";
+import { apiRequestCapability } from "../../../src/modules/skills/capabilities/apiRequest.js";
+
 import { toSafeRoutineValidationDiagnostic, validateRoutineDefinition } from "../../../src/modules/routines/validator.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/domain.js";
 import type { SkillAuthoringDescriptor } from "../../../src/modules/skills/public.js";
@@ -45,6 +48,7 @@ const descriptor = (
     status: "completed",
   }],
   hasDataOutputs: false,
+  outputs: [],
 });
 
 const descriptors = (...items: SkillAuthoringDescriptor[]): ReadonlyMap<string, SkillAuthoringDescriptor> =>
@@ -224,6 +228,98 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     expect(result).toEqual({ ok: true, diagnostics: [] });
   });
 
+  describe("slot types a skill input takes", () => {
+    const slots = [
+      { stableSlotId: "slot_count", key: "count", type: "number" as const, required: false, description: null, ordinal: 0 },
+      { stableSlotId: "slot_gift", key: "gift", type: "boolean" as const, required: false, description: null, ordinal: 1 },
+      { stableSlotId: "slot_pick", key: "pick", type: "item" as const, required: false, description: null, ordinal: 2 },
+    ];
+    const bindingsTo = (ref: string, keys: string[]) =>
+      Object.fromEntries(keys.map((key) => [key, { kind: "variableRef" as const, ref }]));
+    const mismatchedInputs = (category: SkillAuthoringDescriptor["category"], bindings: Record<string, { kind: "variableRef"; ref: string }>) =>
+      validateRoutineDefinition({
+        ...definitionWithTool("order.lookup"),
+        slots,
+        steps: [{ ...definitionWithTool("order.lookup").steps[0], metadata: { inputBindings: bindings } }],
+      }, {
+        skillDescriptors: descriptors({
+          ...descriptor("order.lookup", Object.keys(bindings).map((key) => ({
+            key,
+            type: key.startsWith("placed") ? "date" as const : "text" as const,
+            required: false,
+          }))),
+          category,
+        }),
+      }).diagnostics.filter((diagnostic) => diagnostic.code === "input_type_mismatch").map((diagnostic) => diagnostic.location);
+
+    it("lets an API request text input take a number or boolean slot, which its executor coerces", () => {
+      expect(mismatchedInputs("api_request", { ...bindingsTo("count", ["note"]), ...bindingsTo("gift", ["label"]) })).toEqual([]);
+    });
+
+    it("refuses a boolean slot into a date input, and an item slot into any typed input", () => {
+      expect(mismatchedInputs("api_request", { ...bindingsTo("gift", ["placed"]), ...bindingsTo("pick", ["note"]) }))
+        .toEqual(["step:lookup.inputBindings.placed", "step:lookup.inputBindings.note"]);
+    });
+
+    it.each(["external_mcp", "webhook", "customer_email"] as const)("keeps a %s text input to text, email and date slots", (category) => {
+      expect(mismatchedInputs(category, { ...bindingsTo("count", ["note"]), ...bindingsTo("pick", ["label"]) }))
+        .toEqual(["step:lookup.inputBindings.note", "step:lookup.inputBindings.label"]);
+    });
+  });
+
+  it("accepts the documented order_status API request skill bound to a slot and a verified context variable", () => {
+    const docsExample = agentSkillToAuthoringDescriptor({
+      id: "skill-1",
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      skillName: "order_status",
+      kind: "api_request",
+      invocationMode: "routine_named",
+      enabled: true,
+      targetType: "api_connection",
+      targetId: "33333333-3333-4333-8333-333333333333",
+      config: {
+        method: "GET",
+        path: "/orders/{order_number}",
+        exposedParams: {
+          order_number: { type: "text", description: "The order number" },
+          email: { type: "email", verifiedOnly: true },
+        },
+        outputs: { status: { path: "status", type: "text", description: "Order status", required: true } },
+      },
+      createdAt: new Date("2026-11-21T00:00:00.000Z"),
+      updatedAt: new Date("2026-11-21T00:00:00.000Z"),
+    }, apiRequestCapability);
+    const result = validateRoutineDefinition(definitionWithSteps([
+      { stableStepId: "ask", kind: "chat", instruction: "Ask for {{slot.order_number}}.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+      {
+        stableStepId: "lookup",
+        kind: "tool",
+        instruction: "Look up the order.",
+        toolRef: "order_status",
+        actionType: null,
+        ordinal: 1,
+        metadata: {
+          inputBindings: {
+            order_number: { kind: "variableRef", ref: "order_number" },
+            email: { kind: "contextVariableRef", contextVariable: "customer_email" },
+          },
+        },
+      },
+    ], [
+      { fromStep: "ask", toRef: "lookup", guardKind: "default", guardText: null, ordinal: 0 },
+      { fromStep: "lookup", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+    ], [
+      { stableSlotId: "slot_order", key: "order_number", type: "text", required: true, description: null, ordinal: 0 },
+    ]), {
+      skillDescriptors: descriptors(docsExample),
+      availableContextVariables: new Map([["customer_email", { valueType: "string" }]]),
+    });
+
+    expect(docsExample.inputs.map((input) => [input.key, input.required])).toEqual([["order_number", true], ["email", true]]);
+    expect(result).toEqual({ ok: true, diagnostics: [] });
+  });
+
   it("flags literal type mismatches and enum values outside the descriptor allow-list", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
@@ -397,6 +493,9 @@ describe("validateRoutineDefinition authoring catalog context", () => {
             jsonToString: { kind: "contextVariableRef", contextVariable: "cart" },
             stringToEnum: { kind: "contextVariableRef", contextVariable: "customer_note" },
             stringToNumber: { kind: "contextVariableRef", contextVariable: "customer_note" },
+            enumToText: { kind: "contextVariableRef", contextVariable: "topic" },
+            enumToEnum: { kind: "contextVariableRef", contextVariable: "topic" },
+            enumToDate: { kind: "contextVariableRef", contextVariable: "topic" },
           },
         },
       }],
@@ -405,10 +504,14 @@ describe("validateRoutineDefinition authoring catalog context", () => {
         { key: "jsonToString", type: "text", required: false },
         { key: "stringToEnum", type: "enum", required: false, enumValues: ["vip", "standard"] },
         { key: "stringToNumber", type: "number", required: false },
+        { key: "enumToText", type: "text", required: false },
+        { key: "enumToEnum", type: "enum", required: false, enumValues: ["billing", "shipping"] },
+        { key: "enumToDate", type: "date", required: false },
       ])),
       availableContextVariables: new Map([
         ["cart", { valueType: "json" }],
         ["customer_note", { valueType: "string" }],
+        ["topic", { valueType: "enum" }],
       ]),
     });
 
@@ -417,7 +520,34 @@ describe("validateRoutineDefinition authoring catalog context", () => {
         code: "input_type_mismatch",
         location: "step:lookup.inputBindings.stringToNumber",
       }),
+      expect.objectContaining({
+        code: "input_type_mismatch",
+        location: "step:lookup.inputBindings.enumToDate",
+      }),
     ]);
+  });
+
+  it("refuses a Choice attribute bound to a choice input that does not accept every one of its keys", () => {
+    const bound = (enumValues: string[]) => validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0],
+        metadata: { inputBindings: { topic: { kind: "contextVariableRef", contextVariable: "topic" } } },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [{ key: "topic", type: "enum", required: false, enumValues }])),
+      // `returns` is archived: a value that already holds it keeps it, so the input must accept it too.
+      availableContextVariables: new Map([["topic", { valueType: "enum", optionKeys: ["billing", "shipping", "returns"] }]]),
+    });
+
+    expect(bound(["billing", "shipping"]).diagnostics).toEqual([
+      expect.objectContaining({
+        code: "context_variable_option_not_accepted",
+        location: "step:lookup.inputBindings.topic",
+        message: expect.stringContaining("\"returns\""),
+      }),
+    ]);
+    expect(bound(["billing", "shipping", "returns", "other"]).diagnostics).toEqual([]);
   });
 
   it("does not treat a required contextVariableRef as guaranteed on entry", () => {

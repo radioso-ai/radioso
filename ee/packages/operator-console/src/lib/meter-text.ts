@@ -14,9 +14,9 @@ export function limitText(limit: number | null): string {
 type DirectoryMeters = Pick<OrganizationDirectoryRow, "monthlyAnswers" | "monthlyConversations">;
 
 /**
- * The headline monthly meter for a directory row. Catalog tiers meter conversations
- * and leave the answer limit null, so reading the answer meter alone would print
- * "unlimited" for a capped tier.
+ * The headline monthly meter for a directory row. Every account but one on an
+ * answer-capped tier is metered in conversations, so reading the answer meter alone
+ * would print "unlimited" for a capped tier and 0 for an untiered one.
  */
 export const directoryMeterText = (row: DirectoryMeters): string => {
   if (row.monthlyConversations) {

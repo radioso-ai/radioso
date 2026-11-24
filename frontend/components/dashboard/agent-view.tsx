@@ -69,9 +69,9 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat' | 'changes'>, Ag
     description: 'Named actions this agent can take — answer from knowledge, send email, post to Slack, call a webhook, or notify a human — usable in routines.',
   },
   'context-variables': {
-    title: 'Context',
+    title: 'Attributes',
     mode: 'assistant',
-    description: 'Host-defined context this agent can resolve for each visitor turn.',
+    description: 'Typed facts about a conversation or visitor this agent reads each turn.',
   },
   directives: { title: 'Directives', mode: 'assistant' },
   routines: { title: 'Routines', mode: 'assistant' },

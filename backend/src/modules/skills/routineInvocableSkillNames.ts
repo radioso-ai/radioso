@@ -1,4 +1,5 @@
-import type { AgentSkillKind, AgentSkillRepositoryPort, AgentSkillSpine } from "../agentSkills/public.js";
+import type { AgentSkillKind, AgentSkillRepositoryPort } from "../agentSkills/public.js";
+import type { ConversationSkill } from "../../shared/domain/conversationSkills.js";
 
 /**
  * The agent-skill kinds a routine step may invoke **by name** without the authoring
@@ -12,13 +13,13 @@ import type { AgentSkillKind, AgentSkillRepositoryPort, AgentSkillSpine } from "
  * routable at runtime and absent from the catalog. That difference is the entire reason
  * this supplement exists.
  *
- * Three kinds are deliberately absent, and each exclusion is the direction that keeps
+ * Four kinds are deliberately absent, and each exclusion is the direction that keeps
  * validation from accepting a name runtime will not route:
  *
- * - **`retrieve` and `notify`.** `RetrieveRoutineSkillResolver` and
- *   `NotifyRoutineSkillResolver` each apply their own
+ * - **`retrieve`, `notify` and `api_request`.** `RetrieveRoutineSkillResolver`,
+ *   `NotifyRoutineSkillResolver` and `ApiRequestRoutineSkillResolver` each apply their own
  *   `enabled && invocationMode === "routine_named"` filter — exactly the filter the
- *   authoring catalog already applies for that kind. Listing either kind here would
+ *   authoring catalog already applies for that kind. Listing any of them here would
  *   widen validation past runtime, admitting an `agent_selectable` retrieve or notify
  *   skill that no routine step can actually dispatch.
  * - **`external_mcp`.** It has no name-keyed routine resolver. External MCP skills
@@ -29,10 +30,10 @@ import type { AgentSkillKind, AgentSkillRepositoryPort, AgentSkillSpine } from "
  */
 export const routineNameDispatchedSkillKinds = ["webhook", "customer_email", "slack"] as const;
 
-export type RoutineNameDispatchedSkillKind = (typeof routineNameDispatchedSkillKinds)[number];
+type RoutineNameDispatchedSkillKind = (typeof routineNameDispatchedSkillKinds)[number];
 
 /** Skill names grouped by kind, one list per runtime resolver in the chain. */
-export type RoutineInvocableSkillNamesByKind = Readonly<Record<RoutineNameDispatchedSkillKind, readonly string[]>>;
+type RoutineInvocableSkillNamesByKind = Readonly<Record<RoutineNameDispatchedSkillKind, readonly string[]>>;
 
 export interface RoutineInvocableSkillNamesContext {
   readonly workspaceId: string;
@@ -40,25 +41,42 @@ export interface RoutineInvocableSkillNamesContext {
 }
 
 /**
- * The skill names a routine may invoke beyond those the authoring catalog lists.
- *
- * Two shapes over **one** derivation, because the two consumers genuinely need different
- * shapes and the thing that must not diverge is the rule, not the return type:
- *
- * - `listForAgent` — one flat set, for routine publish validation and design-time config
- *   analysis, which ask "is this name legal?".
- * - `listByKindForAgent` — grouped, for the runtime resolver chain, where each resolver
- *   mints a kind-specific skill definition and therefore needs its own list.
+ * The skill names a routine may invoke beyond those the authoring catalog lists, as one flat set
+ * for routine publish validation and design-time config analysis, which ask "is this name legal?".
+ * The runtime resolver chain reads the same rule grouped by kind, over the skills the conversation
+ * runs ({@link routineInvocableSkillNamesByKind}).
  */
 export interface RoutineInvocableSkillNames {
   listForAgent(context: RoutineInvocableSkillNamesContext): Promise<readonly string[]>;
-  listByKindForAgent(context: RoutineInvocableSkillNamesContext): Promise<RoutineInvocableSkillNamesByKind>;
 }
+
+type NameDispatchCandidate = Pick<ConversationSkill, "skillName" | "kind" | "enabled">;
 
 const dispatchedKinds = new Set<string>(routineNameDispatchedSkillKinds);
 
-const isNameDispatched = (skill: AgentSkillSpine): boolean =>
+const isNameDispatched = (skill: NameDispatchCandidate): boolean =>
   skill.enabled && dispatchedKinds.has(skill.kind);
+
+/**
+ * The name-dispatched skills grouped by kind, one list per runtime resolver in the chain, each of
+ * which mints a kind-specific skill definition. Read over the skills a conversation runs, so a
+ * routine resolves the names its release holds.
+ */
+export const routineInvocableSkillNamesByKind = (
+  skills: readonly NameDispatchCandidate[],
+): RoutineInvocableSkillNamesByKind => {
+  const byKind: Record<RoutineNameDispatchedSkillKind, string[]> = {
+    webhook: [],
+    customer_email: [],
+    slack: [],
+  };
+  for (const skill of skills) {
+    if (isNameDispatched(skill)) {
+      byKind[skill.kind as RoutineNameDispatchedSkillKind].push(skill.skillName);
+    }
+  }
+  return byKind;
+};
 
 /**
  * Derives the supplement from the shared `agent_skills` spine.
@@ -74,21 +92,6 @@ export class RoutineInvocableSkillNamesService implements RoutineInvocableSkillN
   async listForAgent(context: RoutineInvocableSkillNamesContext): Promise<readonly string[]> {
     const skills = await this.sources.agentSkills.listByAgent(context.workspaceId, context.agentId);
     return skills.filter(isNameDispatched).map((skill) => skill.skillName);
-  }
-
-  async listByKindForAgent(context: RoutineInvocableSkillNamesContext): Promise<RoutineInvocableSkillNamesByKind> {
-    const skills = await this.sources.agentSkills.listByAgent(context.workspaceId, context.agentId);
-    const byKind: Record<RoutineNameDispatchedSkillKind, string[]> = {
-      webhook: [],
-      customer_email: [],
-      slack: [],
-    };
-    for (const skill of skills) {
-      if (isNameDispatched(skill)) {
-        byKind[skill.kind as RoutineNameDispatchedSkillKind].push(skill.skillName);
-      }
-    }
-    return byKind;
   }
 }
 

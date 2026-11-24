@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentSkillKind, AgentSkillInvocationMode, AgentSkillSpine } from "../../../src/modules/agentSkills/public.js";
 import {
   RoutineInvocableSkillNamesService,
+  routineInvocableSkillNamesByKind,
   routineNameDispatchedSkillKinds,
 } from "../../../src/modules/skills/public.js";
 
@@ -123,25 +124,21 @@ describe("RoutineInvocableSkillNamesService", () => {
     expect(await service.listForAgent({ workspaceId, agentId })).toEqual([]);
   });
 
-  it("groups names by kind so each runtime resolver gets its own list", async () => {
-    const { service } = build([
+  it("groups a conversation's skill names by kind so each runtime resolver gets its own list", () => {
+    expect(routineInvocableSkillNamesByKind([
       spine({ skillName: "webhook_notify_ops", kind: "webhook" }),
       spine({ skillName: "email_send_receipt", kind: "customer_email" }),
       spine({ skillName: "slack_ping_team", kind: "slack" }),
       spine({ skillName: "retrieve_docs", kind: "retrieve" }),
-    ]);
-
-    expect(await service.listByKindForAgent({ workspaceId, agentId })).toEqual({
+    ])).toEqual({
       webhook: ["webhook_notify_ops"],
       customer_email: ["email_send_receipt"],
       slack: ["slack_ping_team"],
     });
   });
 
-  it("returns an empty list per kind when the agent has no skills at all", async () => {
-    const { service } = build([]);
-
-    expect(await service.listByKindForAgent({ workspaceId, agentId })).toEqual({
+  it("returns an empty list per kind when the conversation has no skills at all", () => {
+    expect(routineInvocableSkillNamesByKind([])).toEqual({
       webhook: [],
       customer_email: [],
       slack: [],
@@ -154,14 +151,6 @@ describe("RoutineInvocableSkillNamesService", () => {
     await service.listForAgent({ workspaceId, agentId });
 
     expect(agentSkills.calls).toEqual([{ workspaceId, agentId }]);
-  });
-
-  it("issues one read for both shapes rather than one per kind", async () => {
-    const { service, agentSkills } = build([spine({ skillName: "webhook_notify_ops", kind: "webhook" })]);
-
-    await service.listByKindForAgent({ workspaceId, agentId });
-
-    expect(agentSkills.calls).toHaveLength(1);
   });
 
   it("keeps every dispatched kind a real agent-skill kind", () => {

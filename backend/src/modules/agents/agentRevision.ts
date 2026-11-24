@@ -7,10 +7,12 @@ import {
   validateExactContentItem,
 } from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
+import { CONTEXT_VARIABLE_SOURCES } from "../context-variables/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 import { sameVisitorImagesSwitch } from "./agentRevisionVisitorImages.js";
+import { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK } from "../../shared/domain/locale.js";
 import { errorClassOf } from "../../shared/observability/errorClass.js";
@@ -69,7 +71,7 @@ const routineSnapshotSchema = routineDefinitionSchema
   .strip();
 const contextVariableEnablementSnapshotSchema = z.object({
   id: z.string().uuid(), agentId: z.string().uuid(), variableId: z.string().uuid(),
-  source: z.enum(["pushed", "browser", "resolver", "request"]), resolverSkillId: z.string().uuid().nullable(),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES), resolverSkillId: z.string().uuid().nullable(),
   maxAgeSeconds: z.number().int().nonnegative().nullable(), resolverTimeoutMs: z.number().int().positive().nullable(),
   surfacing: z.enum(["always", "on_reference", "operator_only"]), enabled: z.boolean(),
   createdAt: persistedDate, updatedAt: persistedDate,
@@ -172,11 +174,13 @@ const projectScopedAuthoringSnapshot = (snapshot: AgentRevisionSnapshot) => ({
   greeting: canonicalGreeting(snapshot),
 });
 
+/** Whether a draft holds exactly what a release serves: the draft-dirty check. */
 export const equalScopedAuthoringSnapshots = (
   left: AgentRevisionSnapshot,
   right: AgentRevisionSnapshot,
 ): boolean => JSON.stringify(projectScopedAuthoringSnapshot(left)) === JSON.stringify(projectScopedAuthoringSnapshot(right))
-  && sameVisitorImagesSwitch(left, right);
+  && sameVisitorImagesSwitch(left, right)
+  && diffAgentRevisionSkills(right, left).length === 0;
 
 /** Candidate/release validation happens after draft saves: incomplete graphs can
  * be authored, but cannot become a runnable immutable revision.
@@ -455,7 +459,7 @@ export class AgentRevisionService {
         : (input.side === "before" ? beforeCollection : afterCollection).find((entry) => entry.id === input.id) ?? null;
     if (value === null) return { text: null, nextOffset: null, totalLength: 0 };
     const safeValue = field === "agentSkills" && typeof value === "object"
-      ? (() => { const { config: _config, ...metadata } = value as Record<string, unknown>; return metadata; })()
+      ? redactedRevisionSkill(value as NonNullable<AgentRevisionSnapshot["agentSkills"]>[number])
       : value;
     const full = typeof safeValue === "string" ? safeValue : JSON.stringify(safeValue);
     return { text: full.slice(input.offset, input.offset + input.limit), nextOffset: input.offset + input.limit < full.length ? input.offset + input.limit : null, totalLength: full.length };

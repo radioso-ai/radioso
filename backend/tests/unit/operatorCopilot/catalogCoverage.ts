@@ -34,6 +34,7 @@ const catalogToolCoverage = {
   listDocumentChunks: "document_chunks",
   getDocumentChunk: "document_chunks",
   recrawlDocumentSource: "recrawl_source",
+  setDocumentSourceRecrawlCadence: "set_recrawl_cadence",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
   createDocument: "propose_document",
@@ -45,6 +46,8 @@ const catalogToolCoverage = {
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
   getMcpConnection: "agent_skills",
+  listApiConnections: "agent_skills",
+  getApiConnection: "agent_skills",
   listExternalSkills: "agent_skills",
   getExternalSkill: "agent_skills",
   getEvalCaseBySourceMessage: "eval_results",
@@ -183,6 +186,15 @@ const webhookDestinationConfiguration = deferred(
 );
 const webhookDestinationRemoval = deferred(
   "Deferred: deleting a destination silently stops delivery and recreating one mints a new secret the receiver must be reconfigured with, so removal needs its own proposal shape.",
+);
+const apiConnectionCredentialWrite = permanent(
+  "Permanent exclusion: the body carries the connection's write-only credential, which the operator types into the dashboard and the copilot must never handle; Ray proposes the skills that use a connection, through propose_skill_config, not the connection.",
+);
+const apiConnectionRemoval = permanent(
+  "Permanent exclusion: a deleted connection can only be recreated with its credential, which only the operator can supply, so Ray could neither undo nor redo the removal; it is refused anyway while a skill targets the connection.",
+);
+const apiConnectionTestRequest = permanent(
+  "Permanent exclusion: it sends a real request with the stored credential, and its answer carries the API's raw response body, which can hold a customer's records; the model reads API data only through a skill's declared, typed outputs.",
 );
 const channelConnectionStatusRead = deferred(
   "Deferred to Wave 5 channel configuration: non-secret connection, installation, and binding status that no family reader covers; these land with the channel tools that act on them.",
@@ -447,6 +459,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateWebhookDestination",
   ], webhookDestinationConfiguration),
   ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
+  ...coverage(["createApiConnection", "updateApiConnection"], apiConnectionCredentialWrite),
+  ...coverage(["deleteApiConnection"], apiConnectionRemoval),
+  ...coverage(["testApiConnectionRequest"], apiConnectionTestRequest),
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["queryHistory"], historyTextSearch),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
@@ -563,6 +578,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
+  // A scheduled recrawl holds a large removal precisely so that a person, not automation, decides it.
+  ...coverage(["removeDocumentSourceHeldPages", "keepDocumentSourceHeldPages"], permanent(
+    "Permanent exclusion: a scheduled recrawl holds pages it no longer finds when they are more than a fifth of the source, because a loss that large is more often a broken or moved site than a pruned one. Removing them deletes documents in bulk and keeping them exempts them from later scheduled removal, so the decision stays with a person on the source in the dashboard. Ray sets the cadence through set_recrawl_cadence and recrawls through recrawl_source.",
+  )),
   ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
   ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
   ...coverage([

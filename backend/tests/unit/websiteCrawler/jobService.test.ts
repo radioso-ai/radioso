@@ -6,8 +6,8 @@ describe("website crawl job service", () => {
   it("enqueues an existing source without re-identifying it from the URL or replacing its config", async () => {
     const sourceId = "33333333-3333-4333-8333-333333333333";
     const createForSource = vi.fn().mockImplementation(async (input) => ({
-      id: "11111111-1111-4111-8111-111111111111",
-      ...input,
+      job: { id: "11111111-1111-4111-8111-111111111111", ...input },
+      created: true,
     }));
     const dispatch = vi.fn().mockResolvedValue(undefined);
     const resolveSource = vi.fn().mockRejectedValue(new Error("URL source resolution would replace config"));
@@ -24,12 +24,14 @@ describe("website crawl job service", () => {
       sourceId,
       url: "https://example.com/search?apiKey=secret",
       limit: 3,
+      trigger: "scheduled",
     })).resolves.toMatchObject({ sourceId, status: "queued" });
 
     expect(createForSource).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "22222222-2222-4222-8222-222222222222",
       sourceId,
       requestedUrl: "https://example.com/search?apiKey=secret",
+      trigger: "scheduled",
     }));
     expect(resolveSource).not.toHaveBeenCalled();
   });
@@ -61,17 +63,20 @@ describe("website crawl job service", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it("creates a durable job before dispatching a crawl notification", async () => {
-    const create = vi.fn().mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
-      workspaceId: "22222222-2222-4222-8222-222222222222",
-      sourceId: "33333333-3333-4333-8333-333333333333",
-      requestedUrl: "https://example.com",
+  it("creates a durable job for the URL's source before dispatching a crawl notification", async () => {
+    const createForSource = vi.fn().mockResolvedValue({
+      job: {
+        id: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "22222222-2222-4222-8222-222222222222",
+        sourceId: "33333333-3333-4333-8333-333333333333",
+        requestedUrl: "https://example.com",
+      },
+      created: true,
     });
     const dispatch = vi.fn().mockResolvedValue(undefined);
     const resolveSource = vi.fn().mockResolvedValue({ id: "33333333-3333-4333-8333-333333333333" });
     const service = new WebsiteCrawlJobService({
-      repository: { create } as never,
+      repository: { createForSource } as never,
       dispatcher: { dispatch },
       documentIngestionService: { resolveSource } as never,
       assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
@@ -84,7 +89,7 @@ describe("website crawl job service", () => {
       limit: 3,
     });
 
-    expect(create).toHaveBeenCalledWith({
+    expect(createForSource).toHaveBeenCalledWith({
       accountId: "44444444-4444-4444-8444-444444444444",
       workspaceId: "22222222-2222-4222-8222-222222222222",
       sourceId: "33333333-3333-4333-8333-333333333333",
@@ -95,6 +100,7 @@ describe("website crawl job service", () => {
         excludeUrlPatterns: [],
         preserveContentLinks: true,
       },
+      trigger: "manual",
     });
     expect(dispatch).toHaveBeenCalledWith({
       jobId: "11111111-1111-4111-8111-111111111111",
@@ -118,9 +124,9 @@ describe("website crawl job service", () => {
       }),
     };
     const repository = {
-      create: vi.fn().mockImplementation(async () => {
+      createForSource: vi.fn().mockImplementation(async () => {
         order.push("create");
-        return { id: "job-1", workspaceId: "ws-1", sourceId: "source-1", requestedUrl: "https://example.com" };
+        return { job: { id: "job-1", workspaceId: "ws-1", sourceId: "source-1", requestedUrl: "https://example.com" }, created: true };
       }),
       deleteById: vi.fn().mockImplementation(async () => {
         order.push("delete");
@@ -427,5 +433,43 @@ describe("website crawl job service", () => {
       status: "queued",
     });
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("answers a crawl request for a source that is already crawling with that crawl, and starts nothing", async () => {
+    const createForSource = vi.fn().mockResolvedValue({
+      job: { id: "job-active", workspaceId: "ws-1", sourceId: "source-1", requestedUrl: "https://example.com", status: "processing" },
+      created: false,
+    });
+    const dispatch = vi.fn();
+    const publisher = { enqueue: vi.fn() };
+    const service = new WebsiteCrawlJobService({
+      repository: { createForSource } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: { resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }) } as never,
+      publisher,
+      assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(service.enqueueForSource({ workspaceId: "ws-1", sourceId: "source-1", url: "https://example.com", limit: 5 }))
+      .resolves.toEqual({ jobId: "job-active", sourceId: "source-1", requestedUrl: "https://example.com", status: "queued" });
+    await expect(service.enqueue({ workspaceId: "ws-1", url: "https://example.com", limit: 5 }))
+      .resolves.toMatchObject({ jobId: "job-active", sourceId: "source-1" });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("creates an unbound job when no source can be resolved for the URL", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "job-1", workspaceId: "ws-1", sourceId: null, requestedUrl: "https://example.com" });
+    const service = new WebsiteCrawlJobService({
+      repository: { create } as never,
+      dispatcher: { dispatch: vi.fn().mockResolvedValue(undefined) },
+      documentIngestionService: {} as never,
+      assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(service.enqueue({ workspaceId: "ws-1", url: "https://example.com", limit: 5 }))
+      .resolves.toMatchObject({ jobId: "job-1", sourceId: null });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ sourceId: null, trigger: "manual" }));
   });
 });

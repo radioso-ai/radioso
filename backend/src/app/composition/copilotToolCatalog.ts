@@ -66,7 +66,7 @@ import { assertOperatorMcpToolSchemas } from "../../modules/operatorCopilot/mcpT
 import { assertOperatorMcpOperationIdentities } from "../../modules/operatorCopilot/operatorMcpDisposition.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
-import { agentCopilotPrimitives } from "../../modules/agents/public.js";
+import { agentCopilotPrimitives, type AgentContextVariableUsersReader } from "../../modules/agents/public.js";
 import { agentWizardCopilotPrimitives } from "../../modules/agentWizard/public.js";
 import { agentSkillsCopilotPrimitives } from "../../modules/agentSkills/public.js";
 import { chatCopilotPrimitives } from "../../modules/chat/public.js";
@@ -185,6 +185,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly notificationDeliveries: CopilotNotificationDeliveriesPort;
   readonly eventSubscriptions: CopilotEventSubscriptionsPort;
   readonly contextVariables: CopilotContextVariablesPort;
+  readonly contextVariableUsers: AgentContextVariableUsersReader;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly workspaceSetupState: CopilotWorkspaceSetupStatePort;
   /** Null when the deployment has no email provider. */

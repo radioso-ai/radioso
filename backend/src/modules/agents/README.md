@@ -21,6 +21,25 @@ a candidate and a publication freeze it, and a revision that holds none takes no
 photos (`revisionTakesPhotos`, owned by the visitorImages contract). Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
+An agent's skills are part of a revision too. Every skill write, whichever route makes it, is
+projected into the draft in the same transaction under the revision lock (`writeAgentSkillIntoDraft`
+in agentSkills), a candidate freezes the skills, and `applyAgentRevisionSnapshot` hands them to a
+turn as `authoredAgentSkills`, re-reading the contact switch from the release's `contact_human`.
+Everything that runs a skill for a conversation reads its row from that set, never the live table:
+`ConversationSkills` (agentSkills) resolves it for a turn or, for work a conversation queued, from
+the release it is pinned to, and each executor reads the row from the set its invocation carries
+(`shared/domain/conversationSkills.ts`). `diffAgentRevisionSkills`
+(`agentRevisionSkills.ts`) is the one skill comparison behind the draft-dirty check
+(`equalScopedAuthoringSnapshots`), the publication review (`describeCandidateReleaseDiff`) and the
+version history (`presentRevisionDetail`): it matches skills by id, compares what was authored
+rather than write timestamps or list order, and names each change by skill name. Every review
+shows a skill through `redactedRevisionSkill`, settings left out. It leaves out the
+default-answer skill, which carries the agent's retrieval settings and is read live from the
+skills table, and finds no skill change against a snapshot that records none. Such a snapshot
+(frozen before skills were tracked, or cleared by migration 268, since the per-kind skill routes
+had left the recorded sets incomplete) serves the live skills table, which every skill write keeps
+equal to the draft, until the agent's next publish records a complete set.
+
 An agent nobody has published answers nothing: `AgentRevisionRuntimeResolver.resolveNew`
 refuses its turn with `agentNotPublished()`, a `404` whose code is `agent_not_published`,
 so a channel can tell it apart from a link that is gone. `AgentPublicationReader`
@@ -70,6 +89,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-runtime-resolver.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-revision-skill-status.test.ts tests/unit/candidate-release-review.test.ts` (skills as draft changes)
 - `cd backend && pnpm exec vitest run tests/unit/agent-voice-settings.test.ts tests/contract/agent-voice-settings.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/agent-settings-proposal-owner.test.ts` (Ray's proposals for both blocks)
 - `cd backend && pnpm exec vitest run tests/unit/agent-mechanics-replies.test.ts`

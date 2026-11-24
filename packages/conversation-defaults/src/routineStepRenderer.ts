@@ -30,12 +30,15 @@ import {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT,
   DEFAULT_ROUTINE_STEP_SOURCES_PROMPT,
+  DEFAULT_ROUTINE_STEP_SOURCES_TOOL_RESULTS_PROMPT,
   DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
+  DEFAULT_ROUTINE_STEP_TOOL_RESULTS_PROMPT,
 } from "./generated/defaultPrompts.js";
 import { partitionRoutineStepSteering, steeringForSurface, type RoutineStepSteering } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
+import { IDENTIFIER_TOKEN, toolResultsBlock } from "./routineStepToolResults.js";
 import { renderRoutineStepInstructions, renderSteeringRules, routineStepSteeringOptions } from "./steeringPrompt.js";
 
 export {
@@ -132,9 +135,6 @@ const unresolvedRequestBlock = (turn: TurnContext): string => {
  */
 const stepProgressInstruction = (step: RoutineStep, template: string): string =>
   step.kind === "chat" ? renderPromptTemplate("chat/routine-step-progress.md", template, {}) : "";
-
-/** A skill name or outcome status the facts carry as it is: an identifier, never free text. */
-const IDENTIFIER_TOKEN = /^[\w.:-]{1,128}$/u;
 
 /**
  * What the run did before the ending this reply is written for (#1820). An ending's text is
@@ -265,14 +265,15 @@ const retrievalContextMessages = (turn: TurnContext): ConversationMessage[] => {
 
 /**
  * The quoted sources a step reply has besides its own instruction (#1717): the excerpts a
- * retrieval step staged, and the evidence of the context variables the step references, such
- * as the page the visitor is on. A routine chat step runs no retrieval of its own, so on a turn
- * with neither it has none, and is told so. A context block rendered into the instruction is
- * part of the instruction, not one of these.
+ * retrieval step staged, the evidence of the context variables the step references, such
+ * as the page the visitor is on, and the values this turn's tool steps returned (#1883). A routine
+ * chat step runs no retrieval of its own, so on a turn with none of them it has none, and is told
+ * so. A context block rendered into the instruction is part of the instruction, not one of these.
  */
 interface StepReplySources {
   retrievedExcerpts: boolean;
   contextEvidence: boolean;
+  toolResults: boolean;
 }
 
 /** True when a staged retrieval result carries an excerpt the reply's messages render. */
@@ -283,9 +284,10 @@ const hasRetrievedExcerpt = (turn: TurnContext): boolean =>
     Array.isArray(staged.data.contexts) &&
     staged.data.contexts.some((context) => isRecord(context) && textField(context.content) !== null));
 
-const stepReplySources = (turn: TurnContext, contextEvidence: readonly string[]): StepReplySources => ({
+const stepReplySources = (turn: TurnContext, contextEvidence: readonly string[], toolResults: string): StepReplySources => ({
   retrievedExcerpts: hasRetrievedExcerpt(turn),
   contextEvidence: contextEvidence.length > 0,
+  toolResults: toolResults.length > 0,
 });
 
 const sourcePresence = (present: boolean): "provided" | "none" => (present ? "provided" : "none");
@@ -294,6 +296,8 @@ const sourcePresence = (present: boolean): "provided" | "none" => (present ? "pr
 interface StepSourcesTemplates {
   /** Which sources the step has (`{{retrieved_excerpts}}`, `{{context_evidence}}`: `provided` or `none`). */
   some: string;
+  /** The same line for a step this turn's tool steps returned values to, which names them as a source (#1883). */
+  withToolResults: string;
   /** A step with no source at all. */
   none: string;
 }
@@ -305,13 +309,19 @@ interface StepSourcesTemplates {
  * excerpts: none", the reply still stated the window as the edition's dates in 4 of 5 runs.
  * Presence only: what the sources say stays in the messages, as untrusted quoted data.
  */
-const stepSourcesBlock = (sources: StepReplySources, templates: StepSourcesTemplates): string =>
-  sources.retrievedExcerpts || sources.contextEvidence
-    ? renderPromptTemplate("chat/routine-step-sources.md", templates.some, {
-        retrieved_excerpts: sourcePresence(sources.retrievedExcerpts),
-        context_evidence: sourcePresence(sources.contextEvidence),
-      })
+const stepSourcesBlock = (sources: StepReplySources, templates: StepSourcesTemplates): string => {
+  const presence = {
+    retrieved_excerpts: sourcePresence(sources.retrievedExcerpts),
+    context_evidence: sourcePresence(sources.contextEvidence),
+  };
+  // A step without tool results reads the line it always did; only one with them hears of them.
+  if (sources.toolResults) {
+    return renderPromptTemplate("chat/routine-step-sources-tool-results.md", templates.withToolResults, presence);
+  }
+  return sources.retrievedExcerpts || sources.contextEvidence
+    ? renderPromptTemplate("chat/routine-step-sources.md", templates.some, presence)
     : renderPromptTemplate("chat/routine-step-sources-none.md", templates.none, {});
+};
 
 /**
  * Citations the routine step grounded on, drawn from the same staged `retrieval.context`
@@ -412,6 +422,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly stuckHandoffPromptTemplate: string;
   private readonly stepProgressPromptTemplate: string;
   private readonly stepEndingPromptTemplate: string;
+  private readonly stepToolResultsPromptTemplate: string;
   private readonly contextEvidencePromptTemplate: string;
   private readonly stepSourcesTemplates: StepSourcesTemplates;
 
@@ -441,10 +452,14 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       stepProgressPromptTemplate?: string;
       /** What an ending's reply hears the run did (`{{request_passed_on}}`: `yes` or `no`; `{{skill_outcomes}}`: the tool outcomes or `none`; #1820). */
       stepEndingPromptTemplate?: string;
+      /** Frames what this turn's tool steps returned (`{{tool_results}}`: each result under its tool and outcome; #1883). */
+      stepToolResultsPromptTemplate?: string;
       /** Frames the evidence a step's context variables carry (`{{evidence}}`). */
       contextEvidencePromptTemplate?: string;
       /** Which quoted sources the reply has (`{{retrieved_excerpts}}`, `{{context_evidence}}`: `provided` or `none`; #1717). */
       stepSourcesPromptTemplate?: string;
+      /** The same line for a reply this turn's tool steps returned values to, naming them as a source (#1883). */
+      stepSourcesToolResultsPromptTemplate?: string;
       /** The sources line of a reply that has no quoted source at all. */
       stepSourcesNonePromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
@@ -471,10 +486,12 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     this.stuckHandoffPromptTemplate = options.stuckHandoffPromptTemplate ?? DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT;
     this.stepProgressPromptTemplate = options.stepProgressPromptTemplate ?? DEFAULT_ROUTINE_STEP_PROGRESS_PROMPT;
     this.stepEndingPromptTemplate = options.stepEndingPromptTemplate ?? DEFAULT_ROUTINE_STEP_ENDING_PROMPT;
+    this.stepToolResultsPromptTemplate = options.stepToolResultsPromptTemplate ?? DEFAULT_ROUTINE_STEP_TOOL_RESULTS_PROMPT;
     this.contextEvidencePromptTemplate =
       options.contextEvidencePromptTemplate ?? DEFAULT_ROUTINE_STEP_CONTEXT_EVIDENCE_PROMPT;
     this.stepSourcesTemplates = {
       some: options.stepSourcesPromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_PROMPT,
+      withToolResults: options.stepSourcesToolResultsPromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_TOOL_RESULTS_PROMPT,
       none: options.stepSourcesNonePromptTemplate ?? DEFAULT_ROUTINE_STEP_SOURCES_NONE_PROMPT,
     };
   }
@@ -510,9 +527,14 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
         render: async () => {
           const responseLanguage = await this.options.responseLanguage;
           const message = terminalMessage(input.step, input.steering);
-          // The authored message can promise what the run did not do (#1820); the default promises
-          // only that a person connects, which a hand-off always does.
-          const endingRun = message ? endingRunBlock(input.ending, this.stepEndingPromptTemplate) : "";
+          // The authored message can promise what the run did not do (#1820), or give what a tool
+          // returned (#1883); the default promises only that a person connects, which a hand-off
+          // always does.
+          const endingRun = message
+            ? [toolResultsBlock(input.skillResults, this.stepToolResultsPromptTemplate), endingRunBlock(input.ending, this.stepEndingPromptTemplate)]
+              .filter(Boolean)
+              .join("\n\n")
+            : "";
           return this.handoffMessage(
             input.turn,
             responseLanguage,
@@ -551,13 +573,18 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   /**
    * The step as the host's grounded answer gets it. An ending grounded on evidence is told what the
    * run did as one more step instruction (#1820): grounded on the listings a search found, a reply
-   * whose booking tool then failed still said the viewing was booked.
+   * whose booking tool then failed still said the viewing was booked. What this turn's tool steps
+   * returned comes first the same way (#1883), except to a step that presents a tool step's
+   * results, whose host reply reads them itself.
    */
   private groundedInput(input: RoutineStepReplyInput): RoutineStepReplyInput {
+    const toolResults = input.step.present ? "" : toolResultsBlock(input.skillResults, this.stepToolResultsPromptTemplate);
     const endingRun = endingRunBlock(input.ending, this.stepEndingPromptTemplate);
-    return endingRun
-      ? { ...input, steering: [...input.steering, { action: endingRun, source: "routine", lifespan: "response", description: "routine ending run" }] }
-      : input;
+    const added = [
+      { action: toolResults, description: "routine tool results" },
+      { action: endingRun, description: "routine ending run" },
+    ].filter(({ action }) => action.length > 0).map((rule): SteeringRule => ({ ...rule, source: "routine", lifespan: "response" }));
+    return added.length > 0 ? { ...input, steering: [...input.steering, ...added] } : input;
   }
 
   /** The reply that follows the step's own instruction, generated through the model gateway. */
@@ -583,6 +610,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     const responseLanguage = await this.options.responseLanguage;
     const { instructions, guidance } = stepSteering(input.step, input.steering);
     const contextEvidence = input.contextEvidence ?? [];
+    const toolResults = toolResultsBlock(input.skillResults, this.stepToolResultsPromptTemplate);
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
       step_progress_instruction: stepProgressInstruction(input.step, this.stepProgressPromptTemplate),
@@ -592,7 +620,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),
       instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
       reask_context: reaskBlock(input.reask, this.reaskTemplates),
-      step_sources: stepSourcesBlock(stepReplySources(input.turn, contextEvidence), this.stepSourcesTemplates),
+      tool_results: toolResults ? `${toolResults}\n\n` : "",
+      step_sources: stepSourcesBlock(stepReplySources(input.turn, contextEvidence, toolResults), this.stepSourcesTemplates),
     });
     return {
       messages: turnMessages(input.turn, contextEvidence, this.contextEvidencePromptTemplate),

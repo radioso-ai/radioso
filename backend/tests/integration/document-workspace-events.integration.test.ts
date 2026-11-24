@@ -480,10 +480,10 @@ describeIntegration("document events in the workspace event log (Postgres)", () 
 
     expect(await documents.deleteByIdAndWorkspaceId(deletedAlone.documentId, seeded.workspaceId)).toBe(true);
     expect((await documents.deleteBySourceIdAndWorkspaceId(deletedWithSource.sourceId, seeded.workspaceId)).count).toBe(1);
-    expect((await documents.deleteMissingPagesBySourceAndExternalIds({
+    expect((await documents.deleteMissingSourcePages({
       workspaceId: seeded.workspaceId,
       sourceId: prunedFromSource.sourceId,
-      keepExternalDocumentIds: [],
+      documentIds: [prunedFromSource.documentId],
     })).deletedCount).toBe(1);
 
     const events = await eventsOf(seeded.workspaceId);

@@ -71,12 +71,18 @@ const knowledgePorts = () => {
     requestedUrl: "https://help.example.com",
     status: "queued" as const,
   }));
+  const setRecrawlCadence = vi.fn(async () => ({
+    id: sourceId,
+    recrawlCadence: "weekly" as const,
+    nextRecrawlAt: new Date("2026-11-28T10:20:00.000Z"),
+  }));
   return {
     fullChunkText,
     listPageForDocument,
     reprocessDocument,
     reprocessSource,
     recrawlSource,
+    setRecrawlCadence,
   };
 };
 
@@ -393,6 +399,7 @@ describe("copilot document readers", () => {
       { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
       { name: "recrawl_source", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "set_recrawl_cadence", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 
@@ -461,5 +468,19 @@ describe("copilot document readers", () => {
       workspaceId: "workspace-1",
     });
     expect(descriptor.inputSchema.safeParse({ sourceId, url: "https://different.example.com" }).success).toBe(false);
+  });
+
+  it("sets a stored website source's recrawl cadence and reports when it next runs", async () => {
+    const ports = knowledgePorts();
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[3];
+
+    await expect(descriptor.createTool(context).invoke({ sourceId, recrawlCadence: "weekly" }, {} as never)).resolves.toEqual({
+      sourceId,
+      recrawlCadence: "weekly",
+      nextRecrawlAt: "2026-11-28T10:20:00.000Z",
+    });
+    expect(ports.setRecrawlCadence).toHaveBeenCalledWith({ workspaceId: "workspace-1", sourceId, recrawlCadence: "weekly" });
+    expect(descriptor.inputSchema.safeParse({ sourceId, recrawlCadence: "hourly" }).success).toBe(false);
+    expect(descriptor.inputSchema.safeParse({ sourceId, recrawlCadence: "daily", url: "https://different.example.com" }).success).toBe(false);
   });
 });

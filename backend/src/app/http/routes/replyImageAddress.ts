@@ -1,10 +1,9 @@
 import { z } from "zod";
 
 import type { ReplyImageUrls } from "../../../modules/chat/contracts/index.js";
-import {
-  DOCUMENT_IMAGE_RENDITION_WIDTHS,
-  type DocumentImageObjectLookup,
-} from "../../../modules/documents/contracts/index.js";
+import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../../../modules/documents/contracts/index.js";
+import type { StoredDocumentObject } from "../../../modules/documents/contracts/storage.js";
+import type { ToolImageMiss } from "../../../modules/toolImages/contracts/index.js";
 
 /**
  * The one owner of a reply image's address: where the route is mounted, the widths it serves, and
@@ -54,8 +53,14 @@ export const createReplyImageUrls = (publicBaseUrl: string): ReplyImageUrls => {
 };
 
 /**
- * Finds the stored object behind a reply image's address. The route serves by this port alone,
- * under its own name, so its handler never learns whether an image came from a document. The
- * shape is the documents lookup's, so there is one.
+ * Finds the stored object behind a reply image's address, or says why there is none and whether a
+ * later request may find one. The route serves by this port alone, under its own name, so its
+ * handler never learns whether an image came from a document. `recordMiss` counts and logs a miss;
+ * only the route, which answers a browser's request, asks for it.
  */
-export type ReplyImageObjectLookup = DocumentImageObjectLookup;
+export interface ReplyImageObjectLookup {
+  find(
+    input: { imageId: string; width: number },
+    options?: { readonly recordMiss?: boolean },
+  ): Promise<{ readonly kind: "found"; readonly object: StoredDocumentObject } | ToolImageMiss>;
+}

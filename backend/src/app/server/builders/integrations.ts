@@ -11,7 +11,6 @@ export { buildSlackInboundJobComposition } from "../../../modules/connectors/plu
 import {
   WorkspaceProviderCredentialsService,
 } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
-import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../../db/repositories/oauthConnectionRepository.js";
 import {
   DefaultWebhookDestinationAdapter,
@@ -34,7 +33,8 @@ import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import { platformOpenAIEndpointLogFields } from "../../../shared/infra/llm/providerTypes.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
+import { AgentSkillRepository, AgentSkillTargetUses } from "../../../modules/agentSkills/public.js";
+import type { SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { ManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
 import type { WorkspaceModelAvailability } from "../../../shared/domain/workspaceModelAvailability.js";
@@ -65,6 +65,7 @@ import { EmailSkillDefinitionService } from "../../../modules/customerEmail/publ
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/contracts/index.js";
 import { MCP_OAUTH_CALLBACK_PATH } from "../../../modules/externalSkills/domain.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+import { buildApiConnectionService } from "./apiRequestSkills.js";
 import type { RecipientConfirmationRequester } from "../../../shared/domain/recipientConfirmationRequests.js";
 
 
@@ -80,8 +81,8 @@ export const buildWebhookDestinationAdapter = (input: {
   repositories: {
     webhookDestinationRepository: WebhookDestinationRepositoryPort;
     routineDefinitionRepository: WebhookDestinationRoutineReferencePort;
-    webhookSkillDefinitionRepository?: Pick<WebhookSkillDefinitionRepository, "listSkillNamesByDestination">;
   };
+  skillTargetUses: SkillTargetUseReader;
   assertPublicUrl: (url: string) => Promise<void>;
 }): WebhookDestinationPublicAdapter =>
   new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
@@ -91,13 +92,7 @@ export const buildWebhookDestinationAdapter = (input: {
     assertPublicUrl: input.assertPublicUrl,
     allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
     routineReferences: input.repositories.routineDefinitionRepository,
-    skillReferences: input.repositories.webhookSkillDefinitionRepository
-      ? {
-          async listAgentSkillNamesReferencingDestination(workspaceId, destinationId) {
-            return input.repositories.webhookSkillDefinitionRepository!.listSkillNamesByDestination(workspaceId, destinationId);
-          },
-        }
-      : undefined,
+    skillTargetUses: input.skillTargetUses,
   }));
 
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
@@ -215,6 +210,8 @@ export const buildIntegrationServices = (input: {
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
   const encryptionKeys = connectorEncryptionKeys(input.env);
+  // Every target a skill can use refuses its delete through the same check over drafts and releases.
+  const skillTargetUses = new AgentSkillTargetUses(input.infrastructure.database.kysely);
   const slackInstallationService = new SlackInstallationService({
     oauthConnections: new OauthConnectionRepository(input.infrastructure.database.kysely),
     integrationConnections: input.repositories.integrationConnectionRepository,
@@ -222,6 +219,7 @@ export const buildIntegrationServices = (input: {
     bindings: input.repositories.slackChannelBindingRepository,
     workspaceAccounts: new PostgresWorkspaceAccountLookup(input.infrastructure.database.kysely),
     encryptionKey: encryptionKeys,
+    skillTargetUses,
   });
   const oauthConnectionService = new OauthConnectionService({
     repository: new OauthConnectionRepository(input.infrastructure.database.kysely),
@@ -258,6 +256,7 @@ export const buildIntegrationServices = (input: {
     providers: new StaticCustomerEmailProviderRegistry(
       customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
     ),
+    skillTargetUses,
   });
   const mcpConnectionRepository = new McpConnectionRepository(input.infrastructure.database.kysely);
   const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(input.infrastructure.database.kysely);
@@ -271,6 +270,7 @@ export const buildIntegrationServices = (input: {
       ? `${input.env.APP_BASE_URL.replace(/\/$/, "")}${MCP_OAUTH_CALLBACK_PATH}`
       : undefined,
     logger: input.logger,
+    skillTargetUses,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     externalSkillDefinitionRepository,
@@ -285,6 +285,7 @@ export const buildIntegrationServices = (input: {
     env: input.env,
     logger: input.logger,
     repositories: input.repositories,
+    skillTargetUses,
     assertPublicUrl: input.assertPublicUrl,
   });
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
@@ -294,6 +295,12 @@ export const buildIntegrationServices = (input: {
   const slackSkillDefinitionService = new SlackSkillDefinitionService({
     repository: input.repositories.slackSkillDefinitionRepository,
     installations: input.repositories.slackInstallationRepository,
+  });
+  const apiConnections = buildApiConnectionService({
+    db: input.infrastructure.database.kysely,
+    env: input.env,
+    auditService: input.infrastructure.auditService,
+    skillTargetUses,
   });
   const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
     mcp_tool: async ({ workspaceId }) =>
@@ -320,6 +327,8 @@ export const buildIntegrationServices = (input: {
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    api_request: async ({ workspaceId }) =>
+      (await apiConnections.list(workspaceId)).map((connection) => ({ id: connection.id, label: connection.name })),
     retrieve: async ({ workspaceId }) => {
       const [sources, manualDocumentCount] = await Promise.all([
         input.repositories.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
@@ -349,6 +358,7 @@ export const buildIntegrationServices = (input: {
   return {
     agentSkillRepository,
     agentSkillsService,
+    apiConnections,
     customerEmailConnectionService,
     customerEmailOAuthService,
     emailSkillDefinitionService,

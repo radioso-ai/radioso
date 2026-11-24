@@ -197,6 +197,8 @@ const DOCUMENT_DIAGNOSTIC_COPY: Partial<Record<RoutineValidationDiagnostic['code
   present_slot_not_item: 'A pick can only fill an item field.',
   present_selection_mismatch: 'Choose the item field the pick fills, or show the cards without a pick.',
   item_slot_without_presenting_step: 'No step fills this item field. Pick it in a step that shows cards.',
+  referenced_variable_not_guaranteed: 'This can run before the skill step that sets this value.',
+  referenced_list_variable: 'A list cannot go into step text. Show it as cards or check it in a rule.',
 }
 
 export function documentDiagnosticText(diagnostic: RoutineValidationDiagnostic): string {

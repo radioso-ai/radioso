@@ -7,7 +7,7 @@ import { contactDeliveryRoutes } from "../../../../shared/domain/contactDelivery
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const AgentSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
 const InvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
-const CapabilityIdSchema = z.enum(["retrieve", "mcp_tool", "email", "slack_post", "webhook_call", "notify"]);
+const CapabilityIdSchema = z.enum(["retrieve", "mcp_tool", "email", "slack_post", "webhook_call", "notify", "api_request"]);
 
 const AgentSkillTargetSchema = z.object({
   kind: z.string(),

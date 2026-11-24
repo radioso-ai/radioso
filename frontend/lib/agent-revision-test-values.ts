@@ -1,7 +1,7 @@
 type RevisionTestValueVariable = {
   id: string
   name: string
-  valueType: 'string' | 'json'
+  valueType: 'string' | 'json' | 'enum'
 }
 
 type RevisionTestValue = {

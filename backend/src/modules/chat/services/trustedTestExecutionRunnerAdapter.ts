@@ -8,14 +8,19 @@ import {
   type TestExecutionHistoryEntry,
   type TrustedTestExecutionRunnerPort,
 } from "../../test-execution/public.js";
-import type { ResolvedVariableInput } from "../../context-variables/public.js";
+import { frozenTestValueInput, type ResolvedVariableInput } from "../../context-variables/public.js";
 import {
   importTestExecutionReplayContinuation,
+  withTestChatAttributeState,
 } from "./testExecutionContinuation.js";
 import type { WorkbenchReplayInput, WorkbenchReplayRunner } from "./workbenchReplayRunner.js";
 import type { ChatBootstrapService } from "./chatBootstrapService.js";
 import type { ToolImagePreviewRecorder } from "../../toolImages/contracts/index.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
+import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
+import { readItemSelection, type SelectedItem } from "./replyBlocks/itemSelection.js";
+import type { ConversationClassificationService } from "../../contextClassification/public.js";
+import { classifyTestChatTurn, testChatAttributeInputs, type TestChatAttributeState } from "./testChatClassification.js";
 
 type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
@@ -36,6 +41,8 @@ interface TrustedTestExecutionRunnerAdapterOptions {
   bootstrap?: Pick<ChatBootstrapService, "startConversation">;
   /** Copies the pictures a turn's cards show; without it, Test Chat's cards show none. */
   toolImagePreviews?: ToolImagePreviewRecorder;
+  /** Fills the revision's classified attributes after each turn; without it, Test Chat classifies nothing. */
+  classifier?: Pick<ConversationClassificationService, "readDefinitions" | "classifyTranscript">;
 }
 
 /**
@@ -46,6 +53,10 @@ const TEST_CHAT_CLIENT_CAPABILITIES: AssistantClientContextCapabilities = {
   "reply.blocks": { item_list: { layouts: ["carousel", "grid", "list"] } },
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A transcript entry as the chat reads a stored message: an answer keeps what its message stored beside its text, its cards among it. */
 const historyMessage = (entry: TestExecutionHistoryEntry, conversationId: string, workspaceId: string): MessageRecord => ({
   id: entry.messageId ?? `${entry.turnId}:${entry.role}:${entry.attemptId}`,
   conversationId,
@@ -53,21 +64,26 @@ const historyMessage = (entry: TestExecutionHistoryEntry, conversationId: string
   role: entry.role,
   content: entry.content,
   createdAt: entry.createdAt,
+  ...(entry.role === "assistant" && isRecord(entry.messageMetadata) ? { metadata: entry.messageMetadata } : {}),
 });
+
+/**
+ * The card a Test Chat message picks, read from the answer in this side's transcript that showed
+ * it, exactly as live chat reads a pick from the stored reply. Null when this side holds no such
+ * card, such as the other version's in a comparison: the side then runs the message as the card's
+ * words, which name the card wherever this side showed the same one.
+ */
+const pickedItem = (history: readonly MessageRecord[], conversationId: string, selection: ItemSelection): { item: SelectedItem; text: string } | null => {
+  const reading = readItemSelection(history.find((message) => message.id === selection.messageId) ?? null, conversationId, selection);
+  return reading.ok ? { item: reading.item, text: reading.text } : null;
+};
 
 const sampleVariables = (values: readonly FrozenTestValue[], revision: AgentRevision): ResolvedVariableInput[] => values.map((value) => {
   const enablement = revision.snapshot.contextVariableEnablements.find(
     (candidate) => candidate.variableId === value.contextVariableId && candidate.enabled,
   );
   if (!enablement) throw new Error("test_execution_sample_not_enabled_in_candidate");
-  return {
-    name: value.name,
-    description: value.description,
-    value: value.value,
-    surfacing: enablement.surfacing,
-    sensitive: value.sensitive,
-    trust: value.trust,
-  };
+  return frozenTestValueInput(value, enablement);
 });
 
 /**
@@ -111,13 +127,26 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
   }
 
   async *stream(input: TestExecutionRunInput): ReturnType<TrustedTestExecutionRunnerPort["stream"]> {
-    const replayed = yield* this.options.replay.stream(await this.replayInput(input));
+    const { replay, revision, attributes } = await this.replayInput(input);
+    const replayed = yield* this.options.replay.stream(replay);
     if (!replayed.continuation) {
       throw new Error("test_execution_continuation_missing");
     }
     if (!replayed.messageId) {
       throw new Error("test_execution_message_id_missing");
     }
+    // Once the answer is out, as live chat classifies after its turn commits: only then is it known
+    // whether the turn held a sensitive slot. A failed replay never starts it.
+    const classified = this.options.classifier
+      ? await classifyTestChatTurn({
+          classifier: this.options.classifier, workspaceId: input.workspaceId, agentId: input.agentId,
+          conversationId: input.conversationId, revision, history: input.history, message: replay.query,
+          ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
+          samples: input.testValues, previous: attributes, sensitiveSlotKeys: replayed.sensitiveSlotKeys ?? [],
+          ...(input.signal ? { signal: input.signal } : {}),
+        })
+      : null;
+    const carried = classified?.state ?? attributes;
     // Written before the answer is returned, so the pictures exist when Test Chat asks for them.
     if (replayed.toolImages?.length) {
       await this.options.toolImagePreviews?.recordPreview({ workspaceId: input.workspaceId, sources: replayed.toolImages });
@@ -127,13 +156,14 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       messageId: replayed.messageId,
       // The sources the replayed turn's presentation cites: the same ones live chat stores with this reply.
       ...answerSources(replayed),
-      turnTrace: replayed.turnTrace,
-      continuation: replayed.continuation,
+      turnTrace: classified && replayed.turnTrace ? { ...replayed.turnTrace, attributes: classified.trace } : replayed.turnTrace,
+      continuation: withTestChatAttributeState(replayed.continuation, carried),
       ...(replayed.blocks?.length ? { blocks: replayed.blocks } : {}),
+      ...(replayed.messageReplyBlocks ? { messageMetadata: replayed.messageReplyBlocks } : {}),
     };
   }
 
-  private async replayInput(input: TestExecutionRunInput): Promise<WorkbenchReplayInput> {
+  private async replayInput(input: TestExecutionRunInput): Promise<{ replay: WorkbenchReplayInput; revision: AgentRevision; attributes: TestChatAttributeState }> {
     if (input.executionMode !== "safe_test") {
       throw new Error("test_execution_requires_safe_test");
     }
@@ -149,7 +179,9 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     if (!revision) throw notFound("Agent revision is unavailable for test execution");
 
     const continuation = importTestExecutionReplayContinuation(input.continuation, input.conversationId);
-    return {
+    const history = input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId));
+    const picked = input.itemSelection ? pickedItem(history, input.conversationId, input.itemSelection) : null;
+    const replay: WorkbenchReplayInput = {
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       sourceAgentId: input.agentId,
@@ -158,12 +190,13 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       userMessageId: input.userMessageId,
       candidateRevision: revision,
       baselineAgentConfig: agentConfig,
-      query: input.message,
+      query: picked?.text ?? input.message,
+      ...(picked ? { itemSelection: picked.item } : {}),
       clientContextCapabilities: TEST_CHAT_CLIENT_CAPABILITIES,
       // The operator chatting in Test Chat is the visitor of this turn, so their browser's zone
       // decides today the way a visitor's does, then the workspace's.
       visitorTimeZone: input.userTimeZone,
-      history: input.history.map((entry) => historyMessage(entry, input.conversationId, input.workspaceId)),
+      history,
       routineStartState: continuation.routineState
         ? (() => {
             const { sessionId: _sessionId, ...state } = continuation.routineState;
@@ -178,7 +211,11 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
         : null,
       directiveStateStartState: continuation.directiveState,
       consentStartState: continuation.consents,
-      preResolvedHostVariables: sampleVariables(input.testValues, revision),
+      // The samples, then what the classifier wrote on earlier turns, which a sample overrides.
+      preResolvedHostVariables: [
+        ...sampleVariables(input.testValues, revision),
+        ...testChatAttributeInputs(continuation.attributes.values, input.testValues, revision),
+      ],
       executionMode: "safe_test",
       skillEffects: input.skillEffects,
       signal: input.signal,
@@ -190,5 +227,6 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       // in that transcript.
       includeSlotValues: true,
     };
+    return { replay, revision, attributes: continuation.attributes };
   }
 }

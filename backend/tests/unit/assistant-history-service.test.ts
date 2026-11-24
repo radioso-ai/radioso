@@ -27,8 +27,23 @@ describe("AssistantHistoryService", () => {
         includeTurnFailureDebug: true,
         includeOperatorLabel: true,
         activity: { includeFeedback: false },
+        includeAttributes: true,
       },
     );
+  });
+
+  it("hands an attribute filter, as the caller names it, to both history lists", async () => {
+    const chatHistoryService = {
+      listItems: vi.fn(async () => ({}) as never),
+      listConversations: vi.fn(async () => ({}) as never),
+    } as unknown as ChatHistoryService;
+    const service = new AssistantHistoryService(chatHistoryService);
+
+    await service.listItems("workspace-1", { limit: 20, attribute: { name: "topic", option: "billing" } });
+    await service.listConversations("workspace-1", { limit: 20, attribute: { name: "topic", option: "_not_set" } });
+
+    expect(chatHistoryService.listItems).toHaveBeenCalledWith("workspace-1", { limit: 20, attribute: { name: "topic", option: "billing" } });
+    expect(chatHistoryService.listConversations).toHaveBeenCalledWith("workspace-1", { limit: 20, attribute: { name: "topic", option: "_not_set" } });
   });
 
   it("reads a contact request's conversation with the same dashboard-only options", async () => {

@@ -1,0 +1,532 @@
+# Feature Specification: Typed attributes the AI fills, operators see and routines write
+
+**Branch**: `feat/typed-attributes-1884` (PR 1a)
+**Created**: 2026-11-21
+**Status**: Approved (product owner review, 2026-11-21, D9 and D13 confirmed); see "Review outcome" below
+**Issues**: #1884
+**Input**: An operator cannot label conversations with typed facts the agent fills in, see those labels in the Inbox, or filter by them. Extend context variables with typed values, more writers, a record of who wrote a value, and a scope every channel has.
+
+Citations are `path:line` from the repo root, read on `main` at `6a1dadbba0`.
+
+## Decisions at a glance
+
+| # | Decision | Section |
+|---|----------|---------|
+| D1 | Extend context variables. No `attributes` module, table or API namespace. The dashboard and docs say "Attributes" from the first PR that adds UI (1a); the API keeps `/context-variables` | 1, 12 |
+| D2 | Definitions and option lists are workspace-level and not revisioned. Whether an agent classifies a variable, and its surfacing, follow draft/publish through the existing enablement snapshot | 2 |
+| D3 | New `conversation` scope keyed by `conversations.id` | 3 |
+| D4 | Types: `enum` with described options first, then `boolean`, `number`, `date`. Options have an immutable key and are archived, never deleted | 4 |
+| D5 | Every value records its last writer: `api`, `operator`, `routine` or `classifier`, plus a reference. No history table | 5 |
+| D6 | The classifier writes only over an empty or classifier-written value. Every other writer is last-writer-wins. A human value for the conversation, session or customer holds the variable; an agent or workspace value is a default the classifier's conversation value outranks | 5 |
+| D7 | Classification is a per-conversation `rerun` background job after each committed turn. It is not built on the facet job | 6 |
+| D8 | A handoff notice classifies inline before it is sent, inside the notice's own dispatch job, bounded at 10 s. A failed or timed-out classification never holds the notice | 7 |
+| D9 | `handoff.requested` keeps its payload and stays in the turn's transaction. Attributes reach automations through `context_value.changed` and the notice webhook | 7, 11 |
+| D10 | Routine write-back is authored on the slot (`saveTo`), validated, and written when the routine ends, in the turn's transaction | 9 |
+| D11 | Person-level values key on the verified customer id, or on the WhatsApp number through a new `whatsapp_contact` scope type. No cross-channel merging. Email sender addresses are not a person key | 10 |
+| D12 | 50 options per enum, 8 classified variables per agent. No backfill. No classification into a `sensitive` variable | 4, 6, 13 |
+| D13 | Classified values stay out of the answer prompt by default. The default surfacing is `on_reference`, not `operator_only`: see the correction in "Review outcome" | 8 |
+| D14 | The takeover permission sets or resets a value from the Inbox | 11 |
+| D15 | Logs, metrics and spans never carry a value, including an enum key | 13 |
+
+## Review outcome
+
+The design was accepted with three changes, all applied here.
+
+- **Slicing proves operator-visible value.** A directive's prose condition can already judge "asks about billing" from the message, so "steers the next turn" was the weakest proof. Slice 1 now ends with an Attributes block on the conversation and an Inbox filter (section 14).
+- **Handoffs classify before the notice.** Many handoffs happen on turn 1 or 2, before an after-turn job has run (section 7).
+- **The WhatsApp number is a person key** (section 10).
+
+Three items the design left unverified are now closed:
+
+- `resolveForEnablements`, the revision-pinned path, reads the store only for `pushed` enablements, the same as `resolveForAgent` (`backend/src/modules/context-variables/contextVariableResolverService.ts:94`, `backend/src/db/repositories/contextVariableRepository.ts:598`). Both paths change in 1a.
+- The value routes accept bearer tokens as well as dashboard sessions (`requireWorkspaceSession`, `backend/src/app/http/routes/contextVariableRoutes.ts:139`).
+- `on_reference` and `operator_only` are both kept out of the answer prompt: only `always` is rendered (`backend/src/modules/context-variables/contextResolutionService.ts:168-170`). The one difference is that a routine step's `{{context.<name>}}` renders an `on_reference` value and renders nothing for `operator_only` (`backend/src/modules/context-variables/routineContextRenderer.ts:9-11`).
+
+**Correction to an accepted decision.** The product owner accepted `operator_only` as the default surfacing for classified values, on the design's claim that it keeps them out of the answer prompt. The third finding above shows `on_reference` does that too, and `operator_only` would also stop a routine step from reading the value, which contradicts "template reading comes for free". This spec therefore uses `on_reference` (D13). The intent of the decision is unchanged. The product owner confirmed `on_reference` on 2026-11-21.
+
+**One instruction is met in part.** The change request asked for classification before both the notice and `handoff.requested` are dispatched. The notice is covered. The event is not held: it is a transactional outbox row written beside the `handoff_requested` activity for every handoff path (`backend/src/modules/conversationActivity/workspaceEventLogBridge.ts:8-18`, `specs/957-workspace-events/spec.md` D2 and D5). Holding it for a model call would either put that call inside the turn on every handoff path or make the event non-transactional. Section 7 gives what automations get instead.
+
+## 1. Placement: extend context variables
+
+Context variables already are the attribute layer's catalog, store and read side.
+
+| Capability | Where it exists |
+|---|---|
+| Workspace definitions with description, trust tier, sensitivity | `backend/src/modules/context-variables/domain.ts:12-23`, `backend/src/db/schema.sql:2152-2167` |
+| Per-agent use that follows draft/publish | `backend/src/modules/agents/agentRevision.ts:70-76`, `:117`; draft mutation at `backend/src/db/repositories/contextVariableRepository.ts:636-637` |
+| Scoped values with a resolution ladder and a person scope | `domain.ts:10`, `schema.sql:2136-2145`, `backend/src/modules/chat/services/chatSessionPreparer.ts:882-890` |
+| Directive conditions read the values | `backend/src/modules/context-variables/matchContextProjection.ts:91-121`, `backend/src/modules/chat/services/visitorMatchContext.ts:27-41` |
+| Routine steps and skill inputs read the values | `routineContextRenderer.ts:1-12`; `contextVariableRef` in `packages/routine-definition/src/index.ts:209-212` |
+| Redaction, prompt bounds, surfacing | `contextResolutionService.ts:17`, `:116-122`; `backend/src/shared/domain/behaviorConfig.ts:49-70` |
+| Erasure and data-subject export | `contextVariableRepository.ts:810-849`, `:855-` |
+| REST CRUD for definitions, enablements and values | `backend/src/app/http/routes/contextVariableRoutes.ts:143-322` |
+| A Ray proposal primitive | `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts:2` |
+| A catalog editor in the dashboard | `frontend/components/dashboard/settings/assistant-context-variables-section.tsx:280`, `:657` |
+| A system-written fact in the same namespace | `radioso_caller_kind`, `visitorMatchContext.ts:11`; reserved prefix at `domain.ts:60` |
+
+What is missing:
+
+1. **Types.** `value_type` is `string | json` (`domain.ts:5`, `schema.sql:2166`); validation is one line (`backend/src/modules/context-variables/valueCompatibility.ts:3-6`).
+2. **Writers.** The only stored-value writer is the API (`contextVariableRoutes.ts:289`).
+3. **Provenance.** A value row carries `last_modified` and nothing about its writer (`schema.sql:2136-2145`).
+4. **A scope every channel has.** `session` is keyed by `conversations.anonymous_session_id` (`contextVariableRepository.ts:816-832`).
+5. **Deterministic readers.** Rule branches resolve `fieldRef` against skill outputs and slots only (`packages/conversation-engine/src/routineFieldGuard.ts:12-45`). There is no Inbox filter and no Pulse breakdown.
+6. **A change stream.** None of the seven workspace event types reports a value change (`backend/src/shared/domain/workspaceEventLog.ts:17-25`).
+
+**Rejected: a separate `attributes` module.** Directive matching takes one bounded record (`matchContextProjection.ts:91`). Erasure and export would need a second eraser and exporter (`docs/architecture/code-map.md:1278-1291`). Routine chips would need a second reference syntax. Operators would have two catalogs.
+
+**Rejected: renaming the API.** It breaks `/api/v1/context-variables`, the SDK, the routine token and the revision snapshot key (`agentRevision.ts:117`) for no behavioural gain.
+
+**The model after this work:**
+
+```
+context_variables            + value_type: enum | number | boolean | date    (string, json stay)
+                             + options jsonb    (enum: [{key, label, description, archived}])
+context_variable_values      + scope_type: conversation | whatsapp_contact   (session, customer, agent, workspace stay)
+                             + written_by_kind, written_by_ref
+agent_context_variables      + source: classified                            (pushed, browser, resolver, request stay)
+```
+
+Built-ins (`page_context`, `visitor_identity`, `visitor_request`) are untouched.
+
+## 2. Ownership: what is revisioned
+
+**Definitions are workspace-level and not revisioned.** An option list is a reporting vocabulary shared by the Inbox filter and Pulse across agents. Definitions stay where they are (`schema.sql:2152`).
+
+An option-list edit therefore takes effect at once on every agent, including conversations pinned to an older revision: the snapshot holds enablements, not definitions (`agentRevision.ts:63-76`). Three rules keep that safe:
+
+- An option has an immutable `key` (a letter, then letters, digits or underscores), a `label`, a `description` and `archived`. Stored values hold the key.
+- Options are archived, never deleted; at least one stays active. An archived key stays valid for stored values and filters; the classifier and the operator picker stop offering it.
+- Changing `value_type` on a variable that has values is refused.
+
+**Use is agent-level and revisioned.** A new enablement source, `classified`, sits beside `pushed` in the snapshot schema (`agentRevision.ts:72`). Test Chat on a draft classifies with the draft's enablements, the way sample values work (`docs-portal/content/operators/context-variables.mdx:101-107`).
+
+**Sources after this work:** `pushed` is a stored value written by API, operator or routine. `classified` is a stored value the classifier also maintains. Both resolve paths read the store for both sources.
+
+## 3. Scopes and lifetimes
+
+**`conversation` (new), keyed by `conversations.id`.** It lives and dies with the conversation. `session` cannot serve: several conversations can share an `anonymous_session_id` (the eraser checks for it, `contextVariableRepository.ts:828-832`), and email, Slack and some API conversations never set one. Classifier output and routine write-back default here.
+
+**Person scopes.** `customer`, keyed by `verified_customer_id`, exists and is unlocked only by verified identity (`context-variables.mdx:137-138`, `:246`). `whatsapp_contact` is new (section 10). A conversation has at most one person key, decided by its channel.
+
+**Resolution ladder:**
+
+```
+conversation → session → person (customer | whatsapp_contact) → agent → workspace
+```
+
+**The `visitors` row is not a person key.** `visitor_key` is not a credential: anyone who learns one can group a new conversation under that visitor, and the module guarantees this grants no read access (`backend/src/modules/visitors/README.md:9-21`). Resolving visitor-row values into a turn would break that guarantee. Email, Slack and session-less MCP conversations have no visitor row at all (`visitors/README.md:39-48`).
+
+## 4. Types and validation
+
+| Type | Stored as | Slice |
+|---|---|---|
+| `string`, `json` | as today | existing |
+| `enum` | option `key` | 1a |
+| `boolean`, `number`, `date` | JSON boolean, number, ISO date string | 3a |
+
+`validateValue(definition, data) → ok | { code }` replaces `isValueCompatibleWithType` (`valueCompatibility.ts:3-6`). It is a pure function in `context-variables`, and every writer goes through it. An enum value must be an active option key.
+
+**Limits** live in `behaviorConfig`, not in env: 50 options per enum, 300 characters per option description, 8 classified variables per agent.
+
+**Not in scope:** multi-select, date-time, a separate decimal type, reference, file.
+
+## 5. Provenance, trust and the overwrite rule
+
+**Provenance** is two columns on `context_variable_values`:
+
+- `written_by_kind`: `api | operator | routine | classifier`
+- `written_by_ref`: the API token id, the account id, `routineId:executionId`, or the classifier prompt version
+
+`last_modified` is the write time. Rows written before the migration read as `api`.
+
+There is no `integration` kind. Zapier and n8n call the bearer API, the server sees a token, and labelling a token "Zapier" would be an inferred role. The token's name tells the operator what wrote the value.
+
+**Trust.** Trust is a property of the definition, mapped at resolve time (`contextVariableRepository.ts:616`). Classifier and routine values come from what the visitor typed, so authoring refuses to enable a `signed` variable as `classified` or to name one as a `saveTo` target. Nothing is downgraded silently at resolve time. Operator and API writes are allowed on either tier.
+
+**Overwrite rule.** `mayOverwrite(existing, incomingKind)` is a pure function in `context-variables`:
+
+- `api`, `operator`, `routine`: last writer wins.
+- `classifier`: writes only when there is no value or the existing value was written by the classifier.
+
+An operator's value and a host's value therefore stick with no prompt involved. **Reset to automatic** deletes the value, and the next classification fills it.
+
+**Which human values hold a variable.** A human value (`api`, `operator`, `routine`) at the `conversation`, `session` or `customer` scope is a fact about this visitor or conversation. The classifier skips the variable and clears its own older conversation value, which would otherwise hide that fact. An `agent` or `workspace` value is a default: the classifier ignores it and writes its conversation value as usual, which outranks the default in the ladder. The default applies until the classifier picks a value, and again once it clears its own.
+
+## 6. Classification
+
+### Why not the facet job
+
+- Facet extraction is one job per message on a module-owned table, built for a 30-day batch census (`docs/architecture/code-map.md:2796-2828`). It writes an English phrase and an embedding (`backend/prompts/facet-extraction.md:14-22`, `schema.sql:3207-3217`), not an enum.
+- Answer coverage is formed inside the answer call (`docs/answer-coverage-signals.md:17`).
+
+A conversation attribute is per conversation and recomputed as the conversation grows. The precedent is the summary refresh: a `rerun` job keyed by conversation, where a burst of turns folds into one waiting run and a turn that lands mid-run causes one more (`backend/src/modules/chat/services/summary/conversationSummaryRefreshJob.ts:25-37`).
+
+**Reused from facets:**
+
+- the eligibility predicate, customer messages on end-user channels (`backend/src/modules/chat/services/facetExtractionEligibility.ts:16-23`);
+- the rule that a turn whose routine held a sensitive slot is never sent (`backend/src/modules/facets/services/facetExtractionService.ts:20-21`);
+- the fire-and-forget enqueue that cannot fail a turn (`facetExtractionEligibility.ts:25-28`);
+- the `rewrite` model tier and the untrusted-input framing (`facet-extraction.md:4-7`).
+
+### When it runs
+
+**After each committed turn.** Job kind `context.classification`, `onDuplicateKey: "rerun"`, payload `{ workspaceId, conversationId }`, enqueued beside facet extraction (`chatSessionPreparer.ts:534`) only when the conversation's revision has a `classified` enablement. A value is visible from the next turn.
+
+**Before a handoff notice.** See section 7.
+
+There is no conversation-closed state to trigger on. The last run is the final value.
+
+`operator_test` conversations classify, so Test Chat shows the result. Reports already exclude them (`backend/src/modules/chat/audiencePulseHistorySource.ts:120-121`), and so do the Inbox filter and Pulse breakdown.
+
+### Cost
+
+One `rewrite`-tier call per coalesced run, for agents with a classified variable. All of an agent's classified variables go in one call. Input is the rolling summary when one exists, the last few eligible customer messages, and the option lists. No embedding. An unchanged result writes nothing and emits no event.
+
+### Prompt
+
+`backend/prompts/context-classification.md`:
+
+- the role and the untrusted-content rule;
+- per variable: name, description, and each active option as `key — description`. Descriptions are in whatever language the operator writes. Keys are identifiers and are never matched against visitor text;
+- output: a strict JSON schema, one property per variable, each written in order: `evidence`, one sentence in the model's own words on what the visitor stated that bears on the variable; `option_applies`, the explicit "none of these" path; and `key`, an enum of that variable's active keys or `null`. A field whose `option_applies` is false is read as `null`. The evidence makes the key follow from stated facts; it is model output derived from visitor text, so the parse discards it and it is never stored, logged, traced or exported;
+- no value the conversation holds: the classifier judges the conversation, not its earlier answer.
+
+`null` means "none of these": leave the value unset, or clear a previous classifier value. There is no built-in "unknown" option. An absent value is the unknown state and is filterable as **Not set**. An operator who wants "Other" authors it as an option.
+
+A key outside the schema is rejected. A rejected or failed run fails the job, which retries and dead-letters under the shared runtime (`code-map.md:2741-2748`).
+
+### Re-classification
+
+- A new turn reruns the job.
+- An option-list edit reruns nothing. The next turn uses the new list.
+- There is no backfill over past conversations.
+
+### Evals
+
+- **Unit (TDD):** schema building, parsing, `null`, the overwrite rule, sensitive-turn exclusion, eligibility.
+- **Deterministic suite** (`backend/tests/unit/eval-suite/`): labelled short conversations against a stubbed gateway. It asserts that the job is enqueued, the value is written as `classifier`, and an operator value is not overwritten.
+- **Live suite** (`backend/src/modules/eval/suite/`): a small labelled set in Italian, German and English with expected keys, "none applies" cases, a mid-conversation topic change and an injection case. Scored as accuracy against the committed baseline. Mini model, small samples.
+
+## 7. Handoff: classify before the notice
+
+### How a notice is sent today
+
+- The turn writes a `handoff.notify` row into `routine_action_requests` in its own transaction (`backend/src/modules/chat/infra/turnOutboxWrites.ts:22-50`). A retrieval-miss handoff queues the same action type (`backend/src/modules/chat/services/handoffOwnership.ts:80-85`).
+- The `chat.action_dispatch` background job runs it after commit: 120 s timeout, five attempts (`backend/src/modules/chat/services/actions/actionDispatchJob.ts:45-54`).
+- One handler serves every routine-ending notice (`backend/src/modules/chat/services/actions/routineEndingNotifyActionHandler.ts:27-34`). It resolves the conversation's stored facts at dispatch time (`:60-66`).
+- That handler already makes one bounded model call inline: the AI summary, raced against a 10 s timeout, where a timeout or error logs and the notice is sent without it (`:79-121`; `backend/src/modules/chat/services/actions/routineEndingNoticeSummary.ts:16`).
+
+### Mechanism
+
+The notice handler classifies inline, the way it summarises inline.
+
+1. The handler calls a narrow port, `ConversationClassifier.classifyNow({ workspaceId, conversationId, signal })`, implemented by `contextClassification`. It is the same function the background job's handler calls.
+2. It races the call against a 10 s timeout and runs it concurrently with the AI summary.
+3. It then resolves the notice subject, which now includes the conversation's non-sensitive attributes.
+4. It dispatches.
+
+This is the narrowest option because it adds no job-to-job waiting, no new queue state and no change to the turn. Every handoff path that queues `handoff.notify` is covered by one call site.
+
+**Rejected: the classification job releases the notice.** The classifier would have to know about notices, and a dead-lettered classification would strand a handoff.
+
+**Rejected: classify inside the turn.** It puts a model call on the visitor's path at every handoff site.
+
+### Bounds and failure
+
+- **Added latency:** at most 10 s per attempt, and none beyond the summary's own wait when a summary is also generated, because the two run together. A typical `rewrite`-tier call is one to two seconds. The job's 120 s budget is unaffected.
+- **Timeout or error:** the notice is sent with the attributes already stored, which may be none. The outcome is counted (`skipped_timeout`, `failed`) and logged by error class. The notice is never retried for a classification failure.
+- **Conversation with no classified enablement:** the port returns at once without a model call.
+- **Race with the after-turn job:** both may run. Writes are idempotent upserts under the overwrite rule, and an unchanged value emits nothing.
+- **A retried notice** classifies again, which costs one cheap call and changes nothing if the value holds.
+
+### The `handoff.requested` event
+
+Its payload stays `{ reason }` (`workspaceEventLog.ts:92`), written in the turn's transaction. An automation that needs the attributes has three sources:
+
+- `context_value.changed` events, which the notice-time classification writes and which follow `handoff.requested` in the log;
+- the notice webhook JSON, which carries the attributes;
+- `GET /api/v1/history/chat/{conversationId}`, whose `attributes` are current.
+
+### Escalation rules
+
+There is no handoff rule object: handoff is requested by authored triggers and the AI never decides it silently (`docs/human-takeover.md:39-66`). Attribute-driven escalation uses levers that exist: a Rule branch to a `handoff` terminal, or a directive whose condition reads the attribute and whose binding starts a handoff routine. This spec adds no escalation engine.
+
+## 8. Readers
+
+| Reader | Mechanism | Slice |
+|---|---|---|
+| Directive conditions (prose) | Values enter the per-turn snapshot and reach the matcher and the fused planner through `projectContextForMatching` | 1 (one test) |
+| Routine step instructions, skill inputs | `{{context.<name>}}`, `contextVariableRef` | 1 (one test) |
+| Inbox Attributes block | Conversation detail carries `attributes` | 1c |
+| Inbox filter | Filter on conversation-scope enum values | 1c |
+| Routine Rule branches | `fieldRef: "context.<name>"` on field guards | 3b |
+| Handoff notice | Subject resolver reads non-sensitive values | 5 |
+| Pulse breakdown | Split a topic by one enum variable | 7 |
+
+**Directive conditions.** Enum values are projected as `{ key, label }`, so a condition written in the operator's language matches the label. Two existing limits apply: sensitive values arrive as `[redacted]` (`context-variables.mdx:344-346`), and the match record holds at most 12 variables (`behaviorConfig.ts:65-69`). Classified variables sort ahead of host JSON variables in that bound.
+
+**Answer prompt.** The default surfacing for a `classified` enablement is `on_reference` (D13). The value steers conditions and branches, a routine step that names it can read it, and it is not written into the answer prompt. The answer model already read the conversation, and showing it the classifier's opinion lets a classifier error compound. An operator can change the surfacing per agent.
+
+**Inbox filter.** It reads conversation-scope values of non-sensitive enum variables, plus **Not set**. It needs an index on `(variable_id, scope_type, data)`; the existing index covers lookups by scope id only (`schema.sql:8797`). The index ships in 1a, in a second migration (271) that builds it after the catalog changes commit, so no read waits for the build.
+
+**Rule branches.** `evaluateFieldGuard(guard, variables, skillResult, now)` (`packages/conversation-engine/src/routineRunner.ts:309-310`) gains a third source through an optional `contextValueReader` port beside `contextRenderer` (`routineRunner.ts:108-109`). The `context.` prefix is explicit, so resolution never guesses between a slot and a variable of the same name. The validator extends its op and type check (`backend/src/modules/routines/validator.ts:578-598`) to the variable's type and, for `equals` and `in`, to the option keys. A guard on a `sensitive` or `operator_only` variable is allowed: it runs in code. Its trace records the reference and the outcome, never the value.
+
+**Pulse.** Audience Pulse defines a `ConversationValueBreakdownReader` port. The context-variable repository implements it and composition binds it.
+
+**Structured criteria (slice 8, conditional).** `coverageCriteria` is the precedent for a deterministic eligibility filter (`packages/conversation-contract/index.d.ts:69-72`, `packages/routine-definition/src/index.ts:518`). A `contextCriteria` beside it is built only if live evals show prose conditions on enum values misfire.
+
+## 9. Routine write-back
+
+**Authored on the slot:**
+
+```
+slot.saveTo?: { contextVariable: <name>, scope: "conversation" | "person" }
+```
+
+It is added to `routineSlotSchemaFor` (`packages/routine-definition/src/index.ts:231-244`) and picked explicitly in the routine editor's slot row. Nothing is inferred from a slot's key or type.
+
+**Validated at save and publish** (`backend/src/modules/routines/validator.ts`):
+
+- the variable exists and the agent enables it as a stored source;
+- the types are compatible: `text` and `email` to `string`, `number` to `number`, `boolean` to `boolean`, `date` to `date`. `item` is not mappable;
+- the variable's trust tier is `unverified`;
+- a `sensitive` slot (`routine-definition/src/index.ts:39-47`) saves only to a `sensitive` variable;
+- two slots of one routine do not save to the same variable and scope.
+
+**Written at the routine's ending, in the turn's transaction**, beside `routine.completed` (`turnOutboxWrites.ts:111`). Both `complete` and `handoff` terminals write. It is not written at slot fill: a mutable slot can still be corrected (`routine-definition/src/index.ts:235-239`), consent may not have been given, and an abandoned routine leaves no facts. A routine that ends without its terminal (`routine_stuck`, `routine_consent_declined`, `docs/human-takeover.md:47-58`) writes nothing.
+
+**Person scope.** `person` resolves to the conversation's person key: the verified customer id, or from slice 4 the WhatsApp number. A conversation with no person key writes nothing, records `no_person_key` in the routine trace and increments a counter. The routine still completes. No other scope is substituted.
+
+**Conflicts.** Last writer wins among routine, operator and API. A routine value replaces a classifier value.
+
+**Consent withdrawal.** Withdrawing a routine's consent removes its events by routine id and slot keys (`backend/src/modules/workspaceEventLog/README.md`, the consent withholder). `written_by_ref` lets the same withdrawal delete the values that execution wrote.
+
+## 10. The WhatsApp number as a person key
+
+### Today
+
+- The webhook is authenticated by Meta's `X-Hub-Signature-256` (`backend/src/modules/connectors/plugins/whatsapp/whatsappWebhook.ts:228-229`), so the `wa_id` on a message is attested by Meta.
+- WhatsApp turns enter chat with a conversation id and `sourceChannel: "whatsapp"` and no customer identity (`backend/src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.ts:606-613`).
+- A number has one contact row per workspace, pointing at its latest conversation (`schema.sql:2089-2097`, `:5880`; `backend/src/modules/connectors/plugins/whatsapp/whatsappPersistence.ts:452-453`).
+- There is no WhatsApp data-subject finder. The list holds web, email and Slack (`backend/src/app/composition/dataSubjectAccess.ts:26-30`).
+
+### Choice: a new scope type, `whatsapp_contact`, keyed by `wa_id`
+
+**Rejected: a namespaced key in the `customer` scope** (`whatsapp:<wa_id>`). Three places in the code make it unsafe:
+
+- The value routes take any string as a scope id (`contextVariableRoutes.ts:289-299`), and a signed identity token carries any `customerId` the host chooses (`context-variables.mdx:147-158`). A host customer id that happens to read `whatsapp:39…` would resolve a WhatsApp person's values on the web, and the reverse.
+- `eraseVerifiedCustomer` deletes `customer` rows by id (`contextVariableRepository.ts:839-847`), and a data-subject reach lists `verifiedCustomerIds` (`backend/src/shared/domain/dataSubjectAccess.ts:41-46`). Phone numbers in that list would be treated as host customer ids everywhere it is read.
+- A prefix convention is parsed by string matching in every reader.
+
+A scope type is a closed, checked value (`schema.sql:2144`). It keeps the host's namespace untouched and gives the channel its own erasure and export path.
+
+**Rejected: a generic `channel_identity` type with a namespaced id.** It brings the prefix parsing back. A channel qualifies as a person key only when its identity is attested, which is one channel today.
+
+### Resolution
+
+- The WhatsApp handler passes the person key with each turn, `{ kind: "whatsapp_contact", id: waId }`, on the connector chat port, the way the web path passes a verified customer id per turn. Chat does not read WhatsApp tables, and nothing is stored on the conversation.
+- The ladder places it at the person step (section 3). A WhatsApp conversation has no verified customer id, so the two person scopes never meet in one conversation.
+- Values written under one channel's key are read only on that channel. Nothing links a number to a customer id.
+- A host may write `whatsapp_contact` values through the value route. It knows its customers' numbers.
+
+### Erasure, export, retention
+
+- **Erasure.** A new port, `ChannelPersonDataEraser`, sits beside `VerifiedCustomerDataEraser` (`backend/src/shared/domain/conversationDataErasure.ts:34-38`), and `context-variables` implements it. The WhatsApp eraser already finds the numbers whose latest conversation is being erased, before the contact rows cascade (`whatsappPersistence.ts:459-476`). Those numbers are the keys handed to the new port, in the same transaction. Composition binds the two.
+- **Lifetime.** Person values for a number last as long as the number's latest conversation, the same rule the WhatsApp message log follows (`whatsappPersistence.ts:452-457`). Erasing an earlier conversation leaves them.
+- **Retention.** The retention sweep uses the same erasers (`code-map.md:1408-1425`), so when a number's latest conversation ages out, its person values go with it. There is no separate window.
+- **Data-subject requests.** A `WhatsAppNumberIdentityFinder` joins the finder list, so a subject can be found by number. `DataSubjectReach` gains the channel person keys beside `verifiedCustomerIds`, and `ContextVariableValueExporter` exports the `whatsapp_contact` rows in the existing `context_values` section.
+- **Logs.** A `wa_id` is a phone number. It is never logged; the existing log-safe handling applies (`backend/src/shared/observability/logging/logSafeValues.ts`).
+
+### Email
+
+Email sender addresses are not a person key. A sender address is spoofable without DKIM and SPF results. Email conversations use the `conversation` scope only.
+
+## 11. Surfaces
+
+### REST and SDK
+
+No new resource. Changes to existing shapes:
+
+| Change | Slice |
+|---|---|
+| Definition bodies: `valueType` gains `enum`; `options` for enum | 1a |
+| Value body: `scope.type` gains `conversation`; value responses gain `writtenBy` | 1a |
+| Enablement body: `source` gains `classified` | 1b |
+| Conversation detail (`GET /api/v1/history/chat/{id}`) gains `attributes` | 1c |
+| History list gains an attribute filter | 1c |
+| `PUT` and `DELETE /api/v1/history/chat/{conversationId}/attributes/{name}` | 2 |
+| `valueType` gains `boolean`, `number`, `date`; routine slot gains `saveTo` | 3a |
+| Field guard `fieldRef` accepts `context.<name>` | 3b |
+| `scope.type` gains `whatsapp_contact` | 4 |
+
+The operator route exists because the value routes require `workspace.agents.manage` (`contextVariableRoutes.ts:141`, `:289-292`), which a teammate answering in the Inbox should not need. It takes the takeover permission, stamps `operator` provenance from the session and writes a content-free audit event. Both routes call one service.
+
+Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm run sync` and commits the snapshot; the MCP server package's generated types follow (`packages/radioso-mcp-server/src/generated/openapiTypes.ts`).
+
+### Workspace event (slice 2)
+
+`context_value.changed`, version 1:
+
+```
+{ variable: string, valueType, scope: "conversation" | "customer" | "whatsapp_contact",
+  value: <typed value> | null, redacted: boolean,
+  writtenBy: "api" | "operator" | "routine" | "classifier" }
+```
+
+- Recorded through `WorkspaceEventRecorder` in the writer's transaction, only when the stored value changed.
+- A `sensitive` variable's event carries `value: null, redacted: true`, following `sensitiveSlotKeys` on `routine.completed` (`workspaceEventLog.ts:93-99`).
+- Read permission is the history permission, as for other conversation events.
+- It cascades with its conversation and joins the consent withholder.
+
+### Queue review
+
+- `context.classification` rides the shared `background_jobs` table and its existing wake. Its payload names a workspace and a conversation.
+- The notice-time classification runs inside `chat.action_dispatch`; that job's payload is unchanged.
+- Event delivery reuses the existing delivery job.
+- No new queue, no AMQP payload, no document-worker dispatch change, no new env var.
+
+### Ray and operator MCP
+
+- `contextVariables.definition.propose` (`copilotPrimitiveRegistry.ts:2`) learns `valueType`, `options` and the `classified` source, so Ray can propose an attribute and its classification as one draft diff.
+- Routine proposals pick up `saveTo` through the shared schema.
+- The per-scope value routes stay a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- A conversation's attributes are read the way the Inbox reads them (slice 1c): `conversation_transcript` returns them, Private values redacted, and `conversation_history_search` filters by a Choice option. Both map to the history routes already covered (`getHistoryConversation`, `listHistory`).
+- Tool descriptions stay under the 2,048-character cap.
+
+### Zapier and n8n (slice 6)
+
+A trigger **Attribute changed** on the new event, in the REST-hook pattern of the existing triggers (`packages/zapier/triggers/`), and an action **Set attribute** on the value route (`packages/zapier/creates/`). The n8n node gets the same pair and its own release.
+
+### Dashboard
+
+- **Catalog** (`assistant-context-variables-section.tsx`, 672 lines): renamed **Attributes**; a type picker; an options editor as its own component, because the file is near the 1,000-line ratchet.
+- **Agent Context section:** **Classify automatically** per enum attribute.
+- **Inbox reading pane:** an **Attributes** block, after the situation card and before the messages, showing each value and who set it; the conversation drawer shows it too. Read-only in 1c; edit and **Reset to automatic** in slice 2.
+- **Inbox filter** by attribute.
+- **Routine editor:** **Save to** on a slot row (3a); a context chip in the Rule builder (3b).
+
+Playwright covers the journeys.
+
+## 12. Module answers
+
+### `backend/src/modules/context-variables/` (extended)
+
+- **Knows:** definitions, types and options, scopes and the ladder, value validation, provenance, the overwrite rule, redaction, bounds.
+- **Must not know:** LLMs or prompts, classification timing, routines, chat turns, WhatsApp tables, HTTP, events.
+- **Ports it exposes:**
+  - to chat: `ConversationValueWriter` and the existing resolution reader;
+  - to classification: `ClassifiedVariableReader` and the same writer;
+  - to the engine: `contextValueReader`, beside `routineContextRenderer`;
+  - to Audience Pulse: the breakdown reader Pulse defines;
+  - to privacy: the existing eraser and exporter, extended to the two new scopes, and `ChannelPersonDataEraser`.
+- **Direction:** unchanged. Chat, routines and classification depend on its `public.ts`. It depends on none of them. Change events go out through `WorkspaceEventRecorder` from `shared/domain`, handed in by composition.
+
+### `backend/src/modules/contextClassification/` (new)
+
+- **Knows:** the prompt, how to build a JSON schema from described options, how to parse the result, the job kind, the model tier.
+- **Must not know:** how values are stored or overwritten, what a directive, routine or notice is, chat turn internals, facets, the event log.
+- **Ports it consumes:** `ClassifiedVariableReader` and `ConversationValueWriter`; a `ConversationExcerptReader` it defines, implemented by chat; the model gateway.
+- **Ports it exposes:** `ContextClassificationQueue.enqueue` to chat, in the shape chat holds for facets (`backend/src/modules/chat/services/chatService.ts:239`); `ConversationClassifier.classifyNow` to the notice handler.
+- **Direction:** it depends on `context-variables` and `shared`. Chat depends on its two ports. It never imports chat. Its handler is registered in `backend/src/app/composition/backgroundJobHandlers.ts` (`code-map.md:2767-2769`). Composition assembles.
+
+### `packages/routine-definition`, `packages/conversation-engine` (touched)
+
+- `routine-definition` learns `slot.saveTo` and the `context.` prefix as schema. It learns no storage.
+- The engine learns one optional reader port. It decides nothing about what a context variable is.
+
+### WhatsApp connector plugin (touched, slice 4)
+
+- **Knows:** the `wa_id` of a message, and which numbers an erasure reaches.
+- **Must not know:** the value table.
+- It passes the person key on the connector chat port and reports erased numbers to `ChannelPersonDataEraser`.
+
+## 13. Privacy and observability
+
+| Destination | What may go there |
+|---|---|
+| Classifier prompt | Conversation text the answer model already receives, minus turns whose routine held a sensitive slot; option keys and descriptions. No values of other variables |
+| Classifier output | Keys only. The per-variable `evidence` the model writes is discarded at parse |
+| Directive matcher and planner | Non-sensitive values, bounded; sensitive as `[redacted]` (`matchContextProjection.ts:85-89`) |
+| Answer prompt | Per surfacing; classified defaults to `on_reference` |
+| Logs, metrics, spans | Variable ids, value types, writer kinds, counts, outcome enums, prompt version. Never a value, including an enum key, and never a `wa_id` |
+| Workspace events, Zapier, n8n, notice webhook | Non-sensitive values; sensitive as `redacted: true` or omitted |
+| Inbox | Values with provenance for teammates with history access; sensitive redacted by the backend (`context-variables.mdx:392-393`) |
+| Inbox filter, Pulse | Non-sensitive enum values |
+| Data-subject export | The `context_values` section, extended to both new scopes and `writtenBy` |
+| Audit | Operator set and reset: content-free (variable id, conversation id, actor) |
+
+**AI-inferred special-category data.** Classifying a conversation as a health matter processes special-category data though nobody filled a form field. `classified` on a `sensitive` variable is refused. Every classified value is therefore one the operator declared non-sensitive, and the docs say what that declaration means. #1539 decides the rest.
+
+**Deletion and retention.**
+
+- Conversation-scope values are erased with the conversation by extending the existing eraser (`contextVariableRepository.ts:810-837`).
+- Customer-scope values go with the verified customer (`:839-847`).
+- WhatsApp person values follow section 10.
+- Deleting a variable cascades its values (`schema.sql:11882`).
+- Retention uses the same erasers.
+- The schema contract tests that demand an eraser, an export section or a stated reason for every conversation-keyed column cover the new scopes and the new event.
+
+**Observability added:**
+
+- `radioso_context_classification_runs_total{trigger, outcome}`: trigger `after_turn | handoff_notice`; outcome `written | unchanged | no_option | skipped_sensitive | skipped_override | skipped_timeout | invalid | failed`
+- `radioso_context_value_writes_total{writer, outcome}`, including `refused_type`, `refused_trust`, `no_person_key`. It ships in PR 1b, when the classifier becomes a second writer and a refused or kept write stops being an HTTP response a caller sees. In 1a the API is the only writer, and its outcomes (written, `409` kept or changed mid-write, `404` no conversation) are already counted by `http_requests_total{method, route, status_code}`.
+- one span per classification run with counts and the prompt version
+- the notice handler's span records the classification outcome beside the summary outcome
+
+## 14. Slices
+
+File counts are files created or meaningfully edited, tests included, generated SDK snapshot excluded.
+
+### Slice 1: "The AI labels a conversation and the operator sees and filters by it"
+
+**PR 1a: typed attributes, no LLM (about 24 files).**
+Two migrations (270: enum type, `options`, `conversation` scope, provenance columns; 271: CHECK validation and the filter index) with both DB snapshots; domain types, `validateValue`, `mayOverwrite`; both resolve paths read the `conversation` scope; eraser and exporter for the new scope; REST bodies; catalog renamed **Attributes** with the options editor; Ray adapter fields; docs. Useful alone: a host can put a typed value on any conversation by id, on any channel. Contract change: yes.
+
+**PR 1b: classifier and toggle (about 26 files).**
+The `contextClassification` module, prompt and job; enqueue in chat; the excerpt reader; composition; the `classified` source in the snapshot schema, routes and Ray adapter; the agent toggle; unit, deterministic-suite and live eval cases; module README and docs. Contract change: yes.
+
+**PR 1c: reading-pane block and filter (about 16 files).**
+`attributes` on conversation detail; the history list filter; the read-only **Attributes** block; the Inbox filter; Playwright for both; one test that a directive condition reads a classified value and one that a routine step renders it; docs. Contract change: yes.
+The filter's query must carry `filterIndexPredicate` (`backend/src/db/repositories/contextVariableValueReads.ts`), the filter index's predicate: Postgres uses a partial index only when the query implies its predicate, and `data = $1` alone does not. A test runs `EXPLAIN` on the filter query and expects the index.
+
+**What slice 1 proves:**
+
+1. An operator sees what the AI decided, and who decided it, on every conversation, and can narrow the Inbox to one value.
+2. One namespace holds: no second catalog and no second reference syntax.
+3. Classifier accuracy and cost on the async `rerun` shape, in more than one language.
+
+### Later slices
+
+| Slice | Contents | Files per PR | Contract |
+|---|---|---|---|
+| 2 | Operator set and reset from the drawer; audit event; `context_value.changed` with cascade and withholder | about 18 | route, event type |
+| 3a | `boolean`, `number`, `date`; `slot.saveTo`; write at ending; consent-withdrawal deletion; **Save to** in the routine editor | about 16 | routine schema (REST, SDK, MCP types, agent bundle, revision snapshot) |
+| 3b | `context.` field guards; engine reader port; Rule builder chip | about 12 | field guard reference |
+| 4 | `whatsapp_contact` scope; person key on the connector chat port; `ChannelPersonDataEraser`; WhatsApp identity finder; export | about 16 | scope type |
+| 5 | Notice-time classification; attributes in the handoff notice (email, Slack, webhook JSON) | about 12 | notice webhook JSON |
+| 6 | Zapier trigger and action; n8n trigger and action | about 8 per package | none in the backend |
+| 7 | Pulse breakdown reader and one split control | about 10 | Pulse response |
+| 8 | `contextCriteria` on directives and routine activation, only if evals require it | about 20 | directive and routine schema |
+
+Slices 2 to 5 are independent of each other once slice 1 is in, except that 4 follows 3a (the first person-scope writer other than the API).
+
+PR 1b is the largest at about 26 files. They are one new module plus one edit per layer it is wired through, not many modules changing for one concern.
+
+## 15. Out of scope
+
+- Contacts, companies, custom objects, references.
+- Merging identities across channels; email senders as a person key.
+- An escalation-rule or workflow engine.
+- Required-before-close attributes, dependent chains, macros.
+- Multi-select, file and reference types.
+- Value history beyond the last writer and the event stream.
+- Classification inside the visitor's turn.
+- Classification into a `sensitive` variable.
+- Resolving `visitors`-row values into a turn.
+- Renaming the `/context-variables` API.
+- Backfilling classification over past conversations.
+
+## 16. Open items
+
+1. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; the product owner chose to ship it there rather than as a separate fix.

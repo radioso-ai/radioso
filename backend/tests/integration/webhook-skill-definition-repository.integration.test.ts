@@ -91,7 +91,6 @@ describeIntegration("WebhookSkillDefinitionRepository (Postgres)", () => {
     expect(names).toEqual(["alpha", "zeta"]);
 
     expect(await repository.countByDestination(workspaceId, destinationId)).toBe(2);
-    expect(await repository.listSkillNamesByDestination(workspaceId, destinationId)).toEqual(["alpha", "zeta"]);
 
     const target = (await repository.listByAgent(workspaceId, agentId))[0];
     expect(await repository.remove(workspaceId, agentId, target.id)).toBe(true);

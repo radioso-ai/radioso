@@ -1,6 +1,7 @@
 // First: Zod 4 gives `.openapi()` only to schemas built after this runs; other packages load this harness too.
 import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createWebsiteRecrawlComposition } from "../../src/app/composition/websiteRecrawl.js";
 import { createCopilotContext } from "../../src/app/composition/copilotContext.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
@@ -294,6 +295,8 @@ import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoute
 import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
   AgentContextVariableEnablement,
+  ContextValueWriter,
+  ContextValueWriterKind,
   ContextVariable,
   ContextVariableScope,
   ContextVariableValue,
@@ -305,7 +308,8 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableService } from "../../src/modules/context-variables/public.js";
+import { ContextVariableService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import type { ConversationAttributeReadPort, ConversationScope, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -375,10 +379,13 @@ import {
   InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
+  InMemoryWebsiteMissingPageStore,
+  InMemoryWebsiteRecrawlRepository,
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
+  type ConversationValueMatcher,
   InMemoryMessageRepository,
   InMemoryActionOutbox,
   InMemoryConversationActivityStore,
@@ -400,6 +407,9 @@ import {
   InMemoryWebhookDestinationRepository,
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
+import { InMemoryApiConnectionRepository } from "./inMemoryApiConnections.js";
+import { InMemorySkillTargetUses } from "./skillTargetUses.js";
+import { ApiConnectionService, type ApiRequestSender } from "../../src/modules/apiRequestSkills/public.js";
 import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
 import { InMemoryMachineAccessRepository } from "./inMemoryMachineAccess.js";
 import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
@@ -538,6 +548,7 @@ interface TestRepositories {
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
   documentRepository: InMemoryDocumentRepository;
   documentSourceRepository: InMemoryDocumentSourceRepository;
+  websiteMissingPageStore: InMemoryWebsiteMissingPageStore;
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
@@ -670,6 +681,35 @@ class InMemoryDirectiveStateStore implements DirectiveStateStore {
   }
 }
 
+/** A conversation's attributes from the in-memory context-variable store: each variable's most specific value on the rungs. */
+class InMemoryConversationAttributeReads implements ConversationAttributeReadPort {
+  constructor(private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">) {}
+
+  async readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]> {
+    const rungOf = (value: ContextVariableValue) => scopes.findIndex((scope) => scope.type === value.scope.type && scope.id === value.scope.id);
+    const mostSpecific = new Map<string, ContextVariableValue>();
+    for (const value of this.variables.values.values()) {
+      const held = mostSpecific.get(value.variableId);
+      if (value.workspaceId === workspaceId && rungOf(value) >= 0 && (!held || rungOf(value) < rungOf(held))) mostSpecific.set(value.variableId, value);
+    }
+    return [...mostSpecific.values()].flatMap((value) => {
+      const variable = this.variables.variables.get(value.variableId);
+      return variable ? [{ variable, value }] : [];
+    });
+  }
+
+  async findByName(workspaceId: string, name: string): Promise<ContextVariable | null> {
+    return [...this.variables.variables.values()].find((variable) => variable.workspaceId === workspaceId && variable.name === name) ?? null;
+  }
+
+  /** The history lists' attribute filter: whether the conversation's own value is the filter's key, or, for Not set, whether it has none. */
+  readonly holdsValue: ConversationValueMatcher = (filter, conversationId) => {
+    const own = [...this.variables.values.values()].find((value) =>
+      value.variableId === filter.variableId && value.scope.type === "conversation" && value.scope.id === conversationId);
+    return filter.key === null ? own === undefined : own?.data === filter.key;
+  };
+}
+
 class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
   readonly variables = new Map<string, ContextVariable>();
   readonly enablements = new Map<string, AgentContextVariableEnablement>();
@@ -687,6 +727,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       name: input.name,
       description: input.description ?? null,
       valueType: input.valueType,
+      options: input.options ?? null,
       trustTier: input.trustTier,
       sensitivity: input.sensitivity,
       defaultSurfacing: input.defaultSurfacing,
@@ -791,13 +832,16 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       .sort((left, right) => (left.variable?.name ?? "").localeCompare(right.variable?.name ?? ""));
   }
 
-  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue> {
+  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown, writtenBy: ContextValueWriter): Promise<ContextVariableValue | null> {
     const variable = this.variables.get(variableId);
     if (!variable) {
       throw new Error(`Context variable ${variableId} not found`);
     }
     const key = this.valueKey(variableId, scope);
     const existing = this.values.get(key);
+    if (!mayOverwrite(existing?.writtenBy ?? null, writtenBy.kind)) {
+      return null;
+    }
     const value: ContextVariableValue = {
       id: existing?.id ?? randomUUID(),
       workspaceId: variable.workspaceId,
@@ -805,6 +849,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
       scope,
       data,
       lastModified: new Date(),
+      writtenBy,
     };
     this.values.set(key, value);
     return value;
@@ -816,6 +861,21 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
   async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
     return this.values.delete(this.valueKey(variableId, scope));
+  }
+
+  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+    const stored = this.values.get(this.valueKey(variableId, scope));
+    return stored && writerKinds.includes(stored.writtenBy.kind) ? this.values.delete(this.valueKey(variableId, scope)) : false;
+  }
+
+  async hasValues(variableId: string): Promise<boolean> {
+    return [...this.values.values()].some((value) => value.variableId === variableId);
+  }
+
+  async classifiedEnablementAgentIds(variableId: string): Promise<string[]> {
+    return [...this.enablements.values()]
+      .filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled)
+      .map((enablement) => enablement.agentId);
   }
 
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
@@ -863,6 +923,7 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
           name: input.definition.name,
           description: input.definition.description,
           valueType: input.definition.valueType,
+          options: input.definition.options,
           trustTier: input.definition.trustTier,
           sensitivity: input.definition.sensitivity,
           defaultSurfacing: input.definition.defaultSurfacing,
@@ -1026,6 +1087,8 @@ export const createTestDependencies = (overrides: {
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   /** The workspace event log; omitted means an empty in-memory log. */
   workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  /** Sends an API request skill's or test request's HTTP request; omitted means every request fails unreachable. */
+  apiRequestSender?: ApiRequestSender;
   /** Event subscriptions; omitted means an in-memory store behind the real service, every URL public. */
   workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
@@ -1057,7 +1120,7 @@ export const createTestDependencies = (overrides: {
   /** The image rows a document's detail lists; omitted means document details carry no images. */
   documentImageRows?: InMemoryDocumentImageRows;
   /** The pictures cards from a skill's result show, found after the documents' images; omitted means none. */
-  toolImages?: Pick<ToolImageLookup, "findServable">;
+  toolImages?: Pick<ToolImageLookup, "find">;
   /** The bus visitor event streams and parked converse callers hear; omitted means an in-process bus. */
   publicConversationEventBus?: PublicConversationEventBus;
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -1534,6 +1597,18 @@ export const createTestDependencies = (overrides: {
       ? addressedDocumentImageListing(overrides.documentImageRows, createReplyImageUrls(publicApiBaseUrl(env)))
       : undefined,
   );
+  const websiteMissingPageStore = new InMemoryWebsiteMissingPageStore();
+  documentRepository.setHeldPages(websiteMissingPageStore);
+  const websiteRecrawl = createWebsiteRecrawlComposition({
+    schedule: new InMemoryWebsiteRecrawlRepository(documentSourceRepository),
+    missingPages: websiteMissingPageStore,
+    sources: documentSourceRepository,
+    usageLimits: usageLimitPolicy,
+    recrawls: { recrawlSource: async () => undefined },
+    pages: { removeHeldPages: (removal) => documentIngestionService.removeHeldSourcePages(removal) },
+    audit: auditService,
+    logger,
+  });
   const documentImportService = new DocumentImportService(
     documentRepository,
     auditService,
@@ -1744,6 +1819,8 @@ export const createTestDependencies = (overrides: {
       getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
     },
     encryptionKey: connectorEncryptionKeys(env),
+    // The reader spans skill stores built further down; nothing disconnects before they exist.
+    skillTargetUses: { listSkillTargetUses: (target) => skillTargetUses.listSkillTargetUses(target) },
   });
   const slackProvider = buildSlackOauthProviderDefinition({
     clientId: "test-slack-client",
@@ -1833,9 +1910,17 @@ export const createTestDependencies = (overrides: {
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
   const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
   const agentSkillRepository = new InMemoryAgentSkillRepository();
-  customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
-    emailSkillDefinitionRepository.countByConnection("", connectionId),
-  );
+  // The per-kind skill routes keep their skills in their own stores here, so the uses span them.
+  const skillTargetUses = new InMemorySkillTargetUses({
+    skills: agentSkillRepository,
+    perKind: {
+      customer_email_connection: ({ workspaceId, targetId }) => emailSkillDefinitionRepository.skillsOnConnection(workspaceId, targetId),
+      mcp_connection: ({ workspaceId, targetId }) => externalSkillDefinitionRepository.skillsOnConnection(workspaceId, targetId),
+      webhook_destination: ({ workspaceId, targetId }) => webhookSkillDefinitionRepository.skillsOnDestination(workspaceId, targetId),
+      slack_installation: ({ workspaceId, targetId }) => slackSkillDefinitionRepository.skillsOnInstallation(workspaceId, targetId),
+    },
+    agentName: async (workspaceId, agentId) => (await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId))?.name ?? "",
+  });
   const customerEmailConnectionService = new CustomerEmailConnectionService({
     repository: customerEmailConnectionRepository,
     oauthConnections: oauthConnectionService,
@@ -1844,6 +1929,7 @@ export const createTestDependencies = (overrides: {
       new MockCustomerEmailProviderAdapter("microsoft_graph_mail"),
       new MockCustomerEmailProviderAdapter("test_mail"),
     ]),
+    skillTargetUses,
   });
   const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
   const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
@@ -1851,14 +1937,7 @@ export const createTestDependencies = (overrides: {
   mcpConnectionRepository.setReferenceChecker((connectionId) =>
     externalSkillDefinitionRepository.hasConnectionReference(connectionId),
   );
-  mcpConnectionRepository.setAgentUsageLookup((workspaceId, connectionId) =>
-    Promise.all(
-      externalSkillDefinitionRepository.connectionUsage(workspaceId, connectionId).map(async (usage) => ({
-        ...usage,
-        agentName: (await agentRepository.findByIdAndWorkspaceId(usage.agentId, workspaceId))?.name ?? "",
-      })),
-    ),
-  );
+  mcpConnectionRepository.setAgentUsageLookup((workspaceId) => externalSkillDefinitionRepository.connectionUsage(workspaceId));
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
@@ -1872,6 +1951,7 @@ export const createTestDependencies = (overrides: {
       status: 200,
       json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
     }),
+    skillTargetUses,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     externalSkillDefinitionRepository,
@@ -1970,15 +2050,19 @@ export const createTestDependencies = (overrides: {
     encryption: { key: connectorEncryptionKeys(env) },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
-    skillReferences: {
-      async listAgentSkillNamesReferencingDestination(workspaceId, destinationId) {
-        return webhookSkillDefinitionRepository.listSkillNamesByDestination(workspaceId, destinationId);
-      },
-    },
+    skillTargetUses,
   }));
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const apiConnections = new ApiConnectionService({
+    repository: new InMemoryApiConnectionRepository(skillTargetUses),
+    auditService,
+    encryption: { key: connectorEncryptionKeys(env) },
+    assertPublicUrl: async () => undefined,
+    send: overrides.apiRequestSender ?? (async () => ({ kind: "failed", reason: "unreachable", durationMs: 0 })),
+    skillTargetUses,
   });
   const slackSkillDefinitionService = new SlackSkillDefinitionService({
     repository: slackSkillDefinitionRepository,
@@ -2009,6 +2093,8 @@ export const createTestDependencies = (overrides: {
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    api_request: async ({ workspaceId }) =>
+      (await apiConnections.list(workspaceId)).map((connection) => ({ id: connection.id, label: connection.name })),
     retrieve: async ({ workspaceId }) => {
       const [sources, manualDocumentCount] = await Promise.all([
         documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
@@ -2230,11 +2316,13 @@ export const createTestDependencies = (overrides: {
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
+  const conversationAttributeReads = new InMemoryConversationAttributeReads(contextVariableRepository);
+  conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
     auditEventRepository,
-    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
+    new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository, conversationAttributeReads.holdsValue),
     overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
@@ -2243,6 +2331,7 @@ export const createTestDependencies = (overrides: {
     teammateLabels,
     conversationActivityReads,
     replyBlocks.imageUrls,
+    new ConversationAttributeService(conversationAttributeReads),
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -2815,6 +2904,7 @@ export const createTestDependencies = (overrides: {
       reprocessDocument: documentIngestionService.reprocessEligible.bind(documentIngestionService),
       reprocessSource: (input) => documentSourceReprocessService.reprocessSource(input),
       recrawlSource: documentSourceRecrawlService.recrawlSource.bind(documentSourceRecrawlService),
+      setRecrawlCadence: (input) => websiteRecrawl.scheduleService.setRecrawlCadence(input),
     },
     evalResultsService: evalCaseService,
     evalCaseCapture: new EvalCaseCaptureService({
@@ -2874,6 +2964,11 @@ export const createTestDependencies = (overrides: {
     notificationDeliveries,
     eventSubscriptions: workspaceEventSubscriptions,
     contextVariables: contextVariableService,
+    contextVariableUsers: {
+      listContextVariableUsers: async () => {
+        throw new Error("contextVariableUsers reads agent snapshots in Postgres; the test app does not wire it");
+      },
+    },
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);
@@ -3183,6 +3278,7 @@ export const createTestDependencies = (overrides: {
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,
+    apiConnections,
     workspaceLlmCapabilitySettingsService,
     llmCapabilityResolver,
     authService,
@@ -3246,6 +3342,7 @@ export const createTestDependencies = (overrides: {
     documentSourceReprocessService,
     documentProcessingWorker,
     websiteCrawlJobService,
+    websiteRecrawl,
     websiteCrawlWorker: {
       start: async () => undefined,
       stop: async () => undefined,
@@ -3254,7 +3351,7 @@ export const createTestDependencies = (overrides: {
     } as any,
     documentDeletionService,
     documentStorage,
-    replyImageObjectLookup: composeReplyImageLookup(documentImages, overrides.toolImages ?? { findServable: async () => null }),
+    replyImageObjectLookup: composeReplyImageLookup(documentImages, overrides.toolImages ?? { find: async () => ({ kind: "miss", reason: "not_found", retryable: false }) }),
     chatService,
     approvalDecisionService,
     closeApprovalResumeEffectJournal: async () => undefined,
@@ -3465,6 +3562,7 @@ export const createTestDependencies = (overrides: {
       retrievalSettingsRepository,
       documentRepository,
       documentSourceRepository,
+      websiteMissingPageStore,
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
@@ -3515,6 +3613,7 @@ export const createTestApp = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   notificationDeliveries?: AppDependencies["notificationDeliveries"];
   workspaceEventLog?: AppDependencies["workspaceEventLog"];
+  apiRequestSender?: ApiRequestSender;
   workspaceEventSubscriptions?: AppDependencies["workspaceEventSubscriptions"];
   conversationErasure?: AppDependencies["conversationErasure"];
   conversationConsents?: AppDependencies["conversationConsents"];
@@ -3530,7 +3629,7 @@ export const createTestApp = (overrides: {
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   documentImages?: InMemoryDocumentImages;
   documentImageRows?: InMemoryDocumentImageRows;
-  toolImages?: Pick<ToolImageLookup, "findServable">;
+  toolImages?: Pick<ToolImageLookup, "find">;
   publicConversationEventBus?: PublicConversationEventBus;
 } = {}) => {
   const {

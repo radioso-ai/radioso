@@ -1,7 +1,9 @@
 import type { PendingClarification, RoutineState } from "@radioso/conversation-contract";
+import { z } from "zod";
 
 import type { DirectiveFiringState } from "../../directives/public.js";
 import { routineConsentSessionStateSchema, type RoutineConsentSessionState } from "./routines/sessionRoutineConsentStore.js";
+import { testChatAttributeValueSchema, type TestChatAttributeState, type TestChatAttributeValue } from "./testChatClassification.js";
 import type { WorkbenchReplayRoutineStartState } from "./workbenchReplayRunner.js";
 
 export interface TestExecutionReplayContinuationV1 {
@@ -11,6 +13,10 @@ export interface TestExecutionReplayContinuationV1 {
   directiveState: DirectiveFiringState | null;
   /** The session's routine consents (#1544); absent when it holds none, as in a continuation stored before them. */
   consents?: RoutineConsentSessionState;
+  /** The attribute values the classifier wrote on earlier turns (#1884); absent when it wrote none. */
+  contextValues?: TestChatAttributeValue[];
+  /** The ids of the side's messages from turns whose routine held a sensitive slot, which classification never reads (#1884). */
+  withheldMessageIds?: string[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -88,6 +94,12 @@ const parseDirectiveState = (value: unknown): DirectiveFiringState | null => {
   return cloneDirectiveState(value as unknown as DirectiveFiringState);
 };
 
+const parseAttributeState = (values: unknown, withheldMessageIds: unknown): TestChatAttributeState => {
+  const parsed = z.array(testChatAttributeValueSchema).safeParse(values ?? []);
+  if (!parsed.success || (withheldMessageIds !== undefined && !isStringArray(withheldMessageIds))) return invalid();
+  return { values: parsed.data, withheldMessageIds: withheldMessageIds ?? [] };
+};
+
 const parseConsents = (value: unknown): RoutineConsentSessionState | null => {
   if (value === undefined) return null;
   const parsed = routineConsentSessionStateSchema.safeParse(value);
@@ -115,8 +127,9 @@ export const importTestExecutionReplayContinuation = (
   pendingClarification: PendingClarification | null;
   directiveState: DirectiveFiringState | null;
   consents: RoutineConsentSessionState | null;
+  attributes: TestChatAttributeState;
 } => {
-  if (value === null) return { routineState: null, pendingClarification: null, directiveState: null, consents: null };
+  if (value === null) return { routineState: null, pendingClarification: null, directiveState: null, consents: null, attributes: { values: [], withheldMessageIds: [] } };
   if (!isRecord(value) || value.version !== 1) return invalid();
   const routineState = parseRoutineState(value.routineState);
   const pendingClarification = parsePending(value.pendingClarification);
@@ -125,5 +138,16 @@ export const importTestExecutionReplayContinuation = (
     pendingClarification: pendingClarification ? { ...pendingClarification, sessionId } : null,
     directiveState: parseDirectiveState(value.directiveState),
     consents: parseConsents(value.consents),
+    attributes: parseAttributeState(value.contextValues, value.withheldMessageIds),
   };
 };
+
+/** The continuation with the side's attribute state, each field present only when it holds something. */
+export const withTestChatAttributeState = (
+  continuation: TestExecutionReplayContinuationV1,
+  state: TestChatAttributeState,
+): TestExecutionReplayContinuationV1 => ({
+  ...continuation,
+  ...(state.values.length > 0 ? { contextValues: [...state.values] } : {}),
+  ...(state.withheldMessageIds.length > 0 ? { withheldMessageIds: [...state.withheldMessageIds] } : {}),
+});

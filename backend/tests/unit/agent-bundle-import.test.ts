@@ -8,6 +8,7 @@ import {
   projectAgentConfigForImport,
   type AgentBundle,
 } from "../../src/modules/agentBundle/public.js";
+import type { ClassificationFitRefusal as AgentBundleClassificationRefusal } from "../../src/modules/context-variables/public.js";
 
 const agentConfig = (over: Record<string, unknown> = {}): AgentBundle["agent"] => ({
   schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
@@ -71,6 +72,8 @@ const harness = (over: {
   createDirectiveThrows?: boolean;
   /** The models the target workspace can run per provider; absent means every model. */
   runnableModels?: Partial<Record<string, string[]>>;
+  /** Why the AI cannot fill a variable here, by variable id: the context-variable service's refusal of a classified enablement. */
+  classificationRefusals?: Record<string, AgentBundleClassificationRefusal>;
 } = {}) => {
   const agentInputs: AgentInput[] = [];
   const created: Array<{ agentId: string; skill: unknown }> = [];
@@ -133,7 +136,11 @@ const harness = (over: {
     contextVariables: {
       findVariableIdByName: async (_workspaceId, name) => over.variableIds?.[name] ?? null,
       findSkillIdByName: async (_workspaceId, _agentId, name) => over.skillIds?.[name] ?? null,
-      enable: async (_workspaceId, _agentId, enablement) => { enabled.push(enablement); },
+      enable: async (_workspaceId, _agentId, enablement) => {
+        const refused = enablement.source === "classified" ? over.classificationRefusals?.[enablement.variableId] : undefined;
+        if (refused) return { refused };
+        enabled.push(enablement);
+      },
     },
     routines: {
       createDraft: async (_workspaceId, _agentId, definition) => {
@@ -498,6 +505,25 @@ describe("AgentBundleImportService", () => {
       kind: "context_variable_missing",
       element: "contextVariable:plan_tier",
     }));
+  });
+
+  it("reports a classified enablement the AI cannot fill in the target workspace, with the reason, and imports the rest", async () => {
+    const { service, enabled, deleted } = harness({
+      variableIds: { plan: "var-plan", health: "var-health", topic: "var-topic" },
+      classificationRefusals: { "var-plan": "not_choice", "var-health": "private" },
+    });
+    const classified = (variableName: string) => ({
+      variableName, source: "classified" as const, resolverSkillName: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "on_reference" as const, enabled: true,
+    });
+
+    const result = await importBundle(service, "workspace-1", bundle({ contextVariables: [classified("plan"), classified("health"), classified("topic")] }));
+
+    expect(deleted).toEqual([]);
+    expect(enabled).toEqual([expect.objectContaining({ variableId: "var-topic", source: "classified" })]);
+    expect(result.unresolved).toEqual(expect.arrayContaining([
+      { kind: "context_variable_not_classifiable", element: "contextVariable:plan", detail: expect.stringMatching(/not a Choice attribute/u) },
+      { kind: "context_variable_not_classifiable", element: "contextVariable:health", detail: expect.stringMatching(/Private/u) },
+    ]));
   });
 
   it("imports a routine that fails serving validation out of service and reports it", async () => {

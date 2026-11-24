@@ -1,7 +1,7 @@
 ---
 title: "Website Crawler Provider"
 description: "API and provider contract for website ingestion including crawl policy, job management, deployment topology, and disabling."
-last_updated: 2026-11-08
+last_updated: 2026-11-22
 ---
 
 # Website Crawler Provider
@@ -56,7 +56,7 @@ Accepted pages are published as documents with stable external document IDs and 
 
 Website sources can also carry a metadata extraction override. The override is `inherit`, `on`, or `off`; `inherit` uses the workspace ingestion setting. When extraction is on, the standard document worker classifies each processed page and may attach date tags to event-shaped chunks. A new crawl of the same URL writes its own `limit` and `policy` to the source and leaves the override and the source's `documentMetadata` as the operator set them.
 
-The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. Before each outbound fetch hop, including redirects, Radioso rejects URLs that resolve to localhost or private network addresses. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
+The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. When `robots.txt` answers with an error, or a sitemap it lists cannot be read, the crawl carries on with the pages it can reach but never counts as having seen the whole site, so it removes nothing. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. Before each outbound fetch hop, including redirects, Radioso rejects URLs that resolve to localhost or private network addresses. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
 
 The bundled crawler uses structurally link-dense pages and low-quality pages for discovery, but does not publish them as documents by default. A page counts as low-quality when its extracted text is dominated by links, unrendered template markup, or repeated words; a short page with clean extraction, such as a contact page or a glossary entry, is published. The crawl job's `failures` list records the skip reason for every page it held back. It also drops share, tracking, and social links from extracted content, keeps source links by default, and records a normalized content hash so duplicate extracted content can be skipped within a crawl run.
 
@@ -195,7 +195,79 @@ POST /api/v1/document/sources/{sourceId}/recrawl
 
 Enqueues a new crawl job using the URL and limit stored in the source's `config`. Only works for sources with `kind: "website"`. Returns the same `202` response as `POST /api/v1/document/crawl`.
 
+A source runs one crawl at a time. When a crawl for the source is already queued or processing, the recrawl, a scheduled recrawl, and a new `POST /api/v1/document/crawl` for the same URL all answer with that crawl's `jobId` and start nothing. A paused crawl does not count: a recrawl next to it starts a new one.
+
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
+
+After a crawl that saw the whole site, the source's pages the crawl did not find are removed once the site answers that they are gone (see [Removing a page the site no longer has](#removing-a-page-the-site-no-longer-has)), or held for you when they are a large share of the source (see [Pages a crawl holds](#pages-a-crawl-holds)). A crawl saw the whole site when all of these hold, however many two-minute slices it took and whether or not it was paused and resumed:
+
+- Its last slice stopped because nothing was left to fetch. A crawl that reached its page limit with URLs still waiting did not, even if it published fewer pages than the limit: a redirect to a page it already fetched, or a page an earlier slice already processed, spends the limit too.
+- No slice dropped a link because the crawl had discovered as many URLs as it may. A crawl discovers at most ten times its page limit, or its limit plus 50 when that is more, counted across all of its slices.
+- Every slice read the site's `robots.txt` and each sitemap it lists, or found no `robots.txt` at all (`404`).
+- No page failed, and none ran past the five minutes the crawler gives one page. The crawler fetches a page once; a page that runs out of time is not fetched again.
+- Its checkpoint lists fewer than 10,000 URLs of each kind (discovered, queued, in progress, processed), so no list was cut short.
+- It is the newest crawl of the source. A paused crawl resumed after another crawl of the source started removes nothing; the newer crawl decides.
+
+Pages are measured against every page the whole job processed, which the job's checkpoint carries from slice to slice: a page skipped as duplicate content or by the crawl policy counts as found and stays. Any other crawl removes nothing. If a source never loses pages it should, its page limit is too small for the site in scope: raise `limit`, or narrow the crawl with `includeUrlPatterns` and `excludeUrlPatterns`.
+
+Only pages a crawl of the same site published can go missing: a document whose `externalDocumentId` starts with `website:` and the source's base URL, created before the crawl's job started. A document you imported into a website source under an id of your own, or one added while the crawl ran, stays whatever the crawl finds.
+
+### Removing a page the site no longer has
+
+A page missing from a crawl is not proof it is gone: a link can break for a day, or a menu can drop a page that still exists. So before a crawl removes a page, it asks the site. It requests the address the page was published under, the one stored as its `canonicalUrl` (or `sourceUrl`) metadata, through the crawler's own fetch: the same user agent, `robots.txt`, and public-network check on every redirect hop.
+
+| The site answers | The page |
+|------------------|----------|
+| `404` or `410`, after any redirects | is removed. |
+| a redirect to a different page that answers `2xx` | has moved, and is removed. |
+| `2xx` for the page itself | stays as it is. |
+| anything else: a `5xx`, `401`, `403`, `429`, a timeout, a redirect loop, an address `robots.txt` disallows or the network check refuses | stays, and the next complete crawl asks again. |
+
+A page stored without an address, or whose address had a secret redacted from it before it was stored, cannot be asked about, so it stays.
+
+One crawl asks about at most 200 pages, four at a time, and stops asking after 90 seconds; a page with no answer by then stays. When more than 200 pages would be removed, the crawl asks about none and removes none, and the next crawl decides again. Pages a crawl holds for you are not asked about, and **Remove** on held pages deletes them without asking again: that is your decision.
+
+### Keeping a website source up to date
+
+A website source can recrawl itself with its saved URL, limit, and crawl policy. Each scheduled recrawl does what a manual recrawl does: it skips pages whose content is unchanged, updates changed pages in place, and adds new ones. Choose how often with:
+
+```text
+PUT /api/v1/document/sources/{sourceId}/recrawl-cadence
+```
+
+```json
+{ "recrawlCadence": "weekly" }
+```
+
+`recrawlCadence` is `off`, `monthly` (every 30 days), `weekly`, or `daily`. Every source starts at `off`. Turning a cadence on, or changing it, schedules the next recrawl one interval after the source's last crawl, or now when that is already past, plus up to an hour of jitter so sources set together do not all crawl at once. Sending the cadence the source already has keeps the time already scheduled; `off` clears it. The response is the source, as `GET /api/v1/document/sources` lists it.
+
+Every website source in the source list carries four fields about this:
+
+| Field | Meaning |
+|-------|---------|
+| `recrawlCadence` | The cadence the operator chose. |
+| `nextRecrawlAt` | When the next scheduled recrawl is queued, or `null` while the cadence is `off`. |
+| `fastestRecrawlCadence` | The fastest cadence the workspace's plan allows: `daily` on self-hosted deployments, and on Radioso Cloud `monthly` on Comet and `daily` on Satellite and Planet. |
+| `heldPageCount` | Pages a crawl no longer found and held for review. |
+
+Asking for a cadence faster than `fastestRecrawlCadence` answers `403` with code `recrawl_cadence_not_in_plan` and `details.fastestRecrawlCadence`. A workspace that moves to a plan with a slower ceiling keeps its sources' chosen cadence; they recrawl at the plan's fastest.
+
+The `website-recrawl` periodic task queues the crawls. Every 15 minutes it claims the website sources whose next recrawl is due, moves each one interval ahead, and queues a crawl for it. A source that already has a crawl queued or processing waits for its next time, and so does one whose crawl could not be queued. On a self-hosted deployment the document worker's poll loop runs the task, so a stack started with `./run-dev.sh` or Docker Compose recrawls with no extra settings. On Cloud Run, a Cloud Scheduler job calls `/internal/tasks/periodic-tasks/website-recrawl/run` on the worker task service. Each run logs one line with how many sources were due, queued, skipped because a crawl was active, and failed.
+
+### Pages a crawl holds
+
+No crawl removes a large share of a source on its own, whether the operator, the API, Ray, or the schedule started it. A crawl removes or holds pages only after it saw the whole site, as above. Pages the operator kept are never removed or held. When the other pages it did not find are more than a fifth of the pages the source had when its job started, not counting the kept ones, it removes none of them and holds them for review instead; the source's `heldPageCount` says how many. A loss that large is more often a moved, broken, or blocking site than a pruned one. A fifth or less goes to the site check above, and each page the site says is gone is removed. A crawl with no way to measure that share removes nothing.
+
+Decide on held pages with:
+
+```text
+POST /api/v1/document/sources/{sourceId}/held-pages/remove
+POST /api/v1/document/sources/{sourceId}/held-pages/keep
+```
+
+Remove deletes the pages still held when it runs, without asking the site again, and answers `{ "sourceId": "...", "removedPageCount": 12 }`. A held page that a crawl finds again before Remove runs stays. Keep answers `{ "sourceId": "...", "keptPageCount": 12 }`; later crawls neither hold nor remove a kept page. A held or kept page that a complete crawl finds again goes back to being an ordinary page. A source with nothing held answers with a count of `0`.
+
+The crawl audit event, `document.website_crawler.crawl`, records `trigger`: `manual` for a crawl the operator, the API, or Ray started, `scheduled` for one the sweep queued. After a crawl that saw the whole site it also records `missingPages`, with how many pages were missing (`candidates`), `held`, and of the ones the site was asked about, `gone`, `alive`, and `unknown`, how many were `removed`, and `overVerificationBound` when more were missing than one crawl asks about. The crawler logs the same counts once per crawl, without any address. A hold records `document.website_crawler.missing_pages_held` with the source, how many pages are held, and how many pages the source had. The operator's decisions record `document.website_crawler.held_pages_removed` and `document.website_crawler.held_pages_kept` with the page count. A scheduled recrawl that stops on the workspace's ingestion quota fails like any other crawl: the job shows the failure and the source's last sync is `failure`.
 
 ### Reprocessing a source
 
@@ -250,6 +322,7 @@ interface WebsiteCrawlerProvider {
   crawl(request: {
     url: string;
     limit: number;
+    totalLimit?: number;
     maxDurationMs?: number;
     signal?: AbortSignal;
     policy?: {
@@ -267,6 +340,7 @@ interface WebsiteCrawlerProvider {
       skipped: number;
       failed: number;
       lastProcessedAt: string | null;
+      linksDroppedAtLimit?: boolean;
     };
     onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
   }): Promise<WebsiteCrawlResult>;
@@ -274,6 +348,7 @@ interface WebsiteCrawlerProvider {
     request: {
       url: string;
       limit: number;
+      totalLimit?: number;
       maxDurationMs?: number;
       signal?: AbortSignal;
       policy?: WebsiteCrawlPolicy;
@@ -289,7 +364,9 @@ A `WebsiteCrawlPage` carries `sourceUrl`, `canonicalUrl`, `title`, `content`, `m
 
 When `crawlStream` is implemented, the service calls it instead of `crawl`, ingesting each page as soon as the crawler discovers it rather than waiting for the entire crawl to finish. The batch `crawl` method is used as a fallback for providers that do not support streaming.
 
-`maxDurationMs` bounds one execution slice. A streaming provider returns `outcome: "yielded"` only when its own slice-abort signal ends the crawl, and returns `outcome: "completed"` when its frontier is exhausted. Callback, ingestion, and checkpoint failures remain terminal errors even if they arrive near the slice boundary. A yielded result is not terminal: Radioso keeps the checkpoint, queues the same job for another delivery, and leaves source sync state unchanged until the crawl completes.
+`maxDurationMs` bounds one execution slice. A streaming provider returns `outcome: "yielded"` only when its own slice-abort signal ends the crawl, and `outcome: "completed"` when the crawl ends for any other reason. Callback, ingestion, and checkpoint failures remain terminal errors even if they arrive near the slice boundary. A yielded result is not terminal: Radioso keeps the checkpoint, queues the same job for another delivery, and leaves source sync state unchanged until the crawl completes.
+
+`limit` is what is left of the crawl's page limit after earlier slices; `totalLimit` is the whole crawl's limit, which the bundled provider sizes link discovery from because the checkpoint's discovered URLs count against it. A provider reports `frontierExhausted: true` in its result only when the crawl stopped because nothing was left to fetch, and reports each link it found but did not queue because of a limit as an `onCheckpointEvent` of type `dropped`; the checkpoint then records `linksDroppedAtLimit` for the rest of the job. A provider that could not read the site's `robots.txt` or a sitemap it lists reports an `onCheckpointEvent` of type `sitemap_unread`, which the checkpoint keeps as `sitemapUnread`. A provider reports a page's links as `discovered` before it reports the page `processed`, and reports the URLs it starts from as `discovered` too, so a checkpoint that lists a page as processed also lists every page it links to. A result without `frontierExhausted: true` never removes missing pages.
 
 Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content and oversized pages, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses. The bundled provider applies that public-network policy before fetching each page, `robots.txt`, same-origin sitemap, and redirect target.
 

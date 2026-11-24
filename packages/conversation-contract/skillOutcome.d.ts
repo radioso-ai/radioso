@@ -1,5 +1,9 @@
 // What a skill reports when it runs: its status, answer, outputs, session control and error.
 import type { SkillTransientGuidance } from "./index.js";
+import type { SkillOutputContract } from "./skillOutputContract.js";
+
+export type { SkillDataValueType, SkillOutputContract, SkillOutputContractEntry, SkillOutputFieldContract, SkillOutputFieldRole } from "./skillOutputContract.js";
+export { renderSkillOutputLines } from "./skillOutputContract.js";
 
 export type SkillOutcomeStatus =
   | "active"
@@ -22,6 +26,8 @@ export interface SkillOutcome {
   status: SkillOutcomeStatus;
   answer?: string;
   outputs?: Record<string, unknown>;
+  /** The typed contract `outputs` follow, when the skill declares one; the model reads them by it. */
+  outputContract?: SkillOutputContract;
   control?: SkillOutcomeControl;
   guidance?: SkillTransientGuidance[];
   metadata?: Record<string, unknown>;

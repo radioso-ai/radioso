@@ -82,13 +82,15 @@ export interface MessageRepositoryPort {
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
   /**
    * The newest `limit` messages, oldest first. `roles` filters before the limit, so a filtered-out
-   * row never takes a place in the window.
+   * row never takes a place in the window. `answeredOnly` keeps the messages recorded no later than
+   * the conversation's latest assistant message: a turn's reply is stored when the turn commits, so
+   * the visitor message of a turn still running has none after it and is left out.
    */
   listRecentByConversationId(
     workspaceId: string,
     conversationId: string,
     limit: number,
-    options?: { roles?: readonly MessageRole[] },
+    options?: { roles?: readonly MessageRole[]; answeredOnly?: boolean },
   ): Promise<MessageRecord[]>;
   /**
    * The newest `limit` messages recorded before the conversation's message `beforeMessageId` in
@@ -434,7 +436,7 @@ export class MessageRepository
     workspaceId: string,
     conversationId: string,
     limit: number,
-    options: { roles?: readonly MessageRole[] } = {},
+    options: { roles?: readonly MessageRole[]; answeredOnly?: boolean } = {},
   ): Promise<MessageRecord[]> {
     const { roles } = options;
     if (limit <= 0 || roles?.length === 0) {
@@ -447,6 +449,13 @@ export class MessageRepository
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
       .$if(roles !== undefined, (qb) => qb.where("role", "in", [...(roles ?? [])]))
+      .$if(options.answeredOnly === true, (qb) => qb.where(sql<boolean>`created_at <= (
+        SELECT max(answer.created_at)
+          FROM messages answer
+         WHERE answer.workspace_id = ${workspaceId}
+           AND answer.conversation_id = ${conversationId}
+           AND answer.role = 'assistant'
+      )`))
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .limit(limit)

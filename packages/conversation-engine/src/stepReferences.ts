@@ -6,6 +6,8 @@ import type {
 } from "@radioso/conversation-contract";
 import { readableSlotValue } from "@radioso/conversation-contract";
 
+import { turnSkillResults } from "./routineStepContext.js";
+
 // A step instruction embeds two kinds of reference: `{{slot.<key>}}` reads a captured
 // variable, `{{context.<name>}}` reads a staged context variable (the visitor's current
 // page, a host-pushed value). Both resolve in ONE pass over the authored text, so a value
@@ -65,20 +67,24 @@ const contextEvidenceFor = (
 /**
  * The step a reply is written from: its instruction with references filled in, and beside it
  * the untrusted evidence the referenced context variables carry, which never enters the
- * instruction.
+ * instruction, and what this turn's tool steps returned (#1883). A tool step an earlier turn ran
+ * reaches the reply only through the variables it assigned, which a reference fills.
  */
 export const stepForReply = (
   step: RoutineStep,
   variables: Record<string, unknown>,
   stagedContext: TurnContext["stagedContext"],
   contextRenderer: RoutineContextRenderer | undefined,
-): Pick<RoutineStepReplyInput, "step" | "contextEvidence"> => {
+): Pick<RoutineStepReplyInput, "step" | "contextEvidence" | "skillResults"> => {
+  const skillResults = turnSkillResults(stagedContext);
+  const returned = skillResults.length > 0 ? { skillResults } : {};
   if (!step.action) {
-    return { step };
+    return { step, ...returned };
   }
   const contextEvidence = contextEvidenceFor(step.action, stagedContext, contextRenderer);
   return {
     step: { ...step, action: resolveStepAction(step.action, variables, stagedContext, contextRenderer) },
     ...(contextEvidence.length > 0 ? { contextEvidence } : {}),
+    ...returned,
   };
 };

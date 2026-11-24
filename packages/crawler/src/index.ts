@@ -69,11 +69,13 @@ export {
   crawlSiteStream,
   type CrawledPageResult,
   type CrawlSiteParams,
+  type CrawlSiteRun,
   type FetchPage,
   type FetchedPage,
   type ValidateNavigationUrl
 } from "./transport/crawler.js";
 export type { PageImage, PageImageRole } from "./transport/htmlImageExtraction.js";
+export { probePages, type PageProbeResult } from "./transport/pageProbe.js";
 export {
   fetchPageWithPlaywright,
   fetchPageWithScreenshot,

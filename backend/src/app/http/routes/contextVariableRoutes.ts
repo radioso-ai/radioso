@@ -6,15 +6,22 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import type { ContextVariableScope } from "../../../modules/context-variables/public.js";
-import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
+import {
+  CONTEXT_VARIABLE_SCOPE_TYPES,
+  CONTEXT_VARIABLE_SOURCES,
+  CONTEXT_VARIABLE_VALUE_TYPES,
+  contextVariableOptionInputSchema,
+  deriveVisitorIdentitySigningKey,
+  normalizeContextVariableOption,
+} from "../../../modules/context-variables/public.js";
+import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 
-const contextVariableValueTypes = ["string", "json"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
-const contextVariableScopeTypes = ["session", "customer", "agent", "workspace"] as const;
+const optionLimits = CONTEXT_VARIABLES_BEHAVIOR.enumOptions;
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   z.union([
@@ -27,10 +34,14 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   ]),
 );
 
+// The context-variable module also checks that keys are unique and that no stored key is dropped.
+const contextVariableOptionSchema = contextVariableOptionInputSchema.transform(normalizeContextVariableOption);
+
 const contextVariableBodySchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullable().optional(),
-  valueType: z.enum(contextVariableValueTypes),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES),
+  options: z.array(contextVariableOptionSchema).max(optionLimits.maxOptions).nullable().optional(),
   trustTier: z.enum(contextVariableTrustTiers),
   sensitivity: z.enum(contextVariableSensitivities),
   defaultSurfacing: z.enum(contextVariableSurfacings),
@@ -47,15 +58,22 @@ const agentContextVariableParamsSchema = z.object({
   variableId: z.string().uuid(),
 });
 
+/** A `conversation` scope is keyed by the conversation's id. */
+const conversationScopeIdIssue = (scope: { type: string; id: string }, ctx: z.RefinementCtx, path: string): void => {
+  if (scope.type === "conversation" && !z.string().uuid().safeParse(scope.id).success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "A conversation scope id is the conversation's id" });
+  }
+};
+
 const contextVariableValueQuerySchema = z.object({
-  scopeType: z.enum(contextVariableScopeTypes),
+  scopeType: z.enum(CONTEXT_VARIABLE_SCOPE_TYPES),
   scopeId: z.string().min(1).max(500),
-});
+}).superRefine((query, ctx) => conversationScopeIdIssue({ type: query.scopeType, id: query.scopeId }, ctx, "scopeId"));
 
 const contextVariableScopeSchema = z.object({
-  type: z.enum(contextVariableScopeTypes),
+  type: z.enum(CONTEXT_VARIABLE_SCOPE_TYPES),
   id: z.string().min(1).max(500),
-}).strict();
+}).strict().superRefine((scope, ctx) => conversationScopeIdIssue(scope, ctx, "id"));
 
 const contextVariableValueBodySchema = z.object({
   scope: contextVariableScopeSchema,
@@ -67,7 +85,7 @@ const contextVariableValueDeleteBodySchema = z.object({
 }).strict();
 
 const agentContextVariableEnablementBodySchema = z.object({
-  source: z.enum(contextVariableSources),
+  source: z.enum(CONTEXT_VARIABLE_SOURCES),
   resolverSkillId: z.string().uuid().nullable().optional(),
   maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
   resolverTimeoutMs: z.number().int().positive().nullable().optional(),
@@ -128,6 +146,14 @@ const agentContextVariableEnablementBodySchema = z.object({
     });
   }
 });
+
+/** An API value write names the credential that made it, or the teammate whose session did. */
+const apiWriterFor = (principal: AuthenticatedPrincipal | undefined): ContextValueWriter => {
+  if (principal?.type === "personal_api_credential" || principal?.type === "service_account_credential") {
+    return { kind: "api", ref: principal.credentialId };
+  }
+  return { kind: "api", ref: principal?.type === "session_user" ? principal.userId : null };
+};
 
 type ContextVariableRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
@@ -293,9 +319,15 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     validateBody(contextVariableValueBodySchema),
     async (req, res, next) => {
       try {
-        const { workspaceId } = res.locals as { workspaceId: string };
+        const { workspaceId, authPrincipal } = res.locals as { workspaceId: string; authPrincipal?: AuthenticatedPrincipal };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        const value = await dependencies.contextVariableService.upsertValue(workspaceId, id, req.body.scope, req.body.data);
+        const value = await dependencies.contextVariableService.upsertValue(
+          workspaceId,
+          id,
+          req.body.scope,
+          req.body.data,
+          apiWriterFor(authPrincipal),
+        );
         res.status(200).json({ value });
       } catch (error) {
         next(error);

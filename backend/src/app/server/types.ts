@@ -100,6 +100,7 @@ import type { ChatModelImageReading, VisitorImageAvailability, VisitorImageServi
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
+import type { ApiConnectionService } from "../../modules/apiRequestSkills/public.js";
 import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -142,6 +143,7 @@ import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/ema
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
+import type { WebsiteRecrawlComposition } from "../composition/websiteRecrawl.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
@@ -286,6 +288,7 @@ export interface AppDependencies {
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;
+  apiConnections: ApiConnectionService;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   llmCapabilityResolver: LlmCapabilityResolver;
   auditService: AuditService;
@@ -325,6 +328,8 @@ export interface AppDependencies {
   facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
+  /** A website source's recrawl cadence and the operator's decision on pages a crawl held. */
+  websiteRecrawl: Pick<WebsiteRecrawlComposition, "scheduleService" | "heldPagesService">;
   websiteCrawlWorker: WebsiteCrawlWorker;
   websiteCrawlJobConsumer?: JobConsumerPort;
   documentDeletionService: DocumentDeletionService;

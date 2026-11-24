@@ -1,4 +1,4 @@
-import { contrastRatio, mixHex, mixHexRgba, parseHex, pickForeground, relativeLuminance } from '@/lib/color'
+import { contrastRatio, mixHex, mixHexRgba, parseHex, pickForeground, relativeLuminance, shadeToContrast } from '@/lib/color'
 import type { WebsiteEmbedThemeOverrides } from '@/lib/embed-widget'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 
@@ -47,6 +47,25 @@ export const quietIconForeground = (theme: { inputBackground: string; inputForeg
   return ensureLegibleForeground(theme.inputBackground, faded, MIN_CONTROL_CONTRAST)
 }
 
+/**
+ * The colour of a link in an assistant answer: the theme's accent, shaded just far enough to read
+ * as text on the bubble, so a light brand colour keeps its hue instead of turning into body text.
+ * The accent as given when it is not a hex colour, since no contrast can be computed from it.
+ */
+export const messageLinkForeground = (theme: { accent: string; assistantBubbleBackground: string }): string =>
+  shadeToContrast(theme.accent, theme.assistantBubbleBackground, MIN_TEXT_CONTRAST)
+
+/** How far a disabled Send's glyph fades into its fill, below the quiet icons' 3:1 floor. */
+const DISABLED_GLYPH_FADE = 0.5
+
+/**
+ * The glyph of a disabled Send: the muted foreground faded halfway into the muted fill it sits on,
+ * so an inactive control never reads firmer than the live paperclip and Talk icons beside it.
+ * WCAG 1.4.11 exempts inactive controls. A theme made of CSS variables names its muted foreground.
+ */
+export const disabledSendForeground = (theme: { mutedBackground: string; mutedForeground: string }): string =>
+  mixHex(theme.mutedForeground, theme.mutedBackground, DISABLED_GLYPH_FADE)
+
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {
     return null
@@ -55,6 +74,17 @@ export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings 
   const brand = theme.brand
   const text = ensureLegibleForeground(surface, theme.text)
   const brandText = ensureLegibleForeground(brand, theme.brandText)
+
+  // Muted text (citation markers, the Sources row, timestamps) sits on the panel, the bubble and the
+  // muted surface. The muted surface is the nearest of them to the text colour, and the muted text is
+  // shaded toward the text's own side, so reading there reads on all three. It stops at the body
+  // text's own contrast so it never outweighs body text that only just reads.
+  const mutedBackground = mixHex(surface, text, 0.06)
+  const mutedForeground = shadeToContrast(
+    mixHex(text, surface, 0.45),
+    mutedBackground,
+    Math.min(MIN_TEXT_CONTRAST, contrastRatio(mutedBackground, text)),
+  )
 
   const isSurfaceDark = relativeLuminance(surface) < 0.5
   const shadowSurface = isSurfaceDark
@@ -75,8 +105,8 @@ export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings 
     panelShadow: shadowSurface,
     accent: brand,
     accentForeground: brandText,
-    mutedBackground: mixHex(surface, text, 0.06),
-    mutedForeground: mixHex(text, surface, 0.45),
+    mutedBackground,
+    mutedForeground,
     inputBackground: surface,
     inputForeground: text,
     inputBorder: mixHex(surface, text, 0.2),

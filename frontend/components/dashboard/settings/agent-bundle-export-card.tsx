@@ -44,7 +44,7 @@ export function AgentBundleExportCard({
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">Export a bundle</p>
           <p className="text-sm text-muted-foreground">
-            Settings, directives, routines, context variables, and skills. Credentials and
+            Settings, directives, routines, attributes, and skills. Credentials and
             access tokens stay in this workspace.
           </p>
           {exportedFileName ? (

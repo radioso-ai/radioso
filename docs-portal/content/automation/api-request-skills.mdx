@@ -1,0 +1,154 @@
+---
+title: "Call a REST API from a routine"
+description: "Connect a REST API to the workspace, define an API request skill, and let a routine look up or create records and use the typed values that come back."
+last_updated: 2026-11-21
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Call a REST API from a routine
+
+When a routine needs a fact that lives in another system, such as the status of an order or the reference of a ticket it just opened, an API request skill fetches it. The routine asks the visitor for what the request needs, the skill calls your API, and the routine carries on with the values that come back.
+
+Take a shop at `https://api.shop.example/v1`. A visitor asks where order A-10042 is. The routine collects the number, calls `GET /orders/A-10042`, and answers with the status and the items.
+
+<Steps>
+### Add an API connection
+
+Open the agent's **Skills** list and choose **Manage API connections**, then **Add API connection**. A connection holds the address and credential for one API, and every agent in the workspace can build skills on it.
+
+- **Name:** `shop-api`. Unique in the workspace, ignoring case.
+- **Base URL:** `https://api.shop.example/v1`. It must be HTTPS and resolve to a public address, with no credentials, query or fragment in it.
+- **Authentication:** `none`, `bearer` (a token), `header` (a custom header name and value) or `basic` (`username:password`).
+- **Default headers:** optional, non-secret headers sent on every request.
+
+The credential is stored encrypted and never shown again. The connection lists only a mask: the last four characters behind asterisks, or for basic authentication the username followed by `:****`. Leave the credential blank when you edit a connection to keep the stored one. Enter it again when you change the base URL's scheme, host or port, the authentication or the header name: the stored credential is only sent where it was entered for.
+
+### Check the request
+
+While you build the skill, use **Send test request** at the bottom of the form. Fill a sample value for each input and send it. The test sends one real request exactly as a skill would, so a `POST` creates a real record. The result shows the HTTP status, the duration, the parsed response body (cut to 16 KB) and any required output the response left out. Click a field in the body tree to add it as an output, or click an array to add a list output. The path and type are filled from the sample.
+
+### Add the skill
+
+Open the agent's **Skills** list, choose **Add new skill**, and pick **API request**. Choose the connection, then describe the request:
+
+```json
+{
+  "method": "GET",
+  "path": "/orders/{order_number}",
+  "exposedParams": {
+    "order_number": { "type": "text", "description": "The order number" }
+  },
+  "outputs": {
+    "status": { "path": "status", "type": "text", "description": "Order status", "required": true }
+  }
+}
+```
+
+The skill runs from routines only. It cannot be bound to a directive or picked by the agent mid-conversation.
+
+Saving the skill changes the agent's draft. Test Chat runs it right away, and visitors get it once you choose **Review & publish**; a conversation keeps the request its release started with. The connection is a workspace setting, so a new base URL or credential reaches every conversation at once.
+
+### Use it in a routine
+
+Add a skill step that names the skill. The step reads `order_number` from the routine variable with that name, or from the one you set with `slotBinding`. Set `@status` from the `status` output, and add a **Rule** row for `not_found` that asks the visitor to check the number.
+</Steps>
+
+## How parameters are sent
+
+You never write a template. Radioso places each parameter by its key:
+
+- A `{key}` in the path takes that parameter, URL-encoded. A value that is empty, `.` or `..`, or holds a `/` or `\`, ends the step as `invalid_input`.
+- On `GET` and `DELETE` the rest go in the query string. An array repeats the key, and an object becomes JSON text.
+- On `POST`, `PUT` and `PATCH` the rest go in a JSON body. A dotted key nests, so `customer.email` becomes `{ "customer": { "email": "…" } }`.
+
+`boundParams` are fixed values sent as written, such as `{ "priority": "normal" }`. A key is bound or exposed, never both, and every `{placeholder}` must be a declared parameter.
+
+Each exposed value is checked against its type before anything is sent.
+
+| Type | Accepts |
+|---|---|
+| `text` | The value as written. Numbers and booleans become text. |
+| `number` | A number or a plain decimal such as `"12.50"`, without thousands separators. |
+| `boolean` | `true` or `false`. |
+| `date` | `YYYY-MM-DD`. A date-time is cut to its date. |
+| `email` | A valid address, trimmed. |
+
+A value that does not fit ends the step as `invalid_input` and nothing is sent. A `text` parameter takes a slot of any type but a picked card; the other types need a matching slot type.
+
+### Protect a lookup with a verified value
+
+Mark a parameter `verifiedOnly` when it identifies the person asking, such as the email on an order lookup. The value must come from a context variable your site signed. A value the visitor typed, an unverified context variable, a literal or no value at all ends the step as `unverified`, even when the parameter is optional, and nothing is sent. Without this, a visitor could type someone else's email address and read their orders.
+
+## What comes back
+
+Only the outputs you declare leave the skill. The raw response never reaches the model, the routine, traces or logs.
+
+```json
+"items": {
+  "path": "items",
+  "type": "list",
+  "description": "Items in the order",
+  "maxItems": 5,
+  "fields": {
+    "name": { "path": "name", "type": "text", "role": "title" },
+    "photo": { "path": "image_url", "type": "text", "role": "image" }
+  }
+}
+```
+
+- A path uses dots, and a number indexes an array: `items.0.title`. Paths have at most 10 segments.
+- Each value is converted to its type or left out. A list keeps its first `maxItems` items (1 to 20, default 10) with exactly the declared fields. Lists cannot nest.
+- An empty list counts as absent. A guard "is set" on a list means the API found something.
+- Set `required: true` on an output the routine cannot do without. If the response leaves it out, the skill fails with `response_mismatch`. A list's fields take no `required`: an item that lacks a field shows without it.
+- Outputs over 16 KB fail with `outputs_too_large`.
+- A list field's `role` (`key`, `title`, `subtitle`, `image` or `link`) builds cards. Each role is used once per list, and `image` and `link` fields are `text`.
+
+The agent reads outputs as typed, described lines, such as `status — Order status (text): "shipped"`, and lists as numbered items. When a reply shows a list as cards, the roles fill each card and the agent only chooses which records to show. See [Show a skill's results as cards](/guides/authoring-routines#show-a-skills-results-as-cards).
+
+Every step the routine reaches on the turn the request runs, an ending included, reads the outputs this way, so a finish that says "Tell them the order's status" gives it. The reply says nothing was found, or that the request did not go through, only when the outcome is `not_found` or a failure: a booking answered with `201 {}` or `204` reads as booked, with no value to quote. A step on a later turn reads only the variables the skill step set: set `@status` from `status` and name `@status` in that step's text.
+
+## Outcomes a step can branch on
+
+| Outcome | Meaning |
+|---|---|
+| `completed` | 2xx response. |
+| `not_found` | 404. |
+| `rejected` | Another 4xx, except 401, 403 and 429. |
+| `missing_input` | A required parameter had no value. |
+| `invalid_input` | A value did not fit its type. |
+| `unverified` | A `verifiedOnly` value was not verified. |
+| `failed` | Anything else, with a reason. |
+
+A `failed` outcome carries one reason: `response_mismatch`, `outputs_too_large`, `non_json_response`, `timeout` (the whole request has 10 seconds), `network`, `upstream_error` (a 5xx or another unexpected status), `auth_rejected` (401 or 403), `rate_limited` (429), `redirect_refused`, `connection_not_found`, `blocked` (the host resolved to a private address), `response_too_large` (a body over 1 MB) or `credential_unavailable`.
+
+A skill makes one attempt, with no retries. Redirects are followed only for `GET`, within the same origin, up to three.
+
+## Test chat
+
+In the agent's test chat and in eval replays, `GET` requests run for real because they only read. Every other method is suppressed, so a test never creates or changes a record.
+
+## Limits
+
+- Routines call API request skills. Directive and turn binding, and agent-selectable use, are not supported.
+- Context variables cannot be resolved through an API request.
+- There is no OpenAPI import; you declare each request.
+- Authentication covers `none`, `bearer`, `header` and `basic`. OAuth client credentials and API keys in the query string are not supported.
+- There are no retries and no pagination.
+- Only JSON responses are read as data.
+
+## Common failure modes
+
+- **`blocked`.** The connection's host resolves to a private address. Use a public HTTPS host.
+- **`auth_rejected`.** The API answered 401 or 403. Edit the connection, enter the credential again and re-run the test request.
+- **`response_mismatch`.** A required output was absent. Run a test request and compare its `body` with the output `path`.
+- **`non_json_response`.** The API answered with something other than JSON while outputs were declared.
+- **`unverified`.** The value came from a slot or an unverified context variable. Sign the context variable on your site.
+- **The connection cannot be deleted.** A skill in an agent's draft or published release uses it, and the error names the agent and skill. If it says the published version still uses the skill, change the skill, publish the agent, then delete.
+- **A `POST` did nothing in the test chat.** Non-`GET` requests are suppressed there.
+
+## Read next
+
+- [Agents and skills](/api/agents-and-skills)
+- [Author a routine](/guides/authoring-routines)
+- [Send data to an automation](/automation/webhook-skills)

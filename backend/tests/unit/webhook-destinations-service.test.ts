@@ -9,7 +9,9 @@ import {
   type WebhookDestinationRecord,
   type WebhookDestinationRepositoryPort,
 } from "../../src/modules/webhooks/public.js";
+import type { SkillTargetUse } from "../../src/shared/domain/skillTargetUses.js";
 import { decryptField, type FieldEncryptionKeyRing } from "../../src/shared/infra/crypto/fieldEncryption.js";
+import { fixedSkillTargetUses } from "../support/skillTargetUses.js";
 
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -110,6 +112,7 @@ const createService = (overrides: {
   assertPublicUrl?: (url: string) => Promise<void>;
   allowHttpLoopback?: boolean;
   referencedRoutineNames?: string[];
+  skillUses?: SkillTargetUse[];
 } = {}) => {
   const repository = new FakeWebhookDestinationRepository();
   const service = new WebhookDestinationService({
@@ -123,6 +126,7 @@ const createService = (overrides: {
         return overrides.referencedRoutineNames ?? [];
       },
     },
+    skillTargetUses: fixedSkillTargetUses(overrides.skillUses ?? []),
   });
   return { repository, service };
 };
@@ -263,7 +267,42 @@ describe("WebhookDestinationService", () => {
     vi.spyOn(repository, "delete").mockRejectedValue({ code: "23503", message });
 
     await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" }))
-      .rejects.toThrow(/referenced/);
+      .rejects.toMatchObject({ statusCode: 409, code: "webhook_destination_in_use", message: "Webhook destination is in use." });
+  });
+
+  it("blocks deletion while an agent's published release still uses the destination, and says to publish", async () => {
+    const { repository, service } = createService({
+      referencedRoutineNames: ["lead intake"],
+      skillUses: [{ agentId: "agent-1", agentName: "Sales", skillName: "send_lead", inDraft: false, inPublishedRelease: true }],
+    });
+    const created = await service.create({
+      workspaceId,
+      name: "crm",
+      url: "https://example.com",
+      actor: { accountId: "acc-1" },
+    });
+
+    await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "webhook_destination_in_use",
+      message: 'Webhook destination is in use. Used by routine "lead intake". The published version of agent "Sales" still uses skill "send_lead". Publish agent "Sales" first.',
+      details: { destinationId: created.destination.id, references: ["lead intake", "skill:send_lead"] },
+    });
+    expect(repository.rows.has(created.destination.id)).toBe(true);
+  });
+
+  it("translates the database's skill-reference refusal into the same conflict", async () => {
+    const { repository, service } = createService();
+    const created = await service.create({
+      workspaceId,
+      name: "crm",
+      url: "https://example.com",
+      actor: { accountId: "acc-1" },
+    });
+    vi.spyOn(repository, "delete").mockRejectedValue({ code: "23503", constraint: "agent_skills_webhook_target_fk" });
+
+    await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" }))
+      .rejects.toMatchObject({ statusCode: 409, code: "webhook_destination_in_use" });
   });
 });
 

@@ -148,8 +148,10 @@ const declarations: readonly PolicyDeclaration[] = [
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),
   allow("POST", "/api/v1/document/search", "workspace.documents.read"),
-  ...["", "/import", "/sources/:sourceId/recrawl", "/sources/:sourceId/pause-crawl", "/sources/:sourceId/resume-crawl", "/sources/:sourceId/reprocess", "/:documentId/reprocess"]
+  ...["", "/import", "/sources/:sourceId/recrawl", "/sources/:sourceId/pause-crawl", "/sources/:sourceId/resume-crawl", "/sources/:sourceId/reprocess", "/:documentId/reprocess",
+    "/sources/:sourceId/held-pages/remove", "/sources/:sourceId/held-pages/keep"]
     .map((path) => allow("POST", `/api/v1/document${path}`, "workspace.documents.manage")),
+  allow("PUT", "/api/v1/document/sources/:sourceId/recrawl-cadence", "workspace.documents.manage"),
   ...["/sources/:sourceId", "/:documentId"].map((path) =>
     allow("PATCH", `/api/v1/document${path}`, "workspace.documents.manage")),
   allow("PUT", "/api/v1/document/:documentId", "workspace.documents.manage"),
@@ -322,6 +324,13 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PUT", "/api/v1/settings/webhook-destinations/:id", "workspace.settings.manage"],
     ["POST", "/api/v1/settings/webhook-destinations/:id/rotate-secret", "workspace.settings.manage"],
     ["DELETE", "/api/v1/settings/webhook-destinations/:id", "workspace.settings.manage"],
+    ["GET", "/api/v1/settings/api-connections", "workspace.settings.read"],
+    ["POST", "/api/v1/settings/api-connections", "workspace.settings.manage"],
+    ["GET", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.read"],
+    ["PATCH", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.manage"],
+    ["DELETE", "/api/v1/settings/api-connections/:connectionId", "workspace.settings.manage"],
+    // Sends a real request with the stored credential, so only a signed-in teammate may run it.
+    ["POST", "/api/v1/settings/api-connections/:connectionId/test-request", "workspace.settings.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/agents/:agentId/mcp-connections", "workspace.agents.read"],

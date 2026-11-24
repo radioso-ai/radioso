@@ -19,6 +19,8 @@ const websiteSource = (config: Record<string, unknown> = {}) => ({
   metadata: {},
   lastSyncStatus: "completed",
   lastSyncedAt: new Date("2026-08-29T10:00:00.000Z"),
+  recrawlCadence: "off" as const,
+  nextRecrawlAt: null,
   createdAt: new Date("2026-08-01T10:00:00.000Z"),
   updatedAt: new Date("2026-08-29T10:00:00.000Z"),
 });
@@ -57,6 +59,7 @@ describe("DocumentSourceRecrawlService", () => {
       url: "https://help.example.com",
       limit: 100,
       policy: { includeUrlPatterns: ["/docs/**"], preserveContentLinks: true },
+      trigger: "manual",
     });
   });
 
@@ -105,5 +108,24 @@ describe("DocumentSourceRecrawlService", () => {
     });
     await expect(urlMissingService.recrawlSource({ accountId: "account-1", workspaceId: "workspace-1", sourceId }))
       .rejects.toThrow("Source has no configured URL");
+  });
+
+  it("queues the recrawl sweep's crawl as scheduled and unattributed to any operator", async () => {
+    const deps = dependencies();
+    const service = new DocumentSourceRecrawlService({
+      sourceRepository: deps,
+      crawlJobs: deps,
+      crawlerConfig: { defaultLimit: 25, maxLimit: 1000 },
+    });
+
+    await service.recrawlSource({ accountId: null, workspaceId: "workspace-1", sourceId, trigger: "scheduled" });
+
+    expect(deps.enqueueForSource).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: null,
+      sourceId,
+      url: "https://help.example.com",
+      limit: 500,
+      trigger: "scheduled",
+    }));
   });
 });

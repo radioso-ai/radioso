@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-11-13
+last_updated: 2026-11-21
 ---
 
 # Deleting conversation data
@@ -63,7 +63,7 @@ Deleting a conversation removes:
 - the [delivery log](/api/agents-and-skills#delivery-log) entries for the notices it raised, with the recipient addresses they name;
 - its events in the [workspace event log](/api/workspace-event-log), with the contact details and routine values they carry;
 - email skill activity, including its recipient summary;
-- session-scoped context values for a chat session no other conversation uses;
+- the attribute values set on the conversation itself, and session-scoped values for a chat session no other conversation uses;
 - the visitor record, when this was an anonymous visitor's last conversation;
 - the turn audit events that carry its content: suggestions, rewritten queries, retrieval diagnostics, and traces.
 
@@ -131,4 +131,4 @@ The files go once the deletion has gone through. The deletion hands them to the 
 - [Answering a data subject request](/operators/data-subject-requests) — find, export and delete one person's data across channels.
 - [Visitor data](/operators/visitor-data) — what a conversation records about a visit.
 - [Chat and history](/api/chat-and-history) — the history API these routes belong to.
-- [Context variables](/operators/context-variables) — what session- and customer-scoped values hold.
+- [Attributes and context](/operators/context-variables) — what conversation-, session- and customer-scoped values hold.

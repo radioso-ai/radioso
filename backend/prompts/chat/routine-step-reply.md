@@ -43,7 +43,7 @@ Step instruction(s) — the controlling instruction for this message:
 
 {{reask_context}}
 
-{{step_sources}}
+{{tool_results}}{{step_sources}}
 When the step instruction(s) ask you to give a fact they do not state themselves, such as a
 date, time, price, place, or availability to take from the page, the website, the documents,
 or "the sources", take it only from the sources listed here, never from the user's messages

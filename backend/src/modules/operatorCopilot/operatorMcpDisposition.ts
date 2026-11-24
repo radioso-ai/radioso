@@ -77,6 +77,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   prepare_ingestion_settings: eligibleProposal,
   prepare_agent_settings: eligibleProposal,
   prepare_directive: eligibleProposal,
+  prepare_context_variable: eligibleProposal,
   propose_workspace_setting: eligibleProposal,
   propose_privacy_setting: eligibleProposal,
   propose_time_zone_setting: eligibleProposal,
@@ -90,6 +91,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   quality_signals: eligibleRead,
   replay_eval_case: contextDependent,
   recrawl_source: unsafeAct,
+  set_recrawl_cadence: unsafeAct,
   reprocess_document: unsafeAct,
   retrieval_probe: {
     status: "eligible",

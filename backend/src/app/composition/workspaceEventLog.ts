@@ -25,11 +25,10 @@ import {
   type EventSubscriptionOwnerCheck,
 } from "../../modules/workspaceEventLog/public.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
-import { assertPublicHttpUrl, stripIpv6Brackets } from "../../shared/domain/publicNetwork.js";
 import type { DocumentEventEraser, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { WorkspaceEventDeliveryWake } from "../../shared/domain/workspaceEventSubscriptions.js";
 import { FetchWebhookHttpClient, type WebhookUrlGuard } from "../../shared/infra/http/signedWebhook.js";
-import { fetchPublicUrl, resolvePublicAddresses } from "../../shared/infra/http/publicUrlFetch.js";
+import { assertPublicHttpTarget, fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -98,10 +97,7 @@ const WORKSPACE_EVENT_DELIVERY_INTERVAL_MS = 60_000;
  * `PublicHostUnresolvedError` subclass, so delivery tells a refused target from a resolver outage.
  * The DNS-pinned fetch checks the addresses it connects to again.
  */
-const assertPublicDeliveryTarget: WebhookUrlGuard = async (url) => {
-  const target = assertPublicHttpUrl(url);
-  await resolvePublicAddresses(stripIpv6Brackets(target.hostname.toLowerCase()));
-};
+const assertPublicDeliveryTarget: WebhookUrlGuard = (url) => assertPublicHttpTarget(url);
 
 /**
  * Subscriptions and their delivery (#1852): the service the routes and Ray read through, the drain

@@ -418,6 +418,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     // resolved once, with scopes most-specific first
     expect(resolveForAgent).toHaveBeenCalledTimes(1);
     expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "conversation", id: session.conversation.id },
       { type: "session", id: "sess-1" },
       { type: "agent", id: agent.id },
       { type: "workspace", id: "ws-1" },
@@ -526,6 +527,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     });
 
     expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "conversation", id: session.conversation.id },
       { type: "session", id: "sess-1" },
       { type: "customer", id: "cust-1" },
       { type: "agent", id: agent.id },
@@ -594,6 +596,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
 
     expect(session.conversation.verifiedCustomerId).toBe("cust-1");
     expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "conversation", id: session.conversation.id },
       { type: "session", id: "sess-1" },
       { type: "customer", id: "cust-1" },
       { type: "agent", id: agent.id },
@@ -653,6 +656,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
 
     expect(followUp.conversation.verifiedCustomerId).toBe("cust-1");
     expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "conversation", id: followUp.conversation.id },
       { type: "session", id: "sess-1" },
       { type: "customer", id: "cust-1" },
       { type: "agent", id: agent.id },

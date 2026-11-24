@@ -36,6 +36,8 @@ import { SessionRepository } from "../../../db/repositories/sessionRepository.js
 import { UserFederatedIdentityRepository } from "../../../db/repositories/userFederatedIdentityRepository.js";
 import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
+import { WebsiteMissingPageRepository } from "../../../db/repositories/websiteMissingPageRepository.js";
+import { WebsiteRecrawlRepository } from "../../../db/repositories/websiteRecrawlRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
@@ -62,6 +64,7 @@ import { buildWorkspaceEventLog, documentEventEraser, workspaceEventRecorder } f
 import { IntegrationConnectionRepository } from "../../../modules/integrationConnections/public.js";
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
+import { writeAgentSkillIntoDraft } from "../../../modules/agentSkills/public.js";
 import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
 import type { CopilotProposalTargetTypeSet } from "../../../modules/operatorCopilot/public.js";
 import { TestExecutionRepository } from "../../../db/repositories/testExecutionRepository.js";
@@ -264,6 +267,8 @@ export const buildRepositories = (
   userFederatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
   userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
+  websiteMissingPageRepository: new WebsiteMissingPageRepository(database.kysely),
+  websiteRecrawlRepository: new WebsiteRecrawlRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceSetupStateRepository: new WorkspaceSetupStateRepository(database.kysely),
@@ -284,7 +289,7 @@ export const buildRepositories = (
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
-  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely, writeAgentSkillIntoDraft),
   copilotRepository: new CopilotRepository(database.kysely, options.copilotProposalTargetTypes, options.logger),
   testExecutionRepository: new TestExecutionRepository(database.kysely),
 });

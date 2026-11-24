@@ -513,11 +513,12 @@ describe("public chat contract", () => {
       .send({ message: "What is in my cart?", stream: false, signedIdentity });
     expect(valid.status).toBe(200);
     expect(resolveForEnablements).toHaveBeenLastCalledWith(session.workspaceId, agent.id, expect.any(Array), [
+      { type: "conversation", id: valid.body.conversationId },
       { type: "session", id: publicSession.body.publicSessionId },
       { type: "customer", id: "customer-123" },
       { type: "agent", id: agent.id },
       { type: "workspace", id: session.workspaceId },
-    ]);
+    ], undefined);
     expect(prompts.at(-1)).toContain('"items"');
 
     const invalid = await request(app)
@@ -527,10 +528,11 @@ describe("public chat contract", () => {
       .send({ message: "What is in my cart now?", stream: false, signedIdentity: `${signedIdentity}x` });
     expect(invalid.status).toBe(200);
     expect(resolveForEnablements).toHaveBeenLastCalledWith(session.workspaceId, agent.id, expect.any(Array), [
+      { type: "conversation", id: invalid.body.conversationId },
       { type: "session", id: publicSession.body.publicSessionId },
       { type: "agent", id: agent.id },
       { type: "workspace", id: session.workspaceId },
-    ]);
+    ], undefined);
   });
 
   it("answers a turn carrying a token too long to verify as an unidentified one, and counts each outcome", async () => {

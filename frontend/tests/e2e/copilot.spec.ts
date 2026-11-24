@@ -795,3 +795,65 @@ test("shows what a proposal was verified against, regressions and stale replays 
   await expect(page.getByText("Shipping cost", { exact: false })).toBeVisible();
   await expect(page.getByText("agent changed since this case was captured", { exact: false })).toBeVisible();
 });
+
+test("lists a proposed Choice attribute's options one per line in the diff", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-options";
+  const proposalId = "proposal-options-1";
+  const targetLabel = "urgency";
+  const summary = "Add the urgency attribute.";
+  const detail = {
+    id: proposalId,
+    targetType: "context_variable",
+    targetLabel,
+    summary,
+    status: "pending",
+    targetRef: { agentId: defaultAgentId },
+    preview: {
+      current: null,
+      proposed: {
+        name: "urgency",
+        definition: {
+          options: [
+            { key: "low", label: "Low", description: "The visitor can wait", archived: false },
+            { key: "high", label: "High", description: null, archived: true },
+          ],
+        },
+      },
+    },
+    currentVersionMatches: true,
+    evidenceCases: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["context_variable"] } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: [] } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-options" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "context_variable", targetLabel, summary })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted an urgency attribute.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Add an urgency attribute");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: `Show proposed changes for ${targetLabel}`, exact: true }).click();
+  const changes = page.getByLabel("Proposal changes");
+  await expect(changes.getByRole("listitem")).toHaveCount(2);
+  await expect(changes.getByRole("listitem").filter({ hasText: "Low (low)" })).toContainText("The visitor can wait");
+  await expect(changes.getByRole("listitem").filter({ hasText: "High (high)" })).toContainText("archived");
+});

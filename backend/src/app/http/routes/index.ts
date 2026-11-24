@@ -30,6 +30,7 @@ import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
+import { createSettingsApiConnectionRoutes } from "./settingsApiConnectionRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createWorkspaceEventRoutes } from "./workspaceEventLogRoutes.js";
 import { createWorkspaceEventSubscriptionRoutes } from "./workspaceEventSubscriptionRoutes.js";
@@ -131,6 +132,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes },
   { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes },
   { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes },
+  { path: "/api/v1/settings/api-connections", createRouter: createSettingsApiConnectionRoutes },
   { path: "/api/v1/connectors", createRouter: createConnectorRoutes },
   { path: "/api/v1/document", createRouter: createDocumentRoutes },
   {

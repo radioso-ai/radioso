@@ -462,6 +462,13 @@ describe('CopilotProposalCard', () => {
 
       expect(announced).toEqual([])
     })
+
+    it('tells the revision header and Test Chat the draft moved when Ray\'s skill change is applied', async () => {
+      await apply({ id: 'proposal-skill', targetType: 'agent_skill', targetLabel: 'lookup_order', summary: 'Turn on lookup_order', status: 'pending' }, { status: 'applied', appliedRef: { agentId: 'agent-1', skillId: 'skill-1' } })
+
+      expect(draftSaved).toEqual(['agent-1'])
+      expect(announced).toEqual([])
+    })
   })
 
   it('renders a directive removal preview as one legible row instead of every field marked blank', () => {

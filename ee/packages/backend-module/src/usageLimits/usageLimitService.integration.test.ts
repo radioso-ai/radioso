@@ -255,18 +255,86 @@ describeIfDatabase("EE usage limit service integration", () => {
     );
   };
 
-  it("leaves unassigned accounts unlimited", async () => {
+  /** `allowanceTenths` is what a conversation limit has spent; `usageTenths` is everything recorded. */
+  const readMeter = async (
+    accountId: string,
+  ): Promise<{ allowanceTenths: number; usageTenths: number; replies: number[]; answerCounters: number }> => {
+    const [units, kinds, replies, answers] = await Promise.all([
+      database.query<{ used_tenths: number }>(`SELECT used_tenths FROM ee_usage_limit_unit_counters WHERE account_id = $1`, [accountId]),
+      database.query<{ used_tenths: string | null }>(
+        `SELECT sum(used_tenths)::text AS used_tenths FROM ee_usage_limit_unit_kind_counters WHERE account_id = $1`,
+        [accountId],
+      ),
+      database.query<{ reply_count: number }>(
+        `SELECT reply_count FROM ee_usage_limit_conversation_replies WHERE account_id = $1 ORDER BY reply_count`,
+        [accountId],
+      ),
+      database.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ee_usage_limit_answer_counters WHERE account_id = $1`, [accountId]),
+    ]);
+    return {
+      allowanceTenths: units[0]?.used_tenths ?? 0,
+      usageTenths: Number(kinds[0]?.used_tenths ?? 0),
+      replies: replies.map((row) => row.reply_count),
+      answerCounters: Number(answers[0].count),
+    };
+  };
+
+  it("meters an untiered account in conversations, in the catalog's reply blocks, and never refuses it", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     const service = new EnterpriseUsageLimitService(database);
+    const conversationId = randomUUID();
 
-    const reservation = await service.reserveAnswer({ workspaceId, surface: "assistant", usage: "conversation_reply" });
-    await reservation.commit();
+    // One reply past the first block opens a second one.
+    for (let reply = 0; reply <= PLAN_CATALOG.repliesPerConversation; reply += 1) {
+      await service.reserveAnswer({ workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId });
+    }
+    await service.reserveAnswer({ workspaceId, surface: "dashboard", usage: "test_run" });
 
-    const rows = await database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM ee_usage_limit_answer_counters WHERE account_id = $1`,
-      [accountId],
-    );
-    expect(rows[0].count).toBe("0");
+    const tenths = (kind: "conversation" | "test_run") => PLAN_CATALOG.countsAs[kind] * 10;
+    expect(await readMeter(accountId)).toEqual({
+      allowanceTenths: 0,
+      usageTenths: 2 * tenths("conversation") + tenths("test_run"),
+      replies: [PLAN_CATALOG.repliesPerConversation + 1],
+      answerCounters: 0,
+    });
+    // The account-facing summary keeps reporting no conversation allowance.
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
+  });
+
+  it("meters a tier without a monthly cap in conversations and releases a failed reply", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyAnswerLimit: null, monthlyConversationLimit: null, repliesPerConversation: 2 });
+    const service = new EnterpriseUsageLimitService(database);
+    const conversationId = randomUUID();
+
+    await service.reserveAnswer({ accountId, workspaceId, surface: "slack", usage: "conversation_reply", conversationId });
+    const failed = await service.reserveAnswer({ accountId, workspaceId, surface: "slack", usage: "conversation_reply", conversationId: randomUUID() });
+    await failed.release();
+
+    expect(await readMeter(accountId)).toEqual({
+      allowanceTenths: 0,
+      usageTenths: PLAN_CATALOG.countsAs.conversation * 10,
+      replies: [0, 1],
+      answerCounters: 0,
+    });
+  });
+
+  it("starts a tier assigned mid-month at a full allowance, whatever the account used before it", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+    const converse = () =>
+      service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() });
+
+    await converse();
+    await converse();
+    await converse();
+    await assignProfile(accountId, { monthlyConversationLimit: 2 });
+
+    await converse();
+    await converse();
+    await expect(converse()).rejects.toBeInstanceOf(UsageLimitExceededError);
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toMatchObject({ used: 2, limit: 2 });
+    expect(await readMeter(accountId)).toMatchObject({ allowanceTenths: 20, usageTenths: 50 });
   });
 
   it("reads real document capacity from an assigned profile and leaves unassigned capacity unlimited", async () => {
@@ -609,6 +677,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
+    expect(await readMeter(accountId)).toMatchObject({ allowanceTenths: 0, usageTenths: 0, replies: [] });
   });
 
   it("seeds a profile per @radioso/plan-catalog plan with the catalog's own values", async () => {
@@ -638,6 +707,16 @@ describeIfDatabase("EE usage limit service integration", () => {
 
     await expect(service.getNotificationEmailDailyLimit({ workspaceId }))
       .resolves.toBe(satellite.dailyNotificationEmails);
+  });
+
+  it("resolves the fastest website recrawl cadence from the workspace's assigned catalog plan", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    const service = new EnterpriseUsageLimitService(database);
+
+    await service.assignProfile(accountId, "comet");
+    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("monthly");
+    await service.assignProfile(accountId, "satellite");
+    await expect(service.getFastestRecrawlCadence({ workspaceId })).resolves.toBe("daily");
   });
 
   it("keeps a console edit to a seeded profile when the migrator runs again", async () => {

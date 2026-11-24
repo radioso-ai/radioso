@@ -1,17 +1,21 @@
 ---
-title: Context variables
-description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-11-09
+title: "Attributes and context"
+description: "How operators define typed attributes, wire them to agents, and how page, identity and host values reach an agent's turns."
+last_updated: 2026-11-22
 ---
 
-# Context variables
+# Attributes and context
 
-Context variables let an agent use structured visitor context during a turn.
-They are meant for facts such as the current page, visitor identity, cart,
-order status, account tier, or another value supplied by the host system.
+Attributes are the typed facts you keep about a conversation or a visitor: the
+topic a conversation is about, the plan a customer is on, the cart they are
+filling. An agent reads them on every turn, directive conditions and routine
+steps can use them, and your backend sets them through the API. Radioso adds
+built-in context of its own, such as the page the visitor is on.
 
-Operators configure declarations and agent wiring. Runtime
-values come from the host backend or a resolver.
+You define attributes and choose which agents use them. Values come from your
+backend, a resolver, or the AI, which picks a Choice attribute's option from the
+conversation. The API calls an attribute a *context variable*, so the endpoints
+live under `/api/v1/context-variables`.
 
 ## Built-in context
 
@@ -24,8 +28,8 @@ Radioso provides built-in context for the website experience.
   referrer, and entry page Radioso observed when the conversation opened. See
   [Visitor request](#visitor-request) below.
 
-Built-ins are not listed in the host-defined catalog and cannot be edited
-there. They are code-owned platform context, available on every agent.
+Built-ins are not listed with your attributes and cannot be edited there.
+They are code-owned platform context, available on every agent.
 
 ### Page context is relevance-gated
 
@@ -83,45 +87,175 @@ through the same relevance gate. A routine's read served in `metadata` mode
 carries the URL, title, and locales only, even when the message also sent
 `content`.
 
-## Host-defined variables
+## Attributes
 
-Use host-defined variables for data Radioso cannot know by itself. Common
-examples are `cart`, `order_status`, `subscription_plan`, or `account_region`.
+Use attributes for what Radioso cannot know by itself. Common examples are
+`topic`, `cart`, `order_status`, `subscription_plan`, or `account_region`.
 
-Each declaration belongs to the workspace catalog:
+Each attribute is defined once for the workspace, on an agent's **Attributes**
+page:
 
-- **Name** is the stable variable key.
-- **Description** tells operators what the value means.
-- **Value type** is `string` or `json`.
-- **Trust tier** is `unverified` or `signed`.
-- **Sensitivity** is `normal` or `sensitive`.
-- **Default surfacing** is the default prompt visibility policy.
+- **Name** is how directives, routines and the API refer to it, as in
+  `{{context.topic}}`.
+- **Description** tells operators, and the agent, what the value means.
+- **Type** is **Text** (`string`), **Choice** (`enum`), or **JSON** (`json`),
+  which holds structured data your site sends, such as a cart. Every value has
+  this type, and the type is fixed once the attribute has a value anywhere.
 
-Then each agent enables the variables it should use. In the agent **Context**
-section, choose the source and surfacing policy for that agent.
+The **Advanced** section is closed on a new attribute and opens by itself when
+the attribute has a non-default setting:
+
+- **Treat as proof** (`trustTier: signed`) lets skills that need a verified
+  identity accept the value. Radioso does not check a signature on the value
+  itself, so tick it only when your server alone sets it, such as the
+  customer's plan. Unchecked (`trustTier: unverified`), the value is a hint.
+- **Private data** (`sensitivity: sensitive`) masks the value in logs, stored
+  history and directive conditions, which see `[redacted]`. It does not hide
+  the value from replies: wherever an agent's **Used by** is "Every reply, and
+  rules, routines and skills", the agent still reads the raw value. Set the
+  agent's **Used by** to another option to keep it out of the reply.
+- **Used by (default)** (`defaultSurfacing`) is the setting each agent starts
+  with. Each agent sets its own **Used by** on its card. The options are "Every
+  reply, and rules, routines and skills" (`always`), "Only rules, routines and
+  skills that name it" (`on_reference`), and "Only your team"
+  (`operator_only`).
+
+A definition is shared: an edit applies at once to every agent that uses it,
+published versions included. Each agent then enables the attributes it should
+use. On the agent's **Attributes** page, turn an attribute on, then choose **Set by**
+and **Used by** for that agent.
 
 The selection belongs to the agent's private draft. Save it, then use **Test
-Chat** to try the candidate with sample values for the enabled variables. Sample
-values are private test inputs: publishing the candidate never writes them as
-visitor or production values. Changing the selected candidate or sample values
-starts a fresh test conversation, so the conversation's context and routine
-state always match the version you selected.
+Chat** to try the candidate with sample values for the enabled attributes.
+Sample values are private test inputs: publishing the candidate never writes
+them as visitor or production values. A Choice sample is the option key.
+Changing the selected candidate or sample values starts a fresh test
+conversation, so the conversation's context and routine state always match the
+version you selected.
 
-When the behavior is ready, review the Context changes with the other draft
-changes and publish the candidate. The shared variable declarations and runtime
-values remain workspace and host concerns; the agent revision records which
-variables the agent uses and how it resolves them.
+When the behavior is ready, review the attribute changes with the other draft
+changes and publish the candidate. Definitions and values belong to the
+workspace and your backend; the agent revision records which attributes the
+agent uses and how it resolves them.
 
-The dashboard supports one source:
+### Choice attributes
 
-- **Pushed API** — the host backend writes values through the REST API.
+A Choice attribute holds one option from a list you write, such as a
+conversation's topic with the options Billing, Shipping and Returns. Each
+option has:
 
-Resolver-backed variables exist in the API model. The dashboard does not
+- **Key**, the identifier a value stores, such as `billing`. Letters, digits
+  and underscores, starting with a letter. A key never changes, and two keys
+  of one attribute differ by more than case, so `billing` and `Billing` cannot
+  both be options.
+- **Label**, the name teammates see, such as "Billing".
+- **Description**, up to 300 characters on when the option applies, written
+  in whatever language your team works in.
+
+An attribute has up to 50 options. To retire one, archive it instead of
+deleting it: stored values and filters name options by key, so a key stays
+valid for as long as a value holds it. An archived option is no longer accepted
+as a new value; a value that already holds it keeps it. Restore the option to
+offer it again. At least one option stays active, so the attribute always has a
+value it can take.
+
+A value is stored as its key, and a turn reads it by its option. A directive
+condition sees both, as `{ "key": "billing", "label": "Billing" }`, so a
+condition written in your team's language matches the label. The answer prompt
+and a routine step's `{{context.topic}}` show the label. A skill input bound to
+the attribute receives the key, the identifier your own systems act on. When
+that input is a choice of its own, it has to accept every key of the attribute,
+archived ones included, because a value that holds an archived key keeps it.
+A routine that binds the attribute to an input missing one of its keys is
+refused with `context_variable_option_not_accepted`, naming the missing keys.
+
+**Set by** is where the agent gets the value. The dashboard offers two sources:
+
+- **Your website or API** (`pushed`): the host backend writes values through the
+  REST API.
+- **The AI, from the conversation** (`classified`): after each reply, the AI picks
+  one of a Choice attribute's options from what the visitor wrote. The next
+  section covers it.
+
+Resolver-backed attributes exist in the API model. The dashboard does not
 configure them.
+
+### The AI, from the conversation
+
+Say you want every support conversation labelled with its topic, so a rule can
+route billing questions and your team can see what people ask about. Create a
+Choice attribute `topic` with the options Billing, Shipping and Returns, give
+each option a description of when it applies, and set the agent's **Set by** to
+**The AI, from the conversation**.
+
+After each reply the agent sends, Radioso reads the conversation and picks the
+option that describes it, or none when no option fits. It writes the option's key
+as the conversation's value (conversation scope), so a visitor who asks "Why was I
+charged twice?" gets `topic: billing`. When the conversation moves on, say to a
+return, the next reply's run moves the value with it. When nothing fits any more,
+it clears the value it set.
+
+A few things to know in practice:
+
+- **Values usually appear from the next turn.** The run happens in the
+  background after a reply, so the turn that asked about billing does not see
+  `billing` yet; the one after it usually does, unless the visitor answers
+  before the run finishes.
+- **Your values for a visitor stick.** The AI never replaces a value your team or
+  your API set for this visitor or conversation: the conversation, the visitor's
+  session or customer. While one is set, the AI leaves that attribute alone for
+  the conversation, and clears a value it chose earlier so yours is the one the
+  conversation reads. Delete your value and the next run fills the attribute
+  again.
+- **Agent-wide and workspace-wide values are defaults.** A value set for the
+  agent or the workspace applies until the AI picks one. The AI's choice is the
+  conversation's own value, so the conversation reads it instead; when the AI
+  clears its choice because nothing fits any more, the default applies again.
+- **What reaches the model:** the conversation's rolling summary and the
+  visitor's latest messages, plus each attribute's name, description and
+  options. A message the visitor sent while a routine collected a Private field
+  is never sent, and no other attribute's value is.
+- **Where it shows:** by default the value stays out of the reply. Choosing the
+  AI sets **Used by** to "Only rules, routines and skills that name it", so a
+  directive condition, a routine step's `{{context.topic}}` and a skill input read
+  it, and the agent's answer is written from the conversation itself. Change
+  **Used by** if you want the agent to read it in every reply.
+- **Cost:** one call to the workspace's cheaper `rewrite` model per reply, for an
+  agent that has the AI set at least one attribute. All of an agent's attributes
+  share that one call, and a run where your team or your API already set every
+  one for this visitor or conversation makes no call. Each call is counted in usage like the agent's other model
+  calls.
+
+The AI sets Choice attributes only, up to 8 per agent. It never sets a Private
+attribute, since the value would be personal information nobody declared, nor
+one treated as proof, since its value comes from what the visitor typed. The
+dashboard disables the option for those and says why, and the API refuses them.
+Attributes are labels for your team and your rules; the AI only ever picks from
+the options you wrote, and it is told to ignore a visitor who writes "mark this
+as urgent". Before it picks, it writes a sentence on what the visitor said and
+whether any option covers it, so a question none of your options describes gets
+no value. Radioso uses that sentence only to read the choice and never stores
+it. The live eval set checks all of this.
+
+To check it before publishing, open **Test Chat** on the draft and send a few
+messages. Open a reply's turn debug: its **Attributes** section lists every
+attribute the AI sets for the agent, with the value and who set it, or **Not
+set**. A sample value you give an attribute in Test Chat counts as your team's
+and is kept.
+
+Test Chat classifies a turn once its answer is out and shows the value on that
+same turn, where a live conversation usually shows it from the next one. The
+turn waits at most 5 seconds for it; past that, the attributes keep the values
+they had. As in live chat, a turn whose routine collected a Private field is
+left out. Test Chat reads the test's latest six messages and no summary, so in a
+longer test the AI sees less of the start than it would in a live conversation. An MCP client connected to Ray can create the attribute,
+have the agent use it, try it in Test Chat, read the values and publish; see
+[Set up AI-filled attributes through MCP](/guides/attributes-through-mcp).
 
 ## Trust tiers
 
-Trust tier describes how much the system should trust the value.
+The trust tier describes how much the system should trust the value. In the
+dashboard it is the **Treat as proof** checkbox.
 
 - `unverified` is suitable for page state and host-supplied hints. Do not use
   it to unlock account-specific answers.
@@ -243,7 +377,7 @@ When verification succeeds, Radioso adds the `customer` scope to context
 resolution:
 
 ```text
-session -> customer -> agent -> workspace
+conversation -> session -> customer -> agent -> workspace
 ```
 
 It also exposes a sensitive built-in `visitor_identity` context value with
@@ -253,8 +387,8 @@ unlocks customer-scoped data.
 Token `attributes` are a per-turn hint — good for something true only in this
 session, such as the plan the visitor is currently comparing. For a durable
 customer fact such as a name, an email address, or order history, push a
-`customer`-scoped context variable from the host backend instead: it persists
-for that customer across sessions, where `attributes` do not.
+`customer`-scoped attribute from the host backend instead: it persists for that
+customer across sessions, where `attributes` do not.
 
 ## Visitor request
 
@@ -288,7 +422,7 @@ that turn's page-read decision.
 turn whenever the conversation carried at least one of the six facts; a
 directive condition such as "when the visitor is in Germany, mention that
 shipping to the EU takes 3-5 days" reads `visitor_request.country` the same
-way it would read any other context variable.
+way it would read any attribute.
 
 Conditions see every field except `language`. The step that judges conditions
 also picks the language of the reply, and it picks it from the words the
@@ -299,17 +433,19 @@ matching altogether.
 
 ## Surfacing
 
-Surfacing controls whether a resolved value is shown to the model as part of
+Surfacing is the **Used by** setting in the dashboard. It controls whether a resolved value is shown to the model as part of
 the prompt context.
 
-- `always` includes the value whenever it resolves.
-- `on_reference` keeps the value available for turn logic and includes it only
-  when the turn needs it.
+- `always` includes the value in the answer prompt whenever it resolves, and
+  leaves it available to directives, routine steps and skill inputs.
+- `on_reference` keeps the value out of the answer prompt. Directives, routine
+  steps (`{{context.x}}`) and skill inputs that name it read it.
 - `operator_only` stores it for operator inspection and logic, but does not
   surface it into the answer prompt; a routine step that references it reads
   nothing.
 
-Sensitive variables should use the narrowest surfacing that works. Redacted
+Private data (`sensitive`) is masked in logs and history, not in the answer
+prompt when surfacing is `always`, so use the narrowest surfacing that works. Redacted
 values may still appear in the Inbox so operators can debug what happened
 without exposing raw sensitive data.
 
@@ -321,7 +457,7 @@ condition can describe visitor state rather than only what the visitor said.
 page" are conditions the matcher can decide, because `cart` and `page_context`
 are part of the signals it sees.
 
-Alongside your own variables, the turn carries one fact Radioso establishes
+Alongside your own attributes, the turn carries one fact Radioso establishes
 itself: `radioso_caller_kind` is `agent` when the other side of the conversation
 is another AI agent rather than a person, and `human` otherwise. Radioso reads it
 from the channel the conversation arrived on — the MCP converse door and the REST
@@ -337,7 +473,7 @@ a person. A condition scoped to agent callers is therefore one you confirm
 against real traffic from the MCP converse door or the REST agent channel rather
 than in a test run.
 
-Every resolved variable takes part, whatever its surfacing: `operator_only` and
+Every resolved attribute takes part, whatever its surfacing: `operator_only` and
 `on_reference` values steer behavior without being written into the answer
 prompt. Two limits are worth knowing when you write a condition:
 
@@ -346,7 +482,7 @@ prompt. Two limits are worth knowing when you write a condition:
   — an `account_tier` string rather than the account number.
 - Long values are shortened and a turn's context is capped, so conditions that
   hinge on something deep inside a large JSON blob are unreliable. Push the fact
-  the condition needs as its own variable.
+  the condition needs as its own attribute.
 
 Page context reaches conditions as the URL and title. The visible page excerpt
 and the page and browser locales are not part of it, for the same reason
@@ -356,13 +492,24 @@ visitor is on can read the URL.
 
 ## Pushing values
 
-A host backend pushes a value to:
+A host backend sets a value with:
 
 ```text
 PUT /api/v1/context-variables/{id}/values
 ```
 
-The body includes a scope and data:
+The body names a scope and the value. To label one conversation, on any
+channel, use its conversation id:
+
+```json
+{
+  "scope": { "type": "conversation", "id": "3f2b8c1e-6a4d-4f0e-9b7a-2c5d8e1f4a60" },
+  "data": "billing"
+}
+```
+
+A Choice value is the key of an active option; a Text value is a string; a
+JSON value is any JSON, such as a cart:
 
 ```json
 {
@@ -377,20 +524,95 @@ The body includes a scope and data:
 
 Radioso resolves values from most specific to least specific:
 
-1. `session`
-2. `customer`
-3. `agent`
-4. `workspace`
+1. `conversation`
+2. `session`
+3. `customer`
+4. `agent`
+5. `workspace`
 
-Use session scope for short-lived visitor state, customer scope for account data,
-agent scope for agent-specific defaults, and workspace scope for shared defaults.
+Use conversation scope for a fact about one conversation, such as its topic.
+Every channel has it, and the id must name a conversation of the workspace, or
+the call returns `404`. Use session scope for short-lived visitor state on the
+website, customer scope for account data, agent scope for agent-specific
+defaults, and workspace scope for shared defaults.
+
+### Who set a value
+
+Every value records its last writer. The response, and a later
+`GET /api/v1/context-variables/{id}/values`, carries it as `writtenBy`:
+
+```json
+{
+  "writtenBy": { "kind": "api", "ref": "7d1c2b9e-0f4a-4c3e-8a6b-5e9d2f1c4b70" }
+}
+```
+
+A value set through this API has `kind` `api`. `ref` is the id of the API
+credential that made the call, or the teammate's user id when a dashboard
+session did. A value a resolver cached, or one stored before writers were
+recorded, reads as `api` with a `ref` of `null`. A value the AI set has `kind`
+`classifier`, and its `ref` names the version of the instructions it was chosen
+with, such as `context-classification/1`.
+
+Conversation-scope values are deleted with their conversation, and a data
+subject export lists them with the kind of writer that set each one.
 
 ## Inbox
 
-Open a conversation in the Inbox and inspect the assistant turn. When context
-variables were resolved for that turn, the debug panel shows a read-only
-**Visitor context** block. Sensitive values are already redacted by the backend
-before they reach the dashboard.
+Open a conversation from the Inbox's **All** list. Its **Attributes** block,
+above the messages, lists what the conversation holds: each attribute's
+value, who set it and when, for example "Billing", "Set by the AI". A value kept
+for the visitor's chat session or verified customer reads "for this visitor".
+When the same attribute has values at several of those levels, the most
+specific one is shown, the way the agent reads it. Agent-wide and
+workspace-wide values are defaults and stay off the list. A Private attribute
+shows "Private data" instead of its value, and an option archived since the
+value was stored keeps its label, marked "(archived)". A value longer than 160
+characters shows a preview with **Show all**. A conversation without attributes
+shows no block. While the conversation is open, the block reads its attributes
+again a few seconds after each new message, so a value the AI sets after a reply
+appears without a reload.
+
+To find the conversations about one thing, pick an option from the **Attribute**
+filter on the All list. It offers every Choice attribute that is not Private,
+archived options included, plus **Not set** for each. The filter reads only
+values set for the conversation itself: the AI's choices, and values your API
+set with `conversation` scope. A value kept for the visitor's session or
+customer shows in the block but does not match the filter, and a conversation
+with only such a value counts as **Not set**.
+
+Inspect an assistant turn to see what that turn read: when attributes were
+resolved for it, the debug panel shows a read-only **Visitor context** block.
+Sensitive values are redacted by the backend before they reach the dashboard.
+
+The same reads are in the API. `GET /api/v1/history/chat/{conversationId}`
+returns `attributes`:
+
+```json
+{
+  "attributes": [
+    {
+      "name": "topic",
+      "valueType": "enum",
+      "value": "billing",
+      "option": { "label": "Billing", "archived": false },
+      "redacted": false,
+      "scope": "conversation",
+      "writtenBy": { "kind": "classifier", "ref": "context-classification/1" },
+      "updatedAt": "2026-11-22T09:30:00.000Z"
+    }
+  ]
+}
+```
+
+`GET /api/v1/history`, `POST /api/v1/history/query` and
+`GET /api/v1/history/chat` take `attribute` and `attributeOption` together,
+for example `?attribute=topic&attributeOption=billing`, or
+`attributeOption=_not_set` for the conversations with no value of their own.
+The name matches exactly as written. An unknown attribute or option, or an
+attribute that is not a Choice or is Private, returns `400` with the reason.
+`attributes` comes with the first page of messages; an older page (`cursor`, or
+an `offset` above 0) leaves it out.
 
 ## Read next
 

@@ -135,6 +135,7 @@ import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
 import { backgroundJobHandlers } from "../composition/backgroundJobHandlers.js";
+import { buildContextClassification } from "../composition/contextClassification.js";
 import { lateBoundReviewedProposalPorts } from "../composition/lateBoundReviewedProposals.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
@@ -262,6 +263,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const {
     agentSkillRepository,
     agentSkillsService,
+    apiConnections,
     customerEmailConnectionService,
     customerEmailOAuthService,
     emailSkillDefinitionService,
@@ -383,6 +385,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationListener: infrastructure.notificationListener,
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
+    apiConnections,
     productAnalyticsService: infrastructure.productAnalyticsService,
     publicConversationEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
@@ -391,7 +394,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
     slackSkillDefinitionRepository: repositories.slackSkillDefinitionRepository,
-    routineInvocableSkillNames,
     retrievalPipeline: retrieval.retrievalPipeline,
     retrievalDefaultsProvider,
     skillSettingsResolver,
@@ -520,6 +522,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     registry: connectorRegistry,
   });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
+  const contextClassification = buildContextClassification({ infrastructure, repositories, contextVariableRepository, resolver: llmCapabilityResolver, logger });
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,
     agentReader: { get: agentService.get.bind(agentService) },
@@ -579,15 +582,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     logger,
   });
-  // Constructed only once the routine authoring services exist: the agent-revision release
-  // gate needs RoutineDefinitionService's skill/capability/webhook-aware validation
-  // (validateForServing) to reject a candidate or publish whose enabled routine references a
-  // skill, capability, or webhook destination the workspace no longer has.
+  // Built after routine authoring: the agent-revision release gate validates through RoutineDefinitionService
+  // (validateForServing), refusing a release whose routine names a skill, capability or webhook destination now gone.
   const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID, {
     validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
-    // Batched form: a candidate/publish snapshot's enabled routines all belong to one agent, so
-    // this resolves the workspace-scoped skill/context-variable state once for the whole release
-    // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
+    // Batched: a snapshot's enabled routines all belong to one agent, so the workspace-scoped skill and
+    // context-variable state resolves once per release check, not once per routine.
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
   }, logger);
   const testExecutionService = buildTestExecutionService({
@@ -595,7 +595,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentRevisions: agentRevisionService,
     contextCatalog: contextVariableRepository,
     agentRepository: repositories.agentRepository,
-    chat,
+    chat, classifier: contextClassification.classifier,
     visitorImages: visitorImages.service,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     audit: infrastructure.auditService,
@@ -832,7 +832,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       retrievalAuthoring,
     }),
     createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
-    createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createDocumentCopilotProposalAdapter({
       documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
       documentDeletion: documents.documentDeletionService,
@@ -1028,11 +1028,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentInventory: {
       listInventoryForWorkspace: documents.documentIngestionService.listInventoryForWorkspace.bind(documents.documentIngestionService),
     },
-    documentChunks: repositories.chunkRepository,
-    documentMaintenance: {
+    documentChunks: repositories.chunkRepository, documentMaintenance: {
       reprocessDocument: documents.documentIngestionService.reprocessEligible.bind(documents.documentIngestionService),
       reprocessSource: (input) => documents.documentSourceReprocessService.reprocessSource(input),
       recrawlSource: documents.documentSourceRecrawlService.recrawlSource.bind(documents.documentSourceRecrawlService),
+      setRecrawlCadence: (input) => documents.websiteRecrawl.scheduleService.setRecrawlCadence(input),
     },
     evalResultsService: evalCaseService,
     pendingApprovals: chat.approvalDecisionService,
@@ -1063,7 +1063,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     operatorNoticeDestinations: { read: (input) => operatorNoticeDestinations.read(input) },
     notificationDeliveries,
     eventSubscriptions: workspaceEventDelivery.subscriptions,
-    contextVariables: contextVariableService,
+    contextVariables: contextVariableService, contextVariableUsers: repositories.agentRevisionRepository,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSetupState: workspace.workspaceSummaryService,
@@ -1192,17 +1192,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retention: { db: infrastructure.database.kysely, erasure: conversationErasure, audit: infrastructure.auditService, logger, metrics: infrastructure.metricsRegistry },
     identityNonces: { nonces: repositories.identityNonceRepository, logger },
     voiceRecordingErasureRecovery: voiceRecordings.erasureRecoveryTask,
-    workspaceEventDelivery: workspaceEventDelivery.periodicTask,
+    workspaceEventDelivery: workspaceEventDelivery.periodicTask, websiteRecrawl: documents.websiteRecrawl.periodicTask,
     contributed: {
       registrations: composition.periodicTaskRegistrations,
       context: { database: infrastructure.database, logger, audit: infrastructure.auditService, noticeMail, accountAdministrators, appBaseUrl: env.APP_BASE_URL ?? null },
     },
   });
   const { lifecycle: periodicTasksLifecycle, handlesById: periodicTaskHandlesById } = createPeriodicTasks(periodicTaskEntries, logger);
-  const conversationLinks = buildConversationLinkResolver({
-    database: infrastructure.database,
-    appBaseUrl: env.APP_BASE_URL,
-  });
+  const conversationLinks = buildConversationLinkResolver({ database: infrastructure.database, appBaseUrl: env.APP_BASE_URL });
   // Built here (not only inside the API-only `SlackPlugin`) so the worker can dispatch
   // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
   const slackInboundJobs = buildSlackInboundJobComposition({
@@ -1220,7 +1217,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const backgroundJobRuntime = backgroundJobs.createRuntime(backgroundJobHandlers({
     chat: chat.backgroundJobHandlers,
-    slackInbound: slackInboundJobs.backgroundJobHandlers,
+    slackInbound: slackInboundJobs.backgroundJobHandlers, contextClassification: contextClassification.jobHandler,
     voiceRecordingErasure: voiceRecordings.erasureJobHandler,
     visitorImageObjectDeletion: visitorImages.objectDeletionJobHandler,
     workspaceEventDelivery: workspaceEventDelivery.jobHandler,
@@ -1302,6 +1299,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,
+    apiConnections,
     workspaceLlmCapabilitySettingsService,
     llmCapabilityResolver,
     auditService: infrastructure.auditService,
@@ -1334,7 +1332,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     facetExtractionWorkspaceDrainWorker,
     facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
-    websiteCrawlJobService: documents.websiteCrawlJobService,
+    websiteCrawlJobService: documents.websiteCrawlJobService, websiteRecrawl: documents.websiteRecrawl,
     websiteCrawlWorker: documents.websiteCrawlWorker,
     websiteCrawlJobConsumer: documents.websiteCrawlJobConsumer,
     documentDeletionService: documents.documentDeletionService,

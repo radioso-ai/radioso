@@ -15,7 +15,7 @@ import {
 } from '@/lib/api'
 import { shouldClampHistoryPage, shouldResetAllLensPageForFilterChange, useHistoryListQuery } from './history-list-query'
 import type { ConversationSearchParams } from '@/lib/conversation-filters'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
   audiencePulseApi,
   type AudiencePulseEvidenceAnchorResponse,
@@ -102,6 +102,7 @@ export function useHistoryListState({
           ? 'Failed to load contact activity.'
           : 'Failed to load activity.',
   ) : null
+  const listErrorStatus = historyQuery.error ? getApiErrorStatus(historyQuery.error) : undefined
   const historyItems = historyQuery.data?.variant === 'all' ? historyQuery.data.response.items : []
   const historyItemsTotal = historyQuery.data?.variant === 'all' ? historyQuery.data.response.total : 0
   const hasHistoryItemsNextPage = historyQuery.data?.variant === 'all' ? historyQuery.data.response.hasMore : false
@@ -301,6 +302,7 @@ export function useHistoryListState({
     isListLoading,
     hasAnyHistory,
     listError,
+    listErrorStatus,
     conversations,
     conversationTotal,
     conversationPage,
@@ -743,6 +745,8 @@ export function useHistoryDetailState({
         }
         return {
           ...older,
+          // An older page carries no attributes; the first page's stay.
+          ...(current.attributes ? { attributes: current.attributes } : {}),
           messages: [...older.messages, ...current.messages],
         }
       })

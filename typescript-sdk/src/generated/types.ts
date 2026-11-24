@@ -1283,6 +1283,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/api-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace API connections */
+        get: operations["listApiConnections"];
+        put?: never;
+        /** Create a workspace API connection */
+        post: operations["createApiConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/api-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace API connection */
+        get: operations["getApiConnection"];
+        put?: never;
+        post?: never;
+        /** Delete a workspace API connection */
+        delete: operations["deleteApiConnection"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a workspace API connection
+         * @description Changes only the fields sent; an omitted credential is kept. While a credential is stored, an update that changes the base URL's origin, the auth scheme or the auth header name must send a new credential in the same request, or it is refused with `credential_required`: a stored credential is only ever sent where it was entered for.
+         */
+        patch: operations["updateApiConnection"];
+        trace?: never;
+    };
+    "/api/v1/settings/api-connections/{connectionId}/test-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test request through an API connection
+         * @description Sends one real request the way an API request skill would and returns its outcome, the declared outputs and the parsed body. A method other than GET acts on the target.
+         */
+        post: operations["testApiConnectionRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/revision-state": {
         parameters: {
             query?: never;
@@ -3432,6 +3492,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}/recrawl-cadence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set how often a website source recrawls itself
+         * @description Turning a cadence on or changing it schedules the next recrawl one interval after the last crawl, never before now, with up to an hour of jitter. Choosing the stored cadence again keeps the scheduled time; `off` clears it. A scheduled recrawl reuses the source's saved crawl settings. Like every crawl, it holds missing pages for review when they are more than a fifth of the source, and removes a page only once the site answers that it is gone.
+         */
+        put: operations["setDocumentSourceRecrawlCadence"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/held-pages/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove the pages a crawl held
+         * @description Deletes the source's pages still held for review, without asking the site again. A held page a crawl found again before this runs stays. A source with no held pages answers with a count of 0.
+         */
+        post: operations["removeDocumentSourceHeldPages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/held-pages/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the pages a crawl held
+         * @description Keeps the source's held pages. Later crawls neither hold nor remove a kept page; a page that appears on the site again stops being kept.
+         */
+        post: operations["keepDocumentSourceHeldPages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}/chunks": {
         parameters: {
             query?: never;
@@ -5457,7 +5577,7 @@ export interface paths {
         };
         /**
          * Read a reply block's image
-         * @description Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. Once the document the image came from is deleted, the image answers 404.
+         * @description Unauthenticated: the image id is an unguessable capability, so a page embedding the chat loads it cross-origin and a messaging provider can fetch it. Clients take the address from a reply block's `image.src` or `image.srcSet` rather than building it. Responses are WebP, `Cache-Control: private`, and `Cross-Origin-Resource-Policy: cross-origin`. The picture on a card built from a skill's records is copied the first time it is asked for, so that request can take up to 6 seconds. Once the document the image came from is deleted, the image answers 404.
          */
         get: operations["getPublicReplyImage"];
         put?: never;
@@ -6721,6 +6841,16 @@ export interface components {
             greeting: components["schemas"]["AgentGreetingDraft"];
             validation: components["schemas"]["AgentGreetingValidation"];
         };
+        AgentRevisionSkill: {
+            name: string;
+            kind: string;
+            invocationMode: string;
+            enabled: boolean;
+            targetType: string | null;
+            targetId: string | null;
+            /** @description The skill has settings; they are not shown, since they can hold recipients, payloads and tool settings. */
+            configRedacted: boolean;
+        };
         AgentRevisionDetailResponse: {
             revision: components["schemas"]["AgentRevisionSummary"] & {
                 /** @enum {number} */
@@ -6771,6 +6901,18 @@ export interface components {
                         change: "added" | "removed" | "changed";
                         before?: unknown;
                         after?: unknown;
+                    }[];
+                    /** @description Skills this revision adds, removes or changes against its base release, by name. The default-answer skill is not listed: retrieval settings apply without publishing. */
+                    agentSkills: {
+                        /** Format: uuid */
+                        skillId: string;
+                        skillName: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        /** @description For a changed skill: whether its settings changed. They are not shown. */
+                        settingsChanged?: boolean;
+                        before?: components["schemas"]["AgentRevisionSkill"];
+                        after?: components["schemas"]["AgentRevisionSkill"];
                     }[];
                     greeting: {
                         before: components["schemas"]["AgentGreetingDraft"];
@@ -7288,7 +7430,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable";
                 location: string;
                 message: string;
             }[];
@@ -7601,15 +7743,31 @@ export interface components {
             /** @enum {string} */
             status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
         };
+        SkillAuthoringOutput: {
+            name: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "date" | "email" | "list";
+            required: boolean;
+            description?: string;
+            fields?: {
+                name: string;
+                /** @enum {string} */
+                type: "text" | "number" | "boolean" | "date" | "email";
+                description?: string;
+                /** @enum {string} */
+                role?: "key" | "title" | "subtitle" | "image" | "link";
+            }[];
+        };
         SkillAuthoringDescriptor: {
             skillName: string;
             displayName: string;
             /** @enum {string} */
-            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify";
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify" | "api_request";
             description?: string;
             inputs: components["schemas"]["SkillAuthoringInput"][];
             outcomes: components["schemas"]["SkillAuthoringOutcome"][];
             hasDataOutputs: boolean;
+            outputs: components["schemas"]["SkillAuthoringOutput"][];
         };
         RoutineSkillCatalogResponse: {
             skills: components["schemas"]["SkillAuthoringDescriptor"][];
@@ -8071,7 +8229,7 @@ export interface components {
         AgentBundleContextVariable: {
             variableName: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             resolverSkillName: string | null;
             maxAgeSeconds: number | null;
             resolverTimeoutMs: number | null;
@@ -8102,6 +8260,7 @@ export interface components {
          *     rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
          *     looks configured and answers wrong.
          *     - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+         *     - context_variable_not_classifiable: a classified enablement whose variable the AI cannot fill here (not a Choice, Private, or treated as proof), or past the agent's limit; not written.
          *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
          *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
          *     - skill_capability_unknown: no capability with this id is registered in this deployment.
@@ -8116,7 +8275,7 @@ export interface components {
          *     - chat_model_unavailable: the agent's chat model override is one this workspace cannot run; the agent imports without it.
          * @enum {string}
          */
-        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
+        AgentBundleUnresolvedKind: "context_variable_missing" | "context_variable_not_classifiable" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound" | "chat_model_unavailable";
         AgentBundleUnresolvedReference: {
             kind: components["schemas"]["AgentBundleUnresolvedKind"];
             /** @description The bundle element the caller must fix, named the way they authored it. */
@@ -8343,6 +8502,23 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
             crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
+            /**
+             * @description Website sources only. How often the source recrawls itself with its saved crawl settings. `off` for every source until the operator chooses a cadence.
+             * @enum {string}
+             */
+            recrawlCadence?: "off" | "monthly" | "weekly" | "daily";
+            /**
+             * Format: date-time
+             * @description Website sources only. When the next scheduled recrawl is queued; null while the cadence is `off`.
+             */
+            nextRecrawlAt?: string | null;
+            /**
+             * @description Website sources only. The fastest cadence the workspace's plan allows. A stored cadence faster than this runs at this cadence.
+             * @enum {string}
+             */
+            fastestRecrawlCadence?: "daily" | "weekly";
+            /** @description Website sources only. Pages a crawl no longer found and held for review instead of removing, because they were more than a fifth of the source. */
+            heldPageCount?: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -10054,6 +10230,35 @@ export interface components {
             message: components["schemas"]["HumanReplyMessage"];
             ownership: components["schemas"]["ConversationOwnership"] & unknown;
         };
+        ConversationAttribute: {
+            /** @description The attribute's name, as in `{{context.<name>}}`. */
+            name: string;
+            /** @enum {string} */
+            valueType: "string" | "json" | "enum";
+            /** @description The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`. */
+            value?: unknown;
+            /** @description The option an `enum` value names, archived or not. Absent for other types, for a redacted value, and for a key no option has. */
+            option?: {
+                label: string;
+                archived: boolean;
+            };
+            /** @description True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain. */
+            redacted: boolean;
+            /**
+             * @description Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed.
+             * @enum {string}
+             */
+            scope: "conversation" | "session" | "customer";
+            /** @description The value's last writer. */
+            writtenBy: {
+                /** @enum {string} */
+                kind: "api" | "operator" | "routine" | "classifier";
+                /** @description What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`. */
+                ref: string | null;
+            };
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ChatConversationDetail: {
             /** Format: uuid */
             conversationId: string;
@@ -10099,6 +10304,8 @@ export interface components {
             recording?: {
                 available: boolean;
             };
+            /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
+            attributes?: components["schemas"]["ConversationAttribute"][];
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
@@ -10823,6 +11030,21 @@ export interface components {
             items: components["schemas"]["InternalUsageEvent"][];
             nextCursor: string | null;
         };
+        ContextVariableOption: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description: string | null;
+            /** @description An archived option is no longer offered or accepted as a new value; values that hold it keep it. */
+            archived: boolean;
+        };
+        ContextVariableOptionInput: {
+            /** @description What a value stores. It never changes. */
+            key: string;
+            label: string;
+            description?: string | null;
+            archived?: boolean;
+        };
         ContextVariable: {
             /** Format: uuid */
             id: string;
@@ -10831,7 +11053,9 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            valueType: "string" | "json";
+            valueType: "string" | "json" | "enum";
+            /** @description The options of an `enum` variable; null for every other type. */
+            options: components["schemas"]["ContextVariableOption"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10846,8 +11070,13 @@ export interface components {
         ContextVariableCreateRequest: {
             name: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier: "unverified" | "signed";
             /** @enum {string} */
@@ -10858,8 +11087,13 @@ export interface components {
         ContextVariableUpdateRequest: {
             name?: string;
             description?: string | null;
-            /** @enum {string} */
-            valueType?: "string" | "json";
+            /**
+             * @description The type of every value. It cannot change while the variable has values.
+             * @enum {string}
+             */
+            valueType?: "string" | "json" | "enum";
+            /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
+            options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
             trustTier?: "unverified" | "signed";
             /** @enum {string} */
@@ -10881,7 +11115,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver" | "request" | "classified";
             /** Format: uuid */
             resolverSkillId: string | null;
             maxAgeSeconds: number | null;
@@ -10896,8 +11130,11 @@ export interface components {
             variable?: components["schemas"]["ContextVariable"];
         };
         AgentContextVariableEnablementRequest: {
-            /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            /**
+             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session` or `customer` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
+             * @enum {string}
+             */
+            source: "pushed" | "browser" | "resolver" | "classified";
             /** Format: uuid */
             resolverSkillId?: string | null;
             maxAgeSeconds?: number | null;
@@ -10913,8 +11150,11 @@ export interface components {
             enablements: components["schemas"]["AgentContextVariableEnablement"][];
         };
         ContextVariableScope: {
-            /** @enum {string} */
-            type: "session" | "customer" | "agent" | "workspace";
+            /**
+             * @description Where a value is kept. A `conversation` scope id is the conversation's id.
+             * @enum {string}
+             */
+            type: "conversation" | "session" | "customer" | "agent" | "workspace";
             id: string;
         };
         ContextVariableValue: {
@@ -10925,14 +11165,21 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
             /** Format: date-time */
             lastModified: string;
+            /** @description The last writer of the value. */
+            writtenBy: {
+                /** @enum {string} */
+                kind: "api" | "operator" | "routine" | "classifier";
+                /** @description What wrote the value: for `api`, the API credential's id, or the teammate's user id for a dashboard session. */
+                ref: string | null;
+            };
         };
         ContextVariableValueUpsertRequest: {
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
         };
         ContextVariableValueDeleteRequest: {
@@ -11412,6 +11659,114 @@ export interface components {
          *     data: {"protocolVersion":1}
          */
         WorkspaceEventStream: string;
+        ApiConnection: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            baseUrl: string;
+            /** @enum {string} */
+            authScheme: "none" | "bearer" | "header" | "basic";
+            authHeaderName: string | null;
+            /** @description The credential's last four characters behind asterisks; null when the connection has none. The credential itself is never returned. */
+            credentialMask: string | null;
+            defaultHeaders: {
+                [key: string]: string;
+            };
+            createdAt: string;
+            updatedAt: string;
+        };
+        ApiConnectionCreateRequest: {
+            name: string;
+            /** @description https base URL every request's path is appended to; no query or fragment. */
+            baseUrl: string;
+            /**
+             * @default none
+             * @enum {string}
+             */
+            authScheme: "none" | "bearer" | "header" | "basic";
+            /** @description The header the credential is sent in; required for the header scheme. */
+            authHeaderName?: string;
+            /** @description Write-only. A bearer token, a header value, or username:password for basic; required unless the scheme is none. */
+            credential?: string;
+            /** @default {} */
+            defaultHeaders: {
+                [key: string]: string;
+            };
+        };
+        ApiConnectionUpdateRequest: {
+            name?: string;
+            baseUrl?: string;
+            /** @enum {string} */
+            authScheme?: "none" | "bearer" | "header" | "basic";
+            authHeaderName?: string | null;
+            /** @description Write-only. Omit to keep the stored credential; required when the update changes the base URL's origin, the auth scheme or the auth header name. */
+            credential?: string;
+            defaultHeaders?: {
+                [key: string]: string;
+            };
+        };
+        ApiRequestOutput: {
+            path: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "date" | "email";
+            description?: string;
+            /** @default false */
+            required: boolean;
+        } | {
+            path: string;
+            /** @enum {string} */
+            type: "list";
+            description?: string;
+            /** @default false */
+            required: boolean;
+            /** @default 10 */
+            maxItems: number;
+            fields: {
+                [key: string]: {
+                    path: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "date" | "email";
+                    description?: string;
+                    /** @enum {string} */
+                    role?: "key" | "title" | "subtitle" | "image" | "link";
+                };
+            };
+        };
+        ApiRequestTestRequest: {
+            /** @enum {string} */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            /** @description Path appended to the base URL; a {param} placeholder takes the param's value. */
+            path: string;
+            /** @default {} */
+            boundParams: {
+                [key: string]: unknown;
+            };
+            /** @default {} */
+            exposedSampleValues: {
+                [key: string]: unknown;
+            };
+            /** @default {} */
+            outputs: {
+                [key: string]: components["schemas"]["ApiRequestOutput"];
+            };
+        };
+        ApiRequestTestResult: {
+            httpStatus: number | null;
+            durationMs: number;
+            /** @enum {string} */
+            outcome: "completed" | "not_found" | "rejected" | "missing_input" | "invalid_input" | "unverified" | "failed";
+            /** @enum {string} */
+            reason?: "response_mismatch" | "outputs_too_large" | "non_json_response" | "timeout" | "network" | "upstream_error" | "auth_rejected" | "rate_limited" | "redirect_refused" | "connection_not_found" | "blocked" | "response_too_large" | "credential_unavailable" | "skill_not_found" | "invalid_config" | "context_missing";
+            /** @description The declared outputs projected to their types: what a routine step would get. */
+            outputs: {
+                [key: string]: unknown;
+            };
+            /** @description Required outputs the response left absent. */
+            mismatches: string[];
+            /** @description The parsed JSON body cut down to 16 KB; null when empty or not JSON. */
+            body?: unknown;
+            bodyTruncated: boolean;
+        };
         /** @description Where the agent's voice runtime stands. */
         AgentVoiceConnection: {
             /**
@@ -12161,6 +12516,23 @@ export interface components {
         };
         EventSubscriptionResponse: {
             subscription: components["schemas"]["EventSubscription"];
+        };
+        DocumentSourceRecrawlCadenceRequest: {
+            /**
+             * @description How often the source recrawls itself. `off` stops scheduled recrawls.
+             * @enum {string}
+             */
+            recrawlCadence: "off" | "monthly" | "weekly" | "daily";
+        };
+        DocumentSourceHeldPagesRemoved: {
+            /** Format: uuid */
+            sourceId: string;
+            removedPageCount: number;
+        };
+        DocumentSourceHeldPagesKept: {
+            /** Format: uuid */
+            sourceId: string;
+            keptPageCount: number;
         };
         /** @description One consent decision a visitor gave in a conversation (#1544): the proof, with no reply text and no field values. A record outlives its conversation. */
         ConversationConsent: {
@@ -13059,6 +13431,13 @@ export interface components {
             message?: string;
             /** @description Photos uploaded with `POST /api/v1/assistant/images` for this agent by the same caller, in the order they were attached; at most three, each sent once. Every side runs on the message followed by what the agent read in each photo. */
             imageIds?: string[];
+            /** @description The card the message picks: the answer that showed it (its `messageId`), the block and the item's key. Sent with the card's title as `message` and no photos. A side whose answer showed the card takes it as a pick, read from that answer's stored card, as live chat does; another side, such as the other version in a comparison, runs `message` as typed. */
+            selection?: {
+                /** Format: uuid */
+                messageId: string;
+                blockId: string;
+                itemKey: string;
+            };
         };
         TestExecutionRetryRequest: {
             executionGeneration: number;
@@ -17447,7 +17826,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Destination is referenced by enabled routines */
+            /** @description `webhook_destination_in_use`: the latest version of an enabled routine exports to the destination, or a skill in an agent's draft or published release uses it; the message names each routine, agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18434,6 +18813,296 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listApiConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connections returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: components["schemas"]["ApiConnection"][];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description API connection created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connection returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API connection deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `api_connection_in_use`: a skill in an agent's draft or published version uses the connection; the message names each agent and skill */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiConnectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description API connection updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: components["schemas"]["ApiConnection"];
+                    };
+                };
+            };
+            /** @description Request validation failed, or `credential_required`: the update moves the stored credential to another origin, scheme or header without a new one */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    testApiConnectionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiRequestTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Test request settled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiRequestTestResult"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API connection not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21293,6 +21962,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description The value type cannot change while the variable has values */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     listAgentContextVariables: {
@@ -21480,7 +22158,8 @@ export interface operations {
     getContextVariableValue: {
         parameters: {
             query: {
-                scopeType: "session" | "customer" | "agent" | "workspace";
+                /** @description Where a value is kept. A `conversation` scope id is the conversation's id. */
+                scopeType: "conversation" | "session" | "customer" | "agent" | "workspace";
                 scopeId: string;
             };
             header?: never;
@@ -21571,8 +22250,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Context variable not found */
+            /** @description Context variable, or the conversation a conversation scope names, not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The value was not written: the stored one was set by a writer this one does not replace, or the variable's type or options changed during the write */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21796,6 +22484,7 @@ export interface operations {
                             authMethod: string;
                             status: string;
                             hasCredential: boolean;
+                            /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                             usedByAgents: {
                                 id: string;
                                 name: string;
@@ -21876,6 +22565,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22013,6 +22703,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22079,7 +22770,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Connection is still referenced by a skill */
+            /** @description A skill in an agent's draft or published version uses the connection; the message names each agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22123,6 +22814,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -22603,6 +23295,7 @@ export interface operations {
                         authMethod: string;
                         status: string;
                         hasCredential: boolean;
+                        /** @description Each agent whose draft or published release has a skill on the connection, once. While this is non-empty, deleting the connection answers 409. */
                         usedByAgents: {
                             id: string;
                             name: string;
@@ -23279,7 +23972,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Customer email connection is still referenced by an email skill */
+            /** @description A skill in an agent's draft or published version uses the connection; the message names each agent and skill */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24324,6 +25017,15 @@ export interface operations {
             };
             /** @description Agent manage permission required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `slack_installation_in_use`: a skill in an agent's draft or published version uses the installation; the message names each agent and skill */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -26457,7 +27159,7 @@ export interface operations {
                     "application/json": {
                         capabilities: {
                             /** @enum {string} */
-                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             targetKind: string;
                             requiresTarget: boolean;
@@ -26634,7 +27336,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -26703,7 +27405,7 @@ export interface operations {
                 "application/json": {
                     name: string;
                     /** @enum {string} */
-                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                     target: {
                         kind: string;
                         /** Format: uuid */
@@ -26740,7 +27442,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -27058,7 +27760,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -28583,6 +29285,184 @@ export interface operations {
             };
         };
     };
+    setDocumentSourceRecrawlCadence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceRecrawlCadenceRequest"];
+            };
+        };
+        responses: {
+            /** @description The source with its new cadence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required, or `recrawl_cadence_not_in_plan`: the plan allows a slower cadence at most; `details.fastestRecrawlCadence` names it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeDocumentSourceHeldPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held pages removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceHeldPagesRemoved"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    keepDocumentSourceHeldPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held pages kept */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceHeldPagesKept"];
+                };
+            };
+            /** @description Request validation failed, or the source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace documents manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listDocumentChunks: {
         parameters: {
             query?: never;
@@ -28926,6 +29806,10 @@ export interface operations {
                 outcome?: "in_progress" | "completed" | "handed_off";
                 /** @description Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller. */
                 callerKind?: "human" | "agent";
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                attribute?: string;
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                attributeOption?: string;
             };
             header?: never;
             path?: never;
@@ -28996,6 +29880,10 @@ export interface operations {
                      * @enum {string}
                      */
                     callerKind?: "human" | "agent";
+                    /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. Narrows results to chat rows only. */
+                    attribute?: string;
+                    /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                    attributeOption?: string;
                     /** @description Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither). */
                     q?: string;
                 };
@@ -29043,6 +29931,10 @@ export interface operations {
                 ownership?: "human_owned";
                 agentId?: string;
                 channel?: string;
+                /** @description The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither. */
+                attribute?: string;
+                /** @description An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400. */
+                attributeOption?: string;
             };
             header?: never;
             path?: never;
@@ -29057,6 +29949,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatHistoryListResponse"];
+                };
+            };
+            /** @description Invalid query, including an attribute filter no conversation can match */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */
@@ -35522,7 +36423,7 @@ export interface operations {
                     "image/webp": string;
                 };
             };
-            /** @description Unknown image, an image whose document was deleted, or a width other than 320 or 640 */
+            /** @description Unknown image, an image whose document was deleted, a skill card's picture that could not be copied, or a width other than 320 or 640. A skill card's picture not copied within the request's time answers 404 too; a later request may serve it */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -33,6 +33,7 @@ import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
 import { registerChatConversationMessageSchemas } from "./chatConversationMessageSchemas.js";
+import { registerConversationAttributeSchema } from "./conversationAttributeSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -766,6 +767,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ConversationAttributeSchema = registerConversationAttributeSchema(registry);
   const ChatConversationDetailSchema = registry.register(
     "ChatConversationDetail",
     z.object({
@@ -824,6 +826,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
           + "`available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; "
           + "it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`.",
       }),
+      attributes: z.array(ConversationAttributeSchema).optional().openapi({
+        description: "On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out.",
+      }),
     }),
   );
 
@@ -870,6 +875,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       privacyNoticeVersion: true,
       messages: true,
       recording: true,
+      attributes: true,
     }).extend({
       messages: z.array(PublicChatConversationMessageSchema),
     }),

@@ -71,6 +71,8 @@ Full local stack:
 
 Workspace checks. Lint and the dead-code and file-size ratchets cover every area from one config,
 so run them from the repo root, not inside a package. See `docs/code-quality-gates.md`.
+`pnpm install` also installs a git pre-push hook that runs the file-size and dead-code gates, so a
+push that would fail them stops locally; fix what it reports rather than skipping it.
 
 ```bash
 pnpm run lint
@@ -104,6 +106,7 @@ cd backend
 pnpm run evals                 # live five-sample run, gated against the committed baseline
 pnpm run evals:ci              # same five-sample gated shape the nightly workflow runs
 pnpm run evals:update-baseline # re-record the committed baseline from five samples
+pnpm run evals:classification  # the labelled attribute-classification set; needs only the rewrite model's key
 ```
 
 Ray behaviour evals (tool selection, proposal quality, never-list adherence). The deterministic half runs in normal CI via `tests/unit/operatorCopilot/copilot-eval-suite.test.ts`; the live half runs on demand and needs Postgres plus `OPENAI_API_KEY`:

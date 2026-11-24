@@ -169,6 +169,48 @@ describe("an item slot read from a typed reply", () => {
     expect(result.nextState?.path.at(-1)).toBe("choose");
   });
 
+  // The presenting step can also be left by an exit its author wrote, such as searching again.
+  const withSearchAgain = (): Routine => {
+    const routine = homes();
+    return {
+      ...routine,
+      steps: [...routine.steps, { id: "widen", kind: "chat", action: "Ask how to widen the search." }],
+      transitions: [...routine.transitions, { from: "choose", to: "widen", condition: "The user wants to search again.", guard: { kind: "llm" } }],
+    };
+  };
+
+  it.each([
+    ["a position nothing showed", 3, "handoff"],
+    ["a name nothing showed, on an exit of its own", "a garden flat instead", "widen"],
+  ])("holds the step when this run showed cards and the selector's item names none of them: %s", async (_label, value, exit) => {
+    const selector: ConversationRoutineNextStepSelector = {
+      select: vi.fn(async () => ({ nextStepId: exit, variables: { chosen_home: value } })),
+    };
+    const result = await new DefaultRoutineRunner([withSearchAgain()], selector, renderer(), search())
+      .resume({ turn: turn("The third one please", { shownItems: shown() }), state: atChoose });
+
+    expect(result.terminal).toBeUndefined();
+    expect(result.nextState?.path.at(-1)).toBe("choose");
+    expect(result.nextState?.variables.chosen_home).toBeUndefined();
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "choose", rejectedSlots: [{ key: "chosen_home", reason: "type_mismatch" }] });
+  });
+
+  it.each([
+    ["no presentation reached the turn", undefined],
+    ["another run's presentation", shown({ executionId: "run-0" })],
+    ["a presentation with no cards, from a search that found nothing", shown({ items: [] })],
+  ])("drops the item and takes the exit when this run showed no cards to pick from: %s", async (_label, shownItems) => {
+    const selector: ConversationRoutineNextStepSelector = {
+      select: vi.fn(async () => ({ nextStepId: "widen", variables: { chosen_home: "a garden flat instead" } })),
+    };
+    const result = await new DefaultRoutineRunner([withSearchAgain()], selector, renderer(), search())
+      .resume({ turn: turn("Search again for a garden flat", shownItems ? { shownItems } : {}), state: atChoose });
+
+    expect(result.nextState?.path.at(-1)).toBe("widen");
+    expect(result.nextState?.variables.chosen_home).toBeUndefined();
+    expect(result.trace?.steps[0]?.rejectedSlots ?? []).toEqual([]);
+  });
+
   it("fills nothing when the step showed nothing this run", async () => {
     const result = await new DefaultRoutineRunner([homes()], reading({ chosen_home: 2 }), renderer(), search())
       .resume({ turn: turn("the second one", { shownItems: shown({ executionId: "run-0" }) }), state: atChoose });

@@ -53,8 +53,12 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     },
   };
   let photo: Buffer;
-  const fetchBytes = vi.fn(async (url: string): Promise<PublicBytesFetchResult> =>
-    url.includes("expired") ? { kind: "failed", reason: "http_status", status: 403 } : { kind: "fetched", bytes: photo, contentType: "image/jpeg", url });
+  const fetchBytes = vi.fn(async (url: string): Promise<PublicBytesFetchResult> => {
+    if (url.includes("expired")) return { kind: "failed", reason: "http_status", status: 403 };
+    // A shop's CDN takes a moment, so a carousel's captures overlap.
+    if (url.includes("cdn.shop.example")) await new Promise((resolve) => setTimeout(resolve, 50));
+    return { kind: "fetched", bytes: photo, contentType: "image/jpeg", url };
+  });
   let tags = 0;
   const capture = new ToolImageCapture({
     store,
@@ -173,7 +177,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     const handler = toolImageCaptureHandler({ capture, store });
     await handler.run({ imageIds: [first, second] }, { jobId: randomUUID(), attempt: 1, signal: new AbortController().signal });
     expect(await row(first)).toMatchObject({ status: "stored", source_url: null, width: 800 });
-    expect(await lookup.findServable({ imageId: first, width: 320 })).toMatchObject({ objectPath: expect.stringMatching(new RegExp(`/tool-images/${first}-w320-[0-9a-f]{12}$`)) });
+    expect(await lookup.find({ imageId: first, width: 320 })).toMatchObject({ kind: "found", object: { objectPath: expect.stringMatching(new RegExp(`/tool-images/${first}-w320-[0-9a-f]{12}$`)) } });
   });
 
   it("changes nothing for a capture whose claim was taken over, and deletes only that capture's copies", async () => {
@@ -206,12 +210,38 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
       { imageId: expired, url: "https://img.homes.example/expired.jpg" },
     ]);
 
-    expect(await lookup.findServable({ imageId: waiting, width: 640 })).toMatchObject({ objectPath: expect.stringContaining(`/tool-images/${waiting}-w640-`) });
-    expect(await lookup.findServable({ imageId: expired, width: 640 })).toBeNull();
+    expect(await lookup.find({ imageId: waiting, width: 640 })).toMatchObject({ kind: "found", object: { objectPath: expect.stringContaining(`/tool-images/${waiting}-w640-`) } });
+    expect(await lookup.find({ imageId: expired, width: 640 })).toEqual({ kind: "miss", reason: "failed", retryable: false });
     expect(await row(expired)).toMatchObject({ status: "failed", failure_reason: "http_error", source_url: null });
     const fetchesBefore = fetchBytes.mock.calls.length;
-    expect(await lookup.findServable({ imageId: expired, width: 640 })).toBeNull();
+    expect(await lookup.find({ imageId: expired, width: 640 })).toEqual({ kind: "miss", reason: "failed", retryable: false });
     expect(fetchBytes.mock.calls.length).toBe(fetchesBefore);
+  });
+
+  it("copies every picture of a carousel whose browser asks for all of them at once, more than the process captures at a time", async () => {
+    const sources = Array.from({ length: 6 }, (_, index) => ({ imageId: randomUUID(), url: `https://cdn.shop.example/products/${index + 1}/thumbnail.webp` }));
+    await reply(conversationId, sources);
+
+    const served = await Promise.all(sources.map(({ imageId }) => lookup.find({ imageId, width: 320 })));
+
+    expect(served.map((found) => (found.kind === "found" ? found.object.objectPath : found.reason)))
+      .toEqual(sources.map(({ imageId }) => expect.stringContaining(`/tool-images/${imageId}-w320-`)));
+    for (const { imageId } of sources) expect(await row(imageId)).toMatchObject({ status: "stored", source_url: null });
+  });
+
+  it("reads where a picture stands without claiming it: waiting, held by a fresh claim, waiting again once that claim is stale, stored, failed or missing", async () => {
+    const [waiting, held, stale, stored, failed] = Array.from({ length: 5 }, () => randomUUID());
+    await reply(conversationId, [waiting, held, stale, stored, failed].map((imageId) => ({ imageId, url: `https://img.homes.example/photos/${imageId}.jpg` })));
+    const now = new Date();
+    await store.claim(held, new Date(now.getTime() - 5_000));
+    await store.claim(stale, new Date(now.getTime() - 31_000));
+    await capture.capture(stored, "job");
+    await database.query("UPDATE conversation_tool_images SET status = 'failed', failure_reason = 'http_error', source_url = NULL WHERE id = $1", [failed]);
+
+    const states = await Promise.all([waiting, held, stale, stored, failed, randomUUID()].map((imageId) => store.peek(imageId, now)));
+
+    expect(states).toEqual(["waiting", "held", "waiting", "stored", "failed", "missing"]);
+    expect(await row(waiting)).toMatchObject({ status: "pending" });
   });
 
   it("erases a conversation's pictures and hands their objects to the deletion job", async () => {
@@ -226,7 +256,7 @@ describeIntegration("cards from a skill's result (Postgres)", () => {
     expect(erased).toBe(1);
     expect(await row(image)).toBeNull();
     expect(await handedOffPaths()).toEqual(expect.arrayContaining(copies));
-    expect(await lookup.findServable({ imageId: image, width: 640 })).toBeNull();
+    expect(await lookup.find({ imageId: image, width: 640 })).toEqual({ kind: "miss", reason: "not_found", retryable: false });
   });
 
   it("sweeps a picture no message carries, a day after it was written", async () => {

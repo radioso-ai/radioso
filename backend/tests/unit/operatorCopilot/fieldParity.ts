@@ -147,6 +147,9 @@ const testChatSkillEffectsAlwaysSuppressed = permanent(
 const testChatSendsText = permanent(
   "send_test_chat_message sends text. `imageIds` names photos the caller uploaded with POST /api/v1/assistant/images, and Ray uploads none; the operator attaches photos in Test Chat, and test_chat_transcript gives Ray each photo's reading as the text of the turn it was sent in.",
 );
+const testChatPicksCardsByText = permanent(
+  "send_test_chat_message sends text. `selection` is the tap on a card the dashboard drew; a typed answer naming the card by its place or title resolves to the same stored card, so Ray picks a card by writing it.",
+);
 
 const retrievalSettingsOnlyPatchesTheDefaultSkill = permanent(
   "prepare_retrieval_settings only ever patches the agent's one default retrieval skill through a typed retrieval-specific `patch`. The generic target/config/replaceConfig/invocationMode/enabled surface belongs to the general skill editor (propose_skill_config), not this narrower tool.",
@@ -195,6 +198,9 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ], agentSettingGenericKeyValue),
   },
   propose_context_variable: {
+    ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
+  },
+  prepare_context_variable: {
     ...fields(["source", "resolverSkillId", "maxAgeSeconds", "resolverTimeoutMs", "surfacing", "enabled"], contextVariableEnablementNesting),
   },
   propose_directive: {
@@ -283,6 +289,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["idempotencyKey", "executionGeneration", "turnId", "attemptId"], testChatMintsItsOwnIdentities),
     ...fields(["skillEffects"], testChatSkillEffectsAlwaysSuppressed),
     ...fields(["imageIds"], testChatSendsText),
+    ...fields(["selection"], testChatPicksCardsByText),
   },
 };
 

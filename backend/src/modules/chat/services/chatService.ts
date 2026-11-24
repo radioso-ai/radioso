@@ -584,6 +584,7 @@ export class ChatService {
       routineProvider,
       suspendedRoutineReader,
       workspaceTimeZones,
+      channelPersonKeys,
       detectResponseLanguage: (input, session) => this.detectResponseLanguage(input, session),
       logger,
     });

@@ -8,6 +8,7 @@ import { ApprovalResumeTurn } from "../../src/modules/chat/services/approvalResu
 import type { ChatRoutineProvider } from "../../src/modules/chat/contracts/routineProvider.js";
 import type { RoutinePresentingSteps } from "../../src/modules/chat/services/routines/routinePresentingStepRenderer.js";
 import { visitorTimeZoneTurnMetadata } from "../../src/modules/chat/services/turnReferenceTimeZone.js";
+import type { ChannelPersonKey, ConversationChannelPersonKeys } from "../../src/shared/domain/channelPersonKey.js";
 import { formatIsoDate } from "../../src/shared/domain/clock.js";
 import {
   InMemoryAgentRepository,
@@ -38,6 +39,8 @@ const setup = async (input: {
   presentingSteps?: RoutinePresentingSteps;
   /** The release the conversation is pinned to. */
   agentRevisionId?: string;
+  sourceChannel?: string;
+  channelPersonKeys?: ConversationChannelPersonKeys;
   agentRevisionRuntimeResolver?: ConstructorParameters<typeof ApprovalResumeTurn>[0]["agentRevisionRuntimeResolver"];
 }) => {
   const conversationRepository = new InMemoryConversationRepository();
@@ -47,6 +50,7 @@ const setup = async (input: {
     workspaceId,
     agentId: agent.id,
     ...(input.agentRevisionId ? { agentRevisionId: input.agentRevisionId } : {}),
+    ...(input.sourceChannel ? { sourceChannel: input.sourceChannel } : {}),
   });
   await messageRepository.create({
     conversationId: conversation.id,
@@ -128,6 +132,7 @@ const setup = async (input: {
     suspendedRoutineReader: { loadSuspended: async () => null },
     detectResponseLanguage: async () => undefined,
     workspaceTimeZones: { readWorkspaceTimeZone },
+    ...(input.channelPersonKeys ? { channelPersonKeys: input.channelPersonKeys } : {}),
   });
   const now = new Date();
   const record: PendingDecisionRecord = {
@@ -164,7 +169,7 @@ const setup = async (input: {
     const engineTrace = (completeAssistantTurn.mock.calls[0] as unknown as [{ engineTrace: { stages: Stage[] } }])[0].engineTrace;
     return { engineTurn, engineTrace, readWorkspaceTimeZone };
   };
-  return { resume, forTurn, resumeAwaitingDecision, commit: commitSpy, completeAssistantTurn, decisionTransaction, agent };
+  return { resume, forTurn, resumeAwaitingDecision, commit: commitSpy, completeAssistantTurn, decisionTransaction, agent, conversation };
 };
 
 // The decision's transaction must hold no transaction id while the routine calls the model, or it
@@ -238,6 +243,23 @@ describe("an approval resume's skills", () => {
 
     expect(resolvePinned).not.toHaveBeenCalled();
     expect(forTurn.mock.calls[0][0]).not.toHaveProperty("conversationSkills");
+  });
+});
+
+// #1884: no message is live on a resume, so nothing attests the number: the resumed turn runs as
+// the person the conversation's channel keeps, and a routine it ends saves under that number.
+describe("an approval resume's person", () => {
+  // An obviously fake number in the reserved 555-01xx range.
+  const recorded: ChannelPersonKey = { kind: "whatsapp_contact", id: "15550100101" };
+
+  it("is the one the conversation's channel keeps", async () => {
+    const personKeyOf = vi.fn<ConversationChannelPersonKeys["personKeyOf"]>(async () => recorded);
+    const { resume, completeAssistantTurn, conversation } = await setup({ workspaceTimeZone: null, sourceChannel: "whatsapp", channelPersonKeys: { personKeyOf } });
+
+    await resume();
+
+    expect(personKeyOf).toHaveBeenCalledWith({ workspaceId, conversationId: conversation.id, sourceChannel: "whatsapp" });
+    expect(completeAssistantTurn).toHaveBeenCalledWith(expect.objectContaining({ session: expect.objectContaining({ channelPersonKey: recorded }) }));
   });
 });
 

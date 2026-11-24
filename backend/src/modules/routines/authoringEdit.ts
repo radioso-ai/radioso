@@ -6,6 +6,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineExposureSchema,
   routineReentryModes,
+  routineSlotSaveToSchema,
   routineSlotSensitivities,
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
@@ -78,10 +79,13 @@ export const routineFieldPatchSchema = z.object({
     // Whether the visitor may correct the value after the routine completes ("Editable after
     // completion" in the routine editor). Only ever the operator's choice, like sensitivity.
     mutable: z.boolean().optional(),
-  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined || slot.sensitivity !== undefined || slot.mutable !== undefined, {
+    // The attribute the value is saved to when the routine ends (#1884); null stops saving it.
+    // Only ever the attribute the operator names, never one matched by the field's key or type.
+    saveTo: routineSlotSaveToSchema.nullable().optional(),
+  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined || slot.sensitivity !== undefined || slot.mutable !== undefined || slot.saveTo !== undefined, {
     // An entry that names a field and changes nothing about it would still produce a card to apply
     // and a write that only moves the routine's version.
-    message: "an information field edit must set a description, a required flag, a sensitivity, or whether it is editable after completion",
+    message: "an information field edit must set a description, a required flag, a sensitivity, whether it is editable after completion, or the attribute it saves to",
   })).min(1), (slot) => slot.key, "information field").optional(),
   // How the routine is offered to a calling agent as a tool. The whole block is replaced: a
   // tool name is frozen once published, so an edit that changes it is refused at publish, not
@@ -242,6 +246,13 @@ const withMutable = (slot: DraftSlot, mutable: boolean | undefined): DraftSlot =
   return mutable ? { ...rest, mutable } : rest;
 };
 
+// No save target is the absence of the field, as a stored slot reads back.
+const withSaveTo = (slot: DraftSlot, saveTo: DraftSlot["saveTo"] | null | undefined): DraftSlot => {
+  if (saveTo === undefined) return slot;
+  const { saveTo: _previous, ...rest } = slot;
+  return saveTo ? { ...rest, saveTo } : rest;
+};
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
   rawPatch: RoutineFieldPatch,
@@ -266,11 +277,11 @@ export const applyRoutineFieldPatch = (
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
       if (!edit) return slot;
-      return withMutable(withSensitivity({
+      return withSaveTo(withMutable(withSensitivity({
         ...slot,
         ...(edit.description === undefined ? {} : { description: edit.description }),
         ...(edit.required === undefined ? {} : { required: edit.required }),
-      }, edit.sensitivity), edit.mutable);
+      }, edit.sensitivity), edit.mutable), edit.saveTo);
     }),
     steps: draft.steps.map((step) => {
       const edit = stepEdits.get(step.stableStepId);
@@ -336,6 +347,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     description: slot.description ?? null,
     mutable: slot.mutable ?? false,
     sensitivity: slot.sensitivity ?? "normal",
+    saveTo: slot.saveTo ?? null,
     ordinal: slot.ordinal,
   }]))),
   steps: Object.fromEntries(uniquelyKeyed(routine.steps.map((step) => [step.stableStepId, {

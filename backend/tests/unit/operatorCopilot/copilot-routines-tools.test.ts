@@ -105,7 +105,7 @@ describe("copilot routine readers", () => {
       stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: false, operatorNotice: null }],
       endingsTruncated: false,
-      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false }],
+      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal", mutable: false, saveTo: null }],
       fieldsTruncated: false,
       consents: [],
     });
@@ -154,7 +154,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
 
     expect(result.routine.editable.fields).toEqual([
-      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive", mutable: false },
+      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive", mutable: false, saveTo: null },
     ]);
   });
 
@@ -168,7 +168,7 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
 
     expect(result.routine.editable.fields).toEqual([
-      { key: "email", type: "email", required: true, description: "Where to reach them", sensitivity: "normal", mutable: true },
+      { key: "email", type: "email", required: true, description: "Where to reach them", sensitivity: "normal", mutable: true, saveTo: null },
     ]);
   });
 

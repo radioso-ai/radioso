@@ -6238,6 +6238,32 @@
                     "normal",
                     "sensitive"
                   ]
+                },
+                "saveTo": {
+                  "type": "object",
+                  "properties": {
+                    "contextVariable": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                      "description": "The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "conversation",
+                        "person"
+                      ],
+                      "description": "conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."
+                    }
+                  },
+                  "required": [
+                    "contextVariable",
+                    "scope"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type."
                 }
               },
               "required": [
@@ -6976,6 +7002,32 @@
                         "normal",
                         "sensitive"
                       ]
+                    },
+                    "saveTo": {
+                      "type": "object",
+                      "properties": {
+                        "contextVariable": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                          "description": "The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "conversation",
+                            "person"
+                          ],
+                          "description": "conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."
+                        }
+                      },
+                      "required": [
+                        "contextVariable",
+                        "scope"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type."
                     }
                   },
                   "required": [
@@ -7649,7 +7701,13 @@
                     "present_selection_mismatch",
                     "item_slot_without_presenting_step",
                     "referenced_variable_not_guaranteed",
-                    "referenced_list_variable"
+                    "referenced_list_variable",
+                    "save_to_unknown_attribute",
+                    "save_to_attribute_not_stored",
+                    "save_to_type_mismatch",
+                    "save_to_attribute_signed",
+                    "save_to_sensitive_slot_not_private",
+                    "save_to_duplicate_target"
                   ]
                 },
                 "location": {
@@ -7807,6 +7865,32 @@
                     "normal",
                     "sensitive"
                   ]
+                },
+                "saveTo": {
+                  "type": "object",
+                  "properties": {
+                    "contextVariable": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                      "description": "The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "conversation",
+                        "person"
+                      ],
+                      "description": "conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."
+                    }
+                  },
+                  "required": [
+                    "contextVariable",
+                    "scope"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type."
                 }
               },
               "required": [
@@ -8617,6 +8701,32 @@
                         "normal",
                         "sensitive"
                       ]
+                    },
+                    "saveTo": {
+                      "type": "object",
+                      "properties": {
+                        "contextVariable": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                          "description": "The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "conversation",
+                            "person"
+                          ],
+                          "description": "conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."
+                        }
+                      },
+                      "required": [
+                        "contextVariable",
+                        "scope"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type."
                     }
                   },
                   "required": [
@@ -10826,6 +10936,32 @@
                         "normal",
                         "sensitive"
                       ]
+                    },
+                    "saveTo": {
+                      "type": "object",
+                      "properties": {
+                        "contextVariable": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                          "description": "The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "conversation",
+                            "person"
+                          ],
+                          "description": "conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."
+                        }
+                      },
+                      "required": [
+                        "contextVariable",
+                        "scope"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type."
                     }
                   },
                   "required": [

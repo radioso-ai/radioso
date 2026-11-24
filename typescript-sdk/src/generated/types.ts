@@ -7174,6 +7174,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7305,6 +7315,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7412,7 +7432,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "context_variable_option_not_accepted" | "variable_name_collision" | "node_id_collision" | "exposure_tool_name_invalid" | "exposure_tool_name_reserved" | "exposure_tool_name_duplicate" | "exposure_tool_name_changed" | "exposure_requires_ungated_activation" | "operator_notice_skill_unavailable" | "operator_notice_reply_to_slot_invalid" | "consent_slot_unknown" | "consent_slot_not_sensitive" | "consent_slot_not_collected" | "consent_slot_covered_twice" | "consent_key_duplicate" | "consent_missing_default_variant" | "consent_text_invalid" | "sensitive_slot_without_consent" | "consent_step_mixes_fields" | "consent_step_needs_default_exit" | "present_step_not_chat" | "present_source_not_earlier_tool" | "present_source_unreachable" | "present_slot_not_item" | "present_selection_mismatch" | "item_slot_without_presenting_step" | "referenced_variable_not_guaranteed" | "referenced_list_variable" | "save_to_unknown_attribute" | "save_to_attribute_not_stored" | "save_to_type_mismatch" | "save_to_attribute_signed" | "save_to_sensitive_slot_not_private" | "save_to_duplicate_target";
                 location: string;
                 message: string;
             }[];
@@ -7447,6 +7467,16 @@ export interface components {
                 mutable?: boolean;
                 /** @enum {string} */
                 sensitivity?: "normal" | "sensitive";
+                /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                saveTo?: {
+                    /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                    contextVariable: string;
+                    /**
+                     * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                     * @enum {string}
+                     */
+                    scope: "conversation" | "person";
+                };
             }[];
             steps: {
                 stableStepId: string;
@@ -7605,6 +7635,16 @@ export interface components {
                     mutable?: boolean;
                     /** @enum {string} */
                     sensitivity?: "normal" | "sensitive";
+                    /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                    saveTo?: {
+                        /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                        contextVariable: string;
+                        /**
+                         * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                         * @enum {string}
+                         */
+                        scope: "conversation" | "person";
+                    };
                 }[];
                 steps: {
                     stableStepId: string;
@@ -8104,6 +8144,16 @@ export interface components {
                     mutable?: boolean;
                     /** @enum {string} */
                     sensitivity?: "normal" | "sensitive";
+                    /** @description The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type. */
+                    saveTo?: {
+                        /** @description The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed. */
+                        contextVariable: string;
+                        /**
+                         * @description conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none.
+                         * @enum {string}
+                         */
+                        scope: "conversation" | "person";
+                    };
                 }[];
                 steps: {
                     stableStepId: string;

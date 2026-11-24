@@ -13,8 +13,8 @@ export const routineSlotSaveScopes = ["conversation", "person"] as const;
  * where the agent's attributes are known.
  */
 export const routineSlotSaveToSchemaFor = <TName extends z.ZodTypeAny>(contextVariable: TName) => z.object({
-  contextVariable,
-  scope: z.enum(routineSlotSaveScopes),
-}).strict();
+  contextVariable: contextVariable.describe("The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."),
+  scope: z.enum(routineSlotSaveScopes).describe("conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."),
+}).strict().describe("The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type.");
 
 export type RoutineSlotSaveScope = typeof routineSlotSaveScopes[number];

@@ -217,6 +217,26 @@ describe("routine authoring edits", () => {
     expect(described.slots?.[0]).toMatchObject({ description: "Reworded", mutable: true, sensitivity: "sensitive" });
   });
 
+  it("sets, changes and clears the attribute a field saves to through the edit patch, and shows the reviewer where (#1884)", () => {
+    const saving = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", saveTo: { contextVariable: "order_reference", scope: "conversation" } }],
+    }));
+    expect(saving.slots?.[0]?.saveTo).toEqual({ contextVariable: "order_reference", scope: "conversation" });
+    expect(() => routineDefinitionDraftInputSchema.parse(saving)).not.toThrow();
+    expect((projectRoutineForReview(saving).slots as Record<string, { saveTo: unknown }>).order_number.saveTo)
+      .toEqual({ contextVariable: "order_reference", scope: "conversation" });
+
+    const stored = { ...routine(), slots: routine().slots.map((slot) => ({ ...slot, description: "Kept", saveTo: { contextVariable: "order_reference", scope: "conversation" as const } })) };
+    const reworded = applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({ slots: [{ key: "order_number", description: "Reworded" }] }));
+    expect(reworded.slots?.[0]?.saveTo).toEqual({ contextVariable: "order_reference", scope: "conversation" });
+
+    // No save target is the absence of the field, so a cleared field reads as it did before.
+    const cleared = applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({ slots: [{ key: "order_number", saveTo: null }] }));
+    expect(cleared.slots?.[0]).not.toHaveProperty("saveTo");
+    expect((projectRoutineForReview(cleared).slots as Record<string, { saveTo: unknown }>).order_number.saveTo).toBeNull();
+    expect(routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number", saveTo: { contextVariable: "order_reference", scope: "workspace" } }] }).success).toBe(false);
+  });
+
   it("accepts mutable alone as a field edit and refuses a field edit that sets nothing", () => {
     expect(routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number", mutable: false }] }).success).toBe(true);
     expect(routineFieldPatchSchema.safeParse({ slots: [{ key: "order_number", mutable: "yes" }] }).success).toBe(false);
@@ -308,7 +328,7 @@ describe("routine authoring edits", () => {
       enabled: true,
       activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
       slots: {
-        order_number: { type: "text", required: true, description: "The order it concerns", mutable: false, sensitivity: "normal", ordinal: 0 },
+        order_number: { type: "text", required: true, description: "The order it concerns", mutable: false, sensitivity: "normal", saveTo: null, ordinal: 0 },
       },
       steps: {
         collect_topic: { kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, captureKey: null, options: null, ordinal: 0, metadata: { outlineLabel: "collect_topic" } },

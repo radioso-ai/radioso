@@ -64,3 +64,25 @@ describe("the release gate and routine consents (#1544)", () => {
     })]);
   });
 });
+
+describe("the release gate and routine save targets (#1884)", () => {
+  const guests = { stableSlotId: "guests", key: "guests", type: "number", required: true, description: null, ordinal: 0, saveTo: { contextVariable: "party_size", scope: "conversation" } };
+  const booking = () => routine({ slots: [guests], steps: [{ stableStepId: "ask_diet", kind: "chat", instruction: "Ask how many guests: {{slot.guests}}.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }] });
+
+  it("refuses a field saving to an attribute the candidate no longer keeps, with a message safe to show", () => {
+    const refusal = refusalOf(() => assertCandidateSnapshotIsRunnable(snapshot([booking()]), { saveTargetAttributes: new Map() }));
+
+    expect(refusal.details?.diagnostics).toEqual([expect.objectContaining({
+      safeDiagnostic: true,
+      code: "save_to_unknown_attribute",
+      location: "slot:guests.saveTo",
+    })]);
+  });
+
+  it("releases the routine while the candidate keeps the attribute, and checks nothing of the attribute when it is not given", () => {
+    const kept = new Map([["party_size", { valueType: "number" as const, stored: { trustTier: "unverified" as const, sensitivity: "normal" as const } }]]);
+
+    expect(() => assertCandidateSnapshotIsRunnable(snapshot([booking()]), { saveTargetAttributes: kept })).not.toThrow();
+    expect(() => assertCandidateSnapshotIsRunnable(snapshot([booking()]))).not.toThrow();
+  });
+});

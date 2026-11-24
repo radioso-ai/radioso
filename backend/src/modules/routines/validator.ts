@@ -145,6 +145,12 @@ export interface RoutineValidationContext {
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
   availableContextVariables?: ReadonlyMap<string, AvailableContextVariable>;
   /**
+   * The attributes a slot's save target (#1884) is checked against when they are not
+   * `availableContextVariables`: the publish gate passes the candidate's own, so a release never
+   * saves to an attribute it does not keep, without re-running the other context-variable rules.
+   */
+  saveTargetAttributes?: ReadonlyMap<string, AvailableContextVariable>;
+  /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
    * compiles.
@@ -888,7 +894,7 @@ export const validateRoutineDefinition = (
     diagnostics.push(...consentDiagnostics(definition, context.agentDefaultLocale));
   }
   diagnostics.push(...presentBindingDiagnostics(definition));
-  diagnostics.push(...saveTargetDiagnostics(definition, context.availableContextVariables));
+  diagnostics.push(...saveTargetDiagnostics(definition, context.saveTargetAttributes ?? context.availableContextVariables));
 
   // Slice 3 seam: validate referenced action types against the action registry and
   // per-agent capability policy before publish.

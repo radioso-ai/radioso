@@ -56,6 +56,7 @@ const setupApp = (overrides?: {
   phoneNumberId?: string;
   persistence?: ReturnType<typeof createPersistence>;
   handler?: Pick<WhatsAppMessageHandler, "handleInboundMessage"> & Partial<Pick<WhatsAppMessageHandler, "handleFailedStatus">>;
+  numberChanges?: { forget: (input: { workspaceId: string; previousNumber: string }) => Promise<void> };
 }) => {
   const persistence = overrides?.persistence ?? createPersistence();
   const handler = {
@@ -80,6 +81,7 @@ const setupApp = (overrides?: {
     },
     persistence,
     messageHandler: handler,
+    ...(overrides?.numberChanges ? { numberChanges: overrides.numberChanges } : {}),
   });
 
   const app = express();
@@ -345,6 +347,39 @@ describe("createWhatsAppWebhookRouter", () => {
       "WhatsApp inbound message processing failed",
     );
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(visitorPhone);
+  });
+
+  it("forgets a sender's old number when Meta reports they changed it, naming no number in its logs", async () => {
+    const numberChanges = { forget: vi.fn(async () => {}) };
+    const { app, logger } = setupApp({ numberChanges });
+    // Obviously fake numbers in the reserved 555-01xx range.
+    const payload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [{ value: {
+        metadata: { phone_number_id: "15550001111" },
+        messages: [
+          {
+            from: "15550100101",
+            id: "wamid.system-1",
+            timestamp: "1763632800",
+            type: "system",
+            system: { body: "Ada changed from 1 555-010-0101 to 1 555-010-0103", wa_id: "15550100103", type: "user_changed_number" },
+          },
+          { from: "15550100102", id: "wamid.system-2", timestamp: "1763632801", type: "system", system: { body: "Security code changed", type: "customer_identity_changed" } },
+        ],
+      } }] }],
+    });
+
+    const response = await request(app)
+      .post("/api/connectors/whatsapp/workspace-number/webhook")
+      .set("content-type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload);
+    await vi.waitFor(() => expect(numberChanges.forget).toHaveBeenCalled());
+
+    expect(response.status).toBe(200);
+    expect(numberChanges.forget.mock.calls).toEqual([[{ workspaceId: "workspace-number", previousNumber: "15550100101" }]]);
+    expect(JSON.stringify([...logger.info.mock.calls, ...logger.warn.mock.calls, ...logger.error.mock.calls])).not.toMatch(/1555010010[13]/u);
   });
 
   it("hands each failed delivery status of this number to the handler, and no other status", async () => {

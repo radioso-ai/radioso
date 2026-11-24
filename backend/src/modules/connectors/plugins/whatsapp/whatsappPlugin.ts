@@ -7,9 +7,12 @@ import type {
   ConnectorValidationIssue,
 } from "@radioso/connector-api";
 
+import type { ChannelPersonDataEraser } from "../../../../shared/domain/conversationDataErasure.js";
+import type { Db } from "../../../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
+import { WhatsAppNumberChanges } from "./whatsappNumberChanges.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { createWhatsAppWebhookRouter, findInboundMessageInPayload } from "./whatsappWebhook.js";
@@ -30,6 +33,8 @@ type WhatsAppConnectorContext = ConnectorContext & {
 };
 
 interface WhatsAppPluginOptions {
+  /** Erases the person values kept under a number, bound to the plugin's database: a sender's old number, once they change it. */
+  personValues?: (db: Db) => ChannelPersonDataEraser;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   debounceMs?: number;
@@ -51,6 +56,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
   private readonly sleep?: (ms: number) => Promise<void>;
   private readonly debounceMs?: number;
   private readonly cleanupIntervalMs: number;
+  private readonly personValues?: (db: Db) => ChannelPersonDataEraser;
   private initialized = false;
   private messageHandler?: WhatsAppMessageHandler;
   private cleanupTimer?: NodeJS.Timeout;
@@ -60,6 +66,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     this.sleep = options.sleep;
     this.debounceMs = options.debounceMs;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? WhatsAppPlugin.DEFAULT_CLEANUP_INTERVAL_MS;
+    this.personValues = options.personValues;
   }
 
   configSchema(): ConfigFieldDefinition[] {
@@ -126,6 +133,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       return;
     }
 
+    const metrics = (context as WhatsAppConnectorContext).metricsRegistry ?? null;
     const client = new WhatsAppClient({
       logger: context.logger,
       fetch: this.fetchImpl,
@@ -133,9 +141,10 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       // public transport: only public addresses, and the check holds on the connection itself.
       mediaFetch: this.fetchImpl ?? ((input, init) => context.publicHttp.fetch(input as string | URL, init)),
       sleep: this.sleep,
-      metrics: (context as WhatsAppConnectorContext).metricsRegistry ?? null,
+      metrics,
     });
-    const persistence = new PostgresWhatsAppPersistence(connectorKyselyDb(context.db));
+    const db = connectorKyselyDb(context.db);
+    const persistence = new PostgresWhatsAppPersistence(db);
     this.messageHandler = new WhatsAppMessageHandler({
       db: context.db,
       logger: context.logger,
@@ -143,7 +152,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       state: context.state,
       client,
       persistence,
-      metrics: (context as WhatsAppConnectorContext).metricsRegistry ?? null,
+      metrics,
       debounceMs: this.debounceMs,
     });
 
@@ -154,6 +163,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
         state: context.state,
         persistence,
         messageHandler: this.messageHandler,
+        ...(this.personValues ? { numberChanges: new WhatsAppNumberChanges({ personValues: this.personValues(db), metrics }) } : {}),
       }),
     );
 

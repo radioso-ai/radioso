@@ -12,12 +12,13 @@ import { createPostgresDataSubjectReadUnitOfWork } from "../../src/app/compositi
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { ContextValueConsentWithholder } from "../../src/db/repositories/contextValueConsentWithholder.js";
-import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
+import { ContextVariableRepository, ContextVariableValueEraser } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationAttributeReads } from "../../src/db/repositories/conversationAttributeReads.js";
 import { readConversationClassification } from "../../src/db/repositories/conversationClassifiedVariables.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { WhatsAppNumberChanges } from "../../src/modules/connectors/plugins/whatsapp/whatsappNumberChanges.js";
 import { PostgresWhatsAppPersistence } from "../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 import { ConversationAttributeService, routineValueWriter } from "../../src/modules/context-variables/public.js";
 import { ConversationErasureService, DataSubjectAccessService } from "../../src/modules/privacy/public.js";
@@ -320,6 +321,22 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
 
       await expect(access.lookup({ workspaceId: tenant.workspaceId, query: `00${NUMBER_A}`, actor: actor(tenant) }))
         .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/country code/u) });
+    });
+  });
+
+  describe("a number its sender left", () => {
+    it("has its values forgotten in the workspace told of the change, and no other number's or workspace's", async () => {
+      const tenant = await seedTenant();
+      const elsewhere = await seedTenant();
+      await keepForNumber(tenant, NUMBER_A, "silver");
+      await keepForNumber(tenant, NUMBER_B, "gold");
+      await keepForNumber(elsewhere, NUMBER_A, "bronze");
+      const changes = new WhatsAppNumberChanges({ personValues: new ContextVariableValueEraser(database.kysely) });
+
+      await changes.forget({ workspaceId: tenant.workspaceId, previousNumber: NUMBER_A });
+
+      expect(await personValues(tenant)).toEqual([{ number: NUMBER_B, data: "gold" }]);
+      expect(await personValues(elsewhere)).toEqual([{ number: NUMBER_A, data: "bronze" }]);
     });
   });
 

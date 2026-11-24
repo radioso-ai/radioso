@@ -1,7 +1,7 @@
 ---
 title: "Answering a data subject request"
-description: "How to find one person's conversations across the website, email and Slack, export what Radioso holds about them as JSON, and erase it."
-last_updated: 2026-11-21
+description: "How to find one person's conversations across the website, email, Slack and WhatsApp, export what Radioso holds about them as JSON, and erase it."
+last_updated: 2026-11-24
 ---
 
 # Answering a data subject request
@@ -19,6 +19,7 @@ A person shows up differently on each channel:
 - **Website**: a visitor record. When your site verifies visitors, the record carries the customer id your site gave them.
 - **Email**: the address they write from, across every mailbox of the workspace.
 - **Slack**: the member who started a thread with your agent.
+- **WhatsApp**: the number they message you from.
 
 Send what you know about the person:
 
@@ -66,6 +67,19 @@ Content-Type: application/json
 ```
 
 A Slack identity's key names the Slack workspace and the member, for example `T0ACME:U0JANE`.
+
+A WhatsApp number matches by its digits, written in international form with the country code first. Spaces, dashes, brackets and the leading `+` don't matter, so `+1 (555) 010-0101` finds the number WhatsApp reports as `15550100101`. A number written with a national prefix (`0…`) in place of its country code matches nothing. The identity's key is the digits and its label the number with a `+`:
+
+```json
+{
+  "identity": { "kind": "whatsapp_number", "key": "15550100101" },
+  "channel": "whatsapp",
+  "label": "+15550100101",
+  "conversationCount": 3,
+  "firstSeenAt": "2026-09-03T10:02:11.000Z",
+  "lastSeenAt": "2026-11-20T18:40:05.000Z"
+}
+```
 
 ## Confirm which identities are theirs
 
@@ -136,6 +150,8 @@ The answer is one JSON document. Save it and send it to the person:
     "conversation_summaries": [],
     "context_values": [],
     "visitors": [],
+    "whatsapp_contacts": [],
+    "whatsapp_messages": [],
     "answer_feedback": []
   }
 }
@@ -150,8 +166,10 @@ Each section is a list of records, and every section is present even when it hol
 | `routine_values` | What the routine a conversation last ran collected, such as a booking's date or a phone number. |
 | `routine_actions` | What routines handed on about the person: each contact request as it was queued, with every value the routine had collected by then, and the values a routine's ending sent to your team or to a webhook. |
 | `conversation_summaries` | The rolling summary the agent keeps of a long conversation. |
-| `context_values` | The [attribute](/operators/context-variables) values kept about the person: on each of their conversations, in those conversations' chat sessions, and under their verified customer id. Each record names the attribute, the `scope` it was kept under (`conversation`, `session` or `customer`), the value, when it last changed, and `writtenBy`, the kind of writer that last set it: `api`, `operator`, `routine` or `classifier`. |
+| `context_values` | The [attribute](/operators/context-variables) values kept about the person: on each of their conversations, in those conversations' chat sessions, under their verified customer id, and under their WhatsApp number. Each record names the attribute, the `scope` it was kept under (`conversation`, `session`, `customer` or `whatsapp_contact`), the value, when it last changed, and `writtenBy`, the kind of writer that last set it: `api`, `operator`, `routine` or `classifier`. |
 | `email_messages` | Each mail of their email conversations: direction, subject, sender address and display name, Cc, and attachment names, types and sizes. The mail's text is the conversation's message. |
+| `whatsapp_contacts` | Each WhatsApp number's contact: the number, the profile name WhatsApp reported, the latest conversation, and when the number first and last wrote. |
+| `whatsapp_messages` | The WhatsApp channel's copy of every message to and from each number, earlier conversations' included, as WhatsApp delivered it or Radioso sent it: direction, type, delivery status, time and the message payload. |
 | `answer_feedback` | The ratings and comments the person left on answers. |
 
 One request exports at most 200 conversations, which keeps it well inside the request time limit. A request whose identities reach more answers `413` with `data_subject_request_too_large`, saying how many conversations it reached. Export those identities in pages instead: take the ids from the conversation list and send at most 200 of them at a time as `conversationIds`, alongside the same identities:
@@ -166,7 +184,7 @@ Content-Type: application/json
 }
 ```
 
-Each page holds its conversations and everything derived from them, plus the identities' own records: their website visitor records and the context values stored under their verified customer id. Every page is a whole export document, so send the person all of them. A conversation the identities do not reach answers `400` with `data_subject_conversations_not_reached`, and `details.conversationIds` names each one; nothing is exported until every listed id is theirs.
+Each page holds its conversations and everything derived from them, plus the identities' own records: their website visitor records, the context values stored under their verified customer id or WhatsApp number, and each number's WhatsApp contact and messages. Every page is a whole export document, so send the person all of them. A conversation the identities do not reach answers `400` with `data_subject_conversations_not_reached`, and `details.conversationIds` names each one; nothing is exported until every listed id is theirs.
 
 The export reads one consistent snapshot, so a message that arrives while it runs is either in it with everything derived from it, or not in it at all. `formatVersion` changes whenever the document's shape changes, so whatever reads the file can tell which shape it has.
 
@@ -192,7 +210,7 @@ Content-Type: application/json
 { "visitorCount": 1, "conversationCount": 4, "messageCount": 12, "complete": true }
 ```
 
-Radioso erases each website visitor among the identities exactly as `DELETE /api/v1/history/visitors/{visitorId}` does: their conversations, their customer-scoped context values, voice calls their browser started that never reached a first turn, and the visitor record. It then erases every other conversation the identities reach exactly as `DELETE /api/v1/history/chat/{conversationId}` does. An email address or a Slack member has no record of its own beyond its conversations, so erasing those conversations erases the identity, and a lookup afterwards finds nothing. [Deleting conversation data](/operators/deleting-conversation-data) lists everything a deletion removes and the few records it keeps.
+Radioso erases each website visitor among the identities exactly as `DELETE /api/v1/history/visitors/{visitorId}` does: their conversations, their customer-scoped context values, voice calls their browser started that never reached a first turn, and the visitor record. It then erases every other conversation the identities reach exactly as `DELETE /api/v1/history/chat/{conversationId}` does. An email address or a Slack member has no record of its own beyond its conversations, so erasing those conversations erases the identity, and a lookup afterwards finds nothing. A WhatsApp number's contact, its WhatsApp messages and the values kept for it go with the number's latest conversation. [Deleting conversation data](/operators/deleting-conversation-data) lists everything a deletion removes and the few records it keeps.
 
 Export first, then erase. The same confirmed identities reach the same conversations, so the file you send covers exactly what the erasure removes.
 
@@ -208,20 +226,21 @@ Ray does not run data subject requests. Exporting someone's personal data is a t
 
 ## What Radioso records
 
-Every step but the conversation list records one audit event: `data_subject.looked_up`, `data_subject.exported` or `data_subject.erased`. Each names who asked, the kind of each identity it covered with Radioso's own ids for its records, and its counts: conversations found, records per section for an export, and for an erasure what it erased and whether it finished. The records are a website visitor's id, the conversations of an email address's threads, and the Slack thread links of a member. No event, and no log line, carries the query, an address, a Slack member id, or anything the person said, so nothing in the audit trail names the person once their data is erased.
+Every step but the conversation list records one audit event: `data_subject.looked_up`, `data_subject.exported` or `data_subject.erased`. Each names who asked, the kind of each identity it covered with Radioso's own ids for its records, and its counts: conversations found, records per section for an export, and for an erasure what it erased and whether it finished. The records are a website visitor's id, the conversations of an email address's threads, the Slack thread links of a member, and the conversations of a WhatsApp number. No event, and no log line, carries the query, an address, a Slack member id, a phone number, or anything the person said, so nothing in the audit trail names the person once their data is erased.
 
 An erasure also records a `conversation.erased` or `visitor.erased` event for each conversation and visitor it erased.
 
 ## Common failure modes
 
 - **`403`**: the caller lacks `workspace.history.delete`: a member session, or a member credential.
-- **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address` or `slack_user`, a request names more than 50 identities, or `conversationIds` lists more than 200 ids.
+- **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address`, `slack_user` or `whatsapp_number`, a request names more than 50 identities, or `conversationIds` lists more than 200 ids.
 - **`400` with `data_subject_conversations_not_reached`**: `conversationIds` lists a conversation the identities do not reach, such as one of an identity you left out, or one an earlier page already erased. `details.conversationIds` names each one.
 - **`413`**: the identities reach more than 200 conversations. Send them in pages with `conversationIds`.
 - **`500` with `data_subject_erasure_incomplete`**: the erasure stopped partway; `details.receipt` says what it erased. Send the same request again.
 - **No email identity for an address you know wrote in**: the mail never became a conversation. Mail from automated senders, bounces and spam stays in the email channel's event log for 30 days and goes on its own.
 - **The website visitor but no email identity, or the other way round**: your site verifies the person by an id that is not the address they mail from. Look up each identifier.
 - **No website identity for a visitor who never signed in**: a lookup finds website visitors by the customer id your site verified them by. For an anonymous visitor, open one of their conversations, take `visitor.id` from its detail, and [delete the visitor](/operators/deleting-conversation-data#delete-a-visitor) by id.
+- **No WhatsApp identity for a number you know wrote in**: the number was written with a national prefix. Write it with its country code, as `+44 7700 900123` rather than `07700 900123`.
 - **No Slack identity for a member who talked to your agent**: a Slack conversation belongs to the member who started its thread. A member who only replied in someone else's thread is in that thread's messages, but is not its identity.
 
 ## Read next

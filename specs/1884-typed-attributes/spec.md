@@ -357,6 +357,19 @@ A scope type is a closed, checked value (`schema.sql:2144`). It keeps the host's
 - **Data-subject requests.** A `WhatsAppNumberIdentityFinder` joins the finder list, so a subject can be found by number. `DataSubjectReach` gains the channel person keys beside `verifiedCustomerIds`, and `ContextVariableValueExporter` exports the `whatsapp_contact` rows in the existing `context_values` section.
 - **Logs.** A `wa_id` is a phone number. It is never logged; the existing log-safe handling applies (`backend/src/shared/observability/logging/logSafeValues.ts`).
 
+### Slice 4 settled
+
+- **The turn's key.** `@radioso/connector-api` gains `ConnectorPersonKey { kind: "whatsapp_contact"; id }` and an optional `personKey` on `ConnectorChatPort.answer`. The port reads it in the channel's stored form (`channelPersonKeyOf`, `shared/domain/channelPersonKey.ts`), refuses one it can't read with `400` before any turn runs, and forwards it as `channelPersonKey` on the text, photo and pick paths. `AssistantChatRequest.channelPersonKey` carries it to `PrepareChatSessionInput`, and `PreparedSession.channelPersonKey` keeps it for the turn: the host-variable ladder reads it, and the turn persistence port hands it to the routine's slot saves. Nothing is stored on the conversation row.
+- **Outside a turn.** The Inbox, the classifier, an edit's read-back and a decision's resume save have no turn to carry the key, and a number's contact row names only its latest conversation. Migration 282 adds `connector_whatsapp_conversations (conversation_id PK, workspace_id, wa_id)`, owned by the WhatsApp plugin and written beside the contact row after each answer (the first turn of a conversation has no row yet, which is why the turn carries its own key). A shared port, `ConversationChannelPersonKeys.personKeyOf` (`shared/domain/channelPersonKey.ts`), is bound by composition (`app/composition/conversationReadSources.ts`) to `WhatsAppConversationPersonKeys`, so `context-variables` reads a channel person without knowing WhatsApp. Readers ask it only when the conversation has no verified customer. The backfill can name only each number's latest conversation.
+- **Resolver cache.** A channel person key is a visitor scope, so a resolver caches under the number and a second number's turn never reads the first's value. The skill is handed the first scope past the conversation that is not a channel person key, so a number never reaches a host's skill or webhook; a WhatsApp turn hands it the agent scope.
+- **Value route.** A `whatsapp_contact` scope id must read as a number (`whatsAppNumberKey`: digits, country code first; spaces, dashes, dots, brackets and a leading `+` are dropped; 6 to 20 digits) or the route answers `400`. It is stored and read as its digits.
+- **Event.** A routine's save to the person records `context_value.changed` with the saving conversation as its subject and `scope` `customer` or `whatsapp_contact`, never the customer id or number, so the event cascades with that conversation and the consent withholder removes it with the routine's other events. A value route write to a person scope has no conversation and records none. Version stays 1: the `scope` enum widens and every older event still parses. Person values take the same per-value advisory lock as conversation values.
+- **Withdrawal.** `ContextValueConsentWithholder` also deletes `whatsapp_contact` rows a withdrawn routine's run saved; the writer ref's `@<conversationId>` suffix ties them to the conversation.
+- **Data-subject finder.** `WhatsAppNumberIdentityFinder` (`whatsapp/whatsappNumbers.ts`): kind `whatsapp_number`, channel `whatsapp`, key the number's digits (`whatsAppNumberKey`, so `+1 (555) 010-0101` finds `15550100101`; a national trunk prefix matches nothing), label `+<digits>`, record ids the conversation ids, so an audit event never names the number. It reaches the conversations recorded against the number and the one its contact row points at, and returns the numbers as `channelPersonKeys`. `WhatsAppContactExporter` writes `whatsapp_contacts` and `WhatsAppMessageLogExporter` writes `whatsapp_messages` (the transport log, payload included); `connector_whatsapp_conversations` is excluded as the finder's index. The surface is REST and the SDK: data-subject requests stay a stated exclusion from Ray and operator MCP (`catalogCoverage.ts`), and there is no dashboard screen.
+- **Observability.** No new metric, log line or span. A save is counted by `radioso_context_value_writes_total{writer, outcome}` as before; the only new failure is the port's `400`, which the connector already reports as a failed turn. A source scan (`whatsappNumberNeverObserved.test.ts`) fails when a log call, metric label or span attribute in the code a number passes through names `waId`, `wa_id` or a person key.
+- **Queue review.** WhatsApp turns cross no queue: the handler runs the turn, and recovery re-reads the inbound log, whose `wa_id` it derives the key from. `personKey` is optional, so a connector that sends none runs as before. `context_value.changed` widens additively. No AMQP payload, worker dispatch or new env var.
+- **Known limits.** A value a host writes for a number that has no WhatsApp conversation in the workspace is reached by no finder or eraser, as a `customer` value with no visitor record is not. A number's conversations from before migration 282 other than its latest are not recorded against it, so the finder reaches only that latest one of them.
+
 ### Email
 
 Email sender addresses are not a person key. A sender address is spoofable without DKIM and SPF results. Email conversations use the `conversation` scope only.
@@ -401,7 +414,8 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 `context_value.changed`, version 1:
 
 ```
-{ variableId: uuid, variable: string, valueType, scope: "conversation",
+{ variableId: uuid, variable: string, valueType,
+  scope: "conversation" | "customer" | "whatsapp_contact",
   value: <typed value> | null, redacted: boolean,
   writtenBy: "api" | "operator" | "routine" | "classifier",
   routineId: string | null }
@@ -409,7 +423,7 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 
 `variableId` keys the attribute across a rename. `value` is required and null for a cleared or Private value. `operator` covers a teammate in the Inbox, through Ray and through an operator MCP client.
 
-- **Scopes that emit (decided in slice 2).** Only `conversation`-scope values. The log's subject is a conversation, the event cascades with it, and the consent withholder keys on it. A session value spans conversations, a customer value has none, and an agent or workspace value is a default, so none has a conversation to attach to. `customer` and `whatsapp_contact` join with the person scopes in slice 4, which needs a person-keyed subject. Writes the resolver cache makes do not emit: composition builds that repository with `null` events, explicitly, and every other construction is handed the recorder and the delivery wake. Deleting an attribute cascades its values away and records no event.
+- **Scopes that emit (decided in slice 2).** Only `conversation`-scope values. The log's subject is a conversation, the event cascades with it, and the consent withholder keys on it. A session value spans conversations, a customer value has none, and an agent or workspace value is a default, so none has a conversation to attach to. Slice 4 adds `customer` and `whatsapp_contact` for a routine's save to the person, with the saving conversation as the subject (section 10, "Slice 4 settled"). Writes the resolver cache makes do not emit: composition builds that repository with `null` events, explicitly, and every other construction is handed the recorder and the delivery wake. Deleting an attribute cascades its values away and records no event.
 - `routineId` names the routine whose write it was (the part of the writer ref before the run id), null for any other writer, so the consent withholder deletes a withdrawn routine's value events the way it deletes its `routine.completed`.
 - "Changed" compares the value alone: the same value from a different writer records nothing. A delete records `value: null`.
 - No migration: `workspace_events.type` is checked by pattern, not by list.
@@ -480,9 +494,9 @@ Playwright covers the journeys.
 
 ### WhatsApp connector plugin (touched, slice 4)
 
-- **Knows:** the `wa_id` of a message, and which numbers an erasure reaches.
+- **Knows:** the `wa_id` of a message, the number each of its conversations is with (`connector_whatsapp_conversations`), and which numbers an erasure reaches.
 - **Must not know:** the value table.
-- It passes the person key on the connector chat port and reports erased numbers to `ChannelPersonDataEraser`.
+- It passes the person key on the connector chat port, answers `ConversationChannelPersonKeys` for readers outside a turn, finds and exports a data subject by number, and reports erased numbers to `ChannelPersonDataEraser`.
 
 ## 13. Privacy and observability
 
@@ -574,3 +588,4 @@ PR 1b is the largest at about 26 files. They are one new module plus one edit pe
 ## 16. Open items
 
 1. **WhatsApp data-subject finder.** It is absent on `main` independently of this work (`dataSubjectAccess.ts:26-30`). Slice 4 adds it; the product owner chose to ship it there rather than as a separate fix.
+2. **Slice 4 decisions to confirm.** (a) A routine's person save records `context_value.changed` with the saving conversation as its subject and the scope but no person id; a value route write to a person scope records none. (b) `connector_whatsapp_conversations` records each conversation's number, beside the per-turn key, so the finder and readers outside a turn reach it; it reverses "nothing is stored" only for the WhatsApp plugin's own table, never the conversation row. (c) The backfill names each number's latest conversation only, so earlier conversations from before it stay unreachable by number. (d) `whatsapp_messages` exports the transport log's payload as stored.

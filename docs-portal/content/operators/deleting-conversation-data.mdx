@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-11-21
+last_updated: 2026-11-24
 ---
 
 # Deleting conversation data
@@ -58,7 +58,7 @@ Deleting a conversation removes:
 - email threads, sent-email records, and the inbound mail it received, raw message included;
 - Slack and voice links, and WhatsApp contacts;
 - a voice call's recording, which ElevenLabs keeps: Radioso asks ElevenLabs to delete it once the conversation is gone (see below);
-- the WhatsApp message log of the number whose latest conversation it is (see below);
+- the WhatsApp message log of the number whose latest conversation it is, and the attribute values kept for that number (see below);
 - routine actions and notices queued for it and not yet sent;
 - the [delivery log](/api/agents-and-skills#delivery-log) entries for the notices it raised, with the recipient addresses they name;
 - its events in the [workspace event log](/api/workspace-event-log), with the contact details and routine values they carry;
@@ -79,7 +79,7 @@ A few records stay on purpose. None of them holds the conversation's content:
 - **Operational audit events.** Events that name the conversation id with an outcome — a takeover, an approval, an email send — keep the id and the outcome codes.
 - **Audience Pulse topics.** Topic names and descriptions are written from many visitors' de-identified question summaries and checked for personal details, and topic sizes are counts. They stay. The Audience Pulse report itself quotes visitors' questions in its recommendations, so a report built on a deleted conversation is discarded; regenerate it from what remains.
 
-WhatsApp keeps one transport log per phone number, not per conversation, and links the number only to its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included. Deleting one of its earlier conversations leaves the log until the latest one is deleted. For a photo the sender sent, the log keeps the message id, WhatsApp's media id and the caption; the photo itself is stored with the conversation and goes with it.
+WhatsApp keeps one transport log per phone number, not per conversation, and the number's contact points at its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included, and the [attribute values kept for the number](/operators/context-variables#pushing-values). Deleting one of its earlier conversations leaves the log and the values until the latest one is deleted. Retention removes them the same way, when it removes the number's latest conversation. For a photo the sender sent, the log keeps the message id, WhatsApp's media id and the caption; the photo itself is stored with the conversation and goes with it.
 
 Two copies outside the conversation stay until their own lifecycle removes them:
 

@@ -59,11 +59,12 @@ Composition builds the service and registers `contextClassificationHandler` in
 
 1. Read the targets: the enabled `classified` enablements of the revision the
    conversation is pinned to, through the agents module's revision reader, and
-   what the conversation's whole ladder (conversation, session, customer, agent,
-   workspace) holds for each. A variable the classifier may not fill (no longer a
+   what the conversation's whole ladder (conversation, session, person, agent,
+   workspace) holds for each; the person is the verified customer, else the
+   WhatsApp number the conversation is with. A variable the classifier may not fill (no longer a
    Choice, or made sensitive or signed since), or one with no active option, is
    dropped. A variable another writer set for this conversation, its session or
-   its customer is held: it is left out of the call, and a conversation value the
+   its person is held: it is left out of the call, and a conversation value the
    classifier wrote for it is cleared, since it would hide that writer's value.
    When every one is held, no call is made (`skipped_override`). An agent or
    workspace value is a default and holds nothing: the classifier's conversation

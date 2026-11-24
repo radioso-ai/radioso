@@ -211,6 +211,11 @@ export interface RoutineSlotSchema {
   mutable?: boolean;
   /** Absent means `normal`. A sensitive slot's value is masked in every copy the engine hands out. */
   sensitivity?: ValueSensitivity;
+  /**
+   * The attribute the host writes the slot's value to when the routine ends, and its scope. The
+   * engine carries it and never reads it.
+   */
+  saveTo?: { contextVariable: string; scope: "conversation" | "person" };
 }
 
 /**

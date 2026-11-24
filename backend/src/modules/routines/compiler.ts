@@ -172,6 +172,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       description: slot.description ?? undefined,
       ...(slot.mutable ? { mutable: true } : {}),
       ...(slot.sensitivity === "sensitive" ? { sensitivity: "sensitive" as const } : {}),
+      ...(slot.saveTo ? { saveTo: { ...slot.saveTo } } : {}),
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {

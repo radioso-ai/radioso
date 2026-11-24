@@ -152,6 +152,10 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       mutable BOOLEAN NOT NULL DEFAULT FALSE,
       -- Mirrors migration 248_routine_slot_sensitivity.sql.
       sensitivity TEXT NOT NULL DEFAULT 'normal' CHECK (sensitivity IN ('normal', 'sensitive')),
+      -- Mirrors migration 277_typed_attribute_values_and_slot_save_targets.sql.
+      save_to_context_variable TEXT NULL,
+      save_to_scope TEXT NULL,
+      CHECK ((save_to_context_variable IS NULL) = (save_to_scope IS NULL) AND (save_to_scope IS NULL OR save_to_scope IN ('conversation', 'person'))),
       PRIMARY KEY (definition_id, stable_slot_id),
       UNIQUE(definition_id, key),
       UNIQUE(definition_id, ordinal)
@@ -515,6 +519,32 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     // The persisted gate still validates clean: the decision field guards resolve against
     // the recovered capture key (a dropped captureKey would surface field_guard_unknown_reference).
     expect(validateRoutineDefinition(reloaded!)).toMatchObject({ ok: true });
+  });
+
+  it("round-trips a slot's save target, reading a slot without one back without the field (#1884)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("save-to-roundtrip");
+    const created = await repository.createDraft(agentId, {
+      ...base,
+      slots: [
+        { ...base.slots[0], saveTo: { contextVariable: "enquiry_topic", scope: "conversation" } },
+        { stableSlotId: "slot_email", key: "email", type: "email", required: false, description: null, ordinal: 1, saveTo: { contextVariable: "contact_email", scope: "person" } },
+        { stableSlotId: "slot_note", key: "note", type: "text", required: false, description: null, ordinal: 2 },
+      ],
+      steps: [{ ...base.steps[0], instruction: "Collect {{slot.topic}}, {{slot.email}} and {{slot.note}}." }],
+    });
+
+    const reloaded = await repository.findById(agentId, created.id);
+    expect(reloaded?.slots.map((slot) => [slot.key, slot.saveTo])).toEqual([
+      ["topic", { contextVariable: "enquiry_topic", scope: "conversation" }],
+      ["email", { contextVariable: "contact_email", scope: "person" }],
+      ["note", undefined],
+    ]);
+    expect(reloaded?.slots.find((slot) => slot.key === "note")).not.toHaveProperty("saveTo");
+    await expect(database.execute(
+      `UPDATE routine_slot SET save_to_scope = 'workspace' WHERE definition_id = $1 AND key = 'topic'`,
+      [created.id],
+    )).rejects.toMatchObject({ code: "23514" });
   });
 
   it("round-trips a slot's sensitivity, reading a normal slot back without the field (#1543)", async () => {

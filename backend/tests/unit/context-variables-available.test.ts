@@ -61,7 +61,7 @@ describe("resolveAvailableContextVariables", () => {
 
     expect(result.get("page_context")).toEqual({ valueType: "json" });
     expect(result.get("visitor_identity")).toEqual({ valueType: "json" });
-    expect(result.get("plan_tier")).toEqual({ valueType: "string" });
+    expect(result.get("plan_tier")).toMatchObject({ valueType: "string" });
   });
 
   it("includes only enabled agent variables", () => {
@@ -80,7 +80,7 @@ describe("resolveAvailableContextVariables", () => {
       enablement({ id: "e-joined", variable: variable("joined_var", "json") }),
     ]);
 
-    expect(result.get("joined_var")).toEqual({ valueType: "json" });
+    expect(result.get("joined_var")).toMatchObject({ valueType: "json" });
     expect(result.size).toBe(BUILT_IN_CONTEXT_VARIABLES.length + 1);
   });
 
@@ -95,7 +95,7 @@ describe("resolveAvailableContextVariables", () => {
 
     const result = resolveAvailableContextVariables([enablement({ variable: topic })]);
 
-    expect(result.get("topic")).toEqual({ valueType: "enum", optionKeys: ["billing", "legacy"] });
+    expect(result.get("topic")).toMatchObject({ valueType: "enum", optionKeys: ["billing", "legacy"] });
   });
 
   it("lets an agent-scoped variable override a built-in of the same name", () => {
@@ -103,8 +103,21 @@ describe("resolveAvailableContextVariables", () => {
       enablement({ variable: variable("page_context", "string") }),
     ]);
 
-    expect(result.get("page_context")).toEqual({ valueType: "string" });
+    expect(result.get("page_context")).toMatchObject({ valueType: "string" });
     expect(result.size).toBe(BUILT_IN_CONTEXT_VARIABLES.length);
+  });
+
+  it("says how a stored variable is held, the facts a routine's save target is checked against", () => {
+    const result = resolveAvailableContextVariables([
+      enablement({ id: "e-pushed", variable: { ...variable("party_size", "number"), sensitivity: "sensitive" } }),
+      enablement({ id: "e-classified", source: "classified", variable: { ...variable("plan", "string"), trustTier: "signed" } }),
+      enablement({ id: "e-resolver", source: "resolver", variable: variable("order", "json") }),
+    ]);
+
+    expect(result.get("party_size")).toEqual({ valueType: "number", stored: { trustTier: "unverified", sensitivity: "sensitive" } });
+    expect(result.get("plan")).toEqual({ valueType: "string", stored: { trustTier: "signed", sensitivity: "normal" } });
+    expect(result.get("order")).toEqual({ valueType: "json" });
+    expect(result.get("page_context")).toEqual({ valueType: "json" });
   });
 
   it("does not let a disabled agent variable override a built-in", () => {

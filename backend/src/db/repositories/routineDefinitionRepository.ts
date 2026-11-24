@@ -115,7 +115,9 @@ const definitionSelect = sql`
       'description', s.description,
       'ordinal', s.ordinal,
       'mutable', s.mutable,
-      'sensitivity', s.sensitivity
+      'sensitivity', s.sensitivity,
+      'saveToContextVariable', s.save_to_context_variable,
+      'saveToScope', s.save_to_scope
     ) ORDER BY s.ordinal ASC, s.stable_slot_id ASC) AS items
     FROM routine_slot s
     WHERE s.definition_id = d.id
@@ -763,6 +765,8 @@ export class RoutineDefinitionRepository {
           ordinal: slot.ordinal,
           mutable: slot.mutable ?? false,
           sensitivity: slot.sensitivity ?? "normal",
+          save_to_context_variable: slot.saveTo?.contextVariable ?? null,
+          save_to_scope: slot.saveTo?.scope ?? null,
         })
         .execute();
     }

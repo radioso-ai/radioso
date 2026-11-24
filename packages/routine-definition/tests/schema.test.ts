@@ -232,6 +232,17 @@ describe("routine definition schemas", () => {
     expect(routineSlotSchema.safeParse({ ...validSlot, key: "bad-key" }).success).toBe(false);
   });
 
+  it("keeps a slot's save target, an attribute name and a scope, and reads an absent one as none", () => {
+    const saveTo = { contextVariable: "party_size", scope: "conversation" };
+    expect(routineSlotSchema.parse({ ...validSlot, saveTo }).saveTo).toEqual(saveTo);
+    expect(routineSlotSchema.parse({ ...validSlot, saveTo: { ...saveTo, scope: "person" } }).saveTo?.scope).toBe("person");
+    expect("saveTo" in routineSlotSchema.parse(validSlot)).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { ...saveTo, scope: "session" } }).success).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "party size", scope: "conversation" } }).success).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "party_size" } }).success).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { ...saveTo, extra: true } }).success).toBe(false);
+  });
+
   it("keeps a slot's authored sensitivity and reads an absent one as unset, not defaulted", () => {
     expect(routineSlotSchema.parse({ ...validSlot, sensitivity: "sensitive" }).sensitivity).toBe("sensitive");
     expect(routineSlotSchema.parse({ ...validSlot, sensitivity: "normal" }).sensitivity).toBe("normal");

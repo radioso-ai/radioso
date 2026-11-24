@@ -4,6 +4,7 @@ import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/pu
 import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
+import { safeSaveTargetValidationMessages, saveTargetDiagnostics } from "./saveTargetValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
@@ -108,6 +109,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   context_variable_option_not_accepted: "A Choice attribute is bound to a skill input that does not accept every one of its option keys.",
   ...safeConsentValidationMessages,
   ...safePresentBindingValidationMessages,
+  ...safeSaveTargetValidationMessages,
 };
 
 const replyToSlotInvalidMessage = (
@@ -886,6 +888,7 @@ export const validateRoutineDefinition = (
     diagnostics.push(...consentDiagnostics(definition, context.agentDefaultLocale));
   }
   diagnostics.push(...presentBindingDiagnostics(definition));
+  diagnostics.push(...saveTargetDiagnostics(definition, context.availableContextVariables));
 
   // Slice 3 seam: validate referenced action types against the action registry and
   // per-agent capability policy before publish.

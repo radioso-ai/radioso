@@ -35,7 +35,7 @@ const enablement = (
 })
 
 describe('routineSaveTargetsFromEnablements', () => {
-  it('offers the enabled attributes whose value the agent keeps, and never a proof', () => {
+  it('offers the enabled pushed attributes, never a proof or one the AI picks', () => {
     const targets = routineSaveTargetsFromEnablements([
       enablement('party_size', { variable: { valueType: 'number' } }),
       enablement('topic', { source: 'classified', variable: { valueType: 'enum' } }),
@@ -48,7 +48,6 @@ describe('routineSaveTargetsFromEnablements', () => {
 
     expect(targets).toEqual([
       { name: 'party_size', valueType: 'number', private: false },
-      { name: 'topic', valueType: 'enum', private: false },
       { name: 'health_note', valueType: 'string', private: true },
     ])
   })

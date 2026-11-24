@@ -24,7 +24,7 @@ export function RoutineSlotSaveTo({ slot, onChange }: {
   slot: RoutineBlockSlot
   onChange: (saveTo: SaveTo | null) => void
 }) {
-  const { saveTargets } = useContext(RoutineSkillCatalogContext)
+  const { saveTargets, saveTargetsFailed } = useContext(RoutineSkillCatalogContext)
   const saveTo = slot.saveTo
   const targets = saveTargetsForField(saveTargets, slot)
   const unlisted = saveTo && !targets.some((target) => target.name === saveTo.contextVariable) ? saveTo.contextVariable : null
@@ -54,7 +54,9 @@ export function RoutineSlotSaveTo({ slot, onChange }: {
           </SelectContent>
         </Select>
       ) : null}
-      {targets.length === 0 && !saveTo ? <p className="text-xs text-muted-foreground">No attribute of this type to save to.</p> : null}
+      {targets.length === 0 && !saveTo ? (
+        <p className="text-xs text-muted-foreground">{saveTargetsFailed ? "Couldn't load this agent's attributes." : 'No attribute of this type to save to.'}</p>
+      ) : null}
     </div>
   )
 }

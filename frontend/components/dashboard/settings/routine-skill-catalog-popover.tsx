@@ -37,6 +37,8 @@ type RoutineSkillCatalogState = {
   skills: SkillAuthoringDescriptor[]
   contextVariables: RoutineEditorContextVariable[]
   saveTargets: RoutineSaveTarget[]
+  /** The agent's attributes could not be read, so an empty `saveTargets` is not a finding. */
+  saveTargetsFailed?: boolean
   noticeDestinations: OperatorNoticeDestinations | null
   isLoading: boolean
   error: string | null
@@ -50,21 +52,22 @@ export const RoutineSkillCatalogContext = createContext<RoutineSkillCatalogState
   skills: [],
   contextVariables: NO_CONTEXT_VARIABLES,
   saveTargets: NO_SAVE_TARGETS,
+  saveTargetsFailed: false,
   noticeDestinations: null,
   isLoading: false,
   error: null,
 })
 
 export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: string; children: ReactNode }) {
-  const [state, setState] = useState<RoutineSkillCatalogState>({ agentId: '', skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, noticeDestinations: null, isLoading: true, error: null })
+  const [state, setState] = useState<RoutineSkillCatalogState>({ agentId: '', skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, saveTargetsFailed: false, noticeDestinations: null, isLoading: true, error: null })
 
   useEffect(() => {
     let cancelled = false
     // The built-ins are always offered; a failed enablement read only narrows the list to them,
     // and leaves no attribute to save to.
     const enablements = contextVariablesApi.listAgentEnablements(agentId)
-      .then((response) => ({ contextVariables: routineContextVariablesFromEnablements(response.enablements), saveTargets: routineSaveTargetsFromEnablements(response.enablements) }))
-      .catch(() => ({ contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS }))
+      .then((response) => ({ contextVariables: routineContextVariablesFromEnablements(response.enablements), saveTargets: routineSaveTargetsFromEnablements(response.enablements), saveTargetsFailed: false }))
+      .catch(() => ({ contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, saveTargetsFailed: true }))
     // Where notices go is shown, never required: a failed read leaves the "Sends to" line out.
     const noticeDestinations = routineSkillCatalogApi.listOperatorNoticeDestinations(agentId).catch(() => null)
     Promise.all([routineSkillCatalogApi.listRoutineSkillCatalog(agentId), enablements, noticeDestinations])
@@ -72,7 +75,7 @@ export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: st
         if (!cancelled) setState({ agentId, skills, ...loaded, noticeDestinations: loadedNoticeDestinations, isLoading: false, error: null })
       })
       .catch(() => {
-        if (!cancelled) setState({ agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, noticeDestinations: null, isLoading: false, error: 'Could not load the skill catalog.' })
+        if (!cancelled) setState({ agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, saveTargetsFailed: true, noticeDestinations: null, isLoading: false, error: 'Could not load the skill catalog.' })
       })
     return () => {
       cancelled = true
@@ -84,7 +87,7 @@ export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: st
   // value object re-renders every chip on every render (Playwright saw elements
   // "not stable"), so the identity must only change when the state does.
   const value = useMemo(
-    () => (state.agentId === agentId ? state : { agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, noticeDestinations: null, isLoading: true, error: null }),
+    () => (state.agentId === agentId ? state : { agentId, skills: [], contextVariables: NO_CONTEXT_VARIABLES, saveTargets: NO_SAVE_TARGETS, saveTargetsFailed: false, noticeDestinations: null, isLoading: true, error: null }),
     [state, agentId],
   )
 

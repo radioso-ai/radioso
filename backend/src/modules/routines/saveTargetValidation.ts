@@ -1,6 +1,7 @@
-import { routineSlotSavesToValueType, type RoutineValidationCode } from "@radioso/routine-definition";
+import { routineSlotSavesToValueType, type RoutineSlotSaveValueType, type RoutineValidationCode } from "@radioso/routine-definition";
 
-import type { AvailableContextVariable } from "../context-variables/public.js";
+import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
+import type { SameType } from "../../shared/types/sameType.js";
 import type { RoutineDefinition } from "./domain.js";
 
 interface SaveTargetDiagnostic {
@@ -10,6 +11,10 @@ interface SaveTargetDiagnostic {
 }
 
 type Slot = RoutineDefinition["slots"][number];
+
+// Every value type a field saves to is one an attribute has: renaming an attribute's type fails tsc here.
+const saveValueTypesExist: SameType<Extract<RoutineSlotSaveValueType, ContextVariableValueType>, RoutineSlotSaveValueType> = true;
+void saveValueTypesExist;
 
 const SAVE_TO_LOCATION = /^slot:([A-Za-z_][A-Za-z0-9_]*)\.saveTo$/u;
 
@@ -22,7 +27,7 @@ const naming = (rest: string) => (location: string): string => {
 /** What an operator-facing diagnostic says of each save rule; locations carry only the slot key. */
 export const safeSaveTargetValidationMessages: Partial<Record<RoutineValidationCode, (location: string) => string>> = {
   save_to_unknown_attribute: naming("saves to an attribute this agent doesn't have. Pick one of its attributes, or stop saving the field."),
-  save_to_attribute_not_stored: naming("saves to an attribute whose value this agent doesn't keep. Pick one set by your website or API, or by the AI."),
+  save_to_attribute_not_stored: naming("saves to an attribute whose value this agent doesn't keep. Turn it on for this agent as an attribute your website or API sets, or pick one that is."),
   save_to_type_mismatch: naming("saves to an attribute of another type. Text and email fields save to Text, and number, Yes/no and date fields to their own type."),
   save_to_attribute_signed: naming("saves to an attribute treated as proof. A visitor typed the value, so pick an attribute that isn't proof."),
   save_to_sensitive_slot_not_private: naming("is sensitive and saves to an attribute that isn't Private. Make the attribute Private, or pick a Private one."),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contextVariableNameSchema } from "@radioso/routine-definition";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
@@ -74,7 +75,7 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
   const ContextVariableCreateRequestSchema = registry.register(
     "ContextVariableCreateRequest",
     z.object({
-      name: z.string().min(1).max(120),
+      name: contextVariableNameSchema,
       description: z.string().max(2000).nullable().optional(),
       valueType: ContextVariableValueTypeSchema.openapi({
         description: "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.",

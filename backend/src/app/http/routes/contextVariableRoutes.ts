@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { contextVariableNameSchema } from "@radioso/routine-definition";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
@@ -38,7 +39,7 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
 const contextVariableOptionSchema = contextVariableOptionInputSchema.transform(normalizeContextVariableOption);
 
 const contextVariableBodySchema = z.object({
-  name: z.string().min(1).max(120),
+  name: contextVariableNameSchema,
   description: z.string().max(2000).nullable().optional(),
   valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES),
   options: z.array(contextVariableOptionSchema).max(optionLimits.maxOptions).nullable().optional(),

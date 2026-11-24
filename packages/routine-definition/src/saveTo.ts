@@ -9,24 +9,34 @@ import type { RoutineSlotType } from "./index.js";
 export const routineSlotSaveScopes = ["conversation", "person"] as const;
 
 /**
+ * The rule an attribute's (context variable's) name keeps: 1 to 120 characters. The attribute's
+ * definition and a slot's save target, which names it, share it, so every name an attribute can
+ * have can be saved to.
+ */
+export const contextVariableNameSchema = z.string().min(1).max(120);
+
+/**
  * A slot's save target: the attribute (context variable) its value is written to when the routine
  * reaches an ending, and the scope. Picked by the author; nothing infers it from the slot's key or
  * type. This package learns the shape only: the attribute's existence, type and trust are checked
  * where the agent's attributes are known.
  */
-export const routineSlotSaveToSchemaFor = <TName extends z.ZodTypeAny>(contextVariable: TName) => z.object({
-  contextVariable: contextVariable.describe("The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."),
+export const routineSlotSaveToSchema = z.object({
+  contextVariable: contextVariableNameSchema.describe("The name of the attribute the value is saved to. It must be enabled for the agent as a stored attribute, of a type that fits the field, and not signed."),
   scope: z.enum(routineSlotSaveScopes).describe("conversation keeps the value on this conversation; person keeps it on the conversation's verified person, and nothing is saved when there is none."),
 }).strict().describe("The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type.");
 
 export type RoutineSlotSaveScope = typeof routineSlotSaveScopes[number];
+
+/** The attribute value types a field saves to; the host checks that each is one its attributes have. */
+export type RoutineSlotSaveValueType = "string" | "number" | "boolean" | "date";
 
 /**
  * The attribute value types a field of each type saves to. A field's value is already in its type's
  * canonical form (a trimmed string, a number, a boolean, an ISO calendar date), which is how the
  * attribute stores it. An item, a card the visitor picked, saves to none.
  */
-const routineSlotSaveValueTypes: Readonly<Record<RoutineSlotType, readonly string[]>> = {
+const routineSlotSaveValueTypes: Readonly<Record<RoutineSlotType, readonly RoutineSlotSaveValueType[]>> = {
   text: ["string"],
   email: ["string"],
   number: ["number"],
@@ -37,4 +47,4 @@ const routineSlotSaveValueTypes: Readonly<Record<RoutineSlotType, readonly strin
 
 /** Whether a field of `slotType` may save to an attribute of `valueType`. */
 export const routineSlotSavesToValueType = (slotType: RoutineSlotType, valueType: string): boolean =>
-  routineSlotSaveValueTypes[slotType].includes(valueType);
+  routineSlotSaveValueTypes[slotType].some((saved) => saved === valueType);

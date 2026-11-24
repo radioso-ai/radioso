@@ -238,7 +238,11 @@ describe("routine definition schemas", () => {
     expect(routineSlotSchema.parse({ ...validSlot, saveTo: { ...saveTo, scope: "person" } }).saveTo?.scope).toBe("person");
     expect("saveTo" in routineSlotSchema.parse(validSlot)).toBe(false);
     expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { ...saveTo, scope: "session" } }).success).toBe(false);
-    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "party size", scope: "conversation" } }).success).toBe(false);
+    // Any name an attribute may have, 1 to 120 characters, as its definition allows.
+    expect(routineSlotSchema.parse({ ...validSlot, saveTo: { contextVariable: "Party size", scope: "conversation" } }).saveTo?.contextVariable).toBe("Party size");
+    expect(routineSlotSchema.parse({ ...validSlot, saveTo: { contextVariable: "n".repeat(120), scope: "conversation" } }).saveTo?.contextVariable).toHaveLength(120);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "n".repeat(121), scope: "conversation" } }).success).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "", scope: "conversation" } }).success).toBe(false);
     expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { contextVariable: "party_size" } }).success).toBe(false);
     expect(routineSlotSchema.safeParse({ ...validSlot, saveTo: { ...saveTo, extra: true } }).success).toBe(false);
   });

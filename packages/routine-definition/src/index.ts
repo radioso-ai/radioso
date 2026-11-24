@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { routineConsentEditingSchema, routineConsentSchema } from "./consent.js";
 import { presentBindingOf, routineStepPresentSchema } from "./presentBinding.js";
-import { routineSlotSaveToSchemaFor } from "./saveTo.js";
+import { routineSlotSaveToSchema } from "./saveTo.js";
 
 export * from "./consent.js";
 export * from "./presentBinding.js";
@@ -144,7 +144,6 @@ const routineApprovalOptionEditingSchema = routineApprovalOptionSchemaFor(
   editingText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
 );
 const routineVariableNameSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern);
-export const routineSlotSaveToSchema = routineSlotSaveToSchemaFor(routineVariableNameSchema);
 
 export const routineInputBindingSchema = z.discriminatedUnion("kind", [
   z.object({

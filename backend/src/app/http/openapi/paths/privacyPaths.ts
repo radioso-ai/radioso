@@ -15,12 +15,12 @@ const TAGS = ["Privacy"];
 
 const registerPrivacySchemas = (registry: OpenAPIRegistry) => {
   const DataSubjectIdentitySchema = registry.register("DataSubjectIdentity", dataSubjectIdentitySchema.openapi({
-    description: "One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id.",
+    description: "One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. `whatsapp_number`: a WhatsApp number, keyed by its digits, country code first.",
   }));
   const DataSubjectIdentityCandidateSchema = registry.register("DataSubjectIdentityCandidate", z.object({
     identity: DataSubjectIdentitySchema,
-    channel: z.string().openapi({ description: "The conversation channel the identity is on: `web`, `email` or `slack`." }),
-    label: z.string().openapi({ description: "How the channel knows the person: a verified customer id, an address, or a Slack member id." }),
+    channel: z.string().openapi({ description: "The conversation channel the identity is on: `web`, `email`, `slack` or `whatsapp`." }),
+    label: z.string().openapi({ description: "How the channel knows the person: a verified customer id, an address, a Slack member id, or a WhatsApp number (`+15550100101`)." }),
     conversationCount: z.number().int().min(0),
     firstSeenAt: z.string().datetime().nullable(),
     lastSeenAt: z.string().datetime().nullable(),
@@ -40,7 +40,7 @@ const registerPrivacySchemas = (registry: OpenAPIRegistry) => {
     workspaceId: z.string().uuid(),
     identities: z.array(DataSubjectIdentitySchema),
     sections: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))).openapi({
-      description: "Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list.",
+      description: "Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `whatsapp_contacts`, `whatsapp_messages`, `answer_feedback`. A section with nothing for the subject is an empty list.",
     }),
   }));
   const DataSubjectErasureSchema = registry.register("DataSubjectErasure", z.object({
@@ -94,7 +94,7 @@ export const registerPrivacyPaths = (
     path: "/api/v1/privacy/data-subjects/lookup",
     tags: TAGS,
     summary: "Find a data subject's identities",
-    description: "Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.",
+    description: "Returns every identity whose verified customer id, email address, Slack member id or WhatsApp number is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.",
     operationId: "lookupDataSubject",
     security: sec,
     request: { body: { content: json(privacy.DataSubjectLookupRequestSchema), required: true } },

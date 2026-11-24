@@ -124,5 +124,6 @@ jobs:
           name: n8n-node-package
           path: package
 
+      # The ./ prefix keeps npm from reading package/<file> as a GitHub owner/repo spec.
       - name: Publish with provenance
-        run: npm publish package/*.tgz --provenance --access public
+        run: npm publish ./package/*.tgz --provenance --access public

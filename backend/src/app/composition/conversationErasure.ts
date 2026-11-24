@@ -43,7 +43,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new EmailInboundEraser(trx),
   (trx) => new EmailSkillActivityEraser(trx),
   (trx) => new EvalConversationEraser(trx),
-  (trx) => new WhatsAppMessageLogEraser(trx),
+  // A number whose latest conversation goes takes its transport log and its person values with it.
+  (trx) => new WhatsAppMessageLogEraser(trx, new ContextVariableValueEraser(trx)),
   (trx) => new AudiencePulseSnapshotEraser(trx),
   (trx) => new VoiceSessionEraser(trx),
   // A conversation's photos: their objects go to the deletion job in the erasure's transaction.

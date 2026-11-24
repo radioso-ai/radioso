@@ -10,7 +10,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 /**
  * Where a table that holds data about a conversation, a chat session, a visitor or a message, or
- * that is keyed by a person's identifier (a verified customer id, a visitor key, an address), goes
+ * that is keyed by a person's identifier (a verified customer id, a visitor key, an address, a WhatsApp number), goes
  * in a data subject's export. Every such table needs an entry, so a table added with a
  * `conversation_id` or a `sender_address` fails here until it gets a section in
  * `app/composition/dataSubjectAccess.ts` or a stated reason it stays out.
@@ -37,6 +37,8 @@ const coverage: Record<string, ExportCoverage> = {
   a2a_tasks: { kind: "exported", section: "a2a_tasks" },
   routine_consent_records: { kind: "exported", section: "consent_records" },
   visitor_images: { kind: "exported", section: "visitor_images" },
+  connector_whatsapp_contacts: { kind: "exported", section: "whatsapp_contacts" },
+  connector_whatsapp_message_log: { kind: "exported", section: "whatsapp_messages" },
 
   conversation_tool_images: excluded("A copy of a third party's picture a card from a skill's result showed. The card, with its title, link and the picture's id, is exported with the message that carried it, under conversations."),
   email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),
@@ -44,7 +46,7 @@ const coverage: Record<string, ExportCoverage> = {
   slack_conversation_links: excluded("How the Slack finder finds a member's threads: a routing key naming the Slack workspace, channel and thread, which the conversation's channel context carries too."),
   email_send_intents: excluded("Delivery bookkeeping for replies the export carries as messages: provider ids, states and the authority to send."),
   email_skill_activity: excluded("A record that an email skill sent mail: an outcome and a redacted recipient summary, never the mail."),
-  connector_whatsapp_contacts: excluded("The WhatsApp channel's contact row, outside the web, email and Slack identities a lookup finds; a WhatsApp conversation is exported when another identity reaches it."),
+  connector_whatsapp_conversations: excluded("How the WhatsApp finder finds a number's conversations: the number beside each conversation id, which whatsapp_contacts and the conversations section carry."),
   voice_sessions: excluded("Where a call's recording sits at the voice vendor: the vendor's ids for it. The call's transcript is the conversation's messages."),
   voice_recording_erasure_items: excluded("Bookkeeping for deleting an already erased conversation's recording at the voice vendor: the vendor's ids for it, asks, and coded outcomes, never content. It is written as the conversation is erased, so no lookup reaches it, and the organization reads what is left at the vendor in its own list."),
   conversation_ownership: excluded("Which teammate owns a conversation and since when: the workspace's own workflow, not data about the subject."),
@@ -91,21 +93,22 @@ const contextValueScopeExport: Record<string, ExportCoverage> = {
   conversation: { kind: "exported", section: "context_values" },
   session: { kind: "exported", section: "context_values" },
   customer: { kind: "exported", section: "context_values" },
+  whatsapp_contact: { kind: "exported", section: "context_values" },
   agent: excluded("The operator's own configuration for an agent, the same for every visitor."),
   workspace: excluded("The operator's own configuration for the workspace, the same for every visitor."),
 };
 
 /**
- * Tables keyed by a subject in a way no column name shows: customer-scoped context values carry the
- * verified customer id in a generic `scope_id`.
+ * Tables keyed by a subject in a way no column name shows: person-scoped context values carry the
+ * verified customer id or the WhatsApp number in a generic `scope_id`.
  */
 const SUBJECT_KEYED_TABLES = ["context_variable_values"] as const;
 
 /**
  * Columns that name a conversation, chat session, visitor or message, or carry a person's own
- * identifier: a verified customer id, a visitor key, an address. Matched whatever their type.
+ * identifier: a verified customer id, a visitor key, an address, a WhatsApp number. Matched whatever their type.
  */
-const SUBJECT_COLUMN_PATTERN = "(^|_)(conversation|session|visitor|message)_id$|(^|_)(verified_customer_id|visitor_key)$|(^|_)address(es)?$";
+const SUBJECT_COLUMN_PATTERN = "(^|_)(conversation|session|visitor|message)_id$|(^|_)(verified_customer_id|visitor_key|wa_id)$|(^|_)address(es)?$";
 
 describeIntegration("data subject export schema coverage", () => {
   const database = new Database(integrationDatabaseUrl);

@@ -25,7 +25,7 @@ const ACTOR = { accountId: "acct-1", userId: "user-1" };
 const NOW = new Date("2026-10-19T12:00:00.000Z");
 const ADDRESS = "jane@example.com";
 
-const noReach: DataSubjectIdentityReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
+const noReach: DataSubjectIdentityReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [], recordIds: [] };
 
 const finder = (
   kind: DataSubjectIdentityKind,
@@ -49,6 +49,7 @@ const finder = (
         conversationIds: parts.flatMap((part) => part.conversationIds),
         visitorIds: parts.flatMap((part) => part.visitorIds),
         verifiedCustomerIds: parts.flatMap((part) => part.verifiedCustomerIds),
+        channelPersonKeys: parts.flatMap((part) => part.channelPersonKeys),
         recordIds: parts.flatMap((part) => part.recordIds),
       };
     },
@@ -223,6 +224,7 @@ describe("DataSubjectAccessService", () => {
         conversationIds: ["conv-mail-1", "conv-web-1", "conv-web-2"],
         visitorIds: ["visitor-1"],
         verifiedCustomerIds: ["cust-42"],
+        channelPersonKeys: [],
       }]);
       expect(h.runs()).toBe(1);
     });
@@ -286,8 +288,8 @@ describe("DataSubjectAccessService", () => {
 
       expect(pages.flatMap((page) => page.sections.conversations.map((record) => record.id))).toEqual(["conv-web-2", "conv-web-1"]);
       expect(h.exportScopes).toEqual([
-        { workspaceId: WORKSPACE, conversationIds: ["conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
-        { workspaceId: WORKSPACE, conversationIds: ["conv-web-1"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], channelPersonKeys: [] },
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-1"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], channelPersonKeys: [] },
       ]);
       expect(h.audit.map((event) => event.metadata)).toEqual([
         expect.objectContaining({ conversationCount: 1 }),

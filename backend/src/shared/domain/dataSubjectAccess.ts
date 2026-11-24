@@ -2,7 +2,8 @@
  * Access to one data subject's data: the person a workspace's conversations are with, as each
  * channel knows them.
  *
- * Identity is split by channel: a web visitor record, an email sender's address, a Slack user.
+ * Identity is split by channel: a web visitor record, an email sender's address, a Slack user, a
+ * WhatsApp number.
  * Radioso never merges them on its own. A module that keeps identities implements a finder, which
  * matches an operator's search against them and says what an identity the operator confirmed
  * reaches. A module that keeps data about the subject implements an exporter for its section of the
@@ -10,29 +11,31 @@
  * consistent snapshot.
  */
 
-export const DATA_SUBJECT_IDENTITY_KINDS = ["web_visitor", "email_address", "slack_user"] as const;
+import type { ChannelPersonKey } from "./channelPersonKey.js";
+
+export const DATA_SUBJECT_IDENTITY_KINDS = ["web_visitor", "email_address", "slack_user", "whatsapp_number"] as const;
 
 export type DataSubjectIdentityKind = (typeof DATA_SUBJECT_IDENTITY_KINDS)[number];
 
 /** One identity, named by the finder that keeps it. */
 export interface DataSubjectIdentity {
   readonly kind: DataSubjectIdentityKind;
-  /** The finder's own key: a visitor id, a lowercased address, a Slack team and user. */
+  /** The finder's own key: a visitor id, a lowercased address, a Slack team and user, a number's digits. */
   readonly key: string;
 }
 
 /** An identity a search matched, for an operator to confirm or leave out. */
 export interface DataSubjectIdentityMatch {
   readonly key: string;
-  /** How the channel knows the person: a verified customer id, an address, a Slack user id. */
+  /** How the channel knows the person: a verified customer id, an address, a Slack user id, a number. */
   readonly label: string;
   readonly conversationCount: number;
   readonly firstSeenAt: Date | null;
   readonly lastSeenAt: Date | null;
   /**
    * Radioso's own ids for the records the identity is made of: a visitor record, Slack link rows,
-   * email thread links (keyed by their conversation). Audit events name an identity by these, never
-   * by its key, which can be the person's own address.
+   * email thread links (keyed by their conversation), a WhatsApp contact row. Audit events name an
+   * identity by these, never by its key, which can be the person's own address or number.
    */
   readonly recordIds: readonly string[];
 }
@@ -44,6 +47,8 @@ export interface DataSubjectReach {
   readonly visitorIds: readonly string[];
   /** Host-verified customer ids those visitors carry, which customer-scoped data is stored by. */
   readonly verifiedCustomerIds: readonly string[];
+  /** The person keys channels attest for the subject, a WhatsApp number, which a channel person's data is stored by. */
+  readonly channelPersonKeys: readonly ChannelPersonKey[];
 }
 
 /** What one finder's keys reach, with the ids of the identity records they resolved to. */

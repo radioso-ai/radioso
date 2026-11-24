@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import type { ConversationDataEraser, ConversationErasureScope } from "../../../../shared/domain/conversationDataErasure.js";
+import type {
+  ChannelPersonDataEraser,
+  ConversationDataEraser,
+  ConversationErasureScope,
+} from "../../../../shared/domain/conversationDataErasure.js";
 import { anyOf, toJsonb } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 
@@ -456,35 +460,47 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
 }
 
 /**
- * Erases the WhatsApp transport log of a number whose conversation is erased: the raw inbound and
- * outbound payloads, message text included, keyed by the number rather than the conversation. The
- * number is found through its contact row, which cascades with the conversation, so this runs first.
+ * Erases what Radioso keeps by a WhatsApp number whose conversation is erased: the transport log, the
+ * raw inbound and outbound payloads with their message text, and, through `persons`, the values kept
+ * for the number as a person (#1884). Both are keyed by the number rather than the conversation. The
+ * number is found through its contact row, which cascades with the conversation, so this runs first,
+ * and `persons` is bound to the same transaction.
  *
  * A number has one contact row, pointing at its latest conversation; a message after the
- * conversation timeout starts a new conversation and moves the row. The log cannot be split by
- * conversation, so erasing the number's latest conversation erases the whole log for the number,
+ * conversation timeout starts a new conversation and moves the row. Neither the log nor the values
+ * can be split by conversation, so erasing the number's latest conversation erases both whole,
  * earlier conversations' entries included. Erasing an earlier conversation reaches no number, and
- * its entries stay until the number's latest conversation is erased. A workspace's log cascades
- * with the workspace.
+ * they stay until the number's latest conversation is erased. A workspace's log cascades with the
+ * workspace. The count includes the values `persons` erased.
  */
 export class WhatsAppMessageLogEraser implements ConversationDataEraser {
   readonly owner = "whatsapp";
 
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly persons: ChannelPersonDataEraser,
+  ) {}
 
   async erase(scope: ConversationErasureScope): Promise<number> {
     if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
       return 0;
     }
-    const result = await this.db
+    const numbers = (await this.db
+      .selectFrom("connector_whatsapp_contacts")
+      .select("wa_id")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .execute()).map((row) => row.wa_id);
+    if (numbers.length === 0) return 0;
+    const log = await this.db
       .deleteFrom("connector_whatsapp_message_log")
       .where("workspace_id", "=", scope.workspaceId)
-      .where("wa_id", "in", (eb) => eb
-        .selectFrom("connector_whatsapp_contacts")
-        .select("wa_id")
-        .where("workspace_id", "=", scope.workspaceId)
-        .where((inner) => anyOf(inner.ref("conversation_id"), scope.conversationIds, "uuid[]")))
+      .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
       .executeTakeFirst();
-    return Number(result.numDeletedRows);
+    const values = await this.persons.eraseChannelPersons({
+      workspaceId: scope.workspaceId,
+      keys: numbers.map((id) => ({ kind: "whatsapp_contact", id })),
+    });
+    return Number(log.numDeletedRows) + values;
   }
 }

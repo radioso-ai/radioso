@@ -10,7 +10,12 @@ import {
 import { ConsentRecordExporter } from "../../db/repositories/routineConsentRepository.js";
 import { RoutineValueExporter } from "../../db/repositories/routineStateRepository.js";
 import { A2aTaskExporter } from "../../modules/a2a/public.js";
-import { SlackUserIdentityFinder } from "../../modules/connectors/plugins/index.js";
+import {
+  SlackUserIdentityFinder,
+  WhatsAppContactExporter,
+  WhatsAppMessageLogExporter,
+  WhatsAppNumberIdentityFinder,
+} from "../../modules/connectors/plugins/index.js";
 import { EmailMessageExporter, EmailSenderIdentityFinder } from "../../modules/emailChannel/public.js";
 import { DataSubjectAccessService, type DataSubjectReadUnitOfWork } from "../../modules/privacy/public.js";
 import { VisitorImageExporter } from "../../modules/visitorImages/composition.js";
@@ -27,6 +32,7 @@ export const defaultDataSubjectIdentityFinders: readonly DataSubjectIdentityFind
   (trx) => new WebVisitorIdentityFinder(trx),
   (trx) => new EmailSenderIdentityFinder(trx),
   (trx) => new SlackUserIdentityFinder(trx),
+  (trx) => new WhatsAppNumberIdentityFinder(trx),
 ];
 
 /**
@@ -46,6 +52,8 @@ export const defaultDataSubjectDataExporters: readonly DataSubjectDataExporterBi
   (trx) => new AnswerFeedbackExporter(trx),
   (trx) => new A2aTaskExporter(trx),
   (trx) => new VisitorImageExporter(trx),
+  (trx) => new WhatsAppContactExporter(trx),
+  (trx) => new WhatsAppMessageLogExporter(trx),
   // No exporter for `conversation_tool_images`: each is a copy of a third party's picture a card
   // showed. The cards themselves, with each picture's id, go out with their messages under
   // `conversations`.

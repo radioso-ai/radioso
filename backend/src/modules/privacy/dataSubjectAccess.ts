@@ -1,4 +1,5 @@
 import type { AuditEventInput } from "../audit/contracts/index.js";
+import type { ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import type {
   DataSubjectDataExporter,
   DataSubjectExportRecord,
@@ -131,12 +132,19 @@ const isNotFound = (error: unknown): boolean => error instanceof AppError && err
 
 const errorTypeOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
+/** Each channel person key once, in a stable order, as the merged reach's other lists are. */
+const uniqueChannelPersonKeys = (keys: readonly ChannelPersonKey[]): ChannelPersonKey[] =>
+  [...new Map(keys.map((key) => [`${key.kind}:${key.id}`, key])).entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, key]) => key);
+
 const mergeReaches = (reaches: readonly DataSubjectReach[]): DataSubjectReach => {
   const unique = (values: readonly string[]) => [...new Set(values)].sort();
   return {
     conversationIds: unique(reaches.flatMap((reach) => reach.conversationIds)),
     visitorIds: unique(reaches.flatMap((reach) => reach.visitorIds)),
     verifiedCustomerIds: unique(reaches.flatMap((reach) => reach.verifiedCustomerIds)),
+    channelPersonKeys: uniqueChannelPersonKeys(reaches.flatMap((reach) => reach.channelPersonKeys)),
   };
 };
 

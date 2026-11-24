@@ -1,6 +1,5 @@
 import { whatsAppNumberKey, type ChannelPersonKey, type ConversationChannelPersonKeys } from "../../../../shared/domain/channelPersonKey.js";
 import {
-  exportJson,
   exportTimestamp,
   type DataSubjectDataExporter,
   type DataSubjectExportRecord,
@@ -11,6 +10,7 @@ import {
 } from "../../../../shared/domain/dataSubjectAccess.js";
 import { anyOf } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
+import { exportedWhatsAppMessage } from "./whatsappMessageExport.js";
 
 /**
  * What the WhatsApp channel lets other modules read by a number (#1884), through ports they own: the
@@ -143,9 +143,9 @@ export class WhatsAppContactExporter implements DataSubjectDataExporter {
 }
 
 /**
- * The export's `whatsapp_messages` section: the WhatsApp transport's copy of each message the
- * subject's numbers sent or were sent, as Meta delivered it or Radioso sent it. It keeps a number's
- * messages until its latest conversation is erased, earlier conversations' included.
+ * The export's `whatsapp_messages` section: each message the subject's numbers sent or were sent that
+ * the WhatsApp transport still logs, as `exportedWhatsAppMessage` projects it. The log keeps a
+ * message for 90 days, and less once the number's latest conversation is erased.
  */
 export class WhatsAppMessageLogExporter implements DataSubjectDataExporter {
   readonly section = "whatsapp_messages";
@@ -157,19 +157,20 @@ export class WhatsAppMessageLogExporter implements DataSubjectDataExporter {
     if (numbers.length === 0) return [];
     const rows = await this.db
       .selectFrom("connector_whatsapp_message_log")
-      .select(["wa_id", "direction", "message_type", "status", "payload", "created_at"])
+      .select(["wamid", "wa_id", "direction", "message_type", "status", "payload", "created_at"])
       .where("workspace_id", "=", scope.workspaceId)
       .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
       .orderBy("created_at")
       .orderBy("id")
       .execute();
-    return rows.map((row) => ({
-      number: `+${row.wa_id}`,
+    return rows.map((row) => exportedWhatsAppMessage({
+      wamid: row.wamid,
+      waId: row.wa_id,
       direction: row.direction,
       messageType: row.message_type,
       status: row.status,
-      createdAt: exportTimestamp(new Date(row.created_at)),
-      payload: exportJson(row.payload),
+      payload: row.payload,
+      createdAt: new Date(row.created_at),
     }));
   }
 }

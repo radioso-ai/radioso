@@ -32,6 +32,19 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const NUMBER_A = "15550100101";
 const NUMBER_B = "15550100102";
 
+/** A webhook delivery Meta batched: a message from each of two numbers in one body. */
+const deliveryFromTwoNumbers = (wamidOfA: string) => ({
+  object: "whatsapp_business_account",
+  entry: [{ id: "waba-1", changes: [{ field: "messages", value: {
+    metadata: { phone_number_id: "phone-number-1" },
+    contacts: [{ wa_id: NUMBER_A, profile: { name: "Ada" } }, { wa_id: NUMBER_B, profile: { name: "Bea" } }],
+    messages: [
+      { id: wamidOfA, from: NUMBER_A, timestamp: "1763632800", type: "text", text: { body: "A table for four, please" } },
+      { id: `wamid.${randomUUID()}`, from: NUMBER_B, timestamp: "1763632801", type: "text", text: { body: "Bea's private question" } },
+    ],
+  } }] }],
+});
+
 interface Tenant {
   accountId: string;
   workspaceId: string;
@@ -203,6 +216,11 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
       const otherNumber = await startConversation(tenant, NUMBER_B);
       await keepForNumber(tenant, NUMBER_A, "gold");
       await keepForNumber(tenant, NUMBER_B, "silver");
+      const batchedWamid = `wamid.${randomUUID()}`;
+      await whatsapp.createMessageLog({
+        wamid: batchedWamid, direction: "inbound", workspaceId: tenant.workspaceId, waId: NUMBER_A,
+        messageType: "text", payload: deliveryFromTwoNumbers(batchedWamid), status: "replied",
+      });
 
       const candidates = await access.lookup({ workspaceId: tenant.workspaceId, query: " +1 (555) 010-0101 ", actor: actor(tenant) });
 
@@ -218,7 +236,10 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
       expect(document.sections.whatsapp_messages).toEqual([
         expect.objectContaining({ number: `+${NUMBER_A}`, direction: "inbound" }),
         expect.objectContaining({ number: `+${NUMBER_A}`, direction: "inbound" }),
+        expect.objectContaining({ number: `+${NUMBER_A}`, direction: "inbound", type: "text", text: "A table for four, please" }),
       ]);
+      // A delivery that batched another number's message gives A only A's own.
+      expect(JSON.stringify(document)).not.toContain("Bea");
       expect(document.sections.context_values).toEqual([expect.objectContaining({ scope: "whatsapp_contact", value: "gold" })]);
       expect(JSON.stringify(document)).not.toContain(NUMBER_B);
 

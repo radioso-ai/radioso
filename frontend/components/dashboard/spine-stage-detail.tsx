@@ -6,7 +6,7 @@ import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
 import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
 import { buildRoutineRunTrace, type RoutineRunTraceView } from '@/lib/routine-run-trace'
 import { RejectedSlotChips } from './rejected-slot-chips'
-import { RoutineFilledSlots } from './routine-filled-slots'
+import { RoutineFilledSlots, StageOutputSaves } from './routine-filled-slots'
 import {
   routineEventDescription,
   routineEventLabel,
@@ -1006,7 +1006,7 @@ function RoutineStageDetail({
           </p>
         )}
       </Section>
-      {trace ? <RoutineStepsTimeline trace={trace} /> : null}
+      {trace ? <RoutineStepsTimeline trace={trace} /> : <StageOutputSaves outputs={outputs} />}
       {trace && (trace.filledSlotKeys.length > 0 || trace.capturedSlotKeys.length > 0) ? (
         <Section label={`Slots filled (${trace.filledSlotKeys.length})`}>
           <RoutineFilledSlots trace={trace} />
@@ -1078,7 +1078,7 @@ function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
       {[dispatched?.outcome, dispatched?.fallbackNote].filter(Boolean).map((line) => (
         <p key={line} className="text-sm text-muted-foreground">{line}</p>
       ))}
-
+      <StageOutputSaves outputs={outputs} />
       {Object.keys(outputs).length ? (
         <Section label="Outputs">
           <KeyValueGrid record={outputs} />

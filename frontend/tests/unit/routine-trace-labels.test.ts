@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ConversationTraceStage } from '@/lib/api'
-import { buildRoutineRunTrace } from '@/lib/routine-run-trace'
+import { buildRoutineRunTrace, routineSavesFromOutputs } from '@/lib/routine-run-trace'
 import { routineEventDescription, routineEventLabel } from '@/lib/routine-trace-labels'
 
 const consentStep = (event: string, consent: Record<string, unknown>) => {
@@ -95,5 +95,22 @@ describe("an ended run's saves to attributes in the turn inspector (#1884)", () 
 
   it('has no saves on a run that saved none', () => {
     expect(buildRoutineRunTrace(stageWith({}))).not.toHaveProperty('saves')
+  })
+})
+
+describe('saves a stage carries on its outputs (#1884)', () => {
+  it('reads the saves of a stage that has no routine sub-trace, without any value', () => {
+    expect(routineSavesFromOutputs({
+      routineId: 'booking',
+      saves: [
+        { slotKey: 'guests', contextVariable: 'party_size', scope: 'conversation', outcome: 'withdrawn', value: 4 },
+        { slotKey: 'broken' },
+      ],
+    })).toEqual([{ slotKey: 'guests', contextVariable: 'party_size', scope: 'conversation', outcome: 'withdrawn' }])
+  })
+
+  it('reads none from outputs without saves, or from no outputs', () => {
+    expect(routineSavesFromOutputs({ routineId: 'booking' })).toEqual([])
+    expect(routineSavesFromOutputs(undefined)).toEqual([])
   })
 })

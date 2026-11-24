@@ -1,6 +1,6 @@
 'use client'
 
-import type { RoutineRunTraceView, RoutineTraceSaveView } from '@/lib/routine-run-trace'
+import { routineSavesFromOutputs, type RoutineRunTraceView, type RoutineTraceSaveView } from '@/lib/routine-run-trace'
 
 /**
  * What each save to an attribute did when the run ended (#1884): the field, the attribute, the
@@ -16,6 +16,12 @@ function RoutineAttributeSaves({ saves }: { saves: readonly RoutineTraceSaveView
       ))}
     </ul>
   )
+}
+
+/** The saves a stage with no routine sub-trace carries on its outputs; nothing when it has none. */
+export function StageOutputSaves({ outputs }: { outputs: unknown }) {
+  const saves = routineSavesFromOutputs(outputs)
+  return saves.length > 0 ? <RoutineAttributeSaves saves={saves} /> : null
 }
 
 /**

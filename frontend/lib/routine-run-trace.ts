@@ -156,6 +156,13 @@ export interface RoutineTraceSaveView {
   outcome: string
 }
 
+/**
+ * The saves a stage carries on its outputs, where the backend records them when the stage has no
+ * `routine` sub-trace (a decision's resume, a correction after the routine completed).
+ */
+export const routineSavesFromOutputs = (outputs: unknown): RoutineTraceSaveView[] =>
+  isRecord(outputs) ? savesOf(outputs.saves) : []
+
 const savesOf = (value: unknown): RoutineTraceSaveView[] =>
   asArray(value).flatMap((entry) => {
     if (!isRecord(entry)) return []

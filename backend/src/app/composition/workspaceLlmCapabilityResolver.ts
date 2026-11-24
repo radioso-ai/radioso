@@ -109,6 +109,17 @@ interface CapabilityDecision {
   replaced?: LlmCapabilitySelection;
 }
 
+const missingApiKeyError = (provider: LlmProviderName, capability: LlmCapabilityName): ProviderConfigurationError =>
+  new ProviderConfigurationError(
+    `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
+    {
+      kind: "missing_api_key",
+      provider,
+      capability,
+      remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
+    },
+  );
+
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
 
@@ -162,16 +173,32 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     return (await this.decide(capability, input)).selection;
   }
 
+  async assertResolvable(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<void> {
+    const { provider } = (await this.decide(capability, input, { logManagedReplacement: false })).selection;
+    const hasKey = await this.deps.credentials.hasCredentials(input.workspaceId, provider)
+      || Boolean(this.deps.envKeys.resolveEnvApiKey(provider));
+    if (!hasKey) {
+      throw missingApiKeyError(provider, capability);
+    }
+    if (provider === "openai-compatible") {
+      this.openAICompatibleBaseUrl(capability, this.deps.defaults[capability], input.capabilityOverride?.baseUrl);
+    }
+  }
+
   private async decide(
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
+    options: { logManagedReplacement: boolean } = { logManagedReplacement: true },
   ): Promise<CapabilityDecision> {
     const candidate = await this.resolveCandidate(capability, input);
     const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
     const planned: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
-    if (managed && candidate.resolvedBy !== "environment_default") {
+    if (managed && candidate.resolvedBy !== "environment_default" && options.logManagedReplacement) {
       this.deps.logger?.info(
         {
           ...selectionLogFields(capability, input.workspaceId, planned),
@@ -273,15 +300,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     if (envKey) {
       return { apiKey: envKey, source: "environment" };
     }
-    throw new ProviderConfigurationError(
-      `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
-      {
-        kind: "missing_api_key",
-        provider,
-        capability,
-        remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
-      },
-    );
+    throw missingApiKeyError(provider, capability);
   }
 
   private async resolveProviderEndpoint(
@@ -299,23 +318,29 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     if (provider !== "openai-compatible") {
       return {};
     }
+    return { baseUrl: this.openAICompatibleBaseUrl(capability, envDefault, overrideBaseUrl) };
+  }
 
-    const inheritedBaseUrl = provider === envDefault.provider ? envDefault.baseUrl : undefined;
-    const envBaseUrl = this.deps.envBaseUrls?.[provider];
-    const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? envBaseUrl;
+  private openAICompatibleBaseUrl(
+    capability: LlmCapabilityName,
+    envDefault: LlmCapabilityDefault,
+    overrideBaseUrl: string | undefined,
+  ): string {
+    const inheritedBaseUrl = envDefault.provider === "openai-compatible" ? envDefault.baseUrl : undefined;
+    const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? this.deps.envBaseUrls?.["openai-compatible"];
     if (!baseUrl) {
       throw new ProviderConfigurationError(
         "openai-compatible requires OPENAI_COMPATIBLE_BASE_URL to be configured; selecting this provider for a workspace without a base URL would silently call the default OpenAI endpoint.",
         {
           kind: "missing_base_url",
-          provider,
+          provider: "openai-compatible",
           capability,
           setting: "OPENAI_COMPATIBLE_BASE_URL",
           remediation: "Set OPENAI_COMPATIBLE_BASE_URL on the backend and restart Radioso.",
         },
       );
     }
-    return { baseUrl };
+    return baseUrl;
   }
 
   /**

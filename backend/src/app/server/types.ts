@@ -133,6 +133,7 @@ import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveServ
 import type { AgentToolCatalogPort, RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
 import type { StarterPackApplyService, StarterPackDraftService } from "../../modules/agentStarterPack/public.js";
+import type { ChatReadiness } from "../../shared/infra/llm/chatReadiness.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type {
   ContextVariableResolutionReaderPort,
@@ -291,6 +292,8 @@ export interface AppDependencies {
   apiConnections: ApiConnectionService;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   llmCapabilityResolver: LlmCapabilityResolver;
+  /** Whether the workspace's chat pipeline resolves; what Ray's availability and `llmConfigured` report. */
+  chatReadiness: ChatReadiness;
   auditService: AuditService;
   mailService: EmailService;
   /** Branded-notice sending and the owner+admin directory. Built once in `dependencies.ts` and

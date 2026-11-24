@@ -4,6 +4,7 @@ import { authoredDirectiveInputSchema, authoredDirectiveSurfaceValues } from "..
 import { defaultAnswerDirectives } from "../directives/public.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineValidationResultSchema,
   type RoutineDefinitionDraftInput,
   type RoutineValidationResult,
 } from "../routines/public.js";
@@ -28,48 +29,81 @@ const trimmed = (max: number) => z.string().trim().min(1).max(max);
 export const starterPackPurposeSchema = trimmed(STARTER_PACK_LIMITS.purpose);
 
 /**
- * One drafted directive. A strict subset of the authored-directive input contract
+ * One drafted directive: a subset of the authored-directive input contract
  * (`authoredDirectiveInputSchema`), so an accepted draft can be created unchanged by
- * `AuthoredDirectiveService.create`.
+ * `AuthoredDirectiveService.create`. Model output, not a request: keys outside the subset are
+ * dropped rather than refused, at every level.
  */
 const starterPackDirectiveDraftSchema = z.object({
   name: trimmed(STARTER_PACK_LIMITS.name).refine((name) => !reservedDirectiveNames.has(name), {
     message: "Directive name is reserved by a built-in directive",
   }),
   condition: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("always") }).strict(),
+    z.object({ kind: z.literal("always") }),
     z.object({
       kind: z.literal("contextual"),
       description: trimmed(STARTER_PACK_LIMITS.conditionDescription),
-    }).strict(),
+    }),
   ]),
   action: trimmed(STARTER_PACK_LIMITS.action),
   tags: z.array(trimmed(STARTER_PACK_LIMITS.name)).optional(),
   surfaces: z.array(z.enum(authoredDirectiveSurfaceValues)).optional(),
-}).strict();
+});
 
 /**
  * The single routine a pack proposes. `procedure` is prose, the input the existing routine
  * draft-assist service turns into a validated routine definition.
  */
-export const starterPackRoutineDraftSchema = z.object({
+const starterPackRoutineDraftSchema = z.object({
   name: trimmed(STARTER_PACK_LIMITS.name),
   procedure: trimmed(STARTER_PACK_LIMITS.procedure),
-}).strict();
+});
 
-/** What the model must return: directives plus exactly one routine object. */
-export const starterPackDraftModelOutputSchema = z.object({
-  directives: z.array(starterPackDirectiveDraftSchema)
-    .min(STARTER_PACK_LIMITS.minDirectives)
-    .max(STARTER_PACK_LIMITS.maxDirectives)
-    .refine((directives) => new Set(directives.map((directive) => directive.name)).size === directives.length, {
-      message: "Directive names must be unique within a starter pack",
-    }),
+/** The model's answer before its directives are read one by one. */
+const starterPackDraftModelOutputSchema = z.object({
+  directives: z.array(z.unknown()),
   routine: starterPackRoutineDraftSchema,
-}).strict();
+});
 
 export type StarterPackDirectiveDraft = z.infer<typeof starterPackDirectiveDraftSchema>;
-export type StarterPackDraftModelOutput = z.infer<typeof starterPackDraftModelOutputSchema>;
+
+interface StarterPackDraftModelOutput {
+  directives: StarterPackDirectiveDraft[];
+  routine: z.infer<typeof starterPackRoutineDraftSchema>;
+}
+
+/**
+ * Reads the model's answer one directive at a time, so one bad suggestion costs only itself.
+ * Unknown keys are ignored; a directive that is invalid, takes a reserved name, or repeats an
+ * earlier name is dropped; directives past the maximum are cut. Null only when the routine is
+ * missing or invalid, or no directive is left.
+ */
+export const parseStarterPackDraftModelOutput = (
+  value: unknown,
+): { draft: StarterPackDraftModelOutput; droppedDirectiveCount: number } | null => {
+  const output = starterPackDraftModelOutputSchema.safeParse(value);
+  if (!output.success) {
+    return null;
+  }
+  const directives: StarterPackDirectiveDraft[] = [];
+  for (const candidate of output.data.directives) {
+    const directive = starterPackDirectiveDraftSchema.safeParse(candidate);
+    if (
+      directive.success
+      && directives.length < STARTER_PACK_LIMITS.maxDirectives
+      && !directives.some((kept) => kept.name === directive.data.name)
+    ) {
+      directives.push(directive.data);
+    }
+  }
+  if (directives.length < STARTER_PACK_LIMITS.minDirectives) {
+    return null;
+  }
+  return {
+    draft: { directives, routine: output.data.routine },
+    droppedDirectiveCount: output.data.directives.length - directives.length,
+  };
+};
 
 export interface StarterPackDraft extends StarterPackDraftModelOutput {
   /** The detected language label (for example "German"), or null when detection gave no usable answer. */
@@ -81,7 +115,10 @@ export const starterPackDraftRequestSchema = z.object({
   purpose: starterPackPurposeSchema,
 }).strict();
 
-/** Set when a suggestion's name is already taken on the agent. Applying it would be skipped, never overwrite. */
+/**
+ * Set when a suggestion's name is already taken on the agent. Applying a pack that includes it is
+ * refused with 409 `starter_pack_name_conflict`; nothing existing is ever overwritten.
+ */
 export type StarterPackItemConflict = "name_exists" | null;
 
 export type StarterPackDraftItem =
@@ -175,21 +212,27 @@ const starterPackCoherenceVerdictSchema = z.object({
   rationale: z.string(),
 }).strict();
 
+export const starterPackAppliedDirectiveSchema = z.object({
+  itemKey: z.string(),
+  kind: z.literal("directive"),
+  id: z.string(),
+  name: z.string(),
+  coherence: starterPackCoherenceVerdictSchema,
+}).strict();
+
+export const starterPackAppliedRoutineSchema = z.object({
+  itemKey: z.string(),
+  kind: z.literal("routine"),
+  id: z.string(),
+  name: z.string(),
+  /** The created routine's validation, in the shape the routine authoring endpoints return it. */
+  validation: routineValidationResultSchema,
+}).strict();
+
 /** A created item, as stored with the idempotency record and returned on every replay. */
 const starterPackAppliedItemSchema = z.discriminatedUnion("kind", [
-  z.object({
-    itemKey: z.string(),
-    kind: z.literal("directive"),
-    id: z.string(),
-    name: z.string(),
-    coherence: starterPackCoherenceVerdictSchema,
-  }).strict(),
-  z.object({
-    itemKey: z.string(),
-    kind: z.literal("routine"),
-    id: z.string(),
-    name: z.string(),
-  }).strict(),
+  starterPackAppliedDirectiveSchema,
+  starterPackAppliedRoutineSchema,
 ]);
 
 export const starterPackApplyResultSchema = z.object({

@@ -244,6 +244,7 @@ describe("LlmProviderRegistry", () => {
 
   it("resolves workspace credentials while preserving static pipeline metadata", async () => {
     const resolver = {
+      assertResolvable: vi.fn(),
       resolve: vi.fn(async () => ({
         capability: "chat" as const,
         provider: "openai" as const,
@@ -279,7 +280,7 @@ describe("LlmProviderRegistry", () => {
   });
 
   it("fails closed instead of using a deployment key when a workspace resolver lacks workspace context", async () => {
-    const resolver = { resolve: vi.fn() };
+    const resolver = { resolve: vi.fn(), assertResolvable: vi.fn() };
     const registry = new LlmProviderRegistry(
       resolveLlmConfig({ OPENAI_API_KEY: "platform-key" }),
       undefined,
@@ -339,6 +340,7 @@ describe("LlmProviderRegistry", () => {
       observeHistogram: vi.fn(),
     };
     const resolver = {
+      assertResolvable: vi.fn(),
       resolve: vi.fn(async () => ({
         capability: "chat" as const,
         provider: "openai" as const,
@@ -396,6 +398,7 @@ describe("LlmProviderRegistry", () => {
 
   it("uses a workspace credential for embedding inference when the environment has no key", async () => {
     const resolver = {
+      assertResolvable: vi.fn(),
       resolve: vi.fn(async () => ({
         capability: "embeddings" as const,
         provider: "openai" as const,
@@ -446,7 +449,7 @@ describe("LlmProviderRegistry", () => {
         model: "text-embedding-3-small",
         apiKey: "shared-key",
       });
-    const resolver = { resolve };
+    const resolver = { resolve, assertResolvable: vi.fn() };
     const requests: string[] = [];
     vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       requests.push(input instanceof Request ? input.url : String(input));
@@ -489,7 +492,7 @@ describe("LlmProviderRegistry", () => {
         model: "text-embedding-3-small",
         apiKey: "shared-key",
       });
-    const resolver = { resolve };
+    const resolver = { resolve, assertResolvable: vi.fn() };
     const requests: string[] = [];
     vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       requests.push(input instanceof Request ? input.url : String(input));
@@ -875,6 +878,7 @@ describe("LlmProviderRegistry", () => {
     });
 
     const resolver = {
+      assertResolvable: vi.fn(),
       resolve: vi.fn(async (_capability: string, input: LlmCapabilityResolveInput) => ({
         capability: "embeddings" as const,
         provider: input.capabilityOverride?.provider ?? endpointB.provider,
@@ -951,6 +955,7 @@ describe("LlmProviderRegistry", () => {
 
   it("resolves workspace credentials when probing an embedding transition", async () => {
     const resolver = {
+      assertResolvable: vi.fn(),
       resolve: vi.fn(async () => ({
         capability: "embeddings" as const,
         provider: "gemini" as const,
@@ -1591,5 +1596,59 @@ describe("OpenAIEmbeddingClient", () => {
       input: ["hello"],
     });
     expect(request).not.toHaveProperty("dimensions");
+  });
+});
+
+describe("LlmProviderRegistry.assertChatPipelineResolvable", () => {
+  const answerOperation = (workspaceId: string) => ({
+    workspaceId,
+    requestId: "req-1",
+    surface: "agent_starter_pack",
+    operation: "draft_starter_pack",
+    attemptKey: "primary",
+  });
+
+  it("checks the same resolution the chat inference pipeline makes, without resolving a key", async () => {
+    const resolver = {
+      resolve: vi.fn(async () => ({ capability: "chat" as const, provider: "openai" as const, model: "gpt-5.4-mini", apiKey: "workspace-key" })),
+      assertResolvable: vi.fn(async () => undefined),
+    };
+    vi.stubGlobal("fetch", async () => Response.json({
+      choices: [{ message: { content: "hello" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }));
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}), undefined, { resolver });
+    await registry.createChatInferencePipeline().complete({ prompt: "hello", operation: answerOperation("ws-1") });
+    resolver.resolve.mockClear();
+
+    await expect(registry.assertChatPipelineResolvable("ws-1")).resolves.toBeUndefined();
+
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(resolver.assertResolvable).toHaveBeenCalledTimes(1);
+    // The deployment's chat provider and model, with the workspace's credentials: exactly what a call resolves.
+    expect(resolver.assertResolvable.mock.calls[0]).toEqual(["chat", { workspaceId: "ws-1", capabilityOverride: { provider: "openai", model: "gpt-5.4-mini" } }]);
+  });
+
+  it("passes the resolver's error through unchanged", async () => {
+    const error = new ProviderConfigurationError("No key", { kind: "missing_api_key", capability: "chat" });
+    const resolver = { resolve: vi.fn(), assertResolvable: vi.fn(async () => { throw error; }) };
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}), undefined, { resolver });
+
+    await expect(registry.assertChatPipelineResolvable("ws-1")).rejects.toBe(error);
+  });
+
+  it("fails closed without a workspace, as a pipeline call does", async () => {
+    const resolver = { resolve: vi.fn(), assertResolvable: vi.fn() };
+    const registry = new LlmProviderRegistry(resolveLlmConfig({ OPENAI_API_KEY: "platform-key" }), undefined, { resolver });
+
+    await expect(registry.assertChatPipelineResolvable("unknown")).rejects.toMatchObject({ code: "provider_misconfigured" });
+    expect(resolver.assertResolvable).not.toHaveBeenCalled();
+  });
+
+  it("answers from the deployment's keys when no workspace resolver is attached", async () => {
+    await expect(new LlmProviderRegistry(resolveLlmConfig({ OPENAI_API_KEY: "platform-key" })).assertChatPipelineResolvable("ws-1"))
+      .resolves.toBeUndefined();
+    await expect(new LlmProviderRegistry(resolveLlmConfig({})).assertChatPipelineResolvable("ws-1"))
+      .rejects.toMatchObject({ code: "provider_misconfigured", details: expect.objectContaining({ kind: "missing_api_key" }) });
   });
 });

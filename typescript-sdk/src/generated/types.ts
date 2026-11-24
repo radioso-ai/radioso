@@ -1810,7 +1810,7 @@ export interface paths {
         put?: never;
         /**
          * Create the selected starter pack items
-         * @description Creates exactly the selected directives and routine in the agent's draft, all or nothing. Existing directives and routines are never overwritten. Repeating a request with the same idempotency key returns the first result. Items are not published; publish the agent's draft as usual.
+         * @description Creates exactly the selected directives and routine in the agent's draft, all or nothing, in request order. Existing directives and routines are never overwritten. Names and excludes are checked before any model call. Each directive carries an advisory coherence verdict and the routine its validation result. Repeating a request with the same idempotency key returns the first result. Items are not published; publish the agent's draft as usual.
          */
         post: operations["applyAgentStarterPack"];
         delete?: never;
@@ -5771,7 +5771,7 @@ export interface components {
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
             setup: components["schemas"]["WorkspaceSetupState"];
-            /** @description Whether the workspace can make chat model calls. When false, features that need a model, such as Ray and starter pack drafting, return 503 provider_misconfigured until a provider is configured. */
+            /** @description Whether a chat model call can run for this workspace: the chat model the deployment runs Ray and starter pack drafting on has an API key, the workspace's own or the deployment's, and any base URL it needs. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured. */
             llmConfigured: boolean;
         };
         RegisterRequest: {
@@ -11285,7 +11285,7 @@ export interface components {
                 kind: "directive";
                 directive: components["schemas"]["AuthoredDirectiveCreateRequest"];
                 /**
-                 * @description name_exists when the agent already has a directive or routine with this name. Applying it would be refused; nothing existing is ever overwritten.
+                 * @description name_exists when the agent already has a directive or routine with this name. Applying a pack that includes it is refused with 409 starter_pack_name_conflict; nothing existing is ever overwritten.
                  * @enum {string|null}
                  */
                 conflict: "name_exists" | null;
@@ -11299,7 +11299,7 @@ export interface components {
                 procedure: string;
                 validation: components["schemas"]["RoutineValidationResult"];
                 /**
-                 * @description name_exists when the agent already has a directive or routine with this name. Applying it would be refused; nothing existing is ever overwritten.
+                 * @description name_exists when the agent already has a directive or routine with this name. Applying a pack that includes it is refused with 409 starter_pack_name_conflict; nothing existing is ever overwritten.
                  * @enum {string|null}
                  */
                 conflict: "name_exists" | null;
@@ -11323,7 +11323,7 @@ export interface components {
                 routine: components["schemas"]["RoutineDefinitionCreateRequest"];
             })[];
         };
-        /** @description Created items with their ids. Each directive item includes its advisory coherence verdict; a conflict's directiveId names the directive it conflicts with, including one created by the same apply. */
+        /** @description Created items with their ids. Each directive item includes its advisory coherence verdict; a conflict's directiveId names the directive it conflicts with, including one created by the same apply. The routine item includes its validation, as the routine create endpoint returns it: a routine that is not ok is saved, and publishing the agent's draft is refused until it is fixed or disabled. */
         StarterPackApplyResponse: {
             applyId: string;
             items: ({
@@ -11347,6 +11347,7 @@ export interface components {
                 kind: "routine";
                 id: string;
                 name: string;
+                validation: components["schemas"]["RoutineValidationResult"];
             })[];
             /** @description True when this request repeated an earlier one with the same key; nothing new was created. */
             replayed: boolean;
@@ -20855,7 +20856,7 @@ export interface operations {
                     "application/json": components["schemas"]["StarterPackApplyResponse"];
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or a directive's excludes names a directive that is neither on the agent nor listed before it in the pack (details list the items). Nothing was created. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -20891,7 +20892,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description starter_pack_name_conflict when a selected name is already used on the agent (details list the items); idempotency_key_reused when the key was used for different items; or starter_pack_agent_changed when the agent kept changing while its directives were being checked, which is safe to retry with the same key. Nothing was created. */
+            /** @description starter_pack_name_conflict when a selected name is already used on the agent (details list the items), or idempotency_key_reused when the key was used for different items. Nothing was created. */
             409: {
                 headers: {
                     [name: string]: unknown;

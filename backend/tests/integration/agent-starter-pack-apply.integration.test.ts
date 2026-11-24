@@ -11,7 +11,7 @@ import { pendingDirectiveId } from "../../src/modules/agents/public.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
-import type { StarterPackApplyRequest } from "../../src/modules/agentStarterPack/public.js";
+import { starterPackApplyRequestSchema, type StarterPackApplyRequest } from "../../src/modules/agentStarterPack/public.js";
 import { AuthoredDirectiveService } from "../../src/modules/agents/public.js";
 import { RoutineDefinitionService, type RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -42,13 +42,14 @@ const routine = (name: string, overrides: Partial<RoutineDefinitionDraftInput> =
   ...overrides,
 });
 
-const pack = (items: StarterPackApplyRequest["items"], idempotencyKey = `key-${randomUUID()}`): StarterPackApplyRequest =>
-  ({ idempotencyKey, items });
+/** Parsed as the apply route parses a request body, so defaults such as `excludes: []` are filled in. */
+const pack = (items: unknown[], idempotencyKey = `key-${randomUUID()}`): StarterPackApplyRequest =>
+  starterPackApplyRequestSchema.parse({ idempotencyKey, items });
 
-const directiveItem = (itemKey: string, name: string, action?: string): StarterPackApplyRequest["items"][number] =>
-  ({ itemKey, kind: "directive", directive: { ...directive(name, action), routes: undefined } as never });
+const directiveItem = (itemKey: string, name: string, action?: string, excludes?: string[]) =>
+  ({ itemKey, kind: "directive", directive: { ...directive(name, action), ...(excludes ? { excludes } : {}) } });
 
-const routineItem = (itemKey: string, name: string, overrides?: Partial<RoutineDefinitionDraftInput>): StarterPackApplyRequest["items"][number] =>
+const routineItem = (itemKey: string, name: string, overrides?: Partial<RoutineDefinitionDraftInput>) =>
   ({ itemKey, kind: "routine", routine: routine(name, overrides) });
 
 describeIntegration("starter pack apply against Postgres", () => {
@@ -98,6 +99,10 @@ describeIntegration("starter pack apply against Postgres", () => {
     };
     const committedRoutineFollowUp = vi.fn(async () => undefined);
     const audit = { record: vi.fn(async () => undefined) };
+    const sharedRoutines = new RoutineDefinitionService({
+      agentRepository: new AgentRepository(database.kysely),
+      repository: new RoutineDefinitionRepository(database.kysely),
+    });
     const service = buildStarterPackApplyService({
       db: database.kysely,
       authoredDirectiveService: new AuthoredDirectiveService({
@@ -106,7 +111,10 @@ describeIntegration("starter pack apply against Postgres", () => {
         registeredCapabilityNames,
       }),
       authoringServicesOn,
-      routineDefinitionService: { completeExternalDraftMutation: committedRoutineFollowUp },
+      routineDefinitionService: {
+        completeExternalDraftMutation: committedRoutineFollowUp,
+        findCreateConflict: sharedRoutines.findCreateConflict.bind(sharedRoutines),
+      },
       auditService: audit,
     });
     return { service, committedRoutineFollowUp, audit, checkerInsideTransaction };
@@ -179,7 +187,9 @@ describeIntegration("starter pack apply against Postgres", () => {
     expect(after.applies).toHaveLength(1);
     // Each item went through the owning service's draft mutation, so the agent draft advanced once per item.
     expect(after.draftGeneration).toBe(before.draftGeneration + 3);
-    expect(committedRoutineFollowUp).toHaveBeenCalledTimes(1);
+    expect(result.items[2]).toMatchObject({ kind: "routine", validation: { ok: true, diagnostics: [] } });
+    // Apply only creates, so the routine's authoring follow-up is recorded as a create.
+    expect(committedRoutineFollowUp).toHaveBeenCalledWith(workspaceId, agentId, expect.objectContaining({ name: "book-appointment" }), "create");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "agent_starter_pack.apply", workspaceId }));
   });
 
@@ -431,20 +441,18 @@ describeIntegration("starter pack apply against Postgres", () => {
     expect((await stateOf(workspaceId, agentId)).directives).toHaveLength(2);
   });
 
-  it("reassesses when the greeting instruction changes during assessment, a change the draft generation does not record", async () => {
+  it("saves with the unavailable verdict when the greeting instruction changes during assessment, a change the draft generation does not record", async () => {
     const { accountId, workspaceId, agentId } = await createAgent();
     const generations: number[] = [];
     let calls = 0;
     const checker: DirectiveCoherenceChecker = {
       check: async () => {
         calls += 1;
-        if (calls === 1) {
-          // Another writer edits the agent while the first assessment is in flight.
-          generations.push((await stateOf(workspaceId, agentId)).draftGeneration);
-          await agents.update(agentId, workspaceId, { greetingInstruction: "Willkommen in der Praxis!" });
-          generations.push((await stateOf(workspaceId, agentId)).draftGeneration);
-        }
-        return { coherent: true, conflicts: [], rationale: "Verdict." };
+        // Another writer edits the agent while the assessment is in flight.
+        generations.push((await stateOf(workspaceId, agentId)).draftGeneration);
+        await agents.update(agentId, workspaceId, { greetingInstruction: "Willkommen in der Praxis!" });
+        generations.push((await stateOf(workspaceId, agentId)).draftGeneration);
+        return { coherent: false, conflicts: [], rationale: "Verdict on the old greeting." };
       },
     };
     const { service, checkerInsideTransaction } = buildService(undefined, checker);
@@ -453,10 +461,32 @@ describeIntegration("starter pack apply against Postgres", () => {
 
     // The draft generation is unchanged by the greeting edit, so only the content hash could notice.
     expect(generations[0]).toBe(generations[1]);
-    expect(calls).toBe(2);
+    // Advisory: the stale verdict is replaced, not reassessed, and the apply goes through.
+    expect(calls).toBe(1);
     expect(result.replayed).toBe(false);
+    expect(result.items[0]).toMatchObject({ coherence: { coherent: true, conflicts: [], rationale: "Coherence check unavailable." } });
     expect((await stateOf(workspaceId, agentId)).directives.map((row) => row.name)).toEqual(["confirm-details"]);
     expect(checkerInsideTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a directive that excludes one listed after it before any model call, and accepts the same pack in the other order", async () => {
+    const { accountId, workspaceId, agentId } = await createAgent();
+    const check = vi.fn(coherentChecker.check);
+    const { service } = buildService(undefined, { check });
+    const before = await stateOf(workspaceId, agentId);
+
+    await expect(service.apply(workspaceId, agentId, { accountId }, pack([
+      directiveItem("directive-1", "short-answers", undefined, ["detailed-answers"]),
+      directiveItem("directive-2", "detailed-answers"),
+    ]))).rejects.toMatchObject({ statusCode: 400 });
+    expect(check).not.toHaveBeenCalled();
+    expect(await stateOf(workspaceId, agentId)).toEqual(before);
+
+    await service.apply(workspaceId, agentId, { accountId }, pack([
+      directiveItem("directive-2", "detailed-answers"),
+      directiveItem("directive-1", "short-answers", undefined, ["detailed-answers"]),
+    ]));
+    expect((await stateOf(workspaceId, agentId)).directives.map((row) => row.name)).toEqual(["detailed-answers", "short-answers"]);
   });
 
   it("returns each directive's verdict with references to earlier pack directives resolved, and replays it", async () => {
@@ -481,21 +511,17 @@ describeIntegration("starter pack apply against Postgres", () => {
     expect(replay).toEqual({ ...first, replayed: true });
   });
 
-  it("lets two concurrent applies with different names both succeed, the later one reassessing against the earlier one's directive", async () => {
+  it("lets two concurrent applies with different names both succeed, the later one saving the unavailable verdict", async () => {
     const { accountId, workspaceId, agentId } = await createAgent();
-    // Hold both first assessments until each has started, so both run before either transaction.
+    // Hold both assessments until each has started, so both run before either transaction.
     let arrived = 0;
     let releaseBoth!: () => void;
     const bothArrived = new Promise<void>((resolve) => { releaseBoth = resolve; });
-    const seen: string[][] = [];
     const checker: DirectiveCoherenceChecker = {
-      check: async (input) => {
+      check: async () => {
         arrived += 1;
-        seen.push(input.existingDirectives.map((existing) => existing.name));
-        if (arrived <= 2) {
-          if (arrived === 2) releaseBoth();
-          await bothArrived;
-        }
+        if (arrived === 2) releaseBoth();
+        await bothArrived;
         return { coherent: true, conflicts: [], rationale: "Verdict." };
       },
     };
@@ -506,10 +532,10 @@ describeIntegration("starter pack apply against Postgres", () => {
     ]);
 
     expect(results.map((result) => result.replayed)).toEqual([false, false]);
-    expect(arrived).toBe(3);
-    // The reassessment saw the directive the other apply had committed.
-    const reassessment = seen[2] ?? [];
-    expect(reassessment.includes("confirm-details") || reassessment.includes("no-diagnosis")).toBe(true);
+    expect(arrived).toBe(2);
+    // The apply that took the lock second was assessed without the other's directive, so its verdict is stale.
+    const rationales = results.map((result) => result.items[0]?.kind === "directive" ? result.items[0].coherence.rationale : null);
+    expect(rationales.sort()).toEqual(["Coherence check unavailable.", "Verdict."]);
     expect((await stateOf(workspaceId, agentId)).directives.map((row) => row.name)).toEqual(["confirm-details", "no-diagnosis"]);
   });
 });

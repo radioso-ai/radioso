@@ -24,14 +24,22 @@ Drafting and applying are separate operations with separate ports.
   `RoutineDefinitionService.createDraft`. It never touches their tables
   directly, and it never updates or deletes an existing item.
 
+Apply checks everything cheap before any model call: it reads the agent's
+directive and routine names (a taken name is a `409 starter_pack_name_conflict`)
+and checks that each directive's `excludes` names a directive already on the
+agent, a built-in one, or a pack directive listed before it (otherwise `400`).
+A completed request with the same key is replayed instead. The transaction
+repeats all of these under the agent's lock.
+
 Directive coherence (an advisory model check, returned per directive) runs
-before the transaction, through `AuthoredDirectiveService.assessCoherence`, so
-no model call happens while the agent's lock is held. The assessment returns a
-token over every input the model read. Inside the transaction, apply recomputes
-that token under the lock; if the agent changed in between, it writes nothing,
-reassesses, and gives up with `409 starter_pack_agent_changed` after three
-assessments. A completed request is replayed before any model call, and checked
-again under the lock.
+before the transaction, through `AuthoredDirectiveService.assessCoherence`,
+which checks the candidates concurrently, so no model call happens while the
+agent's lock is held. The assessment returns a token over every input the
+model read. Inside the transaction, apply recomputes that token under the lock;
+if the agent changed in between, the verdicts are stale, and the directives are
+saved with the "Coherence check unavailable" verdict instead. Coherence never
+blocks an apply. The created routine is returned with its validation result,
+in the shape the routine authoring endpoints return it.
 
 This module knows nothing about Postgres or Express. Apply runs through the
 `StarterPackApplyUnitOfWork` port; `app/composition/agentStarterPackComposition.ts`
@@ -44,13 +52,21 @@ publishing goes through the agent revision flow in `../agents/`.
 
 Whether the workspace can call a chat model comes from
 `shared/infra/llm/chatReadiness.ts`, the same check Ray's availability and the
-workspace summary's `llmConfigured` use.
+workspace summary's `llmConfigured` use. It asks `LlmProviderRegistry` whether
+the chat inference pipeline, which drafting and Ray run on, resolves for the
+workspace, checking that a key exists without decrypting it.
+
+The draft parses the model's answer one directive at a time: unknown keys are
+ignored, and an invalid, reserved, or repeated directive is dropped (counted in
+the `starter_pack_draft_llm_call_completed` log and telemetry). The draft fails
+with `422` only when the routine is invalid or no directive is left.
 
 ## Public Surfaces
 
 - `public.ts`: request schemas, the draft and apply services, the generator,
   and the rate-limit policies.
 - `backend/src/app/http/routes/agentRoutes.ts`: `POST /api/v1/agents/:agentId/starter-pack/draft` and `/apply`.
+- `backend/src/app/server/builders/agentStarterPack.ts`: builds both services from the routine authoring services.
 
 ## Tests
 

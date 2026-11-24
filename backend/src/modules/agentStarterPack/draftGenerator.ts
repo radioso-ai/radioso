@@ -14,10 +14,9 @@ import type {
 } from "../../shared/services/responseLanguageDetector.js";
 import { defaultAnswerDirectives } from "../directives/public.js";
 import {
-  starterPackDraftModelOutputSchema,
+  parseStarterPackDraftModelOutput,
   starterPackPurposeSchema,
   type StarterPackDraft,
-  type StarterPackDraftModelOutput,
 } from "./contracts.js";
 
 export const STARTER_PACK_DRAFT_PROMPT_PATH = "agent-setup/starter-pack-draft.md";
@@ -62,22 +61,35 @@ const reservedDirectiveNames = (): string[] => defaultAnswerDirectives.map((dire
 
 // Untrusted text is placed inside these tag-delimited blocks in the template. Removing the tags
 // themselves from that text keeps it from closing its block early and posing as instructions.
+// Removal repeats until nothing changes, so a tag split around another (`<</purpose>/purpose>`)
+// cannot reassemble once the inner one is gone.
 const PROMPT_BLOCK_TAG = /<\/?\s*(?:purpose|agent_context|names_in_use)\s*>/giu;
 
-const stripPromptBlockTags = (value: string): string => value.replace(PROMPT_BLOCK_TAG, "");
+const stripPromptBlockTags = (value: string): string => {
+  let previous: string;
+  let current = value;
+  do {
+    previous = current;
+    current = previous.replace(PROMPT_BLOCK_TAG, "");
+  } while (current !== previous);
+  return current;
+};
 
 const serializePromptData = (value: unknown): string => stripPromptBlockTags(JSON.stringify(value, null, 2));
 
 const cleanJsonCompletion = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
-export const parseStarterPackDraft = (raw: string): StarterPackDraftModelOutput | null => {
+type StarterPackDraftParse = ReturnType<typeof parseStarterPackDraftModelOutput>;
+
+export const parseStarterPackDraft = (raw: string): StarterPackDraftParse => {
+  let value: unknown;
   try {
-    const result = starterPackDraftModelOutputSchema.safeParse(JSON.parse(cleanJsonCompletion(raw)));
-    return result.success ? result.data : null;
+    value = JSON.parse(cleanJsonCompletion(raw));
   } catch {
     return null;
   }
+  return parseStarterPackDraftModelOutput(value);
 };
 
 export const buildStarterPackDraftPrompt = (input: {
@@ -136,7 +148,7 @@ export class StarterPackDraftGenerator {
       { attemptKey: "json_retry", prompt: `${prompt}\n\nReturn valid JSON only. Do not wrap it in markdown. Include exactly one routine object.` },
     ];
     for (const attempt of attempts) {
-      const raw = await this.callLlm({
+      const parsed = await this.callLlm({
         workspaceId: input.workspaceId,
         agentId: input.agent.id,
         requestId,
@@ -145,9 +157,8 @@ export class StarterPackDraftGenerator {
         outputLanguage,
         signal: input.signal,
       });
-      const draft = parseStarterPackDraft(raw);
-      if (draft) {
-        return { ...draft, outputLanguage };
+      if (parsed) {
+        return { ...parsed.draft, outputLanguage };
       }
       this.options.logger.warn({
         workspaceId: input.workspaceId,
@@ -209,9 +220,9 @@ export class StarterPackDraftGenerator {
     prompt: string;
     outputLanguage: string | null;
     signal?: AbortSignal;
-  }): Promise<string> {
+  }): Promise<StarterPackDraftParse> {
     const startedAt = Date.now();
-    // Never log or trace the prompt or purpose text: it is operator-authored content.
+    // Never log or trace the prompt, purpose, or suggestion text: it is operator-authored content.
     const baseFields = {
       workspaceId: input.workspaceId,
       agentId: input.agentId,
@@ -222,7 +233,7 @@ export class StarterPackDraftGenerator {
     this.options.logger.info(baseFields, "starter_pack_draft_llm_call_started");
 
     try {
-      const text = await traceOperation({
+      const { text, parsed } = await traceOperation({
         name: "agent_starter_pack.draft.llm_call",
         attributes: {
           "radioso.workspace_id": input.workspaceId,
@@ -232,39 +243,46 @@ export class StarterPackDraftGenerator {
           "radioso.prompt_length": input.prompt.length,
           "radioso.output_language_detected": input.outputLanguage !== null,
         },
-        run: () => this.options.textGenerationClient.complete({
-          operation: {
-            workspaceId: input.workspaceId,
-            agentId: input.agentId,
-            requestId: input.requestId,
-            surface: SURFACE,
-            operation: "draft_starter_pack",
-            attemptKey: input.attemptKey,
-          },
-          prompt: input.prompt,
-          temperature: 0,
-          maxOutputTokens: 2_000,
-          signal: input.signal,
-        }),
-        resultAttributes: (text) => ({
+        run: async () => {
+          const completion = await this.options.textGenerationClient.complete({
+            operation: {
+              workspaceId: input.workspaceId,
+              agentId: input.agentId,
+              requestId: input.requestId,
+              surface: SURFACE,
+              operation: "draft_starter_pack",
+              attemptKey: input.attemptKey,
+            },
+            prompt: input.prompt,
+            temperature: 0,
+            // A full pack is six directives of up to 4,000 characters each plus the procedure
+            // prose, and a reasoning model spends part of the budget before it writes; the
+            // routine draft assist uses the same budget.
+            maxOutputTokens: 4_000,
+            signal: input.signal,
+          });
+          return { text: completion, parsed: parseStarterPackDraft(completion) };
+        },
+        resultAttributes: (result) => ({
           "radioso.status": "success",
-          "radioso.parsed": parseStarterPackDraft(text) !== null,
+          "radioso.parsed": result.parsed !== null,
+          "radioso.dropped_directive_count": result.parsed?.droppedDirectiveCount ?? 0,
         }),
       });
       const durationMs = Date.now() - startedAt;
-      const parsed = parseStarterPackDraft(text) !== null;
-      await this.emitTelemetry({ ...baseFields, durationMs, status: "success", parsed });
+      const outcome = { parsed: parsed !== null, droppedDirectiveCount: parsed?.droppedDirectiveCount ?? 0 };
+      await this.emitTelemetry({ ...baseFields, durationMs, status: "success", ...outcome });
       this.options.logger.info({
         ...baseFields,
         durationMs,
         status: "success",
-        parsed,
+        ...outcome,
         completionLength: text.length,
       }, "starter_pack_draft_llm_call_completed");
-      return text;
+      return parsed;
     } catch (error) {
       const durationMs = Date.now() - startedAt;
-      await this.emitTelemetry({ ...baseFields, durationMs, status: "failure", parsed: false });
+      await this.emitTelemetry({ ...baseFields, durationMs, status: "failure", parsed: false, droppedDirectiveCount: 0 });
       this.options.logger.warn({
         ...baseFields,
         durationMs,
@@ -284,12 +302,13 @@ export class StarterPackDraftGenerator {
     durationMs: number;
     status: "success" | "failure";
     parsed: boolean;
+    droppedDirectiveCount: number;
   }): Promise<void> {
     await this.options.telemetryService?.emit({
       eventType: "agent_starter_pack.draft.llm_call",
       severity: input.status === "success" ? "info" : "warn",
       correlation: { workspaceId: input.workspaceId },
-      metrics: { durationMs: input.durationMs, promptLength: input.promptLength },
+      metrics: { durationMs: input.durationMs, promptLength: input.promptLength, droppedDirectiveCount: input.droppedDirectiveCount },
       tags: {
         status: input.status,
         parsed: String(input.parsed),

@@ -16,7 +16,14 @@ export interface StarterPackDraftServiceOptions {
     findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<StarterPackAgentContext | null>;
   };
   directives: { list(workspaceId: string, agentId: string): Promise<ReadonlyArray<{ name: string }>> };
-  routines: { list(workspaceId: string, agentId: string): Promise<ReadonlyArray<{ name: string }>> };
+  routines: {
+    list(workspaceId: string, agentId: string): Promise<ReadonlyArray<{ name: string }>>;
+    /**
+     * The row that would block creating a routine under `name`, as apply checks it. Unlike
+     * `list()`, it also sees a retired, non-canonical row that still holds the name.
+     */
+    findCreateConflict(workspaceId: string, agentId: string, name: string): Promise<unknown>;
+  };
   /** Turns plain-language procedure text into a routine definition draft; saves nothing. */
   routineDrafter: {
     draft(
@@ -90,6 +97,7 @@ export class StarterPackDraftService {
     // The pack's routine name was chosen with the agent's taken names in view; the routine
     // drafter never saw them, so its own suggestion could collide.
     const routine: RoutineDefinitionDraftInput = { ...routineDraft.draft, name: pack.routine.name };
+    const routineNameTaken = await this.options.routines.findCreateConflict(workspaceId, agentId, routine.name) !== null;
 
     const items: StarterPackDraftItem[] = [
       ...pack.directives.map((directive, index): StarterPackDraftItem => ({
@@ -104,7 +112,7 @@ export class StarterPackDraftService {
         routine,
         procedure: pack.routine.procedure,
         validation: routineDraft.validation,
-        conflict: conflictFor(routine.name, routineNames),
+        conflict: routineNameTaken ? "name_exists" : null,
       },
     ];
     return { outputLanguage: pack.outputLanguage, items };

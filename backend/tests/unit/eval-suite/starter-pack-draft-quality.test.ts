@@ -49,7 +49,11 @@ const runCase = async (evalCase: StarterPackDraftQualityCase) => {
   const service = new StarterPackDraftService({
     agents: { findByIdAndWorkspaceId: async () => agent },
     directives: { list: async () => (evalCase.existingDirectiveNames ?? []).map((name) => ({ name })) },
-    routines: { list: async () => (evalCase.existingRoutineNames ?? []).map((name) => ({ name })) },
+    routines: {
+      list: async () => (evalCase.existingRoutineNames ?? []).map((name) => ({ name })),
+      findCreateConflict: async (_workspaceId: string, _agentId: string, name: string) =>
+        (evalCase.existingRoutineNames ?? []).includes(name) ? { id: "existing-routine" } : null,
+    },
     routineDrafter: new RoutineDraftAssistService({
       repository: { findByIdAndWorkspaceId: vi.fn(async () => agent) } as never,
       textGenerationClient: routineClient,

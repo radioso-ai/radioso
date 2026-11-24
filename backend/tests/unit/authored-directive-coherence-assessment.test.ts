@@ -120,6 +120,37 @@ describe("AuthoredDirectiveService.assessCoherence", () => {
     expect(assessment.verdicts[2]?.verdict).toMatchObject({ coherent: false, conflicts: [{ directiveId: pendingDirectiveId("item-a") }] });
   });
 
+  it("runs the candidates' checks concurrently and keeps their verdicts in request order", async () => {
+    const { service, check } = setup();
+    let release!: () => void;
+    const allStarted = new Promise<void>((resolve) => { release = resolve; });
+    let started = 0;
+    const finished: string[] = [];
+    check.mockImplementation(async (input: DirectiveCoherenceCheckInput) => {
+      started += 1;
+      if (started === 3) release();
+      // Each check waits until all three are in flight, which a serial loop would never reach.
+      await allStarted;
+      // Later candidates answer first, so request order has to be restored on purpose.
+      await new Promise((resolve) => setTimeout(resolve, input.candidate.name === "first" ? 6 : input.candidate.name === "second" ? 3 : 0));
+      finished.push(input.candidate.name);
+      return { coherent: true, conflicts: [], rationale: `Checked ${input.candidate.name}.` };
+    });
+
+    const assessment = await service.assessCoherence(workspaceId, agentId, [
+      { ref: "item-a", input: directiveInput("first") },
+      { ref: "item-b", input: directiveInput("second") },
+      { ref: "item-c", input: directiveInput("third") },
+    ]);
+
+    expect(finished).toEqual(["third", "second", "first"]);
+    expect(assessment.verdicts.map((entry) => [entry.ref, entry.verdict.rationale])).toEqual([
+      ["item-a", "Checked first."],
+      ["item-b", "Checked second."],
+      ["item-c", "Checked third."],
+    ]);
+  });
+
   it("keeps the fail-open verdict when the model call fails", async () => {
     const { service } = setup({ checkerFails: true });
 

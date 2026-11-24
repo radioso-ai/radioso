@@ -14,7 +14,7 @@ import {
 import {
   ModelEmbeddingGenerationGateway,
 } from "../../../modules/embeddingProfiles/public.js";
-import type { LlmCapabilityConfigResolver } from "./capabilityResolver.js";
+import type { LlmCapabilityResolveInput, LlmRegistryCapabilityResolver } from "./capabilityResolver.js";
 import {
   ContextualChatGateway,
   ContextualFallbackReplyComposer,
@@ -182,13 +182,13 @@ class RoutedEmbeddingClient implements EmbeddingClient {
 
 interface LlmProviderRegistryOptions {
   /** When provided, gateways become workspace-aware and resolve per-call configs. */
-  resolver?: LlmCapabilityConfigResolver;
+  resolver?: LlmRegistryCapabilityResolver;
   /** Existing bounded metrics sink for provider-call telemetry. */
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
 export class LlmProviderRegistry {
-  private resolver: LlmCapabilityConfigResolver | undefined;
+  private resolver: LlmRegistryCapabilityResolver | undefined;
   private readonly clientCache = new TextGenerationClientCache();
 
   constructor(
@@ -207,7 +207,7 @@ export class LlmProviderRegistry {
    * `createXGateway()` method that should return a workspace-aware gateway.
    * The embedding gateway is unaffected — embedding stays env-default.
    */
-  setResolver(resolver: LlmCapabilityConfigResolver): void {
+  setResolver(resolver: LlmRegistryCapabilityResolver): void {
     this.resolver = resolver;
   }
 
@@ -235,6 +235,21 @@ export class LlmProviderRegistry {
 
   createChatInferencePipeline(usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
     return this.createInferencePipeline(this.config.chat, usageEventRecorder);
+  }
+
+  /**
+   * Whether the chat inference pipeline (`createChatInferencePipeline`, and the tool-calling
+   * gateway Ray runs on) could resolve a credentialed config for this workspace: the same
+   * resolution a call makes, checked without a model call and without decrypting a key. Throws
+   * the `ProviderConfigurationError` such a call would fail with.
+   */
+  async assertChatPipelineResolvable(workspaceId: string): Promise<void> {
+    const config = this.config.chat;
+    if (this.resolver) {
+      await this.resolver.assertResolvable(config.capability, this.pipelineResolveInput(config, workspaceId));
+      return;
+    }
+    this.deploymentApiKey(config);
   }
 
   /**
@@ -467,27 +482,45 @@ export class LlmProviderRegistry {
     preserveProviderModel = false,
   ): Promise<LlmCapabilityConfig> {
     if (this.resolver) {
-      if (!workspaceId || workspaceId === "unknown") {
-        throw new ProviderConfigurationError("A workspace identity is required to resolve provider credentials.", {
-          kind: "missing_api_key",
-          provider: config.provider,
-          capability: config.capability,
-          remediation: "Retry the request with its workspace context.",
-        });
-      }
-      return this.resolver.resolve(config.capability, {
-        workspaceId,
-        ...(preserveProviderModel
-          ? {
-              capabilityOverride: {
-                provider: config.provider,
-                model: config.model,
-                ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-              },
-            }
-          : {}),
+      return this.resolver.resolve(
+        config.capability,
+        preserveProviderModel
+          ? this.pipelineResolveInput(config, workspaceId)
+          : { workspaceId: this.requireWorkspaceId(config, workspaceId) },
+      );
+    }
+    return { ...config, apiKey: this.deploymentApiKey(config) };
+  }
+
+  /**
+   * How an inference pipeline resolves per workspace: the deployment's provider and model for
+   * this capability, with the workspace's credentials. Shared by the pipeline's calls and by
+   * `assertChatPipelineResolvable`, so the probe cannot check a different resolution.
+   */
+  private pipelineResolveInput(config: LlmCapabilityDefault, workspaceId: string | undefined): LlmCapabilityResolveInput {
+    return {
+      workspaceId: this.requireWorkspaceId(config, workspaceId),
+      capabilityOverride: {
+        provider: config.provider,
+        model: config.model,
+        ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+      },
+    };
+  }
+
+  private requireWorkspaceId(config: LlmCapabilityDefault, workspaceId: string | undefined): string {
+    if (!workspaceId || workspaceId === "unknown") {
+      throw new ProviderConfigurationError("A workspace identity is required to resolve provider credentials.", {
+        kind: "missing_api_key",
+        provider: config.provider,
+        capability: config.capability,
+        remediation: "Retry the request with its workspace context.",
       });
     }
+    return workspaceId;
+  }
+
+  private deploymentApiKey(config: LlmCapabilityDefault): string {
     const apiKey = this.config.providerApiKeys?.[config.provider];
     if (!apiKey) {
       throw new ProviderConfigurationError(
@@ -500,7 +533,7 @@ export class LlmProviderRegistry {
         },
       );
     }
-    return { ...config, apiKey };
+    return apiKey;
   }
 
   private createEmbeddingClient(config: LlmCapabilityConfig): EmbeddingClient {

@@ -62,6 +62,8 @@ const setup = (input: {
   routineDraft?: () => Promise<unknown>;
   existingDirectiveNames?: string[];
   existingRoutineNames?: string[];
+  /** Names held by retired, non-canonical routine rows: invisible to `list()`, still blocking a create. */
+  retiredRoutineNames?: string[];
 } = {}) => {
   const detectorComplete = vi.fn(async () => ({ text: input.detectorAnswer ?? '{"responseLanguage":"English"}' }));
   const answers = [...(input.draftAnswers ?? [JSON.stringify(englishPack)])];
@@ -101,6 +103,10 @@ const setup = (input: {
     } as unknown as StarterPackDraftServiceOptions["directives"],
     routines: {
       list: vi.fn(async () => (input.existingRoutineNames ?? []).map((name) => ({ name }))),
+      findCreateConflict: vi.fn(async (_ws: string, _agent: string, name: string) =>
+        [...(input.existingRoutineNames ?? []), ...(input.retiredRoutineNames ?? [])].includes(name)
+          ? { id: "routine-occupant", updatedAt: new Date() }
+          : null),
       createDraft: writers.createRoutine,
       updateDraft: writers.updateRoutine,
     } as unknown as StarterPackDraftServiceOptions["routines"],
@@ -209,6 +215,16 @@ describe("StarterPackDraftService", () => {
       "no-medical-diagnosis": "name_exists",
       "book-appointment": "name_exists",
     });
+  });
+
+  it("flags a routine name held by a retired row that list() does not return, as apply would refuse it", async () => {
+    const { service, options } = setup({ retiredRoutineNames: ["book-appointment"] });
+
+    const result = await service.draft(workspaceId, agentId, "Help visitors book dental appointments.");
+
+    const routine = result.items.find((item) => item.kind === "routine");
+    expect(routine?.conflict).toBe("name_exists");
+    expect(options.routines.findCreateConflict).toHaveBeenCalledWith(workspaceId, agentId, "book-appointment");
   });
 
   it("never creates, updates, or publishes anything", async () => {

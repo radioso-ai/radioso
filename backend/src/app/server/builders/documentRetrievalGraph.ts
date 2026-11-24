@@ -204,6 +204,9 @@ export const buildDocumentRetrievalGraph = (input: {
     logger,
   });
   llmRegistry.setResolver(llmCapabilityResolver);
+  // Asks what the chat pipeline asks, so `llmConfigured`, Ray's availability, and the starter pack
+  // draft all agree with what a chat model call would resolve.
+  const chatReadiness = createChatReadiness(llmRegistry);
   const documents = buildDocumentServices({
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
@@ -269,10 +272,11 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceSetupStateRepository: repositories.workspaceSetupStateRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
-    chatReadiness: createChatReadiness(llmCapabilityResolver),
+    chatReadiness,
   });
   return {
     agentRetrievalScope,
+    chatReadiness,
     documentJobDispatcher,
     documents,
     embeddingBindingResolver,

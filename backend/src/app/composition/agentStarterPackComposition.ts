@@ -6,6 +6,7 @@ import {
   StarterPackApplyService,
   StarterPackDraftGenerator,
   StarterPackDraftService,
+  type StarterPackNameReads,
 } from "../../modules/agentStarterPack/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -17,30 +18,45 @@ import type { TelemetryService } from "../../shared/observability/telemetry/tele
 import type { ResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
 import type { ChatReadiness } from "../../shared/infra/llm/chatReadiness.js";
 
+type StarterPackNameServices = {
+  authoredDirectiveService: Pick<AuthoredDirectiveService, "list">;
+  routineDefinitionService: Pick<RoutineDefinitionService, "findCreateConflict">;
+};
+
+/** The name reads apply makes, through the owning services, on whichever connection they are bound to. */
+const nameReadsOn = (services: StarterPackNameServices, workspaceId: string, agentId: string): StarterPackNameReads => ({
+  listDirectiveNames: async () =>
+    (await services.authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.name),
+  routineNameTaken: async (name) =>
+    (await services.routineDefinitionService.findCreateConflict(workspaceId, agentId, name)) !== null,
+});
+
 /**
  * Transaction assembly for applying a starter pack, the same shape as the copilot's atomic
  * routine apply (`copilotRoutineAtomicApply.ts`): one unit of work, the agent's draft lock taken
  * first, and the owning directive and routine services bound to that transaction, so every
  * created item and the idempotency record commit together or not at all.
  *
- * Directive coherence is assessed with the shared directive service, outside the transaction.
- * Inside it, the transaction-bound service only recomputes the coherence context token and
- * saves with the verdict it is given, so no model call happens while the lock is held.
+ * The shared services answer the checks made before any model call: the name reads and the
+ * directive coherence assessment, both outside the transaction. Inside it, the transaction-bound
+ * services repeat the name reads, recompute the coherence context token, and save with the
+ * verdict they are given, so no model call happens while the lock is held.
  */
 export const buildStarterPackApplyService = (input: {
   db: Db;
-  authoredDirectiveService: Pick<AuthoredDirectiveService, "assessCoherence">;
+  authoredDirectiveService: Pick<AuthoredDirectiveService, "assessCoherence" | "list">;
   authoringServicesOn: (db: Db) => {
     authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "coherenceContextToken">;
     routineDefinitionService: Pick<RoutineDefinitionService, "findCreateConflict" | "createDraft">;
   };
-  routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation">;
+  routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "findCreateConflict">;
   auditService?: Pick<AuditPort, "record">;
   logger?: Pick<AppLogger, "warn">;
 }): StarterPackApplyService =>
   new StarterPackApplyService({
     findCompletedApply: (workspaceId, agentId, idempotencyKey) =>
       new AgentStarterPackApplyRepository(input.db).findByKey(workspaceId, agentId, idempotencyKey),
+    readNames: (workspaceId, agentId) => nameReadsOn(input, workspaceId, agentId),
     assessCoherence: (workspaceId, agentId, candidates) =>
       input.authoredDirectiveService.assessCoherence(workspaceId, agentId, candidates),
     unitOfWork: {
@@ -49,26 +65,23 @@ export const buildStarterPackApplyService = (input: {
         // the first read means the replay and name checks below cannot be invalidated by another
         // writer before this transaction commits.
         await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
-        const { authoredDirectiveService, routineDefinitionService } = input.authoringServicesOn(trx);
+        const services = input.authoringServicesOn(trx);
         const applies = new AgentStarterPackApplyRepository(trx);
         return work({
-          listDirectiveNames: async () =>
-            (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.name),
-          routineNameTaken: async (name) =>
-            (await routineDefinitionService.findCreateConflict(workspaceId, agentId, name)) !== null,
+          ...nameReadsOn(services, workspaceId, agentId),
           coherenceContextToken: (candidates) =>
-            authoredDirectiveService.coherenceContextToken(workspaceId, agentId, candidates),
+            services.authoredDirectiveService.coherenceContextToken(workspaceId, agentId, candidates),
           createDirective: async (directive, assessedCoherence) =>
-            (await authoredDirectiveService.create(workspaceId, agentId, directive, { assessedCoherence })).directive,
-          createRoutine: async (routine) =>
-            (await routineDefinitionService.createDraft(workspaceId, agentId, routine)).routine,
+            (await services.authoredDirectiveService.create(workspaceId, agentId, directive, { assessedCoherence })).directive,
+          createRoutine: (routine) => services.routineDefinitionService.createDraft(workspaceId, agentId, routine),
           findApply: (idempotencyKey) => applies.findByKey(workspaceId, agentId, idempotencyKey),
           recordApply: (record) => applies.insert({ ...record, workspaceId, agentId }),
         });
       }),
     },
+    // Apply only ever creates a routine, so its authoring audit records a create.
     afterRoutineCommitted: (workspaceId, agentId, routine) =>
-      input.routineDefinitionService.completeExternalDraftMutation(workspaceId, agentId, routine),
+      input.routineDefinitionService.completeExternalDraftMutation(workspaceId, agentId, routine, "create"),
     audit: input.auditService,
     logger: input.logger,
   });
@@ -80,7 +93,7 @@ export const buildStarterPackApplyService = (input: {
 export const buildStarterPackDraftService = (input: {
   agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
   authoredDirectiveService: Pick<AuthoredDirectiveService, "list">;
-  routineDefinitionService: Pick<RoutineDefinitionService, "list">;
+  routineDefinitionService: Pick<RoutineDefinitionService, "list" | "findCreateConflict">;
   routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
   chatInferencePipeline: Pick<ModelInferencePipeline, "complete">;
   languageDetector: ResponseLanguageDetector;
@@ -91,7 +104,10 @@ export const buildStarterPackDraftService = (input: {
   new StarterPackDraftService({
     agents: input.agentRepository,
     directives: { list: (workspaceId, agentId) => input.authoredDirectiveService.list(workspaceId, agentId) },
-    routines: { list: (workspaceId, agentId) => input.routineDefinitionService.list(workspaceId, agentId) },
+    routines: {
+      list: (workspaceId, agentId) => input.routineDefinitionService.list(workspaceId, agentId),
+      findCreateConflict: (workspaceId, agentId, name) => input.routineDefinitionService.findCreateConflict(workspaceId, agentId, name),
+    },
     routineDrafter: {
       draft: (workspaceId, agentId, request, options) =>
         input.routineDraftAssistService.draft(workspaceId, agentId, request, options),

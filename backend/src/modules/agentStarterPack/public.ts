@@ -1,6 +1,7 @@
 export {
+  starterPackAppliedDirectiveSchema,
+  starterPackAppliedRoutineSchema,
   starterPackApplyRequestSchema,
-  starterPackApplyResultSchema,
   starterPackDraftRequestSchema,
   type StarterPackApplyRequest,
 } from "./contracts.js";
@@ -9,6 +10,7 @@ export {
   starterPackRequestFingerprint,
   type StarterPackApplyTransaction,
   type StarterPackApplyUnitOfWork,
+  type StarterPackNameReads,
 } from "./applyService.js";
 export {
   StarterPackDraftGenerator,

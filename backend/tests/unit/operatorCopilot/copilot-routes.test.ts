@@ -21,7 +21,7 @@ describe("createCopilotRoutes", () => {
       authService: {},
       workspaceSessionService: {},
       accountAccessService: {},
-      llmCapabilityResolver: {},
+      chatReadiness: {},
       operatorCopilotService: {},
       copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
@@ -57,9 +57,7 @@ describe("createCopilotRoutes", () => {
         async requirePermission() {},
         hasPermission: vi.fn(async ({ permission }: { permission: string }) => permission !== "workspace.agents.manage"),
       },
-      llmCapabilityResolver: {
-        async resolve() { return {}; },
-      },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: {},
       copilotToolCatalog: [],
       copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
@@ -82,6 +80,39 @@ describe("createCopilotRoutes", () => {
     });
   });
 
+  it("reports Ray unavailable, and refuses a turn, when the workspace's chat pipeline cannot resolve", async () => {
+    const isChatConfigured = vi.fn(async () => false);
+    const runTurn = vi.fn();
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.cookies = { radioso_session: "valid-session" }; next(); });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session", EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60, EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: 60_000 },
+      authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+      workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+      accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+      chatReadiness: { isChatConfigured },
+      operatorCopilotService: { runTurn },
+      copilotToolCatalog: [],
+      copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
+      auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const availability = await request(app).get("/api/v1/copilot/availability");
+    const turn = await request(app).post("/api/v1/copilot/turns").send({
+      conversationId: null,
+      message: "Hello",
+      pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    expect(availability.body).toMatchObject({ available: false, reason: "no_llm_capability" });
+    expect(turn.status).toBe(503);
+    expect(turn.body).toEqual({ reason: "no_llm_capability" });
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(isChatConfigured).toHaveBeenCalledWith(WORKSPACE_ID);
+  });
+
   it("offers Apply on a contributed card exactly when the operator holds the permission its contribution declares", async () => {
     const targetTypes = resolveCopilotProposalContributions([createAlertThresholdContribution(createAlertThresholdState())]).targetTypes;
     const availabilityFor = async (held: ReadonlySet<string>) => {
@@ -96,7 +127,7 @@ describe("createCopilotRoutes", () => {
           async requirePermission() {},
           hasPermission: vi.fn(async ({ permission }: { permission: string }) => held.has(permission)),
         },
-        llmCapabilityResolver: { async resolve() { return {}; } },
+        chatReadiness: { isChatConfigured: async () => true },
         operatorCopilotService: {},
         copilotToolCatalog: [],
         copilotProposalTargetTypes: targetTypes,
@@ -149,7 +180,7 @@ describe("createCopilotRoutes", () => {
         requirePermission,
         hasPermission: vi.fn(async () => true),
       },
-      llmCapabilityResolver: { async resolve() { return {}; } },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: { resolveProposalWorkspaceForSession, getProposal },
       copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
@@ -195,7 +226,7 @@ describe("createCopilotRoutes", () => {
       authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
       workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
       accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
-      llmCapabilityResolver: { async resolve() { return {}; } },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: { resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })), getProposal, describeReviewedProposalClient },
       copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes, abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
     } as never));
@@ -223,7 +254,7 @@ describe("createCopilotRoutes", () => {
         authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
         workspaceSessionService: {},
         accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
-        llmCapabilityResolver: {},
+        chatReadiness: {},
         operatorCopilotService: {
           resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })),
           approveReviewedProposal,
@@ -293,7 +324,7 @@ describe("createCopilotRoutes", () => {
         authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
         workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
         accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
-        llmCapabilityResolver: {},
+        chatReadiness: {},
         operatorCopilotService: { dismissProposal },
         copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
         abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
@@ -375,7 +406,7 @@ describe("createCopilotRoutes", () => {
     app.use("/api/v1/copilot", createCopilotRoutes({
       env: { SESSION_COOKIE_NAME: "radioso_session" }, authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
       workspaceSessionService: {}, accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
-      llmCapabilityResolver: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
+      chatReadiness: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -420,7 +451,7 @@ describe("createCopilotRoutes", () => {
         },
         hasPermission: vi.fn(async ({ permission }: { permission: string }) => permission !== "workspace.agents.manage"),
       },
-      llmCapabilityResolver: { async resolve() { return {}; } },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: { applyProposal },
       copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
     } as never));
@@ -457,9 +488,7 @@ describe("createCopilotRoutes", () => {
         async requirePermission() {},
         hasPermission: vi.fn(async () => true),
       },
-      llmCapabilityResolver: {
-        async resolve() { return {}; },
-      },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: {
         runTurn: async function* () { throw new CopilotConflictError(); },
       },
@@ -514,7 +543,7 @@ describe("createCopilotRoutes", () => {
         async requirePermission() {},
         hasPermission,
       },
-      llmCapabilityResolver: { async resolve() { return {}; } },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: { runTurn },
       copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
@@ -568,7 +597,7 @@ describe("copilot turn rate limit", () => {
         async requirePermission() {},
         hasPermission: vi.fn(async () => true),
       },
-      llmCapabilityResolver: { async resolve() { return {}; } },
+      chatReadiness: { isChatConfigured: async () => true },
       operatorCopilotService: { runTurn: async function* () { throw new CopilotConflictError(); } },
       copilotToolCatalog: [], copilotProposalTargetTypes: firstPartyCopilotProposalTargetTypes,
       abuseControlService: { enforce: input.enforce },

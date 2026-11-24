@@ -14,7 +14,7 @@ import { forbidden, notFound } from "../../shared/domain/errors.js";
 import type { CopilotStoredProposalTargetType } from "./contracts.js";
 import type { CopilotProposalTargetTypeSet } from "./proposalContribution.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
-import { createChatReadiness, type ChatCapabilityProbe } from "../../shared/infra/llm/chatReadiness.js";
+import type { ChatReadiness } from "../../shared/infra/llm/chatReadiness.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, type CopilotToolDescriptor, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
@@ -69,7 +69,8 @@ interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
       permission: AccountPermission;
     }): Promise<boolean>;
   };
-  llmCapabilityResolver: ChatCapabilityProbe;
+  /** Whether the chat pipeline Ray's turns and empty state run on resolves for the workspace. */
+  chatReadiness: Pick<ChatReadiness, "isChatConfigured">;
   operatorCopilotService: OperatorCopilotService;
   copilotEmptyStateService: Pick<CopilotEmptyStateService, "get">;
   /** Read only for its permission declarations; the turn itself runs against the service's catalog. */
@@ -77,8 +78,6 @@ interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   /** The deployment's assembled target types, for which cards an operator may apply. */
   copilotProposalTargetTypes: Pick<CopilotProposalTargetTypeSet, "targetTypes" | "permissionsFor">;
 }
-
-/** Ray only asks whether the workspace has a usable chat model; it never resolves a call config. */
 
 export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Router => {
   const router = Router();
@@ -170,7 +169,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   router.get("/empty-state", rateLimitEmptyState, validateQuery(emptyStateQuerySchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId, principal } = sessionLocals(res);
-      try { await dependencies.llmCapabilityResolver.resolve("chat", { workspaceId }); } catch { res.status(503).json({ reason: "no_llm_capability" }); return; }
+      if (!(await dependencies.chatReadiness.isChatConfigured(workspaceId))) { res.status(503).json({ reason: "no_llm_capability" }); return; }
       const { locale } = req.query as z.infer<typeof emptyStateQuerySchema>;
       const permissions = new Set<string>();
       for (const permission of workspaceSetupStatePermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
@@ -300,12 +299,12 @@ const applyableProposalTargets = async (
   return targets;
 };
 
-const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver" | "copilotProposalTargetTypes">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean; applyableProposalTargets: CopilotStoredProposalTargetType[] }> => {
+const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "chatReadiness" | "copilotProposalTargetTypes">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean; applyableProposalTargets: CopilotStoredProposalTargetType[] }> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const canManage = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission: "workspace.agents.manage" });
   const targets = await applyableProposalTargets(dependencies, res);
   // The same check the workspace summary's `llmConfigured` and the starter pack make.
-  return await createChatReadiness(dependencies.llmCapabilityResolver).isChatConfigured(workspaceId)
+  return await dependencies.chatReadiness.isChatConfigured(workspaceId)
     ? { available: true, reason: "ok", canManage, applyableProposalTargets: targets }
     : { available: false, reason: "no_llm_capability", canManage, applyableProposalTargets: targets };
 };

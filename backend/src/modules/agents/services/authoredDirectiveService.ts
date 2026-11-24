@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
-import { canonicalJson } from "../../../shared/domain/canonicalJson.js";
+import { canonicalJson } from "../../../shared/domain/canonicalContentHash.js";
 import { addressesSurface, effectiveSurfaces } from "../../../shared/domain/steeringRule.js";
 import type {
   Directive,
@@ -104,7 +104,8 @@ export interface AuthoredDirectiveServiceOptions {
   agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">;
 }
 
-const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
+/** The verdict saved when the coherence check could not run, or ran on inputs that have since changed. Advisory, like every verdict. */
+export const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
   coherent: true,
   conflicts: [],
   rationale: "Coherence check unavailable.",
@@ -168,7 +169,7 @@ const buildCoherenceCheckInput = (
 });
 
 const coherenceContextTokenOf = (inputs: ReadonlyArray<{ input: DirectiveCoherenceCheckInput }>): string =>
-  createHash("sha256").update(canonicalJson(inputs.map((entry) => entry.input))).digest("hex");
+  createHash("sha256").update(canonicalJson(JSON.parse(JSON.stringify(inputs.map((entry) => entry.input))) as unknown)).digest("hex");
 
 const disabledCandidateVerdict = (): DirectiveCoherenceVerdict => ({
   coherent: true,
@@ -495,10 +496,12 @@ export class AuthoredDirectiveService {
     for (const { candidate } of inputs) {
       await this.validateBinding(workspaceId, agentId, candidate);
     }
-    const verdicts: DirectiveCoherenceAssessment["verdicts"] = [];
-    for (const [index, { candidate, input }] of inputs.entries()) {
-      verdicts.push({ ref: candidates[index]?.ref ?? "", verdict: await this.runCoherenceCheck(candidate, input) });
-    }
+    // Each input is complete before any check runs and none depends on another's verdict, so the
+    // checks run concurrently; Promise.all keeps the verdicts in candidate order.
+    const verdicts = await Promise.all(inputs.map(async ({ candidate, input }, index) => ({
+      ref: candidates[index]?.ref ?? "",
+      verdict: await this.runCoherenceCheck(candidate, input),
+    })));
     return { verdicts, contextToken: coherenceContextTokenOf(inputs) };
   }
 

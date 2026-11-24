@@ -67,6 +67,7 @@ export { renderRoutineInvocation } from "./exposure/renderRoutineInvocation.js";
 export { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
 export {
   routineValidationCodes,
+  routineValidationResultSchema,
   validateRoutineDefinition,
   toSafeRoutineValidationDiagnostic,
   type RoutineValidationDiagnostic,

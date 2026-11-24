@@ -200,7 +200,7 @@ describe("workspace summary contract", () => {
   });
 
   it("reports llmConfigured=false when the workspace has no chat model configured", async () => {
-    // The in-memory app's resolver throws for every workspace, as a deployment with no provider key does.
+    // The in-memory app's chat pipeline resolves for no workspace, as a deployment with no provider key.
     const { app } = createTestApp();
     const session = await issueTestSession(app, "workspace-summary-no-llm@example.com");
 
@@ -212,23 +212,9 @@ describe("workspace summary contract", () => {
     expect(response.body.llmConfigured).toBe(false);
   });
 
-  it("reports llmConfigured=true when the chat model resolves, without exposing the provider configuration", async () => {
-    const resolve = vi.fn(async () => ({
-      capability: "chat" as const,
-      provider: "openai" as const,
-      model: "gpt-test",
-      apiKey: "sk-contract-secret-123",
-      baseUrl: "https://llm.example.test/v1",
-    }));
-    const { app } = createTestApp({
-      llmCapabilityResolver: {
-        resolve,
-        // The summary reads readiness through `resolve` only.
-        resolveSelection: async () => {
-          throw new Error("resolveSelection is not used by the workspace summary");
-        },
-      },
-    });
+  it("reports llmConfigured=true when the workspace's chat pipeline resolves", async () => {
+    const assertChatPipelineResolvable = vi.fn(async () => undefined);
+    const { app } = createTestApp({ chatPipelineProbe: { assertChatPipelineResolvable } });
     const session = await issueTestSession(app, "workspace-summary-llm@example.com");
 
     const response = await request(app)
@@ -237,10 +223,7 @@ describe("workspace summary contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.llmConfigured).toBe(true);
-    expect(resolve).toHaveBeenCalledWith("chat", { workspaceId: session.workspaceId });
-    expect(response.text).not.toContain("sk-contract-secret-123");
-    expect(response.text).not.toContain("llm.example.test");
-    expect(response.text).not.toContain("gpt-test");
+    expect(assertChatPipelineResolvable).toHaveBeenCalledWith(session.workspaceId);
   });
 
   it("returns the project ErrorResponse JSON shape on crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {

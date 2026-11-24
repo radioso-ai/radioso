@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-22
+last_updated: 2026-11-24
 ---
 
 # Agents and skills
@@ -343,8 +343,7 @@ opens its link.
 A starter pack gives a new agent a first set of behavior from one sentence about
 what it is for. You describe the purpose, review the suggested directives and
 routine, and keep the ones you want. Drafting and applying are separate calls,
-so you can draft as often as you like and nothing reaches the agent until you
-apply.
+and nothing reaches the agent until you apply.
 
 Draft with `POST /api/v1/agents/{agentId}/starter-pack/draft`. The purpose can
 be in any language; the suggestions come back in the language it is written in.
@@ -390,7 +389,8 @@ transitions, and terminals. A directive is in the same shape
 `POST /api/v1/agents/{agentId}/directives` accepts, and a routine in the shape
 `POST /api/v1/agents/{agentId}/routines` accepts, so you can edit either before
 applying. `validation` is the routine validator's result, and `conflict` is
-`name_exists` when the agent already has an item with that name.
+`name_exists` when the agent already has an item with that name; applying a pack
+that includes it is refused.
 
 Apply the items you keep with `POST /api/v1/agents/{agentId}/starter-pack/apply`.
 Send only the selected items, and an `idempotencyKey` you choose: 8 to 128
@@ -416,10 +416,33 @@ characters of letters, digits, `.`, `_`, `:`, or `-`.
 Apply is all or nothing: either every selected item is created, or none is.
 It never overwrites a directive or routine the agent already has; if a selected
 name is taken, the whole apply is refused and the response lists the clashing
-items. A first apply returns `201` with the created `id` and `name` of each
-item. Sending the same key and items again returns `200` with the same result
-and `replayed: true`, and creates nothing, so a client can retry safely after a
+items. Items are created in the order you send them, so a directive whose
+`excludes` names another directive from the same pack must come after it. An
+excluded name can also be a directive already on the agent or a built-in one;
+anything else is refused with `400`, and `details.items` lists each directive
+with the names it could not find. Names and `excludes` are checked before any
+model call, so a refused apply answers quickly.
+
+A first apply returns `201` with the created `id` and `name` of each item.
+Sending the same key and items again returns `200` with the same result and
+`replayed: true`, and creates nothing, so a client can retry safely after a
 timeout. Two requests racing with the same key give the same outcome.
+
+The routine item carries `validation`, the same result
+`POST /api/v1/agents/{agentId}/routines` returns. A routine that is not `ok`,
+for example one whose step names a skill the agent does not have, is still
+created, but publishing the agent's draft is refused until the routine is fixed
+or turned off:
+
+```json
+{
+  "itemKey": "routine-1",
+  "kind": "routine",
+  "id": "c4a8e2f1-6d3b-4f7a-9e20-1b5d7c9a3e48",
+  "name": "termin-buchen",
+  "validation": { "ok": true, "diagnostics": [] }
+}
+```
 
 Each created directive also carries `coherence`, the same advisory check
 `POST /api/v1/agents/{agentId}/directives` runs: whether the directive can be
@@ -445,7 +468,9 @@ apply:
 ```
 
 When the check could not run, `coherent` is `true` and `rationale` says the check
-was unavailable.
+was unavailable. The apply saves the same verdict when the agent's directives or
+instructions change between the check and the save, because the check judged
+the agent as it was before that change.
 
 Applied items land in the agent's draft. Publish them the same way as any other
 draft change; see [Draft revisions and private tests](#draft-revisions-and-private-tests).
@@ -981,7 +1006,7 @@ GET    /api/v1/skills/{skillName}
 - `422` with `invalid_starter_pack_draft` means the model did not return a usable pack after a retry. Draft again, or reword the purpose.
 - `409` with `starter_pack_name_conflict` on apply means a selected directive or routine name is already on the agent; `details.items` lists them. Rename or deselect them and apply again with a new key.
 - `409` with `idempotency_key_reused` means the key was already used to apply different items. Use a new key for a different selection.
-- `409` with `starter_pack_agent_changed` means the agent's directives or instructions kept changing while the selected directives were being checked. Nothing was created; apply again with the same key.
+- `400` on a starter pack apply whose `details.items` lists `unknownExcludes` means a directive excludes one that is neither on the agent nor listed before it in the pack. List the excluded directive first, or drop it from `excludes`.
 
 ## Read next
 

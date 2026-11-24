@@ -335,8 +335,10 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
       const emailId = await fieldOf("contact_email");
       await values.upsertValue(tenant.variableId, { type: "whatsapp_contact", id: NUMBER_A }, "gold", routineValueWriter("booking", randomUUID(), earlier));
       await values.upsertValue(emailId, { type: "whatsapp_contact", id: NUMBER_A }, "ada@guests.example", routineValueWriter("booking", randomUUID(), latest));
+      // A value under another number that names this conversation is not this conversation's person's, and stays.
+      await values.upsertValue(emailId, { type: "whatsapp_contact", id: NUMBER_B }, "bea@guests.example", routineValueWriter("booking", randomUUID(), latest));
 
-      await new ContextValueConsentWithholder(database.kysely).withhold({
+      await new ContextValueConsentWithholder(database.kysely, conversationReadSources(database.kysely).personKeys).withhold({
         workspaceId: tenant.workspaceId,
         conversationId: latest,
         messageIds: [],
@@ -344,7 +346,7 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
         withdrawnRoutineSlots: [{ routineId: "booking", slotKeys: ["email"] }],
       });
 
-      expect(await personValues(tenant)).toEqual([{ number: NUMBER_A, data: "gold" }]);
+      expect(await personValues(tenant)).toEqual([{ number: NUMBER_A, data: "gold" }, { number: NUMBER_B, data: "bea@guests.example" }]);
     });
   });
 });

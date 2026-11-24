@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { ConversationTrace, ReplyDraft, RoutineActionRequest, RoutineConsentEvent } from "@radioso/conversation-contract";
 import {
@@ -79,6 +79,7 @@ import type { RoutineConsentTurnEvents } from "../../../shared/domain/routineCon
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import { turnBackgroundJobs } from "./turnBackgroundJobs.js";
+import { actionIdempotencyKey } from "./actions/actionIdempotencyKey.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ToolImageSource } from "../../toolImages/contracts/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
@@ -167,16 +168,6 @@ export interface ChatActionOutboxPort {
     skillName?: string | null;
   }): Promise<{ id: string; duplicate: boolean }>;
 }
-
-// Content-addressed idempotency key so a retried turn that re-emits the same request
-// (same conversation + action type + payload) enqueues it once.
-export const actionIdempotencyKey = (
-  conversationId: string,
-  type: string,
-  payload: Record<string, unknown>,
-): string =>
-  `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
-
 
 class RoutineActionAuthorizationError extends Error {
   constructor(

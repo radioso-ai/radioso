@@ -345,9 +345,16 @@ test("a teammate sets an attribute the AI chose, then hands it back to the AI", 
   await expect(attributes.getByText(/^Set by your team · /)).toBeVisible();
   await expect(trigger).toBeFocused();
 
-  // A teammate's own value is not offered to keep as the team's again.
+  // A teammate's own value is not offered to keep as the team's again, but picking it still asks the
+  // server: this view may be stale, and another teammate may have changed it since.
   await trigger.click();
   await expect(page.getByText("keeps it as your team's value")).toHaveCount(0);
+  await page.getByRole("menuitemradio", { name: "Returns" }).click();
+  await expect.poll(() => edits.length).toBe(2);
+  expect(edits[1]).toEqual({ method: "PUT", name: "topic", value: "returns" });
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
   await page.getByRole("menuitem", { name: "Reset to automatic" }).click();
 
   await expect.poll(() => edits.at(-1)).toEqual({ method: "DELETE", name: "topic" });

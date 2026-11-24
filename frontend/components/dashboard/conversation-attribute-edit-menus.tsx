@@ -39,7 +39,8 @@ export function AttributeRowMenu({
   onReset: () => void
 }) {
   const current = attribute.scope === 'conversation' && typeof attribute.value === 'string' ? attribute.value : ''
-  // Choosing the option the conversation holds keeps it as the team's, unless a teammate already wrote it.
+  // Every pick goes to the server, even the option shown: this view may be stale, and the server
+  // answers a teammate's own option with no change and pins anyone else's as the team's.
   const trigger = useRef<HTMLButtonElement>(null)
   const edited = useRef(false)
   // The trigger is disabled while the edit saves, which drops focus; it comes back when the edit ends.
@@ -61,7 +62,7 @@ export function AttributeRowMenu({
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {attribute.scope === 'conversation' ? attributeEditCopy.setFor : attributeEditCopy.overridesVisitor}
         </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={current} onValueChange={(key) => { if (key !== current || pinnable) { edited.current = true; onSet(key) } }}>
+        <DropdownMenuRadioGroup value={current} onValueChange={(key) => { edited.current = true; onSet(key) }}>
           {options.map((option) => (
             <DropdownMenuRadioItem key={option.key} value={option.key}>{option.label}</DropdownMenuRadioItem>
           ))}

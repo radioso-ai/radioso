@@ -19,6 +19,7 @@ const CONVERSATION_EVENT_TYPES = [
   "handoff.requested",
   "routine.completed",
   "decision.pending",
+  "context_value.changed",
 ] as const;
 
 /** The types about a document: each one names the document revision it happened to. */
@@ -44,6 +45,7 @@ export const WORKSPACE_EVENT_VERSIONS = {
   "handoff.requested": 1,
   "routine.completed": 1,
   "decision.pending": 1,
+  "context_value.changed": 1,
   "document.processed": 1,
   "document.failed": 1,
 } as const satisfies Record<WorkspaceEventType, number>;
@@ -55,6 +57,15 @@ export const WORKSPACE_EVENT_RETENTION_DAYS = 30;
 export const ROUTINE_EVENT_OUTCOMES = ["complete", "handoff", "action", "stuck", "consent_declined"] as const;
 
 export type RoutineEventOutcome = typeof ROUTINE_EVENT_OUTCOMES[number];
+
+/**
+ * What `context_value.changed` names of the value: its attribute's type, the scope it is kept at and
+ * the kind of writer. Listed here because the published contract sits below the modules; the
+ * context-variables module checks at compile time that its own lists match.
+ */
+export const CONTEXT_VALUE_EVENT_VALUE_TYPES = ["string", "json", "enum"] as const;
+const CONTEXT_VALUE_EVENT_SCOPES = ["conversation"] as const;
+export const CONTEXT_VALUE_EVENT_WRITERS = ["api", "operator", "routine", "classifier"] as const;
 
 const slotValues = z.record(z.string(), z.unknown())
   .describe("Values keyed by slot key, as they left the conversation: a sensitive slot's value reads `[redacted]`.");
@@ -105,6 +116,16 @@ interface WorkspaceEventDetails {
     options: Array<{ id: string; label: string }>;
     deadline: string | null;
   };
+  "context_value.changed": {
+    variableId: string;
+    variable: string;
+    valueType: typeof CONTEXT_VALUE_EVENT_VALUE_TYPES[number];
+    scope: typeof CONTEXT_VALUE_EVENT_SCOPES[number];
+    value: unknown;
+    redacted: boolean;
+    writtenBy: typeof CONTEXT_VALUE_EVENT_WRITERS[number];
+    routineId: string | null;
+  };
   "document.processed": Record<string, never>;
   "document.failed": { failureCode: string | null };
 }
@@ -135,6 +156,17 @@ const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObje
     reason: z.string().nullable().describe("The reason the routine's author wrote on the decision step."),
     options: z.array(z.object({ id: z.string(), label: z.string() })),
     deadline: z.string().datetime().nullable(),
+  }),
+  "context_value.changed": z.object({
+    variableId: z.string().uuid().describe("The attribute's id, as `GET /api/v1/context-variables` lists it. It stays the same when the attribute is renamed."),
+    variable: z.string().describe("The attribute's name when the value changed, as `GET /api/v1/context-variables` lists it."),
+    valueType: z.enum(CONTEXT_VALUE_EVENT_VALUE_TYPES).describe("The attribute's type. A Choice attribute is `enum`, and its value is an option's key."),
+    scope: z.enum(CONTEXT_VALUE_EVENT_SCOPES).describe("Where the value is kept. Version 1 records the values kept for the conversation."),
+    // Present and null for a cleared or Private value: refusing `undefined` makes the field required.
+    value: z.unknown().refine((value) => value !== undefined).describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."),
+    redacted: z.boolean().describe("True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded."),
+    writtenBy: z.enum(CONTEXT_VALUE_EVENT_WRITERS).describe("Who changed it: `classifier` (the AI), `operator` (a teammate, in the Inbox, through Ray or through an operator MCP client), `api` (an API token or the dashboard's values API) or `routine`."),
+    routineId: z.string().nullable().describe("The routine that wrote the value when `writtenBy` is `routine`; null otherwise."),
   }),
   "document.processed": z.object({}),
   "document.failed": z.object({

@@ -23,7 +23,7 @@ describeIntegration("reviewed context-variable changes, prepared, approved and e
   const accountRepository = new AccountRepository(database.kysely);
   const workspaceRepository = new WorkspaceRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const proposals = new CopilotRepository(database.kysely, firstPartyCopilotProposalTargetTypes);
   const contextVariables = new ContextVariableService({
     repository: contextVariableRepository,

@@ -17,7 +17,7 @@ const option = (key: string): ContextVariableOption => ({ key, label: key, descr
 
 describeIntegration("classified attributes (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ContextVariableRepository(database.kysely);
+  const repository = new ContextVariableRepository(database.kysely, null);
   const reads = new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely));
   const writer = new ConversationValueWriterService({ repository });
   const accountId = randomUUID();
@@ -96,6 +96,21 @@ describeIntegration("classified attributes (Postgres)", () => {
     await expect(reads.readDefinitions({ workspaceId, variableIds: [topic.id, pushed.id] })).resolves.toHaveLength(2);
   });
 
+  it("reads a release's context-variable enablements alone, as its whole snapshot holds them", async () => {
+    const topic = await createChoice();
+    const conversationId = await createConversationOn([enablementSnapshot(topic.id, "classified"), enablementSnapshot(topic.id, "pushed", false)]);
+    const [{ agent_revision_id: revisionId }] = await database.query<{ agent_revision_id: string }>(
+      "SELECT agent_revision_id FROM conversations WHERE id = $1", [conversationId],
+    );
+    const revisions = new AgentRevisionRuntimeRepository(database.kysely);
+
+    const enablements = await revisions.findRevisionEnablements({ workspaceId, agentId, revisionId });
+
+    expect(enablements).toEqual((await revisions.findRevision({ workspaceId, agentId, revisionId }))?.snapshot.contextVariableEnablements);
+    expect(enablements).toHaveLength(2);
+    await expect(revisions.findRevisionEnablements({ workspaceId, agentId: randomUUID(), revisionId })).resolves.toBeNull();
+  });
+
   it("holds a variable the API set for the conversation's customer, and leaves that value to resolve", async () => {
     const urgency = await createChoice();
     const customerId = `customer-${randomUUID()}`;
@@ -170,7 +185,7 @@ describeIntegration("classified attributes (Postgres)", () => {
     await expect(writer.write({ conversationId, variable: topic, stored: { data: "billing", writtenBy: classifier }, data: "shipping", writtenBy: classifier })).resolves.toBe("kept");
     await expect(repository.readValue(topic.id, scope)).resolves.toMatchObject({ data: "shipping", writtenBy: { kind: "api" } });
 
-    await repository.deleteValue(topic.id, scope);
+    await repository.deleteValue(topic.id, scope, { kind: "api", ref: null });
     await writer.write({ conversationId, variable: topic, stored: null, data: "billing", writtenBy: classifier });
     await expect(writer.write({ conversationId, variable: topic, stored: { data: "billing", writtenBy: classifier }, data: null, writtenBy: classifier })).resolves.toBe("cleared");
     await expect(repository.readValue(topic.id, scope)).resolves.toBeNull();

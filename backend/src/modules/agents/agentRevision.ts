@@ -136,6 +136,10 @@ export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
 export { visitorImagesSwitchChanged } from "./agentRevisionVisitorImages.js";
 export type AgentGreetingSnapshot = z.infer<typeof agentGreetingSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);
+export type ContextVariableEnablementSnapshot = AgentRevisionSnapshot["contextVariableEnablements"][number];
+/** A release's `contextVariableEnablements`, read without the rest of its snapshot and checked the same way. */
+export const parseContextVariableEnablementSnapshots = (value: unknown): ContextVariableEnablementSnapshot[] =>
+  agentRevisionSnapshotSchema.shape.contextVariableEnablements.parse(value);
 
 export { readAgentRevisionGreeting };
 

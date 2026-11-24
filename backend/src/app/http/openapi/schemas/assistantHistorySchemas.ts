@@ -33,7 +33,7 @@ import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
 import { registerChatConversationMessageSchemas } from "./chatConversationMessageSchemas.js";
-import { registerConversationAttributeSchema } from "./conversationAttributeSchemas.js";
+import { attributesEditableSchema, registerConversationAttributeChangeSchema, registerConversationAttributeSchema } from "./conversationAttributeSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -829,6 +829,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       attributes: z.array(ConversationAttributeSchema).optional().openapi({
         description: "On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out.",
       }),
+      attributesEditable: attributesEditableSchema,
     }),
   );
 
@@ -875,7 +876,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       privacyNoticeVersion: true,
       messages: true,
       recording: true,
-      attributes: true,
+      attributes: true, attributesEditable: true,
     }).extend({
       messages: z.array(PublicChatConversationMessageSchema),
     }),
@@ -983,6 +984,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatConversationMessageSchema,
     PublicChatConversationMessageSchema,
     ChatConversationDetailSchema,
+    ConversationAttributeChangeSchema: registerConversationAttributeChangeSchema(registry, ConversationAttributeSchema),
     PublicChatConversationDetailSchema,
     ChatConversationTailSchema,
     PublicChatConversationTailSchema,

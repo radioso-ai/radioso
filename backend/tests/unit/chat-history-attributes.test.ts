@@ -22,6 +22,7 @@ const topic: ConversationAttribute = {
   scope: "conversation",
   writtenBy: { kind: "classifier", ref: "context-classification/1" },
   updatedAt: new Date("2026-11-20T10:00:00.000Z"),
+  classified: true,
 };
 
 const setup = () => {

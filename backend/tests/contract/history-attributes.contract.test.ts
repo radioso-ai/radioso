@@ -82,6 +82,7 @@ describe("conversation attributes on the history routes", () => {
         scope: "conversation",
         writtenBy: { kind: "api", ref: expect.any(String) },
         updatedAt: expect.any(String),
+        classified: false,
       },
       {
         name: "plan",
@@ -91,6 +92,7 @@ describe("conversation attributes on the history routes", () => {
         scope: "conversation",
         writtenBy: { kind: "api", ref: expect.any(String) },
         updatedAt: expect.any(String),
+        classified: false,
       },
       {
         name: "topic",
@@ -101,6 +103,7 @@ describe("conversation attributes on the history routes", () => {
         scope: "conversation",
         writtenBy: { kind: "api", ref: expect.any(String) },
         updatedAt: expect.any(String),
+        classified: false,
       },
     ]);
     expect(JSON.stringify(billing.body.attributes)).not.toContain("dental");

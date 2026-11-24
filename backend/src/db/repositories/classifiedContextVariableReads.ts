@@ -1,15 +1,15 @@
 import {
   classificationTargetFrom,
   contextScopeLadder,
-  isClassifiedEnablement,
   type ClassificationTarget,
   type ClassifiedVariableReader,
   type ContextVariable,
 } from "../../modules/context-variables/public.js";
-import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public.js";
+import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { contextVariableColumns, mapContextVariableRow, type ContextVariableRow } from "./contextVariableRepository.js";
 import { readLadderValues } from "./contextVariableValueReads.js";
+import { readConversationClassification } from "./conversationClassifiedVariables.js";
 
 /**
  * The classifier's reads. A conversation's targets come from the revision it is pinned to, read
@@ -21,30 +21,19 @@ import { readLadderValues } from "./contextVariableValueReads.js";
 export class ClassifiedContextVariableReads implements ClassifiedVariableReader {
   constructor(
     private readonly db: Db,
-    private readonly revisions: Pick<AgentRevisionRuntimeReaderPort, "findRevision">,
+    private readonly revisions: AgentRevisionEnablementReader,
   ) {}
 
   async readConversationTargets(input: { workspaceId: string; conversationId: string }): Promise<{ agentId: string; targets: ClassificationTarget[] } | null> {
-    const conversation = await this.db
-      .selectFrom("conversations")
-      .select(["id", "agent_id", "agent_revision_id", "anonymous_session_id", "verified_customer_id"])
-      .where("workspace_id", "=", input.workspaceId)
-      .where("id", "=", input.conversationId)
-      .executeTakeFirst();
+    const conversation = await readConversationClassification(this.db, this.revisions, input);
     if (!conversation) return null;
-    if (!conversation.agent_id || !conversation.agent_revision_id) {
-      return { agentId: conversation.agent_id ?? "", targets: [] };
-    }
-    const agentId = conversation.agent_id;
-    const revision = await this.revisions.findRevision({ workspaceId: input.workspaceId, agentId, revisionId: conversation.agent_revision_id });
-    const variableIds = (revision?.snapshot.contextVariableEnablements ?? [])
-      .filter(isClassifiedEnablement)
-      .map((enablement) => enablement.variableId);
-    if (variableIds.length === 0) return { agentId, targets: [] };
+    const agentId = conversation.agentId ?? "";
+    const variableIds = conversation.classifiedVariableIds;
+    if (!conversation.agentId || variableIds.length === 0) return { agentId, targets: [] };
     const ladder = contextScopeLadder({
-      conversationId: conversation.id,
-      chatSessionId: conversation.anonymous_session_id,
-      verifiedCustomerId: conversation.verified_customer_id,
+      conversationId: conversation.conversationId,
+      chatSessionId: conversation.chatSessionId,
+      verifiedCustomerId: conversation.verifiedCustomerId,
       agentId,
       workspaceId: input.workspaceId,
     });

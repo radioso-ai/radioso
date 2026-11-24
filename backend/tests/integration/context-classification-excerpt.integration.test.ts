@@ -20,7 +20,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("context classification over a stored conversation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();

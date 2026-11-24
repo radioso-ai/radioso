@@ -19,6 +19,7 @@ const attribute = (value: string): ConversationAttribute => ({
   scope: 'conversation',
   writtenBy: { kind: 'classifier', ref: null },
   updatedAt: '2026-11-22T09:30:00.000Z',
+  classified: true,
 })
 
 const message = (id: string) => ({ id, role: 'user', content: id }) as ChatConversationMessage
@@ -31,9 +32,13 @@ interface Props {
 }
 
 let shown: ConversationAttribute[] | undefined
+let applyChange: (name: string, changed: ConversationAttribute | null, options?: { classificationQueued?: boolean }) => void = () => undefined
 function Probe({ conversationId, loaded, messages, hasPolled }: Props) {
-  const attributes = useLiveConversationAttributes({ conversationId, loaded, tail: { messages, hasPolled } })
-  useEffect(() => { shown = attributes })
+  const live = useLiveConversationAttributes({ conversationId, loaded, tail: { messages, hasPolled } })
+  useEffect(() => {
+    shown = live.attributes
+    applyChange = live.applyChange
+  })
   return null
 }
 
@@ -95,6 +100,24 @@ describe('useLiveConversationAttributes', () => {
     expect(shown).toBe(reloaded)
   })
 
+  it('shows a teammate\'s edit at once, over a read that started before it', async () => {
+    let finishRead: (detail: { attributes: ConversationAttribute[] }) => void = () => undefined
+    api.getHistoryConversation.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve }))
+    await render({ messages: [message('m1')], hasPolled: true })
+    await render({ messages: [message('m1'), message('m2')], hasPolled: true })
+    await advance(3_000)
+
+    const edited = { ...attribute('shipping'), writtenBy: { kind: 'operator' as const, ref: 'user-1' } }
+    await act(async () => applyChange('topic', edited))
+    expect(shown).toEqual([edited])
+
+    await act(async () => finishRead({ attributes: [attribute('billing')] }))
+    expect(shown).toEqual([edited])
+
+    await act(async () => applyChange('topic', null))
+    expect(shown).toEqual([])
+  })
+
   it('drops a read for one conversation once another is open', async () => {
     await render({ messages: [message('m1')], hasPolled: true })
     await render({ messages: [message('m1'), message('m2')], hasPolled: true })
@@ -104,5 +127,45 @@ describe('useLiveConversationAttributes', () => {
 
     expect(api.getHistoryConversation).not.toHaveBeenCalled()
     expect(shown).toBe(other)
+  })
+
+  it('keeps an edit over a detail that started loading before it, until a read started after it returns', async () => {
+    await render({})
+    const edited = { ...attribute('shipping'), writtenBy: { kind: 'operator' as const, ref: 'user-1' } }
+    await act(async () => applyChange('topic', edited))
+
+    const staleDetail = [attribute('billing')]
+    await render({ loaded: staleDetail })
+    expect(shown).toEqual([edited])
+
+    await render({ loaded: staleDetail, messages: [message('m1')], hasPolled: true })
+    await render({ loaded: staleDetail, messages: [message('m1'), message('m2')], hasPolled: true })
+    api.getHistoryConversation.mockResolvedValue({ attributes: [attribute('returns')] })
+    await advance(3_000)
+    expect(shown).toEqual([attribute('returns')])
+  })
+
+  it('shows nothing while the detail is still loading, even after an edit', async () => {
+    await render({ loaded: undefined })
+    await act(async () => applyChange('topic', attribute('shipping')))
+    expect(shown).toBeUndefined()
+  })
+
+  it('reads again on the usual schedule after an edit that queued the AI, and stops once another conversation opens', async () => {
+    await render({})
+    const reset = null
+    await act(async () => applyChange('topic', reset, { classificationQueued: true }))
+    expect(shown).toEqual([])
+
+    await advance(3_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledWith('conversation-1', { limit: 1 })
+    expect(shown).toEqual([attribute('shipping')])
+    await advance(10_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledTimes(2)
+
+    await act(async () => applyChange('topic', null, { classificationQueued: true }))
+    await render({ conversationId: 'conversation-2', loaded: [attribute('returns')] })
+    await advance(30_000)
+    expect(api.getHistoryConversation).toHaveBeenCalledTimes(2)
   })
 })

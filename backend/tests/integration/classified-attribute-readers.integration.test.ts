@@ -25,7 +25,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 // answer prompt under the classified default, "Only rules, routines and skills that name it".
 describeIntegration("what reads a value the AI set (Postgres, #1884)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ContextVariableRepository(database.kysely);
+  const repository = new ContextVariableRepository(database.kysely, null);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();

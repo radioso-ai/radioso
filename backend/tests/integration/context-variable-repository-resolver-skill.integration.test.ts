@@ -14,7 +14,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("ContextVariableService resolver skill validation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const agentRepository = new AgentRepository(database.kysely);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const contextVariableService = new ContextVariableService({

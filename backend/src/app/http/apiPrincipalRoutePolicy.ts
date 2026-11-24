@@ -382,6 +382,9 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/conversations/:conversationId/held-reply"],
     ["POST", "/api/v1/conversations/:conversationId/held-replies/:heldReplyId/release"],
     ["POST", "/api/v1/conversations/:conversationId/held-replies/:heldReplyId/discard"],
+    // A teammate sets or resets a conversation's attribute from the Inbox, as its writer.
+    ["PUT", "/api/v1/history/chat/:conversationId/attributes/:name"],
+    ["DELETE", "/api/v1/history/chat/:conversationId/attributes/:name"],
   ].map(([method, path]) => sessionOnly(method, path, "workspace.conversation.takeover")),
   ...[
     ["GET", "/api/v1/connectors", "workspace.settings.read"],

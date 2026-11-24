@@ -35,6 +35,11 @@ export interface ConversationAttribute {
   readonly scope: ConversationScopeType;
   readonly writtenBy: ContextValueWriter;
   readonly updatedAt: Date;
+  /**
+   * Whether the AI fills the attribute on this conversation: the agent release the conversation runs
+   * classifies it. A teammate's reset hands such an attribute back to the AI.
+   */
+  readonly classified: boolean;
 }
 
 /** A stored value on one of a conversation's own rungs, with the definition it is a value of. */
@@ -67,6 +72,8 @@ export interface ConversationAttributeReadPort {
   readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]>;
   /** The variable whose stored name is exactly `name`. */
   findByName(workspaceId: string, name: string): Promise<ContextVariable | null>;
+  /** The variables the agent release a conversation runs classifies; none for a conversation that is gone or runs none. */
+  readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>>;
 }
 
 /** What an operator surface reads of a conversation's attributes, and how it resolves a filter on one. */
@@ -79,8 +86,19 @@ export interface ConversationAttributeReader {
 const isConversationScope = (scope: ContextVariableScopeType): scope is ConversationScopeType =>
   (CONVERSATION_SCOPE_TYPES as readonly ContextVariableScopeType[]).includes(scope);
 
-const presentValue = ({ variable, value }: StoredConversationAttributeValue, scope: ConversationScopeType): ConversationAttribute => {
-  const facts = { name: variable.name, valueType: variable.valueType, scope, writtenBy: value.writtenBy, updatedAt: value.lastModified };
+const presentValue = (
+  { variable, value }: StoredConversationAttributeValue,
+  scope: ConversationScopeType,
+  classified: ReadonlySet<string>,
+): ConversationAttribute => {
+  const facts = {
+    name: variable.name,
+    valueType: variable.valueType,
+    scope,
+    writtenBy: value.writtenBy,
+    updatedAt: value.lastModified,
+    classified: classified.has(variable.id),
+  };
   if (variable.sensitivity === "sensitive") return { ...facts, value: null, redacted: true };
   const option = variable.valueType === "enum" ? variable.options?.find((candidate) => candidate.key === value.data) : undefined;
   return {
@@ -92,11 +110,14 @@ const presentValue = ({ variable, value }: StoredConversationAttributeValue, sco
 };
 
 /** Each attribute's most specific value, as the read port hands it, in name order. */
-const presentConversationAttributes = (stored: readonly StoredConversationAttributeValue[]): ConversationAttribute[] =>
+export const presentConversationAttributes = (
+  stored: readonly StoredConversationAttributeValue[],
+  classified: ReadonlySet<string>,
+): ConversationAttribute[] =>
   stored
     .flatMap((entry) => {
       const scope = entry.value.scope.type;
-      return isConversationScope(scope) ? [presentValue(entry, scope)] : [];
+      return isConversationScope(scope) ? [presentValue(entry, scope, classified)] : [];
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -127,7 +148,14 @@ export class ConversationAttributeService implements ConversationAttributeReader
 
   async read(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationAttribute[]> {
     const scopes = conversationScopeLadder(keys);
-    return scopes.length === 0 ? [] : presentConversationAttributes(await this.reads.readMostSpecificValues(workspaceId, scopes));
+    if (scopes.length === 0) return [];
+    const stored = await this.reads.readMostSpecificValues(workspaceId, scopes);
+    // Most conversations hold no value: the release is read only when there is one to mark.
+    if (stored.length === 0) return [];
+    const classified = keys.conversationId
+      ? await this.reads.readClassifiedVariableIds(workspaceId, keys.conversationId)
+      : new Set<string>();
+    return presentConversationAttributes(stored, classified);
   }
 
   async resolveFilter(workspaceId: string, filter: ConversationAttributeFilterInput): Promise<ConversationAttributeFilter> {

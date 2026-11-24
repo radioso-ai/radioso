@@ -32,13 +32,16 @@ its own facts:
 | `contact_request.created`, `decision.pending`, `routine.completed` | `modules/chat/services/workspaceEventLogDrafts.ts`, recorded in the turn's transaction by `modules/chat/infra/turnOutboxWrites.ts`, and by `ContactRequestRecordingOutbox` for a notify step |
 | `handoff.requested` | `modules/conversationActivity/workspaceEventLogBridge.ts`, beside every `handoff_requested` activity |
 | `document.processed`, `document.failed` | `modules/documents/services/documentWorkspaceEvents.ts`, recorded by the job's fenced terminal write in `db/repositories/documentProcessingJobOutcomes.ts` |
+| `context_value.changed` | `modules/context-variables/contextValueChangedEvent.ts`, recorded by every write or delete that changes a conversation's value in `db/repositories/contextVariableValueWrites.ts`; making the attribute Private redacts its earlier events (`redactContextValueEvents`) in the same transaction |
 
 `app/composition/workspaceEventLog.ts` is the one seam: it owns the recorder and the bridged
 activity recorder, and every construction that records an event is handed them from there.
 The Postgres side is `db/repositories/workspaceEventLogRepository.ts`: the stateless recorder,
-the document event eraser that deleting documents calls (a title can name a person), the snapshot
-read, the 30-day retention rule and the consent withholder, which removes a withdrawn routine's
-events by structure (routine id, slot keys) as well as by value.
+the document event eraser that deleting documents calls (a title can name a person), the
+redaction of a newly Private attribute's values, the snapshot read, the 30-day retention rule and
+the consent withholder, which removes a withdrawn routine's
+events (its `routine.completed` and the `context_value.changed` it wrote) by structure (routine id,
+slot keys) as well as by value.
 
 ## Subscriptions and delivery (#1852)
 
@@ -77,7 +80,10 @@ periodic task, and the wake the chat turn's persistence and the document worker 
 3. Record it from the owning module, in the transaction of the change, through the recorder the
    composition hands it, with an idempotency key that names the fact when the same fact can be
    written twice.
-4. Regenerate the OpenAPI document and the SDK snapshot, and document the type on
+4. Once that transaction commits, call the `WorkspaceEventDeliveryWake` the composition hands the
+   same writer (`requestDelivery(workspaceId)`), so subscriptions get the event before the periodic
+   sweep. Wake once, in the shared write path, not in each caller.
+5. Regenerate the OpenAPI document and the SDK snapshot, and document the type on
    `docs-portal/content/api/workspace-event-log.mdx`.
 
 ## Tests

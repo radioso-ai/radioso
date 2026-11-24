@@ -358,9 +358,9 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     validateBody(contextVariableValueDeleteBodySchema),
     async (req, res, next) => {
       try {
-        const { workspaceId } = res.locals as { workspaceId: string };
+        const { workspaceId, authPrincipal } = res.locals as { workspaceId: string; authPrincipal?: AuthenticatedPrincipal };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        const deleted = await dependencies.contextVariableService.deleteValue(workspaceId, id, req.body.scope);
+        const deleted = await dependencies.contextVariableService.deleteValue(workspaceId, id, req.body.scope, apiWriterFor(authPrincipal));
         if (!deleted) {
           throw notFound("Context variable value not found");
         }

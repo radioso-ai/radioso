@@ -38,9 +38,30 @@ export const registerConversationAttributeSchema = (registry: OpenAPIRegistry) =
     writtenBy: z.object({
       kind: z.enum(CONTEXT_VALUE_WRITER_KINDS),
       ref: z.string().nullable().openapi({
-        description: "What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`.",
+        description: "What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator` (in the Inbox, through Ray or through an operator MCP client), the version of the instructions for `classifier`.",
       }),
     }).openapi({ description: "The value's last writer." }),
     updatedAt: z.string().datetime(),
+    classified: z.boolean().openapi({
+      description: "True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting the conversation's value hands it back to the AI.",
+    }),
+  }),
+);
+
+/** Whether the caller may set and reset the conversation's attributes, on the detail that lists them. */
+export const attributesEditableSchema = z.boolean().optional().openapi({
+  description: "With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset one with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API.",
+});
+
+/** What a teammate's set or reset of a conversation's attribute leaves the conversation reading. */
+export const registerConversationAttributeChangeSchema = (registry: OpenAPIRegistry, attribute: z.ZodTypeAny) => registry.register(
+  "ConversationAttributeChange",
+  z.object({
+    attribute: z.union([attribute, z.null()]).openapi({
+      description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value.",
+    }),
+    classificationQueued: z.boolean().openapi({
+      description: "True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued.",
+    }),
   }),
 );

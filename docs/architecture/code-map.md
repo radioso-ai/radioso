@@ -1173,7 +1173,7 @@ Public surfaces and key files:
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
 - `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
-- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevision`, with what its ladder holds for each)
+- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevisionEnablements`, which reads only the release's enablements, with what its ladder holds for each)
 - `backend/src/db/migrations/273_classified_context_variables.sql` (the `classified` enablement source)
 - `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
 - `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
@@ -1182,7 +1182,8 @@ Public surfaces and key files:
 - `backend/src/modules/operatorCopilot/tools/contextVariableReviewedPreparation.ts` (operator MCP's `prepare_context_variable`: `create`, `edit` and `set_enablement`, reviewed and applied through the same adapter, whose apply commits the execution's receipt in the owner's transaction; a definition is `live` and needs signed-in approval, an enablement is an `agent_draft`)
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 - `backend/src/modules/context-variables/conversationAttributes.ts` (`ConversationAttributeService`: a conversation's attributes as the operator reads them, the most specific of its `conversation`, `session` and `customer` values, a Private value redacted; and `resolveFilter`, which turns an attribute name and option key, or `_not_set`, into the list filter and refuses anything but a non-Private Choice) with its read port in `backend/src/db/repositories/conversationAttributeReads.ts`; the list filter is `conversationHoldsValue` in `contextVariableValueReads.ts`, used by `historyItemsRepository.ts` and `conversationRepository.ts`. `ChatHistoryService` takes it as its attribute reader (default in `historyReaderDefaults.ts`): it adds `attributes` to the first page of an operator detail read and resolves `attribute` + `attributeOption` on the history lists, so REST and Ray's `conversation_transcript` and `conversation_history_search` (`operatorCopilot/tools/chat.ts`) read through the history service alike
-- `frontend/components/dashboard/conversation-attributes.tsx` (the **Attributes** block in the Inbox reading pane and the conversation drawer, kept current by `use-live-conversation-attributes.ts`) and the Inbox's **Attribute** filter in `frontend/components/dashboard/inbox/all-conversations-list-pane.tsx`, fed by `use-inbox-attribute-options.ts` and `frontend/lib/conversation-attributes.ts`
+- `backend/src/modules/context-variables/conversationAttributeEdits.ts` (`ConversationAttributeEditService`: a teammate's set and reset of one conversation's Choice attribute, refusing Private and non-Choice attributes; a reset of an attribute the conversation's release classifies queues the classification job; content-free audit and the `radioso_conversation_attribute_edits_total` counter), composed in `backend/src/app/composition/conversationAttributeEdits.ts` and called by the Inbox's `PUT`/`DELETE /api/v1/history/chat/{conversationId}/attributes/{name}` (`historyAttributeRoutes.ts`) and by Ray and operator MCP's `set_conversation_attribute` and `reset_conversation_attribute` (`operatorCopilot/tools/conversationAttributes.ts`)
+- `frontend/components/dashboard/conversation-attributes.tsx` (the **Attributes** block in the Inbox reading pane and the conversation drawer, kept current by `use-live-conversation-attributes.ts`) and the Inbox's **Attribute** filter in `frontend/components/dashboard/inbox/all-conversations-list-pane.tsx`, fed by `use-inbox-attribute-options.ts` (one cached catalog read per workspace, shared with the block's menus) and `frontend/lib/conversation-attributes.ts`
 
 Focused checks:
 
@@ -1193,6 +1194,7 @@ Focused checks:
 - `cd frontend && pnpm exec playwright test tests/e2e/context-variables-settings.spec.ts` (the Attributes page: a Choice attribute with options, archiving one)
 - `cd backend && pnpm exec vitest run tests/unit/conversation-attributes.test.ts tests/contract/history-attributes.contract.test.ts tests/integration/conversation-attributes.integration.test.ts tests/integration/classified-attribute-readers.integration.test.ts` (a conversation's attributes and the list filter; the integration test runs `EXPLAIN` to prove the filter uses the partial index from migration 271)
 - `cd frontend && pnpm exec vitest run tests/unit/conversation-attributes.test.ts && pnpm exec playwright test tests/e2e/conversation-attributes.spec.ts` (the drawer block and the Inbox filter)
+- `cd backend && pnpm exec vitest run tests/unit/conversation-attribute-edits.test.ts tests/unit/operatorCopilot/copilot-conversation-attribute-tools.test.ts tests/contract/history-attribute-edits.contract.test.ts tests/integration/conversation-attribute-edits.integration.test.ts` (a teammate's set and reset over REST, Ray and MCP, and how they meet the classifier)
 
 Related specs and issues:
 
@@ -2746,7 +2748,7 @@ Related docs:
 
 Owns the workspace event log (#1851): business events an automation acts on
 (`conversation.started`, `contact_request.created`, `handoff.requested`,
-`routine.completed`, `decision.pending`), each written in the transaction of the
+`routine.completed`, `decision.pending`, `context_value.changed`), each written in the transaction of the
 change it records and listed at `GET /api/v1/workspace/events` by a cursor that
 never passes a row still being committed. It is not the dashboard's
 `GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
@@ -2769,6 +2771,10 @@ Where each type is recorded:
   transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
+- `context_value.changed`: every write or delete that changes a conversation's
+  attribute value (`db/repositories/contextVariableValueWrites.ts`), from the
+  draft `modules/context-variables/contextValueChangedEvent.ts` builds; the
+  repository a turn's resolver caches through is built without the recorder
 - `document.processed`, `document.failed`: a vectorize job's terminal write
   (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
   fence (`status = 'processing'` and the claimed attempt) hits, from drafts the

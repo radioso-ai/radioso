@@ -10,6 +10,7 @@ import type {
 } from "../../modules/context-variables/public.js";
 import { sql, type ExpressionBuilder, type RawBuilder } from "kysely";
 
+import { channelPersonKeyId, isChannelPersonKeyKind } from "../../shared/domain/channelPersonKey.js";
 import { anyOf, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 
@@ -69,10 +70,14 @@ export const conversationHoldsValue = (
 
 /**
  * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in
- * lowercase, so an id sent in uppercase still names the stored value.
+ * lowercase, so an id sent in uppercase still names the stored value; a WhatsApp number written with
+ * a `+` or spaces names the number its channel stores.
  */
-export const storedScopeId = (scope: ContextVariableScope): string =>
-  scope.type === "conversation" ? scope.id.toLowerCase() : scope.id;
+export const storedScopeId = (scope: ContextVariableScope): string => {
+  if (scope.type === "conversation") return scope.id.toLowerCase();
+  // A channel's person key is kept the way the channel stores it, a WhatsApp number as its digits.
+  return isChannelPersonKeyKind(scope.type) ? channelPersonKeyId(scope.type, scope.id) ?? scope.id : scope.id;
+};
 
 export const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariableValue => ({
   id: row.id,

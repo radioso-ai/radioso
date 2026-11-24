@@ -707,6 +707,11 @@ class InMemoryConversationAttributeReads implements ConversationAttributeReadPor
       : null;
   }
 
+  /** The in-memory app runs no WhatsApp channel, so no conversation is with a channel person. */
+  async readChannelPersonKey(): Promise<null> {
+    return null;
+  }
+
   /** The in-memory app pins no release snapshot of enablements, so the agent's draft stands in for it. */
   async readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>> {
     const conversation = await this.conversations.findByIdAndWorkspaceId(conversationId, workspaceId);

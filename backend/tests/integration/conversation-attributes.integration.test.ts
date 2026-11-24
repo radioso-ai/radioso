@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Kysely, PostgresDialect, sql, type CompiledQuery } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationAttributeReads } from "../../src/db/repositories/conversationAttributeReads.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
@@ -28,7 +28,7 @@ const option = (key: string): ContextVariableOption => ({
 describeIntegration("a conversation's attributes and the attribute filter (Postgres, #1884)", () => {
   const database = new Database(integrationDatabaseUrl);
   const variables = new ContextVariableRepository(database.kysely, null);
-  const attributes = new ConversationAttributeService(new ConversationAttributeReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)));
+  const attributes = new ConversationAttributeService(new ConversationAttributeReads(database.kysely, conversationReadSources(database.kysely)));
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();

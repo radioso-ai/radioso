@@ -4,9 +4,9 @@ import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/c
 import { afterAll, expect, it, vi } from "vitest";
 
 import { bindConsentMessageWithholding, createConsentWithdrawal } from "../../src/app/composition/consentWithdrawal.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { withWorkspaceEvents } from "../../src/app/composition/workspaceEventLog.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
 import { ContextVariableValueWrites } from "../../src/db/repositories/contextVariableValueWrites.js";
 import { readConversationSaveContext } from "../../src/db/repositories/conversationClassifiedVariables.js";
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
@@ -41,7 +41,6 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
   const conversations = new ConversationRepository(database.kysely, recorder);
   const valueWrites = new ContextVariableValueWrites(database.kysely, { recorder, delivery: { requestDelivery: () => undefined } });
   const metrics = new MetricsRegistry();
-  const revisions = new AgentRevisionRuntimeRepository(database.kysely);
   const persistence = new PostgresAssistantTurnPersistence(
     database.kysely,
     withWorkspaceEvents(new ConversationActivityRepository(database.kysely)),
@@ -55,7 +54,7 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
     bindConsentMessageWithholding,
     undefined,
     undefined,
-    new ContextValueSaves({ store: valueWrites, conversations: { read: (trx, input) => readConversationSaveContext(trx, revisions, input) }, metrics }),
+    new ContextValueSaves({ store: valueWrites, conversations: { read: (trx, input) => readConversationSaveContext(trx, conversationReadSources(trx), input) }, metrics }),
   );
   const seededAccountIds: string[] = [];
 
@@ -186,7 +185,7 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
   const valuesOf = async (workspaceId: string) => database.query<{ name: string; scope_type: string; scope_id: string; data: unknown; written_by_kind: string; written_by_ref: string | null }>(
     `SELECT v.name, cv.scope_type, cv.scope_id, cv.data, cv.written_by_kind, cv.written_by_ref
        FROM context_variable_values cv JOIN context_variables v ON v.id = cv.variable_id
-      WHERE cv.workspace_id = $1 ORDER BY v.name, cv.scope_type`,
+      WHERE cv.workspace_id = $1 ORDER BY v.name, cv.scope_type, cv.scope_id`,
     [workspaceId],
   );
 
@@ -216,10 +215,13 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
       { name: "contact_email", scope_type: "customer", scope_id: customerId, data: "ada@guests.example", written_by_kind: "routine", written_by_ref: ref },
       { name: "party_size", scope_type: "conversation", scope_id: conversation.id, data: 4, written_by_kind: "routine", written_by_ref: ref },
     ]);
-    // A person's value is no conversation's change: only the conversation's own records an event.
-    expect(await eventsOf(seeded.workspaceId, "context_value.changed")).toEqual([
-      expect.objectContaining({ variable: "party_size", value: 4, writtenBy: "routine", routineId: "booking" }),
+    // A person's value a routine saves is the saving conversation's change too: its event names the scope, never the person.
+    const events = await eventsOf(seeded.workspaceId, "context_value.changed");
+    expect(events).toEqual([
+      expect.objectContaining({ variable: "contact_email", scope: "customer", value: "ada@guests.example", writtenBy: "routine", routineId: "booking" }),
+      expect.objectContaining({ variable: "party_size", scope: "conversation", value: 4, writtenBy: "routine", routineId: "booking" }),
     ]);
+    expect(JSON.stringify(events)).not.toContain(customerId);
     expect(await eventsOf(seeded.workspaceId, "routine.completed")).toHaveLength(1);
     expect(await savesTraced(seeded.workspaceId, conversation.id)).toEqual([
       { slotKey: "guests", contextVariable: "party_size", scope: "conversation", outcome: "written" },
@@ -271,6 +273,35 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
     ]);
     expect(await eventsOf(seeded.workspaceId, "routine.completed")).toEqual([expect.objectContaining({ outcome: "handoff" })]);
     expect(metrics.renderPrometheus()).toMatch(/context_value_writes_total\{[^}]*outcome="no_person_key"[^}]*\} [1-9]/);
+  });
+
+  it("saves a person value on WhatsApp for the number the turn carries, and for the number the conversation is recorded with when a turn carries none", async () => {
+    const seeded = await seedWorkspace();
+    // Obviously fake numbers in the reserved 555-01xx range.
+    const first = await startConversation(seeded);
+    const resumed = await startConversation(seeded);
+    await database.query(
+      "INSERT INTO connector_whatsapp_conversations (conversation_id, workspace_id, wa_id) VALUES ($1, $2, '15550100102')",
+      [resumed.id, seeded.workspaceId],
+    );
+
+    await persistence.completeAssistantTurn({
+      ...await turnEnding(seeded, first, ended(first.id, "complete")),
+      channelPersonKey: { kind: "whatsapp_contact", id: "15550100101" },
+    });
+    await persistence.completeAssistantTurn(await turnEnding(seeded, resumed, ended(resumed.id, "complete", { guests: 2, email: "bo@guests.example" })));
+
+    expect((await valuesOf(seeded.workspaceId)).filter((value) => value.name === "contact_email").map(({ scope_type, scope_id, data }) => ({ scope_type, scope_id, data })))
+      .toEqual([
+        { scope_type: "whatsapp_contact", scope_id: "15550100101", data: "ada@guests.example" },
+        { scope_type: "whatsapp_contact", scope_id: "15550100102", data: "bo@guests.example" },
+      ]);
+    expect(await savesTraced(seeded.workspaceId, first.id)).toContainEqual(
+      { slotKey: "email", contextVariable: "contact_email", scope: "person", outcome: "written" },
+    );
+    const events = await eventsOf(seeded.workspaceId, "context_value.changed");
+    expect(events.filter((event) => event.scope === "whatsapp_contact")).toHaveLength(2);
+    expect(JSON.stringify(events)).not.toMatch(/1555010010[12]/u);
   });
 
   it("replaces a classified value, gives way to a teammate's later one, and is not replaced by the classifier", async () => {

@@ -79,6 +79,7 @@ const serviceOver = (
       new Set(workspace === workspaceId && conversation === conversationId ? classifiedIds : []),
     findByName: async (workspace, name) =>
       definitions.find((definition) => definition.workspaceId === workspace && definition.name === name) ?? null,
+    readChannelPersonKey: async () => null,
   };
   return Object.assign(new ConversationAttributeService(reads), { asked });
 };

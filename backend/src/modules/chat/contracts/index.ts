@@ -2,6 +2,7 @@ import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
 import type { VisitorImageOwner } from "../../visitorImages/public.js";
 import type { ReplyBlock } from "./replyBlocks.js";
@@ -149,6 +150,7 @@ export interface ChatDoorPhotoTurnPort {
     stream: false;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    channelPersonKey?: ChannelPersonKey | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     imageIds: readonly string[];
     imageOwner: VisitorImageOwner;
@@ -171,6 +173,7 @@ export interface ChatDoorPickTurnPort {
     inputMetadata: { method: "item_select"; selection: ItemSelection };
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    channelPersonKey?: ChannelPersonKey | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
   }): Promise<ChatDoorTurnReply | null>;
 }
@@ -191,6 +194,8 @@ export interface ChatAnswerPort {
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    /** The person the channel attests the turn is with, in its stored form; see `AssistantChatRequest`. */
+    channelPersonKey?: ChannelPersonKey | null;
     chatSessionId?: string | null;
     /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;

@@ -7,6 +7,7 @@ import type {
   ConnectorImageAllowance,
   ConnectorInboundImage,
   ConnectorItemSelection,
+  ConnectorPersonKey,
   ConnectorReplyBlocks,
   ConnectorReplyBlocksCapability,
   ConnectorIngestInput,
@@ -70,7 +71,9 @@ describe("ConnectorChatPort contract", () => {
         onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
         replyBlocks?: ConnectorReplyBlocksCapability;
         selection?: ConnectorItemSelection;
+        personKey?: ConnectorPersonKey;
       }>();
+      expectTypeOf<ConnectorPersonKey>().toEqualTypeOf<{ kind: "whatsapp_contact"; id: string }>();
       expectTypeOf<Awaited<ReturnType<ConnectorChatPort["answer"]>>>().toEqualTypeOf<{
         conversationId: string;
         answer: string;
@@ -158,6 +161,35 @@ describe("ConnectorChatPort contract", () => {
         answer: "Refunds take five days.",
         outcome: "answered",
       });
+    });
+  });
+
+  describe("a person key", () => {
+    it("runs the turn as the person the channel attests, in the form the channel stores the key", async () => {
+      const { chatService, port } = portFor();
+
+      await port.answer({
+        workspaceId: "workspace-1",
+        query: "Do you deliver on Sundays?",
+        sourceChannel: "whatsapp",
+        personKey: { kind: "whatsapp_contact", id: "+1 555 010 0101" },
+      });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
+        channelPersonKey: { kind: "whatsapp_contact", id: "15550100101" },
+      }));
+    });
+
+    it("refuses a key that is not one the channel stores with 400, and runs no turn", async () => {
+      const { chatService, port } = portFor();
+
+      await expect(port.answer({
+        workspaceId: "workspace-1",
+        query: "Do you deliver on Sundays?",
+        sourceChannel: "whatsapp",
+        personKey: { kind: "whatsapp_contact", id: "customer-1" },
+      })).rejects.toMatchObject({ statusCode: 400 });
+      expect(chatService.answer).not.toHaveBeenCalled();
     });
   });
 

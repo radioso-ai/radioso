@@ -8,6 +8,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { parseParams, parseQuery, validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { whatsAppNumberKey } from "../../../shared/domain/channelPersonKey.js";
 import type { ContextValueWriter, ContextVariableScope } from "../../../modules/context-variables/public.js";
 import {
   CONTEXT_VARIABLE_SCOPE_TYPES,
@@ -59,10 +60,13 @@ const agentContextVariableParamsSchema = z.object({
   variableId: z.string().uuid(),
 });
 
-/** A `conversation` scope is keyed by the conversation's id. */
+/** A `conversation` scope is keyed by the conversation's id, a `whatsapp_contact` scope by a WhatsApp number. */
 const conversationScopeIdIssue = (scope: { type: string; id: string }, ctx: z.RefinementCtx, path: string): void => {
   if (scope.type === "conversation" && !z.string().uuid().safeParse(scope.id).success) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "A conversation scope id is the conversation's id" });
+  }
+  if (scope.type === "whatsapp_contact" && whatsAppNumberKey(scope.id) === null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "A whatsapp_contact scope id is a WhatsApp number, country code first" });
   }
 };
 

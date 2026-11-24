@@ -1,3 +1,4 @@
+import type { ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import {
   CONVERSATION_SCOPE_TYPES,
@@ -31,7 +32,10 @@ export interface ConversationAttribute {
   /** The option an enum value names, archived or not. Absent for other types, a redacted value, and a key no option has. */
   readonly option?: { readonly label: string; readonly archived: boolean };
   readonly redacted: boolean;
-  /** The rung the value is kept on: the conversation's own, the visitor's chat session's or the verified customer's. */
+  /**
+   * The rung the value is kept on: the conversation's own, the visitor's chat session's, or the
+   * person's (the verified customer's, or the WhatsApp number's). The person's key is never shown.
+   */
   readonly scope: ConversationScopeType;
   readonly writtenBy: ContextValueWriter;
   readonly updatedAt: Date;
@@ -74,11 +78,16 @@ export interface ConversationAttributeReadPort {
   findByName(workspaceId: string, name: string): Promise<ContextVariable | null>;
   /** The variables the agent release a conversation runs classifies; none for a conversation that is gone or runs none. */
   readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>>;
+  /** The person key the conversation's channel keeps for it, a WhatsApp number; null when none. */
+  readChannelPersonKey(workspaceId: string, conversationId: string): Promise<ChannelPersonKey | null>;
 }
 
 /** What an operator surface reads of a conversation's attributes, and how it resolves a filter on one. */
 export interface ConversationAttributeReader {
-  /** The attributes of the conversation these keys name: the conversation's id, its chat session's and its verified customer's. */
+  /**
+   * The attributes of the conversation these keys name: the conversation's id, its chat session's,
+   * and its person's, the verified customer or, when the keys name none, the person its channel keeps.
+   */
   read(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationAttribute[]>;
   resolveFilter(workspaceId: string, filter: ConversationAttributeFilterInput): Promise<ConversationAttributeFilter>;
 }
@@ -147,7 +156,7 @@ export class ConversationAttributeService implements ConversationAttributeReader
   constructor(private readonly reads: ConversationAttributeReadPort) {}
 
   async read(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationAttribute[]> {
-    const scopes = conversationScopeLadder(keys);
+    const scopes = conversationScopeLadder(await this.withChannelPerson(workspaceId, keys));
     if (scopes.length === 0) return [];
     const stored = await this.reads.readMostSpecificValues(workspaceId, scopes);
     // Most conversations hold no value: the release is read only when there is one to mark.
@@ -156,6 +165,12 @@ export class ConversationAttributeService implements ConversationAttributeReader
       ? await this.reads.readClassifiedVariableIds(workspaceId, keys.conversationId)
       : new Set<string>();
     return presentConversationAttributes(stored, classified);
+  }
+
+  /** The keys with the person the conversation's channel keeps, a WhatsApp number, unless they name a person already. */
+  private async withChannelPerson(workspaceId: string, keys: ConversationScopeKeys): Promise<ConversationScopeKeys> {
+    if (!keys.conversationId || keys.verifiedCustomerId || keys.channelPersonKey !== undefined) return keys;
+    return { ...keys, channelPersonKey: await this.reads.readChannelPersonKey(workspaceId, keys.conversationId) };
   }
 
   async resolveFilter(workspaceId: string, filter: ConversationAttributeFilterInput): Promise<ConversationAttributeFilter> {

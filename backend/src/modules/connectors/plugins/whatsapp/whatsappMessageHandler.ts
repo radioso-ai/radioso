@@ -421,6 +421,7 @@ export class WhatsAppMessageHandler {
     }
     const response = await this.answerOnChat({
       workspaceId: first.workspaceId,
+      waId: first.waId,
       conversationId,
       query,
       photoMessages,
@@ -582,7 +583,7 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * Runs the turn on the chat port: the typed text and the photos. Photos an earlier attempt
+   * Runs the turn on the chat port: the typed text and the photos, as the sender the number names. Photos an earlier attempt
    * stored are sent by receipt, so a retry downloads, reads and pays for nothing twice; the host
    * says when a receipt is stale (a message already carries the photo, or it was swept) and the
    * photos are then sent again, once. A refusal that means the photos are not ones the turn takes
@@ -590,6 +591,7 @@ export class WhatsAppMessageHandler {
    */
   private async answerOnChat(input: {
     workspaceId: string;
+    waId: string;
     conversationId: string | undefined;
     query: string;
     photoMessages: WhatsAppInboundMessage[];
@@ -608,6 +610,8 @@ export class WhatsAppMessageHandler {
           conversationId: input.conversationId,
           query: input.query,
           sourceChannel: "whatsapp",
+          // Meta attests the sender's number on a signed webhook: the person the host keeps WhatsApp values for.
+          personKey: { kind: "whatsapp_contact", id: input.waId },
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),

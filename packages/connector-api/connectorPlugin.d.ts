@@ -133,6 +133,16 @@ export interface ConnectorItemSelection {
   itemKey: string;
 }
 
+/**
+ * Who the customer is, as the channel's provider attests it: the key the host keeps person-level
+ * values under for this channel, read only on this channel. WhatsApp's is the sender's number as Meta
+ * reports it on a signed webhook (`wa_id`: digits, country code first). The host never logs it.
+ */
+export interface ConnectorPersonKey {
+  kind: "whatsapp_contact";
+  id: string;
+}
+
 /** The blocks a reply carries, and the id of the message that stored them, which a pick names. */
 export interface ConnectorReplyBlocks {
   messageId: string;
@@ -173,6 +183,13 @@ export interface ConnectorChatPort {
     sourceChannel?: string | null;
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     channelContext?: ConversationChannelContext | null;
+    /**
+     * The person the message is from, when the channel's provider attests it. The turn reads the
+     * values kept for that person, and a routine saves its person values to them. Without it, the
+     * conversation has no person key on this channel. One the host cannot read is refused (400).
+     */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    personKey?: ConnectorPersonKey;
     /**
      * The photos the customer sent with this message, at most `imageAllowance().maxImages`.
      * `query` is what they typed with them and may be empty. The host stores and reads each photo,

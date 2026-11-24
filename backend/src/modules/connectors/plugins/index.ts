@@ -19,6 +19,7 @@ export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
 export { buildSlackInboundJobComposition } from "./slack/slackInboundJobComposition.js";
 export { SlackUserIdentityFinder } from "./slack/slackPersistence.js";
 export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
+export { WhatsAppConversationPersonKeys } from "./whatsapp/whatsappNumbers.js";
 
 import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 

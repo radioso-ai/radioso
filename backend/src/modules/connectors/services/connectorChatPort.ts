@@ -6,7 +6,8 @@ import {
   type ChatDoorTurnReply,
   type ConversationIngestPort,
 } from "../../chat/contracts/index.js";
-import type { ConnectorChatPort, ConnectorReplyBlocksCapability } from "@radioso/connector-api";
+import type { ConnectorChatPort, ConnectorPersonKey, ConnectorReplyBlocksCapability } from "@radioso/connector-api";
+import { channelPersonKeyOf, type ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
 import { connectorChatOutcome, connectorTurnResult } from "./connectorTurnFacts.js";
 import { CONNECTOR_IMAGES_UNUSABLE_CODE, type ConnectorImageTurns } from "./connectorImageTurns.js";
@@ -31,6 +32,17 @@ const capabilitiesFor = (replyBlocks: ConnectorReplyBlocksCapability | undefined
   return itemList
     ? { "reply.blocks": { item_list: { layouts: [...itemList.layouts], ...(itemList.buttonLabels ? { buttonLabels: true } : {}) } } }
     : undefined;
+};
+
+/**
+ * The person key a connector's turn runs as, in the form its channel stores it; none when the
+ * connector attests none. A key the host cannot read is the connector's error, and runs no turn.
+ */
+const channelPersonKeyFor = (personKey: ConnectorPersonKey | undefined): { channelPersonKey?: ChannelPersonKey } => {
+  if (!personKey) return {};
+  const channelPersonKey = channelPersonKeyOf(personKey);
+  if (!channelPersonKey) throw badRequest("The person key is not one this channel stores");
+  return { channelPersonKey };
 };
 
 /** A turn's reply as a connector receives it: the blocks only when the reply carries any. */
@@ -72,6 +84,7 @@ export const createConnectorChatPort = (
   answer: async (input) => {
     const clientContextCapabilities = capabilitiesFor(input.replyBlocks);
     const capabilities = clientContextCapabilities ? { clientContextCapabilities } : {};
+    const person = channelPersonKeyFor(input.personKey);
 
     // A pick runs on the card the stored reply holds, through the same claim as the web chat's,
     // and is refused where the web chat's is: the card's words never run as typed text.
@@ -89,6 +102,7 @@ export const createConnectorChatPort = (
           inputMetadata: { method: "item_select", selection: input.selection },
           sourceChannel: input.sourceChannel,
           channelContext: input.channelContext,
+          ...person,
           ...capabilities,
         });
         if (!picked?.conversationId) {
@@ -115,6 +129,7 @@ export const createConnectorChatPort = (
         sourceChannel: input.sourceChannel,
         channelContext: input.channelContext,
         onImagesStored: input.onImagesStored,
+        ...person,
         ...capabilities,
       });
       if (answered) {
@@ -134,6 +149,7 @@ export const createConnectorChatPort = (
       stream: false,
       sourceChannel: input.sourceChannel,
       channelContext: input.channelContext,
+      ...person,
       ...capabilities,
     });
 

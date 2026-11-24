@@ -194,6 +194,12 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     return row ? mapContact(row) : null;
   }
 
+  /**
+   * Points the number's contact row at the conversation it is in now, and records the conversation's
+   * number, which outlives the contact row's move to a later conversation: it is how a data subject
+   * found by number reaches every conversation the number had. The conversation's number goes first,
+   * so a contact row never names a conversation the number is not recorded for.
+   */
   async upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -201,6 +207,11 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     conversationId: string;
     lastMessageAt: Date;
   }): Promise<WhatsAppContactRecord> {
+    await this.db
+      .insertInto("connector_whatsapp_conversations")
+      .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
+      .onConflict((oc) => oc.column("conversation_id").doNothing())
+      .execute();
     const row = await this.db
       .insertInto("connector_whatsapp_contacts")
       .values({

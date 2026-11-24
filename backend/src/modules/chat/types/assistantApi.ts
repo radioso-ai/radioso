@@ -6,6 +6,7 @@ import type { ReplyBlocksCapability } from "../contracts/replyBlocks.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ConversationTurnSupersession, DeliveredReplyReader } from "../contracts/interruption.js";
 import type { VisitorImageOwner } from "../../visitorImages/public.js";
+import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -77,6 +78,13 @@ export interface AssistantChatRequest {
   pageContext?: AssistantPageContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   verifiedCustomerId?: string | null;
+  /**
+   * The person a channel attests the turn is with (#1884), in the form its channel stores it: the
+   * WhatsApp sender's number. Set only by a connector from a signed webhook, never from a body. It
+   * keys the turn's person values when there is no verified customer, and is never stored on the
+   * conversation.
+   */
+  channelPersonKey?: ChannelPersonKey | null;
   verifiedIdentity?: Record<string, unknown> | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;

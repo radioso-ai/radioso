@@ -21,6 +21,7 @@ import { toConversationTrace, toPreparedStagedContext } from "./conversationCont
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
+import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
@@ -104,6 +105,8 @@ export interface PreparedSession {
   preparationTimings?: SessionPreparationTimings;
   agent: AgentRecord;
   conversation: ConversationRecord;
+  /** The person key the turn's channel attested, kept for the turn's person-level saves; null when none. */
+  channelPersonKey?: ChannelPersonKey | null;
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
   turnRoute: ChatTurnRoute;
@@ -224,6 +227,21 @@ export interface PreparedSession {
   preResolvedHostVariables?: readonly ResolvedVariableInput[];
 }
 
+/** The resolved host variables, with the verified identity a signed token supplied on this turn. */
+const withVisitorIdentity = (
+  resolved: ResolvedVariableInput[],
+  verifiedIdentity: Record<string, unknown> | null | undefined,
+): ResolvedVariableInput[] => verifiedIdentity
+  ? [...resolved, {
+      name: "visitor_identity",
+      description: "Verified visitor identity supplied by the host.",
+      value: verifiedIdentity,
+      surfacing: "on_reference",
+      sensitive: true,
+      trust: "verified",
+    }]
+  : resolved;
+
 export interface PrepareChatSessionInput {
   workspaceId: string;
   agentId?: string | null;
@@ -248,6 +266,8 @@ export interface PrepareChatSessionInput {
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   verifiedCustomerId?: string | null;
+  /** The person the channel attests the turn is with (`AssistantChatRequest.channelPersonKey`); never stored on the conversation. */
+  channelPersonKey?: ChannelPersonKey | null;
   verifiedIdentity?: Record<string, unknown> | null;
   /**
    * Edge-observed request facts for this turn's first message (spec 1277). Slice 3
@@ -433,6 +453,7 @@ export class ChatSessionPreparer {
       }));
     const agent = revisionResolved.agent;
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
+    const channelPersonKey = input.channelPersonKey ?? null;
     const [rewriteContinuityState, conversationSummary, referenceTimeZone] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
@@ -539,7 +560,7 @@ export class ChatSessionPreparer {
       this.resolveHostVariables(
         input,
         agent,
-        { conversationId: persistedConversation.id, verifiedCustomerId: effectiveVerifiedCustomerId, chatSessionId },
+        { conversationId: persistedConversation.id, verifiedCustomerId: effectiveVerifiedCustomerId, chatSessionId, channelPersonKey },
         revisionResolved.contextVariableEnablements,
       ));
     // Page context is not yet resolved on this initial pass (mirrors the `null`
@@ -577,6 +598,7 @@ export class ChatSessionPreparer {
       preparationTimings: { totalMs: Date.now() - preparationStartedAtMs, steps },
       agent,
       conversation: conversationForTurn,
+      channelPersonKey,
       history: turnHistory,
       retrieval,
       turnRoute,
@@ -868,7 +890,7 @@ export class ChatSessionPreparer {
   private async resolveHostVariables(
     input: PrepareChatSessionInput,
     agent: AgentRecord,
-    keys: Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId">,
+    keys: Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId" | "channelPersonKey">,
     revisionContextVariableEnablements: readonly AgentContextVariableEnablement[] | null = null,
   ): Promise<ResolvedVariableInput[]> {
     // A resolver can be backed by a live agent-skill executor. Safe-test turns fail
@@ -883,52 +905,19 @@ export class ChatSessionPreparer {
       const resolved = await this.contextVariableRepository.resolveForEnablements(
         input.workspaceId, agent.id, revisionContextVariableEnablements, scopes, agent.authoredAgentSkills,
       );
-      return input.verifiedIdentity
-        ? [...resolved, {
-            name: "visitor_identity",
-            description: "Verified visitor identity supplied by the host.",
-            value: input.verifiedIdentity,
-            surfacing: "on_reference",
-            sensitive: true,
-            trust: "verified",
-          }]
-        : resolved;
+      return withVisitorIdentity(resolved, input.verifiedIdentity);
     }
     try {
-      const resolved = await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
-      if (!input.verifiedIdentity) {
-        return resolved;
-      }
-      // visitor_identity is exposed only on turns where a signed identity token freshly verifies.
-      return [
-        ...resolved,
-        {
-          name: "visitor_identity",
-          description: "Verified visitor identity supplied by the host.",
-          value: input.verifiedIdentity,
-          surfacing: "on_reference",
-          sensitive: true,
-          trust: "verified",
-        },
-      ];
+      return withVisitorIdentity(await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes), input.verifiedIdentity);
     } catch {
-      if (!input.verifiedIdentity) {
-        return [];
-      }
-      return [{
-        name: "visitor_identity",
-        description: "Verified visitor identity supplied by the host.",
-        value: input.verifiedIdentity,
-        surfacing: "on_reference",
-        sensitive: true,
-        trust: "verified",
-      }];
+      return withVisitorIdentity([], input.verifiedIdentity);
     }
   }
 
   private hostScopeKeys(input: PrepareChatSessionInput, session: PreparedSession) {
     return {
       conversationId: session.conversation.id,
+      channelPersonKey: input.channelPersonKey ?? session.channelPersonKey ?? null,
       verifiedCustomerId: input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
       chatSessionId: input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
     };

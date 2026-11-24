@@ -1,13 +1,15 @@
 import { sql } from "kysely";
 
 import { routineWriterMatch } from "../../modules/context-variables/public.js";
+import { CHANNEL_PERSON_KEY_KINDS } from "../../shared/domain/channelPersonKey.js";
 import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domain/messageWithholding.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
  * A withdrawn consent's attribute values go (#1544, #1884): every value a run of a routine whose
- * consent was withdrawn saved while it ran in this conversation, whether to the conversation or to
- * the verified customer the conversation's row is bound to. A run in another conversation, even the
+ * consent was withdrawn saved while it ran in this conversation, whether to the conversation, to
+ * the verified customer the conversation's row is bound to, or to the person its channel attests (a
+ * WhatsApp number), which the writer reference's conversation alone ties to this conversation. A run in another conversation, even the
  * same person's, is covered by that conversation's consent and keeps its values. Found by the writer
  * reference a routine's save records (`routineValueWriter`), so they go even after the routine's
  * state, which held the values, has expired. A value another writer has since replaced is no longer
@@ -40,6 +42,8 @@ export class ContextValueConsentWithholder implements MessageCopyWithholder {
       .where((eb) => eb.or([
         eb.and([eb("scope_type", "=", "conversation"), eb("scope_id", "=", conversation.id)]),
         ...(customerId ? [eb.and([eb("scope_type", "=", "customer"), eb("scope_id", "=", customerId)])] : []),
+        // The number a run saved for is not on the conversation's row; the writer reference names the conversation.
+        ...CHANNEL_PERSON_KEY_KINDS.map((kind) => eb("scope_type", "=", kind)),
       ]))
       .where((eb) => eb.or(routineIds.map((routineId) => {
         const { prefixes: [run, runWithoutExecution], suffix } = routineWriterMatch(routineId, conversation.id);

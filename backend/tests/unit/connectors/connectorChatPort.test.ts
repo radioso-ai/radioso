@@ -318,6 +318,47 @@ describe("createConnectorChatPort", () => {
     });
   });
 
+  describe("the person key a channel attests", () => {
+    const NUMBER = { kind: "whatsapp_contact" as const, id: "15550100101" };
+    const reply = { conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" };
+
+    it("runs a text turn as the person the key names, in the form the channel stores it", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", sourceChannel: "whatsapp", personKey: { kind: "whatsapp_contact", id: "+1 555 010 0101" } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+    });
+
+    it("runs a photo turn and a pick as that person too", async () => {
+      const imageTurns: ConnectorImageTurns = { imageAllowance: vi.fn(async () => ({ maxImages: 3 })), answer: vi.fn(async () => reply) };
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => reply) };
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { imageTurns, picks });
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", personKey: NUMBER, images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] });
+      await connectorChat.answer({
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        query: "Casa Blu",
+        personKey: NUMBER,
+        selection: { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" },
+      });
+
+      expect(imageTurns.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+      expect(picks.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+    });
+
+    it("refuses a key it cannot read and runs no turn", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { kind: "whatsapp_contact", id: "not a number" } }))
+        .rejects.toMatchObject({ statusCode: 400 });
+      expect(chatService.answer).not.toHaveBeenCalled();
+    });
+  });
+
   describe("respond", () => {
     const respondInput: ConnectorRespondInput = {
       workspaceId: "workspace-1",

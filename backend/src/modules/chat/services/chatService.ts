@@ -48,7 +48,7 @@ import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
 import { chatReviewResult, withReplyLanguageTag } from "./reviewDraft.js";
-import type { AssistantClientContextCapabilities, AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
+import type { AssistantChatRequest, AssistantClientContextCapabilities, AssistantPageContext, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { plannerVisitorContext } from "./visitorMatchContext.js";
@@ -277,7 +277,7 @@ interface TurnCoordinationState {
   disconnectSignal?: AbortSignal;
 }
 
-interface ChatAnswerInput {
+interface ChatAnswerInput extends Pick<AssistantChatRequest, "channelPersonKey"> {
   workspaceId: string;
   agentId?: string | null;
   accountId?: string;

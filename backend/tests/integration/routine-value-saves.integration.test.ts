@@ -12,6 +12,7 @@ import { readConversationSaveContext } from "../../src/db/repositories/conversat
 import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { RoutineConsentRepository } from "../../src/db/repositories/routineConsentRepository.js";
+import { RoutineStateRepository } from "../../src/db/repositories/routineStateRepository.js";
 import { postgresWorkspaceEventRecorder } from "../../src/db/repositories/workspaceEventLogRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
@@ -68,7 +69,11 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
   const booking: Routine = {
     id: "booking",
     rootStepId: "ask_guests",
-    steps: [],
+    steps: [
+      { id: "ask_guests", kind: "chat" },
+      { id: "ask_email", kind: "chat" },
+      { id: "done", kind: "terminal", metadata: { terminalKind: "complete" } },
+    ],
     transitions: [],
     slots: [
       { id: "slot-guests", key: "guests", type: "number", required: true, saveTo: { contextVariable: "party_size", scope: "conversation" } },
@@ -149,10 +154,17 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
     conversation: { id: string },
     state: RoutineState,
     endedBefore: RoutineState[] = [],
+  ) => turnCommitting(seeded, conversation, await capturedSave(state, endedBefore));
+
+  /** The turn that commits `routineStateTransition`, as a turn that ended or corrected the booking does. */
+  const turnCommitting = (
+    seeded: Seeded,
+    conversation: { id: string },
+    routineStateTransition: Awaited<ReturnType<typeof capturedSave>>,
   ) => ({
     workspaceId: seeded.workspaceId,
     conversationId: conversation.id,
-    routineStateTransition: await capturedSave(state, endedBefore),
+    routineStateTransition,
     assistantMessage: { id: randomUUID(), conversationId: conversation.id, workspaceId: seeded.workspaceId, role: "assistant" as const, content: "Booked." },
     auditEvent: {
       eventType: "chat.answer",
@@ -468,6 +480,38 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
       ["contact_email", "ada@new.example", "api"],
       ["party_size", 5, "routine"],
     ]);
+  });
+
+  it("re-saves a correction to a run the Postgres store kept, which holds no ending metadata, and leaves a teammate's newer value (D1)", async () => {
+    const seeded = await seedWorkspace();
+    const customerId = `customer-${randomUUID()}`;
+    const conversation = await startConversation(seeded, { verifiedCustomerId: customerId });
+    const routineStates = new RoutineStateRepository(database.kysely);
+    const { metadata, ...run } = ended(conversation.id, "complete");
+    const endingTurn = new DeferredRoutineStore(routineStates, undefined, [booking]);
+    await endingTurn.save({ ...run, metadata });
+    await persistence.completeAssistantTurn(turnCommitting(seeded, conversation, endingTurn.getTransition()));
+    await valueWrites.upsertValue(seeded.variableIds.contact_email, { type: "customer", id: customerId }, "ada@new.example", { kind: "operator", ref: "teammate-1" });
+
+    // The visitor corrects the party size; the turn reads the ended run back from Postgres.
+    const correctionTurn = new DeferredRoutineStore(routineStates, undefined, [booking]);
+    const [stored] = await correctionTurn.loadCompleted({ sessionId: conversation.id });
+    expect(stored).toEqual(run);
+    await correctionTurn.save({ ...stored, variables: { ...stored.variables, guests: 5 }, status: "completed" });
+    await persistence.completeAssistantTurn(turnCommitting(seeded, conversation, correctionTurn.getTransition()));
+
+    expect((await valuesOf(seeded.workspaceId)).map((value) => [value.name, value.data, value.written_by_kind])).toEqual([
+      ["contact_email", "ada@new.example", "operator"],
+      ["party_size", 5, "routine"],
+    ]);
+    const traced = (await database.query<{ saves: unknown }>(
+      `SELECT metadata_json->'turnTrace'->'spine'->'stages'->0->'subTrace'->'payload'->'saves' AS saves
+         FROM audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer' AND metadata_json->>'conversationId' = $2`,
+      [seeded.workspaceId, conversation.id],
+    )).map((row) => row.saves);
+    // The ending turn traced both saves; the correction traced the one field it changed.
+    expect(traced).toHaveLength(2);
+    expect(traced).toContainEqual([{ slotKey: "guests", contextVariable: "party_size", scope: "conversation", outcome: "written" }]);
   });
 
   it("keeps a teammate's equal value and its writer, so a later withdrawal never takes it", async () => {

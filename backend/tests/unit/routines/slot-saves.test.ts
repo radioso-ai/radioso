@@ -6,6 +6,10 @@ import { routineSlotSaves } from "../../../src/modules/routines/public.js";
 
 const routine = {
   id: "routine_booking",
+  steps: [
+    { id: "ask_guests", kind: "chat" },
+    { id: "booked", kind: "terminal", metadata: { terminalKind: "complete" } },
+  ],
   slots: [
     { id: "s1", key: "guests", type: "number", required: true, saveTo: { contextVariable: "party_size", scope: "conversation" } },
     { id: "s2", key: "email", type: "email", required: true, saveTo: { contextVariable: "contact_email", scope: "person" } },
@@ -60,5 +64,15 @@ describe("routineSlotSaves", () => {
     const newRun = { ...ended("complete", values), executionId: "execution-2" };
 
     expect(routineSlotSaves(routine, newRun, earlierRun).map((save) => save.slotKey)).toEqual(["guests", "email", "injury"]);
+  });
+
+  it("reads how a run kept without its ending metadata ended from the terminal its path landed on, as the Postgres store keeps it (D1)", () => {
+    const bare = (path: string[]): RoutineState => ({ ...ended(undefined, values), path, executionId: "execution-1" });
+    const corrected = { ...bare(["ask_guests", "booked"]), variables: { ...values, guests: 5 } };
+
+    expect(routineSlotSaves(routine, corrected, bare(["ask_guests", "booked"]))).toEqual([
+      { slotKey: "guests", contextVariable: "party_size", scope: "conversation", value: 5, sensitive: false },
+    ]);
+    expect(routineSlotSaves(routine, bare(["ask_guests"]))).toEqual([]);
   });
 });

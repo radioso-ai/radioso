@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import type { Routine, RoutineState, RoutineTerminalKind } from "@radioso/conversation-contract";
 
-import type { RoutineSlotSaveScope } from "./domain.js";
+import { endedRunTerminalKind, type RoutineSlotSaveScope } from "./domain.js";
 
 /**
  * A slot value an ended run saves to an attribute (#1884). `value` is the run's own, in the slot
@@ -28,11 +28,12 @@ const SAVING_TERMINALS: ReadonlySet<RoutineTerminalKind> = new Set(["complete", 
  * slot fill, since a slot can still be corrected and consent may still be missing. A correction to
  * an ended run ends it again: given the run as it had ended (`endedBefore`, the same execution), it
  * saves only the fields the correction changed, so a value the host or a teammate set since for
- * another field stays.
+ * another field stays. How the run ended comes from its path when the store kept no metadata, as
+ * the Postgres one keeps a run a correction reads back.
  */
 export const routineSlotSaves = (routine: Routine, state: RoutineState, endedBefore?: RoutineState): RoutineSlotSave[] => {
-  const terminalKind = state.metadata?.terminalKind as RoutineTerminalKind | undefined;
-  if (state.status !== "completed" || !terminalKind || !SAVING_TERMINALS.has(terminalKind)) return [];
+  const terminalKind = endedRunTerminalKind(routine, state);
+  if (!terminalKind || !SAVING_TERMINALS.has(terminalKind)) return [];
   const corrected = endedBefore?.status === "completed" && endedBefore.routineId === state.routineId
     && endedBefore.executionId !== undefined && endedBefore.executionId === state.executionId;
   return (routine.slots ?? []).flatMap((slot) => {

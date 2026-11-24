@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Routine, RoutineState } from "@radioso/conversation-contract";
 
-import { completedRunSentValues } from "../src/index.js";
+import { completedRunSentValues, endedRunTerminalKind } from "../src/index.js";
 import { firingCompletionExport, routineEndingEffects, terminalKindFor } from "../src/routineEnding.js";
 
 describe("routineEndingEffects", () => {
@@ -220,5 +220,45 @@ describe("firingCompletionExport", () => {
     expect(terminalKindFor({ id: "t", kind: "terminal", metadata: { terminalKind: "other" } })).toBe("complete");
     expect(terminalKindFor({ id: "t", kind: "terminal", metadata: { terminalKind: "handoff" } })).toBe("handoff");
     expect(terminalKindFor({ id: "c", kind: "chat" })).toBeNull();
+  });
+});
+
+describe("endedRunTerminalKind", () => {
+  const routine = {
+    id: "booking",
+    rootStepId: "ask_guests",
+    steps: [
+      { id: "ask_guests", kind: "chat" },
+      { id: "consent_email", kind: "consent", consentKey: "booking" },
+      { id: "booked", kind: "terminal", metadata: { terminalKind: "complete" } },
+      { id: "to_desk", kind: "terminal", metadata: { terminalKind: "handoff" } },
+      { id: "plain_end", kind: "terminal" },
+    ],
+    transitions: [],
+  } as unknown as Routine;
+  const endedOn = (path: string[], metadata?: Record<string, unknown>): RoutineState => ({
+    sessionId: "conversation-1",
+    routineId: "booking",
+    path,
+    variables: {},
+    status: "completed",
+    ...(metadata ? { metadata } : {}),
+  });
+
+  it("reads the kind the ending recorded", () => {
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests"], { terminalKind: "stuck" }))).toBe("stuck");
+  });
+
+  it("reads a state a store kept without its metadata by the authored terminal its path landed on", () => {
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests", "booked"]))).toBe("complete");
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests", "to_desk"]))).toBe("handoff");
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests", "plain_end"]))).toBe("complete");
+  });
+
+  it("names no kind for a bare run that ended off a terminal, as a stuck or declined one does, or one not ended", () => {
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests"]))).toBeNull();
+    expect(endedRunTerminalKind(routine, endedOn(["ask_guests", "consent_email"]))).toBeNull();
+    expect(endedRunTerminalKind(routine, endedOn([]))).toBeNull();
+    expect(endedRunTerminalKind(routine, { ...endedOn(["ask_guests", "booked"]), status: "active" })).toBeNull();
   });
 });

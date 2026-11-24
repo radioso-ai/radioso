@@ -1,3 +1,6 @@
+import type { AddressInfo } from "node:net";
+import http from "node:http";
+
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
@@ -98,6 +101,44 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
       windowMs: 3_600_000,
       blockMs: 60_000,
     });
+  });
+
+  it("logs a failure that is not an abort even when the client has already disconnected", async () => {
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { release = resolve; });
+    let fail!: (error: unknown) => void;
+    const gate = new Promise<never>((_resolve, reject) => { fail = reject; });
+    const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const dependencies = createDependencies({
+      logger,
+      starterPackDraftService: { draft: vi.fn(async () => { release(); return gate; }) },
+    });
+    const server = createApp(dependencies).listen(0);
+    try {
+      const { port } = server.address() as AddressInfo;
+      const body = JSON.stringify({ purpose: "Help visitors book appointments." });
+      const clientRequest = http.request({
+        port,
+        method: "POST",
+        path,
+        headers: { Authorization: "Bearer token", "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      });
+      clientRequest.on("error", () => undefined);
+      clientRequest.end(body);
+      await started;
+      clientRequest.destroy();
+      // Let the server see the close before the draft fails.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      fail(new TypeError("secret"));
+      await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledOnce());
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: "TypeError" }),
+        "starter_pack_draft_failed_after_disconnect",
+      );
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret");
+    } finally {
+      server.close();
+    }
   });
 
   it("returns 429 when the rate limit is exhausted", async () => {

@@ -992,7 +992,21 @@ describe("WorkspaceLlmCapabilityResolver.assertResolvable", () => {
     });
 
     await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).resolves.toBeUndefined();
-    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai");
+    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai", { quiet: true });
+  });
+
+  it("reads the key quietly for the probe only, so resolve keeps the decrypt-failure warning", async () => {
+    const credentials = spiedCredentials({ "ws-1:openai": "ws-openai" });
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials,
+      envKeys: envKeyResolver({}),
+    });
+
+    await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai", undefined);
   });
 
   it("fails as resolve does when the stored workspace key cannot be read, without falling back to the deployment key", async () => {

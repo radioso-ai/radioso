@@ -339,6 +339,24 @@ describe("StarterPackDraftService", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it("still logs a failure that is not an abort when the caller has already gone", async () => {
+    const controller = new AbortController();
+    const { service, logger } = setup({
+      routineDraft: async () => {
+        controller.abort();
+        throw new TypeError("secret procedure text");
+      },
+    });
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments.", { signal: controller.signal }))
+      .rejects.toMatchObject({ statusCode: 503, code: "llm_unavailable" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId, agentId, err: "TypeError" }),
+      "starter_pack_draft_failed",
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret procedure text");
+  });
+
   it("runs beforeModelCalls once the agent exists and a chat model is configured, before any model call", async () => {
     const { service, detectorComplete } = setup();
     const beforeModelCalls = vi.fn(async () => undefined);

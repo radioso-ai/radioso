@@ -61,6 +61,9 @@ const llmUnavailable = (): AppError =>
 const conflictFor = (name: string, takenNames: ReadonlySet<string>): StarterPackItemConflict =>
   takenNames.has(name) ? "name_exists" : null;
 
+const isAbortError = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+
 export class StarterPackDraftService {
   constructor(private readonly options: StarterPackDraftServiceOptions) {}
 
@@ -134,7 +137,8 @@ export class StarterPackDraftService {
   }
 
   /**
-   * An abort stays an abort: the caller went away. The routine drafter's invalid draft is this
+   * An abort stays an abort: the caller went away. A failure that is not an abort is still logged
+   * when the caller is gone. The routine drafter's invalid draft is this
    * endpoint's own 422. Any other error with an HTTP meaning passes through. Model and network
    * failures are not the caller's fault and carry no safe message of their own, so they are
    * logged by class and become one stable 503.
@@ -143,7 +147,7 @@ export class StarterPackDraftService {
     error: unknown,
     context: { workspaceId: string; agentId: string; signal: AbortSignal | undefined },
   ): unknown {
-    if (context.signal?.aborted) {
+    if (context.signal?.aborted && isAbortError(error)) {
       return error;
     }
     if (error instanceof AppError) {

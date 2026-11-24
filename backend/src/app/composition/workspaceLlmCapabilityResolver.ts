@@ -29,7 +29,8 @@ interface WorkspaceCapabilityPreferencePort {
 }
 
 interface WorkspaceCapabilityCredentialPort {
-  getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined>;
+  /** `quiet` reads without raising the decrypt-failure alarm; the read still throws. */
+  getApiKey(workspaceId: string, provider: LlmProviderName, options?: { quiet?: boolean }): Promise<string | undefined>;
   /** Presence only; never decrypts. */
   hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean>;
   /**
@@ -155,18 +156,20 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     input: LlmCapabilityResolveInput,
   ): Promise<void> {
     // The same steps resolve runs, key read included: a stored key that cannot be decrypted fails a
-    // call without falling back to the deployment key, so it must fail this check too.
+    // call without falling back to the deployment key, so it must fail this check too. The probe
+    // is polled, so its key read stays quiet; a real call's read still warns.
     const { selection } = await this.decide(capability, input, { logManagedReplacement: false });
-    await this.credentialedConfig(capability, input, selection);
+    await this.credentialedConfig(capability, input, selection, { quiet: true });
   }
 
   private async credentialedConfig(
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
     selection: LlmCapabilitySelection,
+    keyRead?: { quiet: boolean },
   ): Promise<LlmCapabilityConfig> {
     const { provider, model, resolvedBy } = selection;
-    const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
+    const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability, keyRead);
     const { baseUrl, openAIDataResidency, openAIAzureBaseUrl } = await this.resolveProviderEndpoint(
       provider,
       capability,
@@ -291,8 +294,9 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
+    keyRead?: { quiet: boolean },
   ): Promise<ResolvedApiKey> {
-    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
+    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider, keyRead);
     if (workspaceKey) {
       return { apiKey: workspaceKey, source: "workspace" };
     }

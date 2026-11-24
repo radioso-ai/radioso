@@ -64,7 +64,20 @@ const reservedDirectiveNames = (): string[] => defaultAnswerDirectives.map((dire
 // A tag counts however it is spaced, cased, or attributed (`< /purpose>`, `</PURPOSE x="1">`,
 // newlines inside it). Removal repeats until nothing changes, so a tag split around another
 // (`<</purpose>/purpose>`) cannot reassemble once the inner one is gone.
-const PROMPT_BLOCK_TAG = /<\s*\/?\s*(?:purpose|agent_context|names_in_use)\b[^>]*>/giu;
+//
+// Each form is bounded so that prose like `<purpose of the call>` survives: a closing tag takes no
+// `<` or `>` and stays on its line; an opening tag is bare, self-closing, or carries `name=value`
+// attributes. Serialized data is stripped per string value, before JSON encoding, so a match can
+// never span JSON structure.
+const BLOCK_NAMES = "(?:purpose|agent_context|names_in_use)";
+const ATTRIBUTE_VALUE = String.raw`(?:"[^"\n]*"|'[^'\n]*'|[^\s"'<>=]+)`;
+const PROMPT_BLOCK_TAG = new RegExp(
+  [
+    String.raw`<\s*\/\s*${BLOCK_NAMES}\b[^<>\n]*\s*>`,
+    String.raw`<\s*${BLOCK_NAMES}(?:\s+[\w:-]+\s*=\s*${ATTRIBUTE_VALUE})*\s*\/?\s*>`,
+  ].join("|"),
+  "giu",
+);
 
 const stripPromptBlockTags = (value: string): string => {
   let previous: string;
@@ -76,7 +89,7 @@ const stripPromptBlockTags = (value: string): string => {
   return current;
 };
 
-const serializePromptData = (value: unknown): string => stripPromptBlockTags(JSON.stringify(value, null, 2));
+const serializePromptData = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => (typeof item === "string" ? stripPromptBlockTags(item) : item), 2);
 
 const cleanJsonCompletion = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();

@@ -24,7 +24,7 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
 import {
   isMachinePrincipal,
@@ -510,7 +510,14 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         res.status(200).json(result);
       } catch (error) {
         // The client went away: nobody reads an answer, and an abort is not a failure to report.
+        // Any other failure is still the operator's to see, by class only.
         if (res.writableEnded || controller.signal.aborted) {
+          if (!(error instanceof AppError) && !(error instanceof Error && error.name === "AbortError")) {
+            dependencies.logger.warn(
+              { workspaceId: (res.locals as { workspaceId?: string }).workspaceId, agentId: req.params.agentId, err: error instanceof Error ? error.name : "unknown" },
+              "starter_pack_draft_failed_after_disconnect",
+            );
+          }
           return;
         }
         next(error);

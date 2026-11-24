@@ -51,13 +51,14 @@ const liveAgentDefaultLocale = async (
 /**
  * The attributes a candidate's own enablements keep, by their definitions as they are now: what a
  * routine field's save target (#1884) is checked against at release, read on the release's
- * transaction.
+ * transaction. A release whose routines save nothing has nothing to check, and reads nothing.
  */
 const saveTargetAttributes = async (
   trx: Transaction<DB>,
   workspaceId: string,
   snapshot: AgentRevisionSnapshot,
 ): Promise<ReadonlyMap<string, AvailableContextVariable>> => {
+  if (!snapshot.routines.some((routine) => routine.slots.some((slot) => slot.saveTo))) return new Map();
   const enabled = snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled);
   const rows = enabled.length === 0
     ? []

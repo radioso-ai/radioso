@@ -36,8 +36,11 @@ interface WhatsAppPluginOptions {
   cleanupIntervalMs?: number;
 }
 
+/** The WhatsApp connector's id: its database key and URL segment, and what composition binds its number key to. */
+export const WHATSAPP_CONNECTOR_ID = "whatsapp";
+
 export class WhatsAppPlugin implements ConnectorPlugin {
-  readonly id = "whatsapp";
+  readonly id = WHATSAPP_CONNECTOR_ID;
   readonly name = "WhatsApp";
   readonly description = "Connect a workspace to WhatsApp Business so incoming messages flow through chat.";
 

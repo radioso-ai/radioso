@@ -3609,7 +3609,7 @@ export const createTestDependencies = (overrides: {
   void connectorRegistry.initializeAll({
     db: connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
+    chat: () => createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
     ingestion: dependencies.connectorIngestionPort,
     agentStarterPrompts: dependencies.agentStarterPromptReader,
     conversationLinks: dependencies.conversationLinks,

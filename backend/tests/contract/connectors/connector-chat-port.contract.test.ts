@@ -36,7 +36,7 @@ const answerResponse = {
   citations: [{ chunkId: "chunk-1" }],
 };
 
-const portFor = (review?: ChatReviewResult) => {
+const portFor = (review?: ChatReviewResult, binding: { connectorId?: string; personKeyKind?: "whatsapp_contact" } = {}) => {
   const chatService = {
     answer: vi.fn(async () => answerResponse),
     review: vi.fn(async () => review),
@@ -53,7 +53,7 @@ const portFor = (review?: ChatReviewResult) => {
   return {
     chatService,
     conversationIngest,
-    port: createConnectorChatPort(chatService as unknown as ChatAnswerPort, conversationIngest),
+    port: createConnectorChatPort(chatService as unknown as ChatAnswerPort, conversationIngest, binding),
   };
 };
 
@@ -73,7 +73,7 @@ describe("ConnectorChatPort contract", () => {
         selection?: ConnectorItemSelection;
         personKey?: ConnectorPersonKey;
       }>();
-      expectTypeOf<ConnectorPersonKey>().toEqualTypeOf<{ kind: "whatsapp_contact"; id: string }>();
+      expectTypeOf<ConnectorPersonKey>().toEqualTypeOf<{ id: string }>();
       expectTypeOf<Awaited<ReturnType<ConnectorChatPort["answer"]>>>().toEqualTypeOf<{
         conversationId: string;
         answer: string;
@@ -165,14 +165,16 @@ describe("ConnectorChatPort contract", () => {
   });
 
   describe("a person key", () => {
-    it("runs the turn as the person the channel attests, in the form the channel stores the key", async () => {
-      const { chatService, port } = portFor();
+    const whatsApp = { connectorId: "whatsapp", personKeyKind: "whatsapp_contact" as const };
+
+    it("runs the turn as the person the connector attests, under the kind its binding names, in the form the channel stores the key", async () => {
+      const { chatService, port } = portFor(undefined, whatsApp);
 
       await port.answer({
         workspaceId: "workspace-1",
         query: "Do you deliver on Sundays?",
         sourceChannel: "whatsapp",
-        personKey: { kind: "whatsapp_contact", id: "+1 555 010 0101" },
+        personKey: { id: "+1 555 010 0101" },
       });
 
       expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
@@ -180,16 +182,26 @@ describe("ConnectorChatPort contract", () => {
       }));
     });
 
-    it("refuses a key that is not one the channel stores with 400, and runs no turn", async () => {
-      const { chatService, port } = portFor();
+    it("answers without a person when the key is not one the channel stores", async () => {
+      const { chatService, port } = portFor(undefined, whatsApp);
 
-      await expect(port.answer({
+      const answered = await port.answer({
         workspaceId: "workspace-1",
         query: "Do you deliver on Sundays?",
         sourceChannel: "whatsapp",
-        personKey: { kind: "whatsapp_contact", id: "customer-1" },
-      })).rejects.toMatchObject({ statusCode: 400 });
-      expect(chatService.answer).not.toHaveBeenCalled();
+        personKey: { id: "customer-1" },
+      });
+
+      expect(answered.conversationId).toBe(answerResponse.conversationId);
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+    });
+
+    it("answers without a person for a connector bound to no person-key kind", async () => {
+      const { chatService, port } = portFor(undefined, { connectorId: "slack" });
+
+      await port.answer({ workspaceId: "workspace-1", query: "Do you deliver on Sundays?", personKey: { id: "15550100101" } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
     });
   });
 

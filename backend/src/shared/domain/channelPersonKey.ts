@@ -43,12 +43,6 @@ export const channelPersonKeyId = (kind: ChannelPersonKeyKind, raw: string): str
   }
 };
 
-/** The key `raw` names in its channel's stored form; null when its id is not one. */
-export const channelPersonKeyOf = (raw: { kind: ChannelPersonKeyKind; id: string }): ChannelPersonKey | null => {
-  const id = channelPersonKeyId(raw.kind, raw.id);
-  return id ? { kind: raw.kind, id } : null;
-};
-
 /**
  * Which channel person a stored conversation is with, as the channel that keeps the key knows it;
  * null for a conversation of another channel or one it has no key for. A reader outside a turn (the

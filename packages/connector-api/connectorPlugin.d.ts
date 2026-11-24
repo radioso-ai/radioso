@@ -135,11 +135,11 @@ export interface ConnectorItemSelection {
 
 /**
  * Who the customer is, as the channel's provider attests it: the key the host keeps person-level
- * values under for this channel, read only on this channel. WhatsApp's is the sender's number as Meta
- * reports it on a signed webhook (`wa_id`: digits, country code first). The host never logs it.
+ * values under for this channel, read only on this channel. The host binds each connector to the
+ * kind of key it may attest, and ignores a key from a connector it binds none to. The host never
+ * logs it.
  */
 export interface ConnectorPersonKey {
-  kind: "whatsapp_contact";
   id: string;
 }
 
@@ -185,8 +185,8 @@ export interface ConnectorChatPort {
     channelContext?: ConversationChannelContext | null;
     /**
      * The person the message is from, when the channel's provider attests it. The turn reads the
-     * values kept for that person, and a routine saves its person values to them. Without it, the
-     * conversation has no person key on this channel. One the host cannot read is refused (400).
+     * values kept for that person, and a routine saves its person values to them. Without it, or
+     * with one the host cannot read, the turn runs with no person key on this channel.
      */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     personKey?: ConnectorPersonKey;

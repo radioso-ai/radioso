@@ -321,12 +321,15 @@ describe("createConnectorChatPort", () => {
   describe("the person key a channel attests", () => {
     const NUMBER = { kind: "whatsapp_contact" as const, id: "15550100101" };
     const reply = { conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" };
+    const metricsRegistry = () => ({ incrementCounter: vi.fn() });
+    /** A port bound, as composition binds the WhatsApp connector's, to the person-key kind its connector attests. */
+    const attesting = (metrics = metricsRegistry()) => ({ connectorId: "whatsapp", personKeyKind: "whatsapp_contact" as const, metrics });
 
     it("runs a text turn as the person the key names, in the form the channel stores it", async () => {
       const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
-      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, attesting());
 
-      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", sourceChannel: "whatsapp", personKey: { kind: "whatsapp_contact", id: "+1 555 010 0101" } });
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", sourceChannel: "whatsapp", personKey: { id: "+1 555 010 0101" } });
 
       expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
     });
@@ -334,14 +337,14 @@ describe("createConnectorChatPort", () => {
     it("runs a photo turn and a pick as that person too", async () => {
       const imageTurns: ConnectorImageTurns = { imageAllowance: vi.fn(async () => ({ maxImages: 3 })), answer: vi.fn(async () => reply) };
       const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => reply) };
-      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { imageTurns, picks });
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { imageTurns, picks, ...attesting() });
 
-      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", personKey: NUMBER, images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] });
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", personKey: { id: NUMBER.id }, images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] });
       await connectorChat.answer({
         workspaceId: "workspace-1",
         conversationId: "conversation-1",
         query: "Casa Blu",
-        personKey: NUMBER,
+        personKey: { id: NUMBER.id },
         selection: { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" },
       });
 
@@ -349,13 +352,32 @@ describe("createConnectorChatPort", () => {
       expect(picks.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
     });
 
-    it("refuses a key it cannot read and runs no turn", async () => {
+    it("answers without a person when it cannot read the key, and counts that without the key", async () => {
       const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
-      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+      const metrics = metricsRegistry();
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, attesting(metrics));
 
-      await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { kind: "whatsapp_contact", id: "not a number" } }))
-        .rejects.toMatchObject({ statusCode: 400 });
-      expect(chatService.answer).not.toHaveBeenCalled();
+      const answered = await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { id: "user.example-handle" } });
+
+      expect(answered.answer).toBe("Hello again.");
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("connector_person_keys_unused_total", expect.objectContaining({
+        labels: { connector: "whatsapp", reason: "unreadable" },
+      }));
+      expect(JSON.stringify(metrics.incrementCounter.mock.calls)).not.toContain("example-handle");
+    });
+
+    it("ignores a key from a connector bound to no person-key kind, so no other channel can claim a WhatsApp number", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const metrics = metricsRegistry();
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, { connectorId: "slack", metrics });
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { id: NUMBER.id } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("connector_person_keys_unused_total", expect.objectContaining({
+        labels: { connector: "slack", reason: "not_attested" },
+      }));
     });
   });
 

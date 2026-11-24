@@ -611,7 +611,7 @@ export class WhatsAppMessageHandler {
           query: input.query,
           sourceChannel: "whatsapp",
           // Meta attests the sender's number on a signed webhook: the person the host keeps WhatsApp values for.
-          personKey: { kind: "whatsapp_contact", id: input.waId },
+          personKey: { id: input.waId },
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),

@@ -202,7 +202,11 @@ export class WorkspaceProviderCredentialsService {
     })();
   }
 
-  async getApiKey(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<string | undefined> {
+  async getApiKey(
+    workspaceId: string,
+    provider: WorkspaceCredentialProvider,
+    options: { quiet?: boolean } = {},
+  ): Promise<string | undefined> {
     const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);
     if (!record) {
       // No stored workspace credential. A model provider caller may fall back to its deployment
@@ -226,7 +230,7 @@ export class WorkspaceProviderCredentialsService {
     try {
       return decryptField(record.ciphertext, this.encryption.key!, { keyName: KEY_NAME });
     } catch (error) {
-      this.decryptErrorListener?.(error, provider);
+      if (!options.quiet) this.decryptErrorListener?.(error, provider);
       throw new ProviderConfigurationError(
         `Workspace credential for "${provider}" could not be decrypted with ${KEY_NAME} or any key in ${PREVIOUS_KEYS_NAME}. If ${KEY_NAME} was rotated since the credential was stored, add the key it replaced to ${PREVIOUS_KEYS_NAME}; otherwise re-enter the API key.`,
         {

@@ -356,6 +356,8 @@ interface ProviderMisconfigurationDetails {
  * boot time the process still crashes because the runtime catches and rethrows.
  */
 export class ProviderConfigurationError extends AppError {
+  declare readonly details: ProviderMisconfigurationDetails;
+
   constructor(message: string, details?: Partial<ProviderMisconfigurationDetails>) {
     super(503, "provider_misconfigured", message, {
       providerIssue: "configuration_invalid",

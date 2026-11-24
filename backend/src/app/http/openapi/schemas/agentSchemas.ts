@@ -20,7 +20,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
-  routineValidationCodes,
+  routineValidationResultSchema,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
@@ -619,17 +619,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     routineDraftAssistRequestSchema,
   );
 
-  const RoutineValidationResultSchema = registry.register(
-    "RoutineValidationResult",
-    z.object({
-      ok: z.boolean(),
-      diagnostics: z.array(z.object({
-        code: z.enum(routineValidationCodes),
-        location: z.string(),
-        message: z.string(),
-      })),
-    }),
-  );
+  const RoutineValidationResultSchema = registry.register("RoutineValidationResult", routineValidationResultSchema);
 
   const RoutineDefinitionResponseSchema = registry.register(
     "RoutineDefinition",

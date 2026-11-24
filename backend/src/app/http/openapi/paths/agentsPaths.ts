@@ -486,6 +486,54 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/agents/{agentId}/starter-pack/draft",
+    tags: ["Agents"],
+    summary: "Draft a starter pack of directives and one routine from the agent's purpose",
+    description: "Suggests one to six directives and exactly one routine from a plain-language purpose, written in the language the purpose is detected to be in. Nothing is saved; send the items you keep to the apply operation.",
+    operationId: "draftAgentStarterPack",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: { required: true, content: { "application/json": { schema: schemas.StarterPackDraftRequestSchema } } },
+    },
+    responses: {
+      200: { description: "Suggestions returned; nothing saved", content: { "application/json": { schema: schemas.StarterPackDraftResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "The caller cannot manage agents", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "invalid_starter_pack_draft when the model did not return a valid pack or routine", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Starter pack drafting rate limit reached. Only a request that reaches its model calls counts against it.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      503: { description: "provider_misconfigured when the platform's chat model has no usable API key for this workspace (details.provider names the provider to add a key for), or llm_unavailable when the model call failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/starter-pack/apply",
+    tags: ["Agents"],
+    summary: "Create the selected starter pack items",
+    description: "Creates exactly the selected directives and routine in the agent's draft, all or nothing, in request order. Existing directives and routines are never overwritten. Names and excludes are checked before any model call. Each directive carries an advisory coherence verdict and the routine its validation result. Repeating a request with the same idempotency key returns the first result. Items are not published; publish the agent's draft as usual.",
+    operationId: "applyAgentStarterPack",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: { required: true, content: { "application/json": { schema: schemas.StarterPackApplyRequestSchema } } },
+    },
+    responses: {
+      200: { description: "This idempotency key was already applied; the stored result is returned and nothing new is created", content: { "application/json": { schema: schemas.StarterPackApplyResponseSchema } } },
+      201: { description: "Every selected item was created", content: { "application/json": { schema: schemas.StarterPackApplyResponseSchema } } },
+      400: { description: "Request validation failed, or a directive's excludes names a directive that is neither on the agent nor listed before it in the pack (details list the items). Nothing was created.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "The caller cannot manage agents", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "starter_pack_name_conflict when a selected name is already used on the agent (details list the items), or idempotency_key_reused when the key was used for different items. Nothing was created.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Starter pack apply rate limit reached. A replay, or an apply refused for its names or excludes, does not count against it.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/agents/{agentId}/routines",
     tags: ["Agents"],
     summary: "Create a draft routine definition for an agent",

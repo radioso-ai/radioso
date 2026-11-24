@@ -24,7 +24,7 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
 import {
   isMachinePrincipal,
@@ -42,6 +42,14 @@ import {
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
 import { describePublicAccessChange, type AgentSettingsResource } from "../../../modules/agents/public.js";
+import {
+  STARTER_PACK_APPLY_RATE_LIMIT,
+  STARTER_PACK_DRAFT_RATE_LIMIT,
+  starterPackApplyRequestSchema,
+  starterPackDraftRequestSchema,
+  starterPackRateLimitSubjectKey,
+  type StarterPackApplyRequest,
+} from "../../../modules/agentStarterPack/public.js";
 import { answerCoverageCriteriaSchema } from "../../../modules/answerCoverage/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
@@ -120,7 +128,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections" | "visitorImages" | "visitorImageAvailability" | "chatModelImageReading">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "starterPackDraftService" | "starterPackApplyService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections" | "visitorImages" | "visitorImageAvailability" | "chatModelImageReading">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -455,6 +463,100 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         const parsed = agentParamsSchema.parse(req.params);
         const result = await dependencies.directiveAuthorService.draft(workspaceId, parsed.agentId, req.body);
         res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Drafts only: returns suggested directives and one routine for review; nothing is saved.
+  router.post(
+    "/:agentId/starter-pack/draft",
+    workspaceSession,
+    agentManage,
+    validateBody(starterPackDraftRequestSchema),
+    async (req, res, next) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      req.on("aborted", abort);
+      res.on("close", () => {
+        if (!res.writableEnded) abort();
+      });
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const params = agentParamsSchema.safeParse(req.params);
+        if (!params.success) {
+          throw badRequest("Invalid agent id", params.error.flatten());
+        }
+        const body = req.body as { purpose: string };
+        // The budget is spent only once the agent exists and a chat model is configured.
+        const result = await dependencies.starterPackDraftService.draft(
+          workspaceId,
+          params.data.agentId,
+          body.purpose,
+          {
+            signal: controller.signal,
+            beforeModelCalls: async () => {
+              await dependencies.abuseControlService.enforce({
+                ...STARTER_PACK_DRAFT_RATE_LIMIT,
+                subjectKey: starterPackRateLimitSubjectKey(res.locals),
+              });
+            },
+          },
+        );
+        if (res.writableEnded || controller.signal.aborted) {
+          return;
+        }
+        res.status(200).json(result);
+      } catch (error) {
+        // The client went away: nobody reads an answer, and an abort is not a failure to report.
+        // Any other failure is still the operator's to see, by class only.
+        if (res.writableEnded || controller.signal.aborted) {
+          if (!(error instanceof AppError) && !(error instanceof Error && error.name === "AbortError")) {
+            dependencies.logger.warn(
+              { workspaceId: (res.locals as { workspaceId?: string }).workspaceId, agentId: req.params.agentId, err: error instanceof Error ? error.name : "unknown" },
+              "starter_pack_draft_failed_after_disconnect",
+            );
+          }
+          return;
+        }
+        next(error);
+      } finally {
+        req.off("aborted", abort);
+      }
+    },
+  );
+
+  // Creates exactly the selected items, all or nothing. 201 when it created them; 200 when the
+  // same idempotency key was already applied and the stored result is returned unchanged.
+  router.post(
+    "/:agentId/starter-pack/apply",
+    workspaceSession,
+    agentManage,
+    validateBody(starterPackApplyRequestSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const params = agentParamsSchema.safeParse(req.params);
+        if (!params.success) {
+          throw badRequest("Invalid agent id", params.error.flatten());
+        }
+        // A replay of a completed apply, or a pack refused for its names, spends no budget.
+        const result = await dependencies.starterPackApplyService.apply(
+          workspaceId,
+          params.data.agentId,
+          { accountId: accountId ?? null },
+          req.body as StarterPackApplyRequest,
+          {
+            beforeModelCalls: async () => {
+              await dependencies.abuseControlService.enforce({
+                ...STARTER_PACK_APPLY_RATE_LIMIT,
+                subjectKey: starterPackRateLimitSubjectKey(res.locals),
+              });
+            },
+          },
+        );
+        res.status(result.replayed ? 200 : 201).json(result);
       } catch (error) {
         next(error);
       }

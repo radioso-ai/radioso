@@ -131,7 +131,7 @@ export const buildLlmCapabilityResolver = (input: {
       getPreference: (workspaceId, capability) => input.settings.getPreference(workspaceId, capability),
     },
     credentials: {
-      getApiKey: (workspaceId, provider) => input.credentials.getApiKey(workspaceId, provider),
+      getApiKey: (workspaceId, provider, options) => input.credentials.getApiKey(workspaceId, provider, options),
       hasCredentials: (workspaceId, provider) => input.credentials.hasCredentials(workspaceId, provider),
       getOpenAIResidency: (workspaceId) => input.credentials.getOpenAIResidency(workspaceId),
     },

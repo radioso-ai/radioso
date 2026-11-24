@@ -31,6 +31,8 @@ export interface ResponseLanguageDetectorInput {
   history: MessageRecord[];
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext?: ModelCallUsageContext;
+  /** Aborts the detection model call, as the request it serves is aborted. */
+  signal?: AbortSignal;
 }
 
 export interface ResponseLanguageDetector {
@@ -114,6 +116,7 @@ export class LlmResponseLanguageDetector implements ResponseLanguageDetector {
       }),
       reasoningEffort: CHAT_BEHAVIOR.intentRouting.reasoningEffort,
       maxOutputTokens: 128,
+      ...(input.signal ? { signal: input.signal } : {}),
     });
 
     return parseResponseLanguageDetection(text);

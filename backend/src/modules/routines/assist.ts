@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { AppError, notFound } from "../../shared/domain/errors.js";
+import { renderOutputLanguageInstruction } from "../../shared/domain/outputLanguageInstruction.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -46,6 +47,11 @@ export const routineDraftAssistActionCatalogEntrySchema = z.object({
 
 type RoutineDraftAssistRequest = z.infer<typeof routineDraftAssistRequestSchema>;
 export type RoutineDraftAssistActionCatalogEntry = z.infer<typeof routineDraftAssistActionCatalogEntrySchema>;
+type RoutineDraftAssistOptions = {
+  outputLanguage?: string;
+  name?: string;
+  signal?: AbortSignal;
+};
 type RoutineDraftAssistResponse = {
   draft: RoutineDefinitionDraftInput;
   validation: RoutineValidationResult;
@@ -261,10 +267,13 @@ const draftDefinitionFromInput = (
   updatedAt: new Date(),
 });
 
+/** The 422 code for a procedure the drafter could not turn into a routine draft after its retry. */
+export const INVALID_ROUTINE_DRAFT_CODE = "invalid_routine_draft_assist";
+
 const invalidDraftError = () =>
   new AppError(
     422,
-    "invalid_routine_draft_assist",
+    INVALID_ROUTINE_DRAFT_CODE,
     "The routine draft could not be generated as a valid routine draft. Try again or revise the procedure text.",
   );
 
@@ -319,17 +328,30 @@ export class RoutineDraftAssistService {
     );
   }
 
+  /**
+   * `options.outputLanguage` is a language label a caller already detected (for example
+   * "German"). Without one, the draft mirrors the procedure's own language. `options.name` is a
+   * name the caller already chose: every attempt takes it before validation, so the returned
+   * validation describes the routine under that name. `options.signal` aborts the model calls.
+   */
   async draft(
     workspaceId: string,
     agentId: string,
     input: RoutineDraftAssistRequest,
+    options: RoutineDraftAssistOptions = {},
   ): Promise<RoutineDraftAssistResponse> {
     const parsedInput = routineDraftAssistRequestSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const actionCatalog = await this.resolveActionCatalog(workspaceId, agentId);
     const requestId = randomUUID();
     const variableHints = extractVariableHints(parsedInput.prose, actionCatalog);
-    const prompt = this.buildPrompt(agent, parsedInput, variableHints, actionCatalog);
+    const prompt = this.buildPrompt(
+      agent,
+      parsedInput,
+      variableHints,
+      actionCatalog,
+      renderOutputLanguageInstruction(options.outputLanguage, "the procedure"),
+    );
 
     const primary = await this.callLlm({
       workspaceId,
@@ -339,6 +361,7 @@ export class RoutineDraftAssistService {
       proseLength: parsedInput.prose.length,
       attemptKey: "primary",
       catalogSize: actionCatalog.length,
+      signal: options.signal,
     });
     const primaryDraft = parseDraft(primary, variableHints);
     if (primaryDraft) {
@@ -351,6 +374,7 @@ export class RoutineDraftAssistService {
         variableHints,
         actionCatalog,
         draft: primaryDraft,
+        options,
       });
     }
 
@@ -370,6 +394,7 @@ export class RoutineDraftAssistService {
       proseLength: parsedInput.prose.length,
       attemptKey: "schema_retry",
       catalogSize: actionCatalog.length,
+      signal: options.signal,
     });
     const retryDraft = parseDraft(retry, variableHints);
     if (retryDraft) {
@@ -382,6 +407,7 @@ export class RoutineDraftAssistService {
         variableHints,
         actionCatalog,
         draft: retryDraft,
+        options,
       });
     }
 
@@ -404,8 +430,9 @@ export class RoutineDraftAssistService {
     variableHints: string[];
     actionCatalog: RoutineDraftAssistActionCatalogEntry[];
     draft: RoutineDefinitionDraftInput;
+    options: RoutineDraftAssistOptions;
   }): Promise<RoutineDraftAssistResponse> {
-    const original = this.finalizeDraft(input.agentId, input.draft, input.actionCatalog);
+    const original = this.finalizeDraft(input.agentId, input.draft, input.actionCatalog, input.options.name);
     if (original.validation.diagnostics.length === 0) {
       return original;
     }
@@ -418,6 +445,7 @@ export class RoutineDraftAssistService {
       proseLength: input.proseLength,
       attemptKey: "validation_retry",
       catalogSize: input.actionCatalog.length,
+      signal: input.options.signal,
     });
     const retryDraft = parseDraft(retry, input.variableHints);
     if (!retryDraft) {
@@ -431,7 +459,7 @@ export class RoutineDraftAssistService {
       return original;
     }
 
-    const corrected = this.finalizeDraft(input.agentId, retryDraft, input.actionCatalog);
+    const corrected = this.finalizeDraft(input.agentId, retryDraft, input.actionCatalog, input.options.name);
     return corrected.validation.diagnostics.length < original.validation.diagnostics.length
       ? corrected
       : original;
@@ -467,6 +495,7 @@ export class RoutineDraftAssistService {
     input: RoutineDraftAssistRequest,
     variableHints: string[],
     actionCatalog: RoutineDraftAssistActionCatalogEntry[],
+    outputLanguageInstruction: string,
   ): string {
     const template = loadPromptTemplate(PROMPT_PATH);
     return renderTemplate(template, {
@@ -479,6 +508,7 @@ export class RoutineDraftAssistService {
       permitted_action_catalog: serializePromptData(actionCatalog),
       variable_hints: serializePromptData(variableHints),
       procedure_text: input.prose,
+      output_language_instruction: outputLanguageInstruction,
     });
   }
 
@@ -490,6 +520,7 @@ export class RoutineDraftAssistService {
     proseLength: number;
     attemptKey: string;
     catalogSize: number;
+    signal?: AbortSignal;
   }): Promise<string> {
     const startedAt = Date.now();
     const baseFields = {
@@ -526,6 +557,7 @@ export class RoutineDraftAssistService {
           prompt: input.prompt,
           temperature: 0,
           maxOutputTokens: 4_000,
+          ...(input.signal ? { signal: input.signal } : {}),
         }),
         resultAttributes: (text) => ({
           "radioso.status": parseDraft(text) ? "success" : "schema_mismatch",
@@ -548,6 +580,12 @@ export class RoutineDraftAssistService {
       return text;
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      if (input.signal?.aborted) {
+        // The caller went away; the provider did not fail.
+        await this.emitTelemetry({ ...baseFields, durationMs, status: "aborted", failureMode: "aborted" });
+        this.options.logger.info({ ...baseFields, durationMs, status: "aborted" }, "routine_draft_assist_llm_call_aborted");
+        throw error;
+      }
       await this.emitTelemetry({
         ...baseFields,
         durationMs,
@@ -569,8 +607,9 @@ export class RoutineDraftAssistService {
     agentId: string,
     draft: RoutineDefinitionDraftInput,
     actionCatalog: RoutineDraftAssistActionCatalogEntry[],
+    name: string | undefined,
   ): RoutineDraftAssistResponse {
-    const normalizedDraft = normalizeDraftSlotReferences(draft);
+    const normalizedDraft = normalizeDraftSlotReferences(name === undefined ? draft : { ...draft, name });
     const validation = validateRoutineDefinition(draftDefinitionFromInput(agentId, normalizedDraft));
     const catalogValidationDiagnostics = catalogDiagnostics(normalizedDraft, actionCatalog);
     const diagnostics = [...validation.diagnostics, ...catalogValidationDiagnostics];
@@ -592,12 +631,12 @@ export class RoutineDraftAssistService {
     proseLength: number;
     catalogSize: number;
     durationMs: number;
-    status: "success" | "failure";
+    status: "success" | "failure" | "aborted";
     failureMode: string;
   }): Promise<void> {
     await this.options.telemetryService?.emit({
       eventType: "routines.draft_assist.llm_call",
-      severity: input.status === "success" ? "info" : "warn",
+      severity: input.status === "failure" ? "warn" : "info",
       correlation: {
         workspaceId: input.workspaceId,
       },

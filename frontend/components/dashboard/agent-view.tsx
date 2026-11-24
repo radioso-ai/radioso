@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, RefreshCw, X } from 'lucide-react'
@@ -368,6 +368,26 @@ export function AgentView({
     }
     window.history.replaceState(null, '', href)
   }, [accountId, routeState, selectedAgentId])
+  // A Back that lands before Next has rendered the entry it leaves reaches the route in the same
+  // render as that entry's push, so New chat (which clears at once) then Back reads as no route
+  // change and Test Chat never reopens the test left behind. Counting Back or Forward landings on
+  // the URL already rendered gives Test Chat that change to follow. The ref tracks the committed
+  // route (a layout effect, not render), since a pending render may never commit.
+  const renderedHref = buildDashboardHref(accountId, routeState)
+  const renderedHrefRef = useRef(renderedHref)
+  useLayoutEffect(() => {
+    renderedHrefRef.current = renderedHref
+  }, [renderedHref])
+  const [testChatRouteRevisits, setTestChatRouteRevisits] = useState(0)
+  useEffect(() => {
+    const countRevisit = () => {
+      if (`${window.location.pathname}${window.location.search}` === renderedHrefRef.current) {
+        setTestChatRouteRevisits((count) => count + 1)
+      }
+    }
+    window.addEventListener('popstate', countRevisit)
+    return () => window.removeEventListener('popstate', countRevisit)
+  }, [])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
@@ -503,6 +523,7 @@ export function AgentView({
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
             route={testChatRoute}
+            routeRevisits={testChatRouteRevisits}
             onNavigate={navigateTestChat}
             testExecutionHref={testExecutionHref}
           />

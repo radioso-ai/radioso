@@ -378,6 +378,8 @@ test('Delete agent… from a link that names no agent deletes the agent the menu
   })
   // The URL names no agent, so the last agent used is the selection: the menu and the page must agree.
   await page.goto(`/w/${workspaceKey}/agents`)
+  // The link lands on the selected agent's page, and the shell is rebuilt on arrival. Open the menu in the shell that stays.
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}`))
   await switcher(page, 'Marta').click()
   await page.getByRole('menuitem', { name: 'Delete agent…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Delete agent' })

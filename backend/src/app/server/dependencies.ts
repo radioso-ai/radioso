@@ -78,6 +78,7 @@ import { ContextVariableRepository } from "../../db/repositories/contextVariable
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
+import { buildAgentStarterPackServices } from "./builders/agentStarterPack.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
@@ -296,6 +297,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documents,
     embeddingBindingResolver,
     embeddingPorts,
+    chatReadiness,
     llmCapabilityResolver,
     llmRegistry,
     retrieval,
@@ -550,12 +552,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillAuthoringCatalog,
     webhookDestinations,
   });
-  const {
-    authoredDirectiveService,
-    directiveAuthorService,
-    routineDefinitionService,
-    routineDraftAssistService,
-  } = routineAuthoring;
+  const { authoredDirectiveService, directiveAuthorService, routineDefinitionService, routineDraftAssistService } = routineAuthoring;
+  const starterPack = buildAgentStarterPackServices({ infrastructure, repositories, routineAuthoring, chatInferencePipeline, llmRegistry, chatReadiness, logger });
   // Built after routine authoring: the agent-revision release gate validates through RoutineDefinitionService
   // (validateForServing), refusing a release whose routine names a skill, capability or webhook destination now gone.
   const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID, {
@@ -1276,6 +1274,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     apiConnections,
     workspaceLlmCapabilitySettingsService,
     llmCapabilityResolver,
+    chatReadiness,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,
     noticeMail,
@@ -1389,6 +1388,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,
+    ...starterPack,
     agentSurfaceExtensions,
     skillCatalogService,
     skillAuthoringCatalog,

@@ -62,6 +62,7 @@ describeIfDatabase("migration 231 workspace setup state", () => {
       new DocumentRepository(database.kysely, documentEventEraser),
       new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       new WorkspaceSetupStateRepository(database.kysely),
+      { websiteCrawlerEnabled: true, chatReadiness: { isChatConfigured: async () => true } },
     );
 
     await expect(service.getSummary(workspaceId)).resolves.toMatchObject({

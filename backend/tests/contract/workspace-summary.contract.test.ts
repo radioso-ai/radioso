@@ -1,5 +1,5 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
@@ -64,6 +64,7 @@ describe("workspace summary contract", () => {
       hasCompletedChat: true,
       sampleDocumentsImported: true,
       websiteCrawlerEnabled: true,
+      llmConfigured: false,
     });
   });
 
@@ -196,6 +197,33 @@ describe("workspace summary contract", () => {
         .send({ dismissed: false })
         .expect(401);
     }
+  });
+
+  it("reports llmConfigured=false when the workspace has no chat model configured", async () => {
+    // The in-memory app's chat pipeline resolves for no workspace, as a deployment with no provider key.
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "workspace-summary-no-llm@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/workspace/summary")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body.llmConfigured).toBe(false);
+  });
+
+  it("reports llmConfigured=true when the workspace's chat pipeline resolves", async () => {
+    const assertChatPipelineResolvable = vi.fn(async () => undefined);
+    const { app } = createTestApp({ chatPipelineProbe: { assertChatPipelineResolvable } });
+    const session = await issueTestSession(app, "workspace-summary-llm@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/workspace/summary")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body.llmConfigured).toBe(true);
+    expect(assertChatPipelineResolvable).toHaveBeenCalledWith(session.workspaceId);
   });
 
   it("returns the project ErrorResponse JSON shape on crawl routes when WEBSITE_CRAWLER_ENABLED is false", async () => {

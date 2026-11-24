@@ -72,11 +72,11 @@ export interface ConversationAttributeEdits {
   reset(input: { workspaceId: string; conversationId: string; name: string; actor: AttributeEditActor }): Promise<ConversationAttributeEditResult>;
 }
 
-type EditOutcome = "written" | "cleared" | "unchanged" | "not_found" | "refused_type" | "refused_private" | "refused_option" | "failed";
+type EditOutcome = "written" | "pinned" | "cleared" | "unchanged" | "not_found" | "refused_type" | "refused_private" | "refused_option" | "failed";
 
 /** A refusal that carries its own outcome label, so the counter never reads the message. */
 class EditRefusal extends AppError {
-  constructor(readonly outcome: Exclude<EditOutcome, "written" | "cleared" | "unchanged" | "failed">, error: AppError) {
+  constructor(readonly outcome: Exclude<EditOutcome, "written" | "pinned" | "cleared" | "unchanged" | "failed">, error: AppError) {
     super(error.statusCode, error.code, error.message, error.details);
   }
 }
@@ -136,6 +136,8 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
       const { variable, conversation } = await this.target(input);
       if (!validateValue(variable, input.value).ok) throw optionRefusal(variable, input.value);
       const current = await this.readAttribute(input, conversation);
+      // The same option from another writer only changes who holds it; the counter tells that apart from a change.
+      const pinned = current !== null && current.scope === "conversation" && !contextValueChanged(current.value, input.value);
       if (heldByTeam(current, input.value)) return { outcome: "unchanged", result: { attribute: current, classificationQueued: false } };
       const written = await this.deps.values.upsertValue(variable.id, { type: "conversation", id: input.conversationId }, input.value, operatorWriter(input.actor));
       await this.audit({ workspaceId: input.workspaceId, conversationId: input.conversationId, variableId: variable.id, action: "set", actor: input.actor });
@@ -143,7 +145,7 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
       const attribute = written
         ? present([{ variable, value: written }], conversation)
         : await this.readAttribute(input, conversation);
-      return { outcome: "written", result: { attribute, classificationQueued: false } };
+      return { outcome: pinned ? "pinned" : "written", result: { attribute, classificationQueued: false } };
     });
   }
 

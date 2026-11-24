@@ -132,7 +132,7 @@ describe("a teammate sets a conversation's attribute (#1884)", () => {
     expect(values.upsertValue).toHaveBeenCalledWith("topic-id", { type: "conversation", id: conversationId }, "billing", { kind: "operator", ref: "user-1" });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ variableId: "topic-id", action: "set" }));
     expect(result.attribute).toMatchObject({ value: "billing", writtenBy: { kind: "operator", ref: "user-1" } });
-    expect(outcomes()).toEqual([{ action: "set", outcome: "written" }]);
+    expect(outcomes()).toEqual([{ action: "set", outcome: "pinned" }]);
   });
 
   it("sets the conversation's own option over a value kept for the visitor's session", async () => {

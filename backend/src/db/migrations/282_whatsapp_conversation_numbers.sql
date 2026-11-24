@@ -4,9 +4,9 @@
 -- conversation timeout starts a new one, so nothing kept the number of an earlier conversation. A
 -- data subject found by their number must reach every conversation they had, and the Inbox shows
 -- a number's attribute values on its conversations, so each conversation now records its number
--- here when the WhatsApp channel answers on it. The row cascades with its conversation and with its
--- workspace. It is how the WhatsApp finder reaches a number's conversations, the way
--- `slack_conversation_links` and `email_thread_links` are for theirs.
+-- here as soon as its first WhatsApp message is stored, before the turn answers it. The row cascades
+-- with its conversation and with its workspace. It is how the WhatsApp finder reaches a number's
+-- conversations, the way `slack_conversation_links` and `email_thread_links` are for theirs.
 --
 -- Backfill. Only the conversation each contact row points at, the number's latest, can be named:
 -- conversations that came before it were never recorded against their number.

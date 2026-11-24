@@ -63,7 +63,10 @@ export interface DataSubjectIdentityFinder {
   readonly channel: string;
   /** The identities whose channel identifier is exactly `query`, compared the way the channel compares them. */
   find(input: { workspaceId: string; query: string }): Promise<readonly DataSubjectIdentityMatch[]>;
-  /** What the keys reach. A key the finder does not keep reaches nothing. */
+  /**
+   * What the keys reach. A key the finder does not keep reaches nothing; one that can never name an
+   * identity of its kind is refused (`400`), so an erasure is never answered as done for it.
+   */
   reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach>;
   /**
    * Why `query`, written as an identifier of this kind, can never match one, such as a number

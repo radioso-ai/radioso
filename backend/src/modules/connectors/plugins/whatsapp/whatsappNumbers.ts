@@ -1,5 +1,6 @@
 import {
   readWhatsAppNumber,
+  requireChannelPersonKeyId,
   whatsAppNumberKey,
   type ChannelPersonKey,
   type ConversationChannelPersonKeys,
@@ -116,9 +117,10 @@ export class WhatsAppNumberIdentityFinder implements DataSubjectIdentityFinder {
     }];
   }
 
+  /** Refuses a key that is no number: reaching nobody for it would answer an erasure as done. */
   async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
-    const numbers = [...new Set(input.keys.flatMap((key) => whatsAppNumberKey(key) ?? []))];
-    const held = numbers.length > 0 ? await this.held(input.workspaceId, numbers) : { conversations: [], logged: [], valued: new Set<string>() };
+    const numbers = [...new Set(input.keys.map((key) => requireChannelPersonKeyId("whatsapp_contact", key)))];
+    const held = await this.held(input.workspaceId, numbers);
     const conversationIds = held.conversations.map((conversation) => conversation.conversationId);
     return {
       conversationIds,

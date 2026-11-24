@@ -322,6 +322,17 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
       await expect(access.lookup({ workspaceId: tenant.workspaceId, query: `00${NUMBER_A}`, actor: actor(tenant) }))
         .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/country code/u) });
     });
+
+    it.each(["listConversations", "export", "erase"] as const)("refuses a key that is no number on %s, instead of reaching nobody", async (step) => {
+      const tenant = await seedTenant();
+      const conversationId = await startConversation(tenant, NUMBER_A);
+
+      for (const key of [`0${NUMBER_A}`, "+1 (555"]) {
+        await expect(access[step]({ workspaceId: tenant.workspaceId, identities: [{ kind: "whatsapp_number", key }], actor: actor(tenant) }))
+          .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/country code/u) });
+      }
+      expect(await database.query("SELECT id FROM conversations WHERE id = $1", [conversationId])).toHaveLength(1);
+    });
   });
 
   describe("a number its sender left", () => {

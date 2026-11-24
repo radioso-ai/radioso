@@ -5,6 +5,7 @@ import {
   type ChatDoorPickTurnPort,
   type ChatDoorTurnReply,
   type ConversationIngestPort,
+  type UserMessageStoredListener,
 } from "../../chat/contracts/index.js";
 import type { ConnectorChatPort, ConnectorPersonKey, ConnectorReplyBlocksCapability } from "@radioso/connector-api";
 import { channelPersonKeyId, type ChannelPersonKey, type ChannelPersonKeyKind } from "../../../shared/domain/channelPersonKey.js";
@@ -70,6 +71,12 @@ const channelPersonKeyFor = (
   return id ? { channelPersonKey: { kind: binding.personKeyKind, id } } : unused("unreadable");
 };
 
+/** Tells the connector which conversation its message was stored in, the moment the turn stores it. */
+const storedMessageListener = (
+  onMessageStored: ((stored: { conversationId: string }) => Promise<void>) | undefined,
+): { onUserMessageStored?: UserMessageStoredListener } =>
+  onMessageStored ? { onUserMessageStored: ({ conversationId }) => onMessageStored({ conversationId }) } : {};
+
 /** A turn's reply as a connector receives it: the blocks only when the reply carries any. */
 const connectorAnswer = (reply: ChatDoorTurnReply & { conversationId: string }): ConnectorAnswer => ({
   conversationId: reply.conversationId,
@@ -111,6 +118,7 @@ export const createConnectorChatPort = (
     const clientContextCapabilities = capabilitiesFor(input.replyBlocks);
     const capabilities = clientContextCapabilities ? { clientContextCapabilities } : {};
     const person = channelPersonKeyFor(options, input.personKey);
+    const stored = storedMessageListener(input.onMessageStored);
 
     // A pick runs on the card the stored reply holds, through the same claim as the web chat's,
     // and is refused where the web chat's is: the card's words never run as typed text.
@@ -129,6 +137,7 @@ export const createConnectorChatPort = (
           sourceChannel: input.sourceChannel,
           channelContext: input.channelContext,
           ...person,
+          ...stored,
           ...capabilities,
         });
         if (!picked?.conversationId) {
@@ -156,6 +165,7 @@ export const createConnectorChatPort = (
         channelContext: input.channelContext,
         onImagesStored: input.onImagesStored,
         ...person,
+        ...stored,
         ...capabilities,
       });
       if (answered) {
@@ -176,6 +186,7 @@ export const createConnectorChatPort = (
       sourceChannel: input.sourceChannel,
       channelContext: input.channelContext,
       ...person,
+      ...stored,
       ...capabilities,
     });
 

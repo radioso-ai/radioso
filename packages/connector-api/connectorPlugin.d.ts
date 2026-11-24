@@ -210,6 +210,14 @@ export interface ConnectorChatPort {
      * Photos stored before another photo's upload failed are reported too.
      */
     onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+    /**
+     * Called with the conversation's id as soon as the host has stored the customer's message in it,
+     * before the turn runs and even when the turn then fails: a connector records what it keeps
+     * about the conversation here, so readers find it from the first turn on. A rejection fails the
+     * turn.
+     */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    onMessageStored?: (stored: { conversationId: string }) => Promise<void>;
     /** The reply blocks the channel draws; without it, a reply carries none. */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     replyBlocks?: ConnectorReplyBlocksCapability;

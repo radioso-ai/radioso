@@ -85,6 +85,8 @@ export interface AssistantChatRequest {
    * conversation.
    */
   channelPersonKey?: ChannelPersonKey | null;
+  /** Told the moment the turn stores the customer message, after the door's own listeners; set by a connector. */
+  onUserMessageStored?: UserMessageStoredListener;
   verifiedIdentity?: Record<string, unknown> | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;

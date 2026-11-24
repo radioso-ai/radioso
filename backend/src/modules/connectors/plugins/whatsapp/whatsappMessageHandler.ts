@@ -10,6 +10,7 @@ import type {
   ConnectorStoredImage,
 } from "@radioso/connector-api";
 
+import { WHATSAPP_SOURCE_CHANNEL } from "../../../../shared/domain/conversationSource.js";
 import { isStructuredAppError } from "../../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
@@ -609,9 +610,10 @@ export class WhatsAppMessageHandler {
           workspaceId: input.workspaceId,
           conversationId: input.conversationId,
           query: input.query,
-          sourceChannel: "whatsapp",
+          sourceChannel: WHATSAPP_SOURCE_CHANNEL,
           // Meta attests the sender's number on a signed webhook: the person the host keeps WhatsApp values for.
           personKey: { id: input.waId },
+          onMessageStored: ({ conversationId }) => this.persistence.recordConversation({ workspaceId: input.workspaceId, waId: input.waId, conversationId }),
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),

@@ -38,6 +38,11 @@ export interface WhatsAppMessageLogRecord {
 
 export interface WhatsAppPersistencePort {
   findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null>;
+  /**
+   * Records the number a conversation is with, once, as soon as the host stores a message in it, so
+   * readers outside a turn and a data subject's finder reach it from its first turn, failed or not.
+   */
+  recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void>;
   upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -205,6 +210,14 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
    * found by number reaches every conversation the number had. The conversation's number goes first,
    * so a contact row never names a conversation the number is not recorded for.
    */
+  async recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void> {
+    await this.db
+      .insertInto("connector_whatsapp_conversations")
+      .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
+      .onConflict((oc) => oc.column("conversation_id").doNothing())
+      .execute();
+  }
+
   async upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -212,11 +225,8 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     conversationId: string;
     lastMessageAt: Date;
   }): Promise<WhatsAppContactRecord> {
-    await this.db
-      .insertInto("connector_whatsapp_conversations")
-      .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
-      .onConflict((oc) => oc.column("conversation_id").doNothing())
-      .execute();
+    // Recorded when the message was stored; again here for a turn that stored none.
+    await this.recordConversation(input);
     const row = await this.db
       .insertInto("connector_whatsapp_contacts")
       .values({

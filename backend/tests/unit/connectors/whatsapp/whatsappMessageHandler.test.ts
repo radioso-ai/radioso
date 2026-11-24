@@ -184,6 +184,26 @@ describe("WhatsAppMessageHandler", () => {
     expect(logged).not.toContain("15550100101");
   });
 
+  it("records the conversation's number as soon as the message is stored in it, even when the turn then fails", async () => {
+    const chat = {
+      answer: vi.fn<ConnectorChatPort["answer"]>(async (input) => {
+        await input.onMessageStored?.({ conversationId: "conversation-new" });
+        throw new Error("model unavailable");
+      }),
+    };
+    const { handler, persistence } = createHandler({ chat, maxRetryAttempts: 1 });
+    await persistence.createMessageLog({
+      wamid: "wamid-in-1", direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+      messageType: "text", payload: { body: "Hello" }, status: "received",
+    });
+
+    await handler.handleInboundMessage(inbound({ wamid: "wamid-in-1", waId: "15550100101", textBody: "Hello" }));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(persistence.conversationNumbers.get("conversation-new")).toEqual({ workspaceId: "workspace-1", waId: "15550100101" });
+    expect(persistence.contacts.size).toBe(0);
+  });
+
   it("reuses active conversations and rolls over when the timeout expires", async () => {
     const chat = {
       answer: vi
@@ -560,6 +580,7 @@ describe("WhatsAppMessageHandler", () => {
         query: "Something like this, near the coast",
         sourceChannel: "whatsapp",
         personKey: { id: "14155551234" },
+        onMessageStored: expect.any(Function),
         replyBlocks: WHATSAPP_REPLY_BLOCKS,
         images: [{ key: "wamid-photo-1", bytes: PHOTO }],
         onImagesStored: expect.any(Function),
@@ -728,6 +749,7 @@ describe("WhatsAppMessageHandler", () => {
         query: "Do you have this in blue?",
         sourceChannel: "whatsapp",
         personKey: { id: "14155551234" },
+        onMessageStored: expect.any(Function),
         replyBlocks: WHATSAPP_REPLY_BLOCKS,
       });
       expect(persistence.messageLogs.get("wamid-photo-1")?.status).toBe("replied");
@@ -1022,6 +1044,7 @@ describe("WhatsAppMessageHandler", () => {
           query: "Do you have this in blue?",
           sourceChannel: "whatsapp",
           personKey: { id: "14155551234" },
+          onMessageStored: expect.any(Function),
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
         });
         expect(client.sendTextMessage).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ text: "Lovely place." }));

@@ -194,6 +194,8 @@ export interface AssistantTurnPersistencePort {
     workspaceId: string;
     accountId?: string | null;
     conversationId: string;
+    /** The conversation's verified customer this turn, the person a routine's person save goes to (#1884). */
+    verifiedCustomerId?: string | null;
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
@@ -783,6 +785,7 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
+        verifiedCustomerId: input.session.conversation.verifiedCustomerId ?? null,
         actions,
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,

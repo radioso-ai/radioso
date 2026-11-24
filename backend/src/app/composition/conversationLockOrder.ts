@@ -78,6 +78,11 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   holds a conversation locks a variable row in a mode that conflicts with a key share: an edit of
  *   a variable's type or options (`update`, `applyProposal`) and its deletion lock it `FOR UPDATE`
  *   holding no conversation, and an erasure deletes value rows, which locks no variable row.
+ * - A chat turn's save of its ending routine's slot values (`ContextVariableValueWrites.storeIn`, in
+ *   `PostgresAssistantTurnPersistence`'s transaction): the same locks as any value write, after the
+ *   turn has already taken its conversation (step 1) by touching it. The variable row's key share then
+ *   follows step 1, which is safe for the reason above: nothing that locks a variable row in a mode
+ *   that conflicts with it waits on a conversation.
  *
  * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
  * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it

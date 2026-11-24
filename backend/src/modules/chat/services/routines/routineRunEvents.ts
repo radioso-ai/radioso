@@ -1,6 +1,6 @@
 import type { Routine, RoutineState } from "@radioso/conversation-contract";
 
-import { endedRunValues } from "../../../routines/public.js";
+import { endedRunValues, routineSlotSaves, type RoutineSlotSave } from "../../../routines/public.js";
 import { ROUTINE_EVENT_OUTCOMES, type RoutineEventOutcome } from "../../../../shared/domain/workspaceEventLog.js";
 
 /**
@@ -40,18 +40,21 @@ const endingOf = (routine: Routine, state: RoutineState): EndedRoutineRun | unde
 /**
  * The fields a save transition carries for the event log: the run's `ending` when it ended, and the
  * routine's `declaredSlotKeys` when it declares any, so an action the run queued this turn reaches
- * the log with the routine's slots only, never a tool output or a stray key.
+ * the log with the routine's slots only, never a tool output or a stray key. `slotSaves` are the
+ * slot values the ended run saves to attributes (#1884), present when it saves any.
  */
 export const routineRunEventFields = (
   routines: readonly Routine[] | undefined,
   state: RoutineState,
-): { ending?: EndedRoutineRun; declaredSlotKeys?: string[] } => {
+): { ending?: EndedRoutineRun; declaredSlotKeys?: string[]; slotSaves?: RoutineSlotSave[] } => {
   const routine = routines?.find((candidate) => candidate.id === state.routineId);
   if (!routine) return {};
   const ending = endingOf(routine, state);
   const declaredSlotKeys = (routine.slots ?? []).map((slot) => slot.key);
+  const slotSaves = routineSlotSaves(routine, state);
   return {
     ...(ending ? { ending } : {}),
     ...(declaredSlotKeys.length > 0 ? { declaredSlotKeys } : {}),
+    ...(slotSaves.length > 0 ? { slotSaves } : {}),
   };
 };

@@ -24,6 +24,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: topic,
       value: "billing",
       writtenBy: { kind: "operator", ref: "user-1" },
+      routineId: null,
     });
 
     expect(draft).toEqual({
@@ -51,6 +52,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: topic,
       value: null,
       writtenBy: { kind: "operator", ref: "user-1" },
+      routineId: null,
     }).detail;
 
     expect(() => workspaceEventDataSchema("context_value.changed").parse({ ...subject, ...withoutValue, value: null })).not.toThrow();
@@ -64,6 +66,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: topic,
       value: null,
       writtenBy: { kind: "classifier", ref: "context-classification/1" },
+      routineId: null,
     });
 
     expect(draft.detail).toMatchObject({ value: null, redacted: false, writtenBy: "classifier" });
@@ -76,10 +79,24 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: careNeed,
       value: "dental",
       writtenBy: { kind: "api", ref: "credential-1" },
+      routineId: null,
     });
 
     expect(set.detail).toMatchObject({ value: null, redacted: true });
     expect(JSON.stringify(set)).not.toContain("dental");
+  });
+
+  it("names the routine that wrote a value as the writer says, never read out of its reference", () => {
+    const draft = contextValueChangedEvent({
+      workspaceId: "w-1",
+      conversationId: subject.conversationId,
+      variable: topic,
+      value: "billing",
+      writtenBy: { kind: "routine", ref: "routine:legacy:booking:v2:execution-1" },
+      routineId: "routine:legacy:booking:v2",
+    });
+
+    expect(draft.detail.routineId).toBe("routine:legacy:booking:v2");
   });
 
   it("names the routine that wrote a value, and never the writer's other references", () => {
@@ -89,6 +106,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: topic,
       value: "billing",
       writtenBy: { kind: "routine", ref: "booking:7d0c9a3e-1f9b-4a8e-9a43-5b1d2f3c4e5f" },
+      routineId: "booking",
     });
     const api = contextValueChangedEvent({
       workspaceId: "w-1",
@@ -96,6 +114,7 @@ describe("the context_value.changed event a writer records (#1884)", () => {
       variable: topic,
       value: "billing",
       writtenBy: { kind: "api", ref: "credential-1" },
+      routineId: null,
     });
 
     expect(routine.detail).toMatchObject({ writtenBy: "routine", routineId: "booking" });

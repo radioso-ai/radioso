@@ -35,13 +35,16 @@ export {
   CONTEXT_VARIABLE_VALUE_TYPES,
   classificationRefusal,
   contextScopeLadder,
+  CONVERSATION_SAVE_SCOPES,
   CONVERSATION_SCOPE_TYPES,
   frozenTestValueInput,
   isClassifiedEnablement,
   mayOverwrite,
   readsStoredValue,
   resolvedVariableInput,
+  routineValueWriter,
   typeChangeWithValuesRefused,
+  writtenByRoutine,
 } from "./domain.js";
 export {
   CONTEXT_VARIABLE_OPTION_KEY_PATTERN,
@@ -60,6 +63,14 @@ export type {
   ConversationValueWriter,
   StoredConversationValue,
 } from "./conversationValueWriter.js";
+export { ContextValueSaves } from "./contextValueSaves.js";
+export type {
+  ContextValueSaveOutcome,
+  ContextValueSaver,
+  ContextValueSaveRequest,
+  ContextValueSaveStore,
+  SaveTargetDefinition,
+} from "./contextValueSaves.js";
 export { ATTRIBUTE_FILTER_NOT_SET, ConversationAttributeService } from "./conversationAttributes.js";
 export type {
   ConversationAttribute,
@@ -85,6 +96,7 @@ export type {
   ClassificationFitRefusal,
   ContextScopeKeys,
   ConversationScope,
+  ConversationSaveScope,
   ContextValueWriter,
   ContextValueWriterKind,
   ContextVariable,

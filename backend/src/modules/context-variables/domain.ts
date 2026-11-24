@@ -127,6 +127,19 @@ export interface ContextVariableValue {
 }
 
 /**
+ * The writer of a value a routine run saved: `routineId:executionId`, or the routine's id alone for a
+ * run with none. Consent withdrawal finds the values a routine wrote by this reference.
+ */
+export const routineValueWriter = (routineId: string, executionId: string | null): ContextValueWriter => ({
+  kind: "routine",
+  ref: executionId ? `${routineId}:${executionId}` : routineId,
+});
+
+/** Whether `writer` is a run of routine `routineId`, by the reference `routineValueWriter` gives it. */
+export const writtenByRoutine = (writer: ContextValueWriter, routineId: string): boolean =>
+  writer.kind === "routine" && writer.ref !== null && (writer.ref === routineId || writer.ref.startsWith(`${routineId}:`));
+
+/**
  * The overwrite rule. The classifier fills a value only when none is stored or it wrote the stored
  * one, so a value an operator, a routine or the host set stays until one of them changes it. Every
  * other writer replaces whatever is stored.
@@ -213,6 +226,26 @@ export const CONVERSATION_SCOPE_TYPES = ["conversation", "session", "customer"] 
 // A rung added to conversationScopeLadder fails tsc here until it is listed, and every schema built on the list follows.
 const conversationScopeTypesListed: SameType<typeof CONVERSATION_SCOPE_TYPES[number], ConversationScopeType> = true;
 void conversationScopeTypesListed;
+
+/**
+ * The scopes a save for one conversation names, as a routine slot's save target does: the
+ * conversation itself, or the person the conversation is with.
+ */
+export const CONVERSATION_SAVE_SCOPES = ["conversation", "person"] as const;
+export type ConversationSaveScope = typeof CONVERSATION_SAVE_SCOPES[number];
+
+/**
+ * Where a save for one conversation is kept: the conversation's own scope, or the conversation's
+ * person key, its verified customer. Null for the person of a conversation that has none: no other
+ * scope stands in for a person.
+ */
+export const conversationSaveScope = (
+  scope: ConversationSaveScope,
+  keys: { conversationId: string; verifiedCustomerId: string | null },
+): ContextVariableScope | null => {
+  if (scope === "conversation") return { type: "conversation", id: keys.conversationId };
+  return keys.verifiedCustomerId ? { type: "customer", id: keys.verifiedCustomerId } : null;
+};
 
 /** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
 export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [

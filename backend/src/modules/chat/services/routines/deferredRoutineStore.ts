@@ -1,5 +1,6 @@
 import type { ConversationRoutineStore, Routine, RoutineState } from "@radioso/conversation-contract";
 
+import type { RoutineSlotSave } from "../../../routines/public.js";
 import { routineRunEventFields, type EndedRoutineRun } from "./routineRunEvents.js";
 
 /**
@@ -9,6 +10,8 @@ import { routineRunEventFields, type EndedRoutineRun } from "./routineRunEvents.
  * slots in the state; absent when the producer cannot tell, which persistence reads as asking.
  * `ending` is the ended run the workspace event log records (#1851), when the save ends one, and
  * `declaredSlotKeys` the routine's slots, which an action the run queued reaches the log with.
+ * `slotSaves` are the slot values the ended run saves to attributes (#1884), in the turn's
+ * transaction; they hold the run's own values, sensitive ones too, and go nowhere else.
  */
 export type CapturedRoutineTransition =
   | {
@@ -18,6 +21,7 @@ export type CapturedRoutineTransition =
     asksConsent?: boolean;
     ending?: EndedRoutineRun;
     declaredSlotKeys?: string[];
+    slotSaves?: RoutineSlotSave[];
   }
   | { kind: "clear"; sessionId: string; startedFrom?: RoutineState };
 

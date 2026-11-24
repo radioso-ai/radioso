@@ -28,7 +28,7 @@ type ResetInput = z.infer<typeof resetInputSchema>;
 type Output = z.infer<typeof outputSchema>;
 
 const setDescription = "Set a Choice attribute on one conversation, as the operator: value is the option key, as context_variables lists it, not its label. The value is the conversation's own, overrides one set for the visitor's session or customer, and the AI never replaces it. Setting the option the AI chose keeps it so; setting the one already set by a teammate changes nothing. A Private attribute, or one that is not a Choice, is refused. conversation_transcript reads the result.";
-const resetDescription = "Reset a conversation's own value of a Choice attribute. When the conversation's agent fills the attribute with the AI, the AI is asked to fill it again now and classificationQueued is true; otherwise the value is cleared, and a value set for the visitor's session or customer shows through. A conversation with no value of its own is left as it is. A Private attribute is refused.";
+const resetDescription = "Reset a conversation's own value of an attribute of any type, such as a wrong value a routine saved. When the conversation's agent fills the attribute with the AI, the AI is asked to fill it again now and classificationQueued is true; otherwise the value is cleared, and a value set for the visitor's session or customer shows through. A conversation with no value of its own is left as it is. A Private attribute is refused.";
 
 const ACT_PERMISSIONS = ["workspace.history.read", "workspace.conversation.takeover"] as const;
 
@@ -97,7 +97,7 @@ const resetTool = (deps: ConversationAttributeCopilotToolDependencies): CopilotT
 });
 
 /**
- * A teammate's set and reset of one conversation's Choice attribute, the same edit the Inbox makes:
+ * A teammate's set of one conversation's Choice attribute and reset of any it can see, the same edit the Inbox makes:
  * the takeover permission, the operator as writer, and the service's refusals passed through as they
  * come. The conversation is always named, since an MCP client has no page to take it from.
  */

@@ -6,11 +6,11 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
 const TAGS = ["History"];
 
-const refusals = "`404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice.";
+const refusals = "`404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice.";
 
 /**
- * A teammate sets a conversation's Choice attribute, or resets it to what the AI decides (#1884):
- * the Inbox's edit, also reachable through Ray and operator MCP.
+ * A teammate sets a conversation's Choice attribute, or resets any attribute that is not Private
+ * (#1884): the Inbox's edit, also reachable through Ray and operator MCP.
  */
 export const registerHistoryAttributePaths = (
   registry: OpenAPIRegistry,
@@ -57,7 +57,7 @@ export const registerHistoryAttributePaths = (
     tags: TAGS,
     summary: "Reset a conversation's attribute",
     description: [
-      "Deletes the value this conversation holds for a Choice attribute, whoever wrote it. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too.",
+      "Deletes the value this conversation holds for an attribute of any type that is not Private, whoever wrote it: a teammate's, the AI's, an API token's or a routine's. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too.",
       "The conversation then reads what the visitor's session or verified customer holds, if anything.",
       "A conversation with no value of its own changes nothing and answers `200` the same way.",
       "A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value.",
@@ -69,7 +69,7 @@ export const registerHistoryAttributePaths = (
     request: { params: conversationAttributeParamsSchema },
     responses: {
       200: { description: "The attribute as the conversation reads it now", content: json(schemas.ConversationAttributeChangeSchema) },
-      400: errorResponse("Request validation failed, or an attribute a teammate doesn't edit"),
+      400: errorResponse("Request validation failed, or a Private attribute"),
       401: errorResponse("A signed-in teammate is required"),
       403: errorResponse("Caller lacks workspace.conversation.takeover"),
       404: errorResponse("No such conversation, or no attribute by that name"),

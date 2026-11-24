@@ -184,7 +184,6 @@ describe("a teammate sets a conversation's attribute (#1884)", () => {
   it.each([
     ["an attribute nobody defined", "urgency", 404, "not_found"],
     ["a Private attribute", "care_need", 400, "refused_private"],
-    ["one that is not a Choice", "plan", 400, "refused_type"],
   ])("refuses %s", async (_case, name, statusCode, outcome) => {
     const { service, values, audit, outcomes } = harness();
 
@@ -194,6 +193,19 @@ describe("a teammate sets a conversation's attribute (#1884)", () => {
     expect(values.deleteValue).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
     expect(outcomes()).toEqual([{ action: "set", outcome }, { action: "reset", outcome }]);
+  });
+
+  it("sets only a Choice, and clears a value of any other type a routine or the host saved (#1884)", async () => {
+    const { service, values, audit, outcomes } = harness({ held: [topicValue("4", { kind: "routine", ref: "booking:e-1@conversation-1" })] });
+
+    await expect(service.set({ workspaceId, conversationId, name: "plan", value: "pro", actor }))
+      .rejects.toMatchObject({ statusCode: 400, code: "attribute_not_editable", details: { reason: "not_choice" } });
+    expect(values.upsertValue).not.toHaveBeenCalled();
+
+    await expect(service.reset({ workspaceId, conversationId, name: "plan", actor })).resolves.toMatchObject({ classificationQueued: false });
+    expect(values.deleteValue).toHaveBeenCalledWith("plan-id", { type: "conversation", id: conversationId }, { kind: "operator", ref: "user-1" });
+    expect(audit.record).toHaveBeenCalledWith({ workspaceId, conversationId, variableId: "plan-id", action: "reset", actor });
+    expect(outcomes()).toEqual([{ action: "set", outcome: "refused_type" }, { action: "reset", outcome: "cleared" }]);
   });
 
   it("names why a Private attribute is refused, with a code a client can act on", async () => {

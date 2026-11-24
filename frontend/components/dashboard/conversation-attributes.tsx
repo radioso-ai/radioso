@@ -30,8 +30,9 @@ export const attributeEditingFor = (
 
 /**
  * A conversation's attributes: each value, who set it and when. With `editing`, a teammate sets a
- * Choice attribute's option for the conversation and undoes their own value. Without it, or for a
- * conversation with no attributes and nothing to set, it is read-only or renders nothing.
+ * Choice attribute's option for the conversation, and clears or resets a value of any type but
+ * Private. Without it, or for a conversation with no attributes and nothing to set, it is read-only
+ * or renders nothing.
  */
 export function ConversationAttributes({
   attributes,
@@ -61,7 +62,7 @@ export function ConversationAttributes({
               <div key={attribute.name} className="min-w-0">
                 <dt className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
                   {attribute.name}
-                  {options.length > 0 ? (
+                  {options.length > 0 || attributeResetAction(attribute) ? (
                     <AttributeRowMenu
                       attribute={attribute}
                       options={options}

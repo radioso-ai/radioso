@@ -22,7 +22,7 @@ import {
 import type { ConversationAttribute } from '@/lib/api-types'
 import type { SettableAttribute, SettableOption } from '@/lib/conversation-attribute-edits'
 
-/** One attribute's menu: pick an active option for this conversation, and undo the teammate's own value. */
+/** One attribute's menu: pick an active option for this conversation (Choice only), and clear or reset a value. */
 export function AttributeRowMenu({
   attribute,
   options,
@@ -59,18 +59,22 @@ export function AttributeRowMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          {attribute.scope === 'conversation' ? attributeEditCopy.setFor : attributeEditCopy.overridesVisitor}
-        </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={current} onValueChange={(key) => { edited.current = true; onSet(key) }}>
-          {options.map((option) => (
-            <DropdownMenuRadioItem key={option.key} value={option.key}>{option.label}</DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        {pinnable ? <p className="px-2 pb-1.5 text-xs text-muted-foreground">{attributeEditCopy.keepAsTeams}</p> : null}
+        {options.length > 0 ? (
+          <>
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              {attribute.scope === 'conversation' ? attributeEditCopy.setFor : attributeEditCopy.overridesVisitor}
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={current} onValueChange={(key) => { edited.current = true; onSet(key) }}>
+              {options.map((option) => (
+                <DropdownMenuRadioItem key={option.key} value={option.key}>{option.label}</DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </>
+        ) : null}
+        {options.length > 0 && pinnable ? <p className="px-2 pb-1.5 text-xs text-muted-foreground">{attributeEditCopy.keepAsTeams}</p> : null}
         {resetAction ? (
           <>
-            <DropdownMenuSeparator />
+            {options.length > 0 ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem onSelect={() => { edited.current = true; onReset() }}>
               {resetAction === 'reset' ? <RotateCcw aria-hidden /> : <X aria-hidden />}
               {resetAction === 'reset' ? attributeEditCopy.reset : attributeEditCopy.clear}

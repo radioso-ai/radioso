@@ -82,18 +82,20 @@ class EditRefusal extends AppError {
 }
 
 /**
- * A teammate edits the Choice attributes they can see. A Private value is hidden from them, so they
- * neither overwrite nor clear what they can't read; the host sets it through the values API.
+ * A teammate sets the Choice attributes they can see, and clears any attribute they can see, of
+ * whatever type, so a wrong value a routine or the host saved goes without the values API. A Private
+ * value is hidden from them, so they neither overwrite nor clear what they can't read; the host sets
+ * it through the values API.
  */
-const editableVariable = (variable: ContextVariable | null, name: string): ContextVariable => {
+const editableVariable = (variable: ContextVariable | null, name: string, action: AttributeEditAction): ContextVariable => {
   if (!variable) throw new EditRefusal("not_found", notFound(`No attribute is named ${name}`));
   if (variable.sensitivity === "sensitive") {
     throw new EditRefusal("refused_private", new AppError(400, "attribute_not_editable",
       `${variable.name} is Private: a teammate never sees its value, so it is set and cleared only through the values API`, { reason: "private" }));
   }
-  if (variable.valueType !== "enum") {
+  if (action === "set" && variable.valueType !== "enum") {
     throw new EditRefusal("refused_type", new AppError(400, "attribute_not_editable",
-      `Only a Choice attribute is set from a conversation; ${variable.name} is not one`, { reason: "not_choice" }));
+      `${variable.name} is not a Choice: a teammate picks only a Choice's option here, and clears a value of any other type; the host sets one through the values API`, { reason: "not_choice" }));
   }
   return variable;
 };
@@ -133,7 +135,7 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
 
   set(input: Parameters<ConversationAttributeEdits["set"]>[0]): Promise<ConversationAttributeEditResult> {
     return this.counted("set", async () => {
-      const { variable, conversation } = await this.target(input);
+      const { variable, conversation } = await this.target(input, "set");
       if (!validateValue(variable, input.value).ok) throw optionRefusal(variable, input.value);
       const current = await this.readAttribute(input, conversation);
       // The same option from another writer only changes who holds it; the counter tells that apart from a change.
@@ -151,7 +153,7 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
 
   reset(input: Parameters<ConversationAttributeEdits["reset"]>[0]): Promise<ConversationAttributeEditResult> {
     return this.counted("reset", async () => {
-      const { variable, conversation } = await this.target(input);
+      const { variable, conversation } = await this.target(input, "reset");
       const cleared = await this.deps.values.deleteValue(variable.id, { type: "conversation", id: input.conversationId }, operatorWriter(input.actor));
       if (!cleared) return { outcome: "unchanged", result: { attribute: await this.readAttribute(input, conversation), classificationQueued: false } };
       await this.audit({ workspaceId: input.workspaceId, conversationId: input.conversationId, variableId: variable.id, action: "reset", actor: input.actor });
@@ -160,8 +162,8 @@ export class ConversationAttributeEditService implements ConversationAttributeEd
     });
   }
 
-  private async target(input: { workspaceId: string; conversationId: string; name: string }) {
-    const variable = editableVariable(await this.deps.reads.findByName(input.workspaceId, input.name), input.name);
+  private async target(input: { workspaceId: string; conversationId: string; name: string }, action: AttributeEditAction) {
+    const variable = editableVariable(await this.deps.reads.findByName(input.workspaceId, input.name), input.name, action);
     const conversation = await this.deps.reads.readConversation(input.workspaceId, input.conversationId);
     if (!conversation) throw new EditRefusal("not_found", notFound("Conversation not found"));
     return { variable, conversation };

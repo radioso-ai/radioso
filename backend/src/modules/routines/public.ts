@@ -48,6 +48,7 @@ export { createRoutineTurnProvider } from "./turnProvider.js";
 export { createRoutineTurnReporter } from "./routineTurnReporter.js";
 export { endedRunValues, sensitiveSlotsAwaited } from "./sensitiveSlots.js";
 export { routineSlotSaves, type RoutineSlotSave } from "./slotSaves.js";
+export { endedRunTerminalKind } from "./domain.js";
 export type { RoutineInvocationReport, RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
 export {
   RoutineSkillExecutorDispatcher,

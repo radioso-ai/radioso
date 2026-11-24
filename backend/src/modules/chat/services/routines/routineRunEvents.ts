@@ -1,6 +1,6 @@
 import type { Routine, RoutineState } from "@radioso/conversation-contract";
 
-import { endedRunValues, routineSlotSaves, type RoutineSlotSave } from "../../../routines/public.js";
+import { endedRunTerminalKind, endedRunValues, routineSlotSaves, type RoutineSlotSave } from "../../../routines/public.js";
 import { ROUTINE_EVENT_OUTCOMES, type RoutineEventOutcome } from "../../../../shared/domain/workspaceEventLog.js";
 
 /**
@@ -17,8 +17,9 @@ export interface EndedRoutineRun {
   sensitiveSlotKeys: string[];
 }
 
-const outcomeOf = (state: RoutineState): RoutineEventOutcome => {
-  const kind = state.metadata?.terminalKind;
+/** The run's ending kind, read from its path when the store kept no `metadata` (a correction to an ended run). */
+const outcomeOf = (routine: Routine, state: RoutineState): RoutineEventOutcome => {
+  const kind = endedRunTerminalKind(routine, state);
   return ROUTINE_EVENT_OUTCOMES.find((outcome) => outcome === kind) ?? "complete";
 };
 
@@ -32,7 +33,7 @@ const endingOf = (routine: Routine, state: RoutineState): EndedRoutineRun | unde
     ? {
         routineId: state.routineId,
         executionId: state.executionId ?? null,
-        outcome: outcomeOf(state),
+        outcome: outcomeOf(routine, state),
         ...endedRunValues(routine, state.variables),
       }
     : undefined;

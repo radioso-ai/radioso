@@ -78,7 +78,7 @@ import { routineConsentTurnEvents } from "./routines/routineConsentTurn.js";
 import type { RoutineConsentTurnEvents } from "../../../shared/domain/routineConsentTurn.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
-import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
+import { turnBackgroundJobs } from "./turnBackgroundJobs.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ToolImageSource } from "../../toolImages/contracts/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
@@ -97,11 +97,8 @@ import {
 } from "../../../shared/domain/directiveAdherence.js";
 import type { ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
-import {
-  reviewedTurnDraft,
-  reviewTurnFacts,
-  type ReviewTurnCorrelation,
-} from "./reviewDraft.js";
+import { reviewedTurnDraft, reviewTurnFacts, type ReviewTurnCorrelation } from "./reviewDraft.js";
+import { messageReplyBlocks } from "./replyBlocks/messageReplyBlocks.js";
 import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
 import {
   freezePageReadOutcome,
@@ -429,7 +426,7 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
-      ...(input.presentation.replyBlocks ? { blocks: input.presentation.replyBlocks.stored } : {}), ...(input.presentation.listedItems ? { listedItems: [input.presentation.listedItems] } : {}),
+      ...messageReplyBlocks(input.presentation),
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),
@@ -715,15 +712,6 @@ export class ChatTurnLifecycle {
     const ownershipHandoff = capabilities.ownershipHandoff === "apply" ? input.ownershipHandoff : undefined;
     const recordsBookkeeping = capabilities.turnBookkeeping === "record";
     const additionalAuditEvent = recordsBookkeeping ? input.additionalAuditEvent : undefined;
-    // The rolling conversation summary (#866) is regenerated in the worker, never on this turn's
-    // path: the turn only writes the job, and the reply never waits on a model call for it.
-    const backgroundJobs: readonly BackgroundJobRequest[] = this.backgroundJobs && recordsBookkeeping
-      ? [conversationSummaryRefreshRequest({
-          workspaceId: input.workspaceId,
-          conversationId: input.session.conversation.id,
-          accountId: input.accountId,
-        })]
-      : [];
     const routineTurn = describeRoutineTurn(input);
     const invocationReport = input.session.routineInvocationReport ?? null;
     if (invocationReport) {
@@ -735,6 +723,10 @@ export class ChatTurnLifecycle {
       });
     }
     const sensitiveSlotKeys = sensitiveSlotKeysForTurn(input);
+    // The rolling summary and the attribute classification run in the worker: the turn only writes their jobs.
+    const backgroundJobs: readonly BackgroundJobRequest[] = this.backgroundJobs && recordsBookkeeping
+      ? turnBackgroundJobs({ workspaceId: input.workspaceId, accountId: input.accountId, session: input.session })
+      : [];
     const presentation = withSensitiveTurnMarker(buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,

@@ -8,6 +8,7 @@ import {
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "../../modules/websiteCrawler/policy.js";
+import type { CrawlTrigger } from "../../modules/websiteCrawler/recrawlSchedule.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -21,6 +22,7 @@ export interface WebsiteCrawlJobRecord {
   requestedUrl: string;
   limit: number;
   status: WebsiteCrawlJobStatus;
+  trigger: CrawlTrigger;
   attemptCount: number;
   policy: WebsiteCrawlPolicy;
   checkpoint: WebsiteCrawlCheckpoint;
@@ -41,6 +43,7 @@ interface WebsiteCrawlJobRow {
   requested_url: string;
   crawl_limit: number;
   status: WebsiteCrawlJobStatus;
+  crawl_trigger: CrawlTrigger;
   attempt_count: number;
   policy_json: Record<string, unknown> | null;
   checkpoint_json: Record<string, unknown> | null;
@@ -65,6 +68,7 @@ const websiteCrawlJobColumns = [
   "requested_url",
   "crawl_limit",
   "status",
+  "crawl_trigger",
   "attempt_count",
   "policy_json",
   "checkpoint_json",
@@ -85,6 +89,7 @@ const mapWebsiteCrawlJob = (row: WebsiteCrawlJobRow): WebsiteCrawlJobRecord => (
   requestedUrl: row.requested_url,
   limit: row.crawl_limit,
   status: row.status,
+  trigger: row.crawl_trigger,
   attemptCount: row.attempt_count,
   policy: normalizeWebsiteCrawlPolicy(row.policy_json ?? DEFAULT_WEBSITE_CRAWL_POLICY),
   checkpoint: normalizeWebsiteCrawlCheckpoint(row.checkpoint_json ?? emptyWebsiteCrawlCheckpoint()),
@@ -126,6 +131,7 @@ export interface WebsiteCrawlJobCreateInput {
   limit: number;
   policy?: WebsiteCrawlPolicy;
   checkpoint?: WebsiteCrawlCheckpoint;
+  trigger?: CrawlTrigger;
 }
 
 export interface WebsiteCrawlJobCreateForSourceInput extends WebsiteCrawlJobCreateInput {
@@ -134,10 +140,22 @@ export interface WebsiteCrawlJobCreateForSourceInput extends WebsiteCrawlJobCrea
 
 export type SourceBoundWebsiteCrawlJobRecord = WebsiteCrawlJobRecord & { sourceId: string };
 
+/** The crawl a request for a source ends up with: a new one, or the one already queued or running. */
+export interface SourceCrawlJobAdmission {
+  job: SourceBoundWebsiteCrawlJobRecord;
+  created: boolean;
+}
+
+/** A source runs one crawl at a time: these statuses hold its turn. */
+const ACTIVE_CRAWL_STATUSES: WebsiteCrawlJobStatus[] = ["queued", "processing"];
+
 export interface WebsiteCrawlJobRepositoryPort {
   create(input: WebsiteCrawlJobCreateInput): Promise<WebsiteCrawlJobRecord>;
-  createForSource(input: WebsiteCrawlJobCreateForSourceInput): Promise<SourceBoundWebsiteCrawlJobRecord | null>;
+  /** Null when the source is not the workspace's. Returns the source's queued or processing crawl rather than a second one. */
+  createForSource(input: WebsiteCrawlJobCreateForSourceInput): Promise<SourceCrawlJobAdmission | null>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  /** Whether no crawl of the source was created after this job. False once the job is gone. */
+  isNewestForSource(input: { jobId: string; workspaceId: string; sourceId: string }): Promise<boolean>;
   findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
   deleteById(jobId: string, workspaceId: string): Promise<boolean>;
@@ -166,10 +184,10 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return this.insert(this.db, input);
   }
 
-  async createForSource(
-    input: WebsiteCrawlJobCreateForSourceInput,
-  ): Promise<SourceBoundWebsiteCrawlJobRecord | null> {
+  async createForSource(input: WebsiteCrawlJobCreateForSourceInput): Promise<SourceCrawlJobAdmission | null> {
     return this.db.transaction().execute(async (trx) => {
+      // The source row lock serializes every request to crawl this source, so the active-crawl
+      // check below and the insert cannot interleave with another request's.
       const source = await trx
         .selectFrom("document_sources")
         .select("id")
@@ -181,8 +199,17 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
         return null;
       }
 
-      const job = await this.insert(trx, input);
-      return { ...job, sourceId: job.sourceId! };
+      const active = await trx
+        .selectFrom("website_crawl_jobs")
+        .select(websiteCrawlJobColumns)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("source_id", "=", input.sourceId)
+        .where("status", "in", ACTIVE_CRAWL_STATUSES)
+        .orderBy("created_at", "asc")
+        .limit(1)
+        .executeTakeFirst();
+      const job = active ? mapWebsiteCrawlJob(active as WebsiteCrawlJobRow) : await this.insert(trx, input);
+      return { job: { ...job, sourceId: input.sourceId }, created: !active };
     });
   }
 
@@ -199,6 +226,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
         policy_json: toJsonb(input.policy ?? DEFAULT_WEBSITE_CRAWL_POLICY),
         checkpoint_json: toJsonb(input.checkpoint ?? emptyWebsiteCrawlCheckpoint()),
         status: "queued",
+        crawl_trigger: input.trigger ?? "manual",
       })
       .returning(websiteCrawlJobColumns)
       .executeTakeFirstOrThrow();
@@ -214,6 +242,22 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       .executeTakeFirst();
 
     return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
+  }
+
+  async isNewestForSource(input: { jobId: string; workspaceId: string; sourceId: string }): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("website_crawl_jobs as job")
+      .select((eb) => eb.not(eb.exists(
+        eb.selectFrom("website_crawl_jobs as newer")
+          .select("newer.id")
+          .where("newer.workspace_id", "=", input.workspaceId)
+          .where("newer.source_id", "=", input.sourceId)
+          .whereRef("newer.created_at", ">", "job.created_at"),
+      )).as("newest"))
+      .where("job.id", "=", input.jobId)
+      .where("job.workspace_id", "=", input.workspaceId)
+      .executeTakeFirst();
+    return row?.newest === true;
   }
 
   async findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null> {

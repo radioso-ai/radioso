@@ -4,6 +4,7 @@ import { buildWebhookDestinationAdapter } from "../../src/app/server/dependencyB
 import type { Env } from "../../src/app/config/env.js";
 import type { AuditPort } from "../../src/modules/audit/contracts/index.js";
 import { InMemoryWebhookDestinationRepository } from "../support/fakes.js";
+import { noSkillTargetUses } from "../support/skillTargetUses.js";
 
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -42,6 +43,7 @@ describe("webhook destination adapter boot policy", () => {
       env: env({ WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true }),
       logger: { warn: vi.fn() },
       repositories: repositories(),
+      skillTargetUses: noSkillTargetUses,
       assertPublicUrl,
     });
 
@@ -68,6 +70,7 @@ describe("webhook destination adapter boot policy", () => {
       env: env({ WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true }),
       logger: { warn: vi.fn() },
       repositories: repositories(),
+      skillTargetUses: noSkillTargetUses,
       assertPublicUrl,
     });
 
@@ -91,6 +94,7 @@ describe("webhook destination adapter boot policy", () => {
       env: env({ WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: false }),
       logger: { warn: vi.fn() },
       repositories: repositories(),
+      skillTargetUses: noSkillTargetUses,
       assertPublicUrl: vi.fn(async () => undefined),
     });
 

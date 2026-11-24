@@ -68,6 +68,16 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   conversations its window passed, `FOR UPDATE SKIP LOCKED`, so step 1 never waits on another
  *   unit and two sweeps claim disjoint sets; then their ownership rows in id order, and the rest as
  *   an erasure.
+ * - A conversation-scope attribute value write or delete (`ContextVariableValueWrites`, its locks in
+ *   `contextVariableRowLocks.ts`), whoever writes it (the API, a teammate, the classifier): the
+ *   attribute's variable row `FOR KEY SHARE`, then the conversation `FOR SHARE`, then the advisory
+ *   lock on that conversation's value of the variable, which only these writes take, then the value
+ *   row, then its `context_value.changed` event row. An erasure holding the conversation runs its
+ *   erasers first, and the write then finds the conversation gone. The variable row comes before
+ *   step 1, which is safe because no unit that
+ *   holds a conversation locks a variable row in a mode that conflicts with a key share: an edit of
+ *   a variable's type or options (`update`, `applyProposal`) and its deletion lock it `FOR UPDATE`
+ *   holding no conversation, and an erasure deletes value rows, which locks no variable row.
  *
  * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
  * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it

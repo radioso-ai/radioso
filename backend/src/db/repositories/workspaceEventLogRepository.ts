@@ -4,8 +4,12 @@ import type { ConversationDataRetentionRule } from "../../shared/domain/conversa
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import type { MessageCopyWithholder, WithheldMessages } from "../../shared/domain/messageWithholding.js";
 import {
+  DOCUMENT_EVENT_TYPES,
+  isDocumentEventDraft,
   WORKSPACE_EVENT_RETENTION_DAYS,
   WORKSPACE_EVENT_VERSIONS,
+  type DocumentEventDraft,
+  type DocumentEventEraser,
   type LogPosition,
   type StoredLogEvent,
   type WorkspaceEventDraft,
@@ -21,16 +25,18 @@ import {
   logRowAfter,
   snapshotHorizon,
   snapshotHorizonSpan,
+  toJsonb,
   toSanitizedJsonb,
 } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { JsonValue } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
- * Writes an event in the caller's transaction. The conversation's own fields come from its row in
- * the same statement, and a conversation that history's default lists leave out (operator testing,
- * or one no longer there) yields no row: the select finds nothing to insert.
+ * Writes a conversation event in the caller's transaction. The conversation's own fields come from
+ * its row in the same statement, and a conversation that history's default lists leave out
+ * (operator testing, or one no longer there) yields no row: the select finds nothing to insert.
  */
-const recordWorkspaceEvent = async (db: Db, draft: WorkspaceEventDraft): Promise<void> => {
+const recordConversationEvent = async (db: Db, draft: Exclude<WorkspaceEventDraft, DocumentEventDraft>): Promise<void> => {
   await db
     .insertInto("workspace_events")
     .columns(["workspace_id", "type", "version", "idempotency_key", "conversation_id", "agent_id", "channel", "caller_kind", "visitor_id", "data"])
@@ -62,11 +68,80 @@ const recordWorkspaceEvent = async (db: Db, draft: WorkspaceEventDraft): Promise
     .execute();
 };
 
+/** The document event's subject, from the document row and its source's kind. */
+const documentEventSubject = sql<unknown>`jsonb_build_object(
+  'documentId', documents.id, 'revision', documents.revision, 'title', documents.title,
+  'contentKind', documents.source_kind, 'sourceId', documents.source_id,
+  'sourceKind', (SELECT ds.kind FROM document_sources ds WHERE ds.id = documents.source_id AND ds.workspace_id = documents.workspace_id)
+)`;
+
+/**
+ * Writes a document event in the caller's transaction, its `data` whole: the document's id,
+ * revision, title, content kind and source from its row in the same statement, then what the type
+ * adds. A document that is gone, or has moved on to a newer revision, yields no row; the newer
+ * revision records its own. The row is key-share locked, so a deletion that locked it first leaves
+ * nothing to record, and one that comes after waits for this write and then erases it.
+ */
+const recordDocumentEvent = async (db: Db, draft: DocumentEventDraft): Promise<void> => {
+  await db
+    .insertInto("workspace_events")
+    .columns(["workspace_id", "type", "version", "idempotency_key", "data"])
+    .expression((eb) => eb
+      .selectFrom("documents")
+      .select([
+        "workspace_id",
+        sql<string>`${draft.type}::text`.as("type"),
+        sql<number>`${WORKSPACE_EVENT_VERSIONS[draft.type]}::smallint`.as("version"),
+        sql<string>`${draft.idempotencyKey}::text`.as("idempotency_key"),
+        sql<unknown>`${documentEventSubject} || ${toSanitizedJsonb(draft.detail)}`.as("data"),
+      ])
+      .where("id", "=", draft.documentId)
+      .where("workspace_id", "=", draft.workspaceId)
+      .where("revision", "=", draft.revision)
+      .forKeyShare())
+    .onConflict((conflict) => conflict
+      .columns(["workspace_id", "idempotency_key"])
+      .where("idempotency_key", "is not", null)
+      .doNothing())
+    .execute();
+};
+
+const recordWorkspaceEvent = (db: Db, draft: WorkspaceEventDraft): Promise<void> =>
+  isDocumentEventDraft(draft) ? recordDocumentEvent(db, draft) : recordConversationEvent(db, draft);
+
 /**
  * The Postgres recorder. It holds no state; application composition (`workspaceEventLog.ts`) is
  * its one owner and hands it to every module that records an event.
  */
 export const postgresWorkspaceEventRecorder: WorkspaceEventRecorder = { record: recordWorkspaceEvent };
+
+/** Deletes the document events of the documents a deletion has locked, in its transaction. */
+export const postgresDocumentEventEraser: DocumentEventEraser = {
+  async forgetDocuments(db, input) {
+    if (input.documentIds.length === 0) return;
+    await db
+      .deleteFrom("workspace_events")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("type", "in", [...DOCUMENT_EVENT_TYPES])
+      .where((eb) => sql<boolean>`${jsonbKeyText(eb.ref("data"), "documentId")} = ANY(${sql.val([...input.documentIds])}::text[])`)
+      .execute();
+  },
+};
+
+/**
+ * Redacts the values an attribute that has become Private recorded, in the transaction that made it
+ * Private: its `context_value.changed` events stay in the log, each now as a Private value records
+ * it, `value: null` and `redacted: true`.
+ */
+export const redactContextValueEvents = async (db: Db, input: { workspaceId: string; variableId: string }): Promise<void> => {
+  await db
+    .updateTable("workspace_events")
+    .set((eb) => ({ data: sql<JsonValue>`${eb.ref("data")} || ${toJsonb({ value: null, redacted: true })}` }))
+    .where("workspace_id", "=", input.workspaceId)
+    .where("type", "=", "context_value.changed")
+    .where((eb) => eb(jsonbKeyText(eb.ref("data"), "variableId"), "=", input.variableId))
+    .execute();
+};
 
 const storedEventColumns = [
   "id",
@@ -188,9 +263,9 @@ export class WorkspaceEventLogRetention implements ConversationDataRetentionRule
 /**
  * A withdrawn consent's values leave the log (#1544). By structure first, so the events go even
  * after the routine's state, and with it the values, has expired: every `routine.completed` of a
- * routine whose consent was withdrawn, and every `contact_request.created` whose values name one of
- * its slots. Then, as the audit withholder does, any other event of the conversation that states a
- * withdrawn value.
+ * routine whose consent was withdrawn, every `context_value.changed` that routine wrote, and every
+ * `contact_request.created` whose values name one of its slots. Then, as the audit withholder does,
+ * any other event of the conversation that states a withdrawn value.
  */
 export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
   readonly owner = "workspace-events";
@@ -205,7 +280,7 @@ export class WorkspaceEventValueWithholder implements MessageCopyWithholder {
     let removed = 0;
     for (const { routineId, slotKeys } of messages.withdrawnRoutineSlots) {
       const runs = await ofConversation()
-        .where("type", "=", "routine.completed")
+        .where("type", "in", ["routine.completed", "context_value.changed"])
         .where((eb) => eb(jsonbKeyText(eb.ref("data"), "routineId"), "=", routineId))
         .executeTakeFirst();
       removed += Number(runs.numDeletedRows);

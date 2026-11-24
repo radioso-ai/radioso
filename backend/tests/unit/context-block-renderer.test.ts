@@ -98,6 +98,12 @@ describe("renderContextBlock", () => {
     );
   });
 
+  it("renders an enum value by its option's label", () => {
+    const block = renderContextBlock([{ kind: "variable", name: "topic", value: "billing", label: "Billing" }]);
+
+    expect(block.split("\n").at(-1)).toBe('- topic: "Billing"');
+  });
+
   it("renders page context then variables as separate blocks", () => {
     const block = renderContextBlock([
       { kind: "page_context", pageUrl: "https://example.com" },

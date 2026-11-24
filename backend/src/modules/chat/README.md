@@ -294,7 +294,14 @@ stores the message under one (Test Chat does), and a fresh id otherwise.
   reaches the same claim through `ChatDoorPickTurnPort` (contracts), which
   `AssistantChatService` implements; the connector host runs a WhatsApp tap
   through it and reads `ITEM_SELECTION_REFUSAL_CODES` to refuse a pick the claim
-  refuses, as the web chat does, so no turn runs on it.
+  refuses, as the web chat does, so no turn runs on it. Test Chat keeps no message
+  rows: `TrustedTestExecutionRunnerAdapter` returns what the reply's message would
+  store of its blocks (`replyBlocks/messageReplyBlocks.ts`, shared with
+  `chatTurnLifecycle.ts`) as the result's `messageMetadata`, reads it back as each
+  answer's `metadata` in the replayed history, so `shownItems` reaches the engine as
+  in live chat, and reads a Test Chat pick with `readItemSelection` from the answer
+  on that side that showed the card, handing the item to the replay as
+  `itemSelection`; a side that never showed it runs the card's title as typed.
 - Reply picture readiness (`services/replyBlocks/replyPictureReadiness.ts`): for a
   channel whose provider fetches a card's picture by its address when the cards
   are sent, it reads the picture ids from the reply's stored blocks and asks the
@@ -765,6 +772,11 @@ imports from `services/`.
   and the operator tail) — the public routes call
   `chatHistoryService.getConversation` directly and never set them. Ray's
   `conversation_transcript` and `turn_trace` read with the same flags.
+  `AssistantHistoryService` also adds the conversation's `attributes`, read
+  through context-variables' `ConversationAttributeReader`, and resolves the
+  history lists' `attribute` filter there before either list reads; Ray's
+  `conversation_transcript` and `conversation_history_search` take the same
+  reader from composition (`chat.conversationAttributes`).
   A human-agent reply's `operatorDisplayName` follows one rule on every surface
   that reads it (visitor chat and embed, dashboard, Ray, API), applied in
   `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows, trimmed,
@@ -989,6 +1001,27 @@ imports from `services/`.
   `PreparedSession.conversationSummary` instead of loading the store. The applied summary
   is also echoed on `WorkbenchReplayResolvedConfig`/`EvalRunResolvedConfig.conversationSummary`
   for live-vs-replay comparison. Replay is hermetic — it never regenerates or persists the summary.
+- Attribute classification (#1884): beside the summary refresh, `services/turnBackgroundJobs.ts`
+  writes a `context.classification` job (owned by `modules/contextClassification`) in the turn's
+  commit when the conversation's revision has an enabled `classified` enablement and the turn is a
+  visitor's message on an end-user channel. A turn that held a sensitive slot writes it too: its
+  commit marks its messages, so that run recomputes, without them, a value an earlier run read
+  from them. The job reads the conversation through
+  `services/contextClassificationExcerptReader.ts`, chat's implementation of the classifier's
+  `ConversationExcerptReader`: the rolling summary and the visitor's latest messages of committed
+  turns (`answeredOnly`: none newer than the latest assistant message, so a turn still running is
+  not read before it is marked), never one marked as holding a sensitive routine value, nor a
+  teammate's. Test Chat
+  sides are not stored conversations, so the trusted runner classifies a test turn itself
+  (`services/testChatClassification.ts`), once the replayed turn has answered: over the side's
+  own transcript, against the values the test holds (its samples count as the operator's), with
+  the same classifier and overwrite rule, bounded at `TEST_CHAT_CLASSIFICATION_TIMEOUT_MS` (5 s;
+  past it the side keeps its values, `skipped_timeout`). A turn whose routine held a sensitive slot
+  (`WorkbenchReplayResult.sensitiveSlotKeys`, the keys live chat marks a turn with) is not
+  classified, and its message id joins the continuation's `withheldMessageIds`, which no later run
+  reads. The values ride the test's continuation into its next turn, where they resolve as the
+  conversation's, and the turn's trace carries every classified attribute as `attributes` (value,
+  label and writer, or null), the way `handoffPreview` rides a Test Chat trace.
 - Draft a reply without becoming a turn: `services/replyDraftRunner.ts` composes what
   the agent would say next in a live conversation by running the workbench replay over
   that conversation's own transcript, with the last customer message as the query. It is

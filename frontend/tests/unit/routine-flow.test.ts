@@ -90,6 +90,19 @@ describe('routineBlockDocToFlowGraph', () => {
     expect(nodes.find((node) => node.id === 'step:sign_off')?.collects).toEqual([])
   })
 
+  it('leaves a variable a skill step sets out of what a step that names it collects', () => {
+    const base = doc()
+    const withSets: RoutineBlockDoc = {
+      ...base,
+      steps: base.steps.map((entry) => {
+        if (entry.stableStepId === 'lookup') return { ...entry, outputAssignments: { status: 'order_status' } }
+        if (entry.stableStepId === 'sign_off') return { ...entry, instruction: [...entry.instruction, { kind: 'slotReference' as const, key: 'order_status', source: '{{slot.order_status}}' }] }
+        return entry
+      }),
+    }
+    expect(routineBlockDocToFlowGraph(withSets).nodes.find((node) => node.id === 'step:sign_off')?.collects).toEqual([])
+  })
+
   it('reports slots no step collects', () => {
     expect(graph().uncollectedSlotKeys).toEqual(['email'])
   })

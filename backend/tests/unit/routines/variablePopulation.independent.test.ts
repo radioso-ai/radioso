@@ -5,7 +5,7 @@ import { analyzeGuaranteedVariablesOnEntry } from "../../../src/modules/routines
 // Independent reviewer tests (not Codex's) — focus on the cases a naive
 // "any-path / union" implementation would get wrong.
 const def = (steps: unknown[], transitions: unknown[], slots: unknown[] = []) =>
-  ({ steps, transitions, slots }) as never;
+  ({ steps, transitions, slots, terminals: [] }) as never;
 const chat = (id: string, ordinal: number, instruction = "") =>
   ({ stableStepId: id, kind: "chat", instruction, ordinal, metadata: {} });
 const tool = (id: string, ordinal: number, outputAssignments: Record<string, string> = {}) =>

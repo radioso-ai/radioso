@@ -1,5 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
+import { renderSkillOutputLines } from "@radioso/conversation-contract";
+
 import { AGENT_SKILL_OUTCOME_KIND, hasAnswerText } from "./agentSkillTurnSkillProvider.js";
 import type { AssistantReplyComposer, AssistantReplyConfig } from "./assistantReplyComposer.js";
 import { buildSkillResultReplyPrompt } from "./assistantReplyPromptBuilder.js";
@@ -124,6 +126,13 @@ interface SkillResultReplyInput {
   offer: SkillResultCardsOffer | null;
 }
 
+/** A result's outputs as typed, described lines when its skill declares a contract; empty otherwise. */
+const typedOutputFindings = (outcome: TurnOutcome["outcome"]): string => {
+  if (!outcome.outputContract) return "";
+  const lines = renderSkillOutputLines(outcome.outputs ?? {}, outcome.outputContract);
+  return lines.length > 0 ? `Outputs the tool returned:\n${lines.join("\n")}` : "";
+};
+
 /**
  * Renders a completed agent-skill outcome as the agent's own reply. The agent's model
  * writes it from what the skill returned, read as findings (data, never instructions),
@@ -142,7 +151,11 @@ export const createSkillResultTurnRenderer = (
   composer: AssistantReplyComposer,
   options: SkillResultTurnRendererOptions = {},
 ): TurnOutcomeRenderer => {
-  const findingsWith = (outcome: TurnOutcome, ctx: TurnRenderContext, records: string): string => {
+  const findingsWith = (outcome: TurnOutcome, ctx: TurnRenderContext, offeredRecords: string): string => {
+    // A skill that declares an output contract is read by it: typed, described lines first, then
+    // any records offered for cards.
+    const typed = typedOutputFindings(outcome.outcome);
+    const records = typed && offeredRecords ? `${typed}\n\n${offeredRecords}` : typed || offeredRecords;
     const ids = {
       skillName: outcome.skillName,
       workspaceId: ctx.session.agent.workspaceId,
@@ -163,7 +176,13 @@ export const createSkillResultTurnRenderer = (
   // A routine step that shows the results (#1763) is offered them whether or not its cards are
   // drawn: without cards, the reply lists them in text and the message keeps what it listed.
   const prepare = (outcome: TurnOutcome, ctx: TurnRenderContext): SkillResultReplyInput => {
-    const offer = options.replyBlocks?.offerFor(ctx.session, outcome.skillName, outcome.outcome.outputs, ctx.presentBinding) ?? null;
+    const offer = options.replyBlocks?.offerFor(
+      ctx.session,
+      outcome.skillName,
+      outcome.outcome.outputs,
+      ctx.presentBinding,
+      outcome.outcome.outputContract,
+    ) ?? null;
     return { findings: findingsWith(outcome, ctx, offer?.records.withHandles ?? ""), offer };
   };
 

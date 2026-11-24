@@ -36,6 +36,7 @@ import {
 } from '@/lib/directive-surfaces'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { announceAgentDraftSaved } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   directivesApi,
@@ -580,12 +581,10 @@ export function AssistantDirectivesSection({
     try {
       // Authored for a binding, so it is created bindable. The form's defaults are tuned for
       // routine use, and a skill saved that way would go amber in the chip it was created for.
-      const { skill } = await agentSkillsApi.createSkill(agentId, {
-        ...input,
-        enabled: true,
-        invocationMode: 'agent_selectable',
-      })
+      const { skill } = await agentSkillsApi.createSkill(agentId, { ...input, enabled: true, invocationMode: 'agent_selectable' })
       setAgentSkills((current) => [skill, ...current])
+      // The new skill is a draft change: Publish and Test Chat read the draft again.
+      announceAgentDraftSaved(agentId)
       setPendingSkillCreation(null)
       setCreationCapabilityId(null)
       pending.resolve(skill.name)

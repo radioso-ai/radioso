@@ -226,6 +226,7 @@ export const registerSlackPaths = (
       204: { description: "Disconnected" },
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent manage permission required"),
+      409: errorResponse("`slack_installation_in_use`: a skill in an agent's draft or published version uses the installation; the message names each agent and skill"),
     },
   });
 };

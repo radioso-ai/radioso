@@ -1,7 +1,9 @@
+import { writeAgentSkillIntoDraft } from "../../modules/agentSkills/repository.js";
 import { randomUUID } from "node:crypto";
 
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationSkillRow } from "../../shared/domain/conversationSkills.js";
 import type { ExposedParamSpec } from "../../modules/externalSkills/skillDefinitions/resolver.js";
 
 export interface ExternalSkillDefinitionRecord {
@@ -59,20 +61,36 @@ interface ExternalSkillDefinitionRow {
   updated_at: Date;
 }
 
-const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionRecord => ({
+/** An external MCP skill read from its `agent_skills` row, live or as a release froze it. */
+export const externalSkillDefinitionFromSkill = (skill: ConversationSkillRow): ExternalSkillDefinitionRecord => {
+  const config = (skill.config ?? {}) as ExternalSkillDefinitionRow["config"];
+  return {
+    id: skill.id,
+    agentId: skill.agentId,
+    workspaceId: skill.workspaceId,
+    connectionId: skill.targetId ?? "",
+    skillName: skill.skillName,
+    toolName: config.toolName ?? "",
+    boundParams: config.boundParams ?? {},
+    exposedParams: config.exposedParams ?? {},
+    declaredOutcomes: config.declaredOutcomes ?? null,
+    outcomeMap: config.outcomeMap ?? null,
+    enabled: skill.enabled,
+    createdAt: new Date(skill.createdAt),
+    updatedAt: new Date(skill.updatedAt),
+  };
+};
+
+const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionRecord => externalSkillDefinitionFromSkill({
   id: row.id,
   agentId: row.agent_id,
   workspaceId: row.workspace_id,
-  connectionId: row.target_id,
   skillName: row.skill_name,
-  toolName: row.config.toolName ?? "",
-  boundParams: row.config.boundParams ?? {},
-  exposedParams: row.config.exposedParams ?? {},
-  declaredOutcomes: row.config.declaredOutcomes ?? null,
-  outcomeMap: row.config.outcomeMap ?? null,
   enabled: row.enabled,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+  targetId: row.target_id,
+  config: row.config,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 // External MCP skills live on the shared `agent_skills` spine. MCP-specific
@@ -115,29 +133,31 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
     };
     // INSERT ... SELECT FROM agents takes workspace_id from the agent row, so a skill can't be
     // created for an agent outside the given workspace.
-    const row = await this.db
-      .insertInto("agent_skills")
-      .columns(["id", "agent_id", "workspace_id", "skill_name", "kind", "enabled", "target_type", "target_id", "config"])
-      .expression((eb) =>
-        eb
-          .selectFrom("agents as a")
-          .select([
-            eb.val(randomUUID()).as("id"),
-            eb.val(input.agentId).as("agent_id"),
-            "a.workspace_id",
-            eb.val(input.skillName).as("skill_name"),
-            eb.val("external_mcp").as("kind"),
-            eb.val(input.enabled ?? true).as("enabled"),
-            eb.val("mcp_connection").as("target_type"),
-            eb.val(input.connectionId).as("target_id"),
-            toJsonb(config).as("config"),
-          ])
-          .where("a.id", "=", input.agentId)
-          .where("a.workspace_id", "=", input.workspaceId),
-      )
-      .returning(externalSkillColumns)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row as ExternalSkillDefinitionRow);
+    return writeAgentSkillIntoDraft(this.db, { workspaceId: input.workspaceId, agentId: input.agentId }, async (db) => {
+      const row = await db
+        .insertInto("agent_skills")
+        .columns(["id", "agent_id", "workspace_id", "skill_name", "kind", "enabled", "target_type", "target_id", "config"])
+        .expression((eb) =>
+          eb
+            .selectFrom("agents as a")
+            .select([
+              eb.val(randomUUID()).as("id"),
+              eb.val(input.agentId).as("agent_id"),
+              "a.workspace_id",
+              eb.val(input.skillName).as("skill_name"),
+              eb.val("external_mcp").as("kind"),
+              eb.val(input.enabled ?? true).as("enabled"),
+              eb.val("mcp_connection").as("target_type"),
+              eb.val(input.connectionId).as("target_id"),
+              toJsonb(config).as("config"),
+            ])
+            .where("a.id", "=", input.agentId)
+            .where("a.workspace_id", "=", input.workspaceId),
+        )
+        .returning(externalSkillColumns)
+        .executeTakeFirstOrThrow();
+      return mapRecord(row as ExternalSkillDefinitionRow);
+    }, (record) => record.id);
   }
 
   async findById(agentId: string, id: string): Promise<ExternalSkillDefinitionRecord | null> {
@@ -192,28 +212,32 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
       ...("declaredOutcomes" in input ? { declaredOutcomes: input.declaredOutcomes ?? null } : {}),
       ...("outcomeMap" in input ? { outcomeMap: input.outcomeMap ?? null } : {}),
     };
-    const row = await this.db
-      .updateTable("agent_skills")
-      .set((eb) => ({
-        ...(input.enabled != null ? { enabled: input.enabled } : {}),
-        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
-        updated_at: currentTimestamp(),
-      }))
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "external_mcp")
-      .returning(externalSkillColumns)
-      .executeTakeFirst();
-    return row ? mapRecord(row as ExternalSkillDefinitionRow) : null;
+    return writeAgentSkillIntoDraft(this.db, { agentId }, async (db) => {
+      const row = await db
+        .updateTable("agent_skills")
+        .set((eb) => ({
+          ...(input.enabled != null ? { enabled: input.enabled } : {}),
+          config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+          updated_at: currentTimestamp(),
+        }))
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "external_mcp")
+        .returning(externalSkillColumns)
+        .executeTakeFirst();
+      return row ? mapRecord(row as ExternalSkillDefinitionRow) : null;
+    }, (record) => record?.id ?? null);
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("kind", "=", "external_mcp")
-      .executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return writeAgentSkillIntoDraft(this.db, { agentId }, async (db) => {
+      const result = await db
+        .deleteFrom("agent_skills")
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("kind", "=", "external_mcp")
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    }, (removed) => (removed ? id : null));
   }
 }

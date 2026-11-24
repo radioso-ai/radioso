@@ -32,17 +32,24 @@ const message = (blocks: StoredReplyBlock[] | undefined): MessageRecord => ({
   ...(blocks ? { metadata: { blocks } } : {}),
 });
 
-const setup = (options: { stored: MessageRecord | null; servable: (imageId: string, call: number) => boolean | Promise<boolean> }) => {
+/** `true` when the picture is stored by this call, `false` while it is still being copied, `"failed"` once it never will be. */
+type Servable = boolean | "failed";
+
+const setup = (options: { stored: MessageRecord | null; servable: (imageId: string, call: number) => Servable | Promise<Servable> }) => {
   let clock = 0;
   const calls = new Map<string, number>();
-  const findServable = vi.fn(async ({ imageId }: { imageId: string; width: number }) => {
+  const find = vi.fn(async ({ imageId }: { imageId: string; width: number }) => {
     const call = (calls.get(imageId) ?? 0) + 1;
     calls.set(imageId, call);
-    return (await options.servable(imageId, call)) ? { bucket: "b", objectPath: imageId } : null;
+    const servable = await options.servable(imageId, call);
+    if (servable === true) return { kind: "found" as const, object: { bucket: "b", objectPath: imageId, generation: null } };
+    return servable === "failed"
+      ? { kind: "miss" as const, reason: "failed" as const, retryable: false }
+      : { kind: "miss" as const, reason: "busy" as const, retryable: true };
   });
   const readiness = new ReplyPictureReadiness({
     messages: { findByIdAndWorkspaceId: vi.fn(async () => options.stored) },
-    pictures: { findServable },
+    pictures: { find },
     width: 640,
     pollMs: 250,
     now: () => clock,
@@ -50,23 +57,30 @@ const setup = (options: { stored: MessageRecord | null; servable: (imageId: stri
       clock += ms;
     },
   });
-  return { readiness, findServable };
+  return { readiness, find };
 };
 
 describe("reply picture readiness", () => {
   it("is ready at once when every picture is stored, asking for each at the width the cards show", async () => {
-    const { readiness, findServable } = setup({ stored: message([block(["a", "b"])]), servable: () => true });
+    const { readiness, find } = setup({ stored: message([block(["a", "b"])]), servable: () => true });
 
     await expect(readiness.awaitStored({ workspaceId: "workspace-1", messageId: "message-1", withinMs: 6000 })).resolves.toBe(true);
-    expect(findServable.mock.calls.map(([input]) => input)).toEqual([{ imageId: "a", width: 640 }, { imageId: "b", width: 640 }]);
+    expect(find.mock.calls.map(([input]) => input)).toEqual([{ imageId: "a", width: 640 }, { imageId: "b", width: 640 }]);
   });
 
   it("asks again for the pictures still being copied, until they are stored", async () => {
-    const { readiness, findServable } = setup({ stored: message([block(["a", "b"])]), servable: (imageId, call) => imageId === "a" || call >= 3 });
+    const { readiness, find } = setup({ stored: message([block(["a", "b"])]), servable: (imageId, call) => imageId === "a" || call >= 3 });
 
     await expect(readiness.awaitStored({ workspaceId: "workspace-1", messageId: "message-1", withinMs: 6000 })).resolves.toBe(true);
-    expect(findServable.mock.calls.filter(([input]) => input.imageId === "a")).toHaveLength(1);
-    expect(findServable.mock.calls.filter(([input]) => input.imageId === "b")).toHaveLength(3);
+    expect(find.mock.calls.filter(([input]) => input.imageId === "a")).toHaveLength(1);
+    expect(find.mock.calls.filter(([input]) => input.imageId === "b")).toHaveLength(3);
+  });
+
+  it("gives up at once when a picture can never be copied, without asking again", async () => {
+    const { readiness, find } = setup({ stored: message([block(["a", "b"])]), servable: (imageId) => (imageId === "a" ? "failed" : false) });
+
+    await expect(readiness.awaitStored({ workspaceId: "workspace-1", messageId: "message-1", withinMs: 6000 })).resolves.toBe(false);
+    expect(find).toHaveBeenCalledTimes(2);
   });
 
   it("gives up when a picture is not stored within the time it was given", async () => {
@@ -80,7 +94,7 @@ describe("reply picture readiness", () => {
     try {
       const readiness = new ReplyPictureReadiness({
         messages: { findByIdAndWorkspaceId: vi.fn(async () => message([block(["a"])])) },
-        pictures: { findServable: () => new Promise(() => undefined) },
+        pictures: { find: () => new Promise(() => undefined) },
         width: 640,
       });
       const ready = readiness.awaitStored({ workspaceId: "workspace-1", messageId: "message-1", withinMs: 2000 });

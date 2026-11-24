@@ -1,7 +1,7 @@
 ---
 title: "Architecture overview"
 description: "The services Radioso runs, what each one owns, and why chat and document work sit on separate paths."
-last_updated: 2026-08-07
+last_updated: 2026-11-19
 ---
 
 # Architecture overview
@@ -16,7 +16,7 @@ Two clocks run underneath that. A chat turn has to return inside the request tha
 flowchart TB
   dash["Dashboard"]
   link["Public chat link"]
-  embed["Embed widget<br/>Enterprise"]
+  embed["Website widget"]
   sdk["Your code<br/>REST API / TypeScript SDK"]
   mcp["MCP client"]
 
@@ -70,7 +70,7 @@ Every surface below talks to the same agent through the same backend, so an answ
 
 - **Dashboard** — operators configure agents and chat with them while signed in.
 - **Public chat link** — anonymous access to a single agent.
-- **Website embed widget** — an agent embedded in your own site, in Enterprise Edition.
+- **Website widget** — an agent on your own site, added with one script tag. See [Embed on your website](/quickstarts/website-embed).
 - **REST API and TypeScript SDK** — your own code, calling the assistant chat and retrieval endpoints directly.
 - **MCP client** — Claude, Cursor, and other MCP clients, reaching Radioso over the same versioned HTTP API.
 
@@ -78,7 +78,7 @@ Every surface below talks to the same agent through the same backend, so an answ
 
 ### Live chat stays immediate
 
-Normal agent chat runs in the live request path — authenticated turns, anonymous turns, Enterprise embedded widget turns, and the bootstrap greeting for a new conversation. Each one ends in an immediate response, immediate streaming, or an explicit failure. Radioso keeps chat in the request path even under load, so a slow reply is visible rather than silently deferred.
+Normal agent chat runs in the live request path — authenticated turns, anonymous turns, website widget turns, and the bootstrap greeting for a new conversation. Each one ends in an immediate response, immediate streaming, or an explicit failure. Radioso keeps chat in the request path even under load, so a slow reply is visible rather than silently deferred.
 
 ### Post-turn side effects run through an action outbox
 

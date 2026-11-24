@@ -54,9 +54,19 @@ The Radioso node is marked usable as a tool, and current n8n versions list it on
 
 ## Start a workflow from Radioso events
 
-Both trigger nodes use the same **Events** list and emit one item per event: `id`, `type`, `version`, `occurredAt`, `workspaceId` and `data`. The `data` of each type is described in the [workspace event log](https://docs.radioso.ai/api/workspace-event-log) reference. Choose at least one of Conversation Started, Contact Request Created, Handoff Requested, Routine Completed and Decision Pending. Decision Pending only notifies: a teammate decides in the Radioso Inbox, because a service-account token can't resolve a decision.
+Both trigger nodes use the same **Events** list and emit one item per event: `id`, `type`, `version`, `occurredAt`, `workspaceId` and `data`. The `data` of each type is described in the [workspace event log](https://docs.radioso.ai/api/workspace-event-log) reference. Choose at least one of Conversation Started, Contact Request Created, Handoff Requested, Routine Completed, Decision Pending, Document Processed and Document Failed. Decision Pending only notifies: a teammate decides in the Radioso Inbox, because a service-account token can't resolve a decision.
 
-A service account's role needs `workspace.event_subscriptions.manage` (the `member` role holds it) plus read access to each chosen type. Conversation events need history access, and Decision Pending also needs the takeover permission. Radioso answers `403` with `event_type_not_permitted` otherwise.
+Document Processed fires once for each document revision that finishes processing. A website crawl, a connector sync, or a reprocess (every document from Settings, a whole source, or one Ray prepares with `prepare_document_reprocess`) starts the workflow once for every document it touches. Changing a document's metadata through its retrieval settings processes it again too. Put an **If** node on `data.sourceKind` (`website`, `connector`, `upload` or `api`, `null` for a document with no source), `data.sourceId` or `data.contentKind` (`inline_text` or `uploaded_file`) to keep the documents the workflow is for. Document Failed fires once per failed attempt and carries `data.failureCode`, never the failure message; a later Document Processed for the same `data.revision` means the retry worked.
+
+A service account's role needs `workspace.event_subscriptions.manage` (the `member` role holds it) plus read access to each chosen type:
+
+| Events | Permissions |
+|---|---|
+| Conversation Started, Contact Request Created, Handoff Requested, Routine Completed | `workspace.events.read`, `workspace.history.read` |
+| Decision Pending | `workspace.events.read`, `workspace.history.read`, `workspace.conversation.takeover` |
+| Document Processed, Document Failed | `workspace.events.read`, `workspace.documents.read` |
+
+The `member` role holds all of them. Radioso answers `403` with `event_type_not_permitted` when the role lacks one.
 
 ### Radioso Trigger
 

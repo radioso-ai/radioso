@@ -153,6 +153,8 @@ function AutoFocusEndPlugin({ enabled, onDone }: { enabled?: boolean; onDone?: (
 export function RoutineInstructionEditor({
   initialContent,
   variables,
+  listVariableIds,
+  variableSetters,
   onCreateVariable,
   onChange,
   onBlur,
@@ -166,6 +168,11 @@ export function RoutineInstructionEditor({
 }: {
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
+  // Variables a step assigns from a list output; their checks are limited to is-set and is-not-set,
+  // and step text cannot read them, so `@` leaves them out.
+  listVariableIds?: ReadonlySet<string>
+  // The skill that sets each variable a skill step assigns, by variable; a field has none.
+  variableSetters?: ReadonlyMap<string, string>
   // Declares the variable an author names with `@`. A text that may only read the variables
   // the routine already declares leaves it out, and `@` then offers no "Create variable".
   onCreateVariable?: (variable: RoutineEditorVariable) => void
@@ -194,6 +201,13 @@ export function RoutineInstructionEditor({
     () => Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind])),
     [variables],
   )
+  const menuVariables = useMemo(
+    () => variables.map((variable): RoutineEditorVariable => {
+      const setBy = variableSetters?.get(variable.id)
+      return setBy ? { id: variable.id, name: variable.name, setBy } : variable
+    }),
+    [variables, variableSetters],
+  )
   // A variable's type, required, and mutable flags are owned by the Document row's own
   // controls; the chips here read them and never write back. The setters are left out, so the
   // chip menu and the condition builder show them disabled rather than as controls that do nothing.
@@ -206,8 +220,9 @@ export function RoutineInstructionEditor({
       // A skill named here runs as a step of this routine, so its chip offers input and
       // output binding — unlike a skill merely mentioned in a directive action.
       supportsStepBindings: true,
+      listVariableIds,
     }),
-    [variables],
+    [variables, listVariableIds],
   )
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -269,7 +284,7 @@ export function RoutineInstructionEditor({
           <EmptyStepBackspacePlugin onEmptyBackspace={onEmptyBackspace} />
           <AutoFocusEndPlugin enabled={autoFocusEnd} onDone={onAutoFocused} />
           <MaxLengthPlugin maxLength={maxLength} />
-          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly offerContextVariables={offerContextVariables} />
+          <ChipTypeaheadPlugin variables={menuVariables} unofferedVariableIds={listVariableIds} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly offerContextVariables={offerContextVariables} />
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>

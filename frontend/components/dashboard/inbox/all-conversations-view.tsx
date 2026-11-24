@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ConversationDrawer } from '@/components/dashboard/conversation-drawer'
 import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboard/history/history-list'
@@ -11,7 +11,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { useNeedsAttentionOpenCount } from '@/lib/needs-attention-query-state'
-import { buildConversationSearchParams, EMPTY_CONVERSATION_FILTERS } from '@/lib/conversation-filters'
+import { buildConversationSearchParams, EMPTY_CONVERSATION_FILTERS, type ConversationFilterState } from '@/lib/conversation-filters'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import {
@@ -26,6 +26,7 @@ import {
   filterAllLensItems,
 } from './all-conversations-list-pane'
 import { InboxLensToggle } from './inbox-lens-toggle'
+import { useInboxAttributeOptions } from './use-inbox-attribute-options'
 import { InboxResponseView, type InboxResponseSelection } from './inbox-response-view'
 
 // Matches the "collapse rapid keystrokes into one request" convention documented on
@@ -66,7 +67,17 @@ export function AllConversationsView({
   accountId: string
   routeState: DashboardRouteState
 }) {
-  const [conversationFilters, setConversationFilters] = useState(EMPTY_CONVERSATION_FILTERS)
+  const workspaceId = routeState.workspaceId ?? ''
+  const [filterState, setFilterState] = useState({ workspaceId, filters: EMPTY_CONVERSATION_FILTERS })
+  // An attribute filter names one workspace's attribute: another workspace's list starts without it.
+  const conversationFilters = useMemo(
+    () => (filterState.workspaceId === workspaceId ? filterState.filters : { ...filterState.filters, attribute: null }),
+    [filterState, workspaceId],
+  )
+  const setConversationFilters = useCallback(
+    (filters: ConversationFilterState) => setFilterState({ workspaceId, filters }),
+    [workspaceId],
+  )
   // Debounced so typing doesn't fire a request per keystroke; the input itself stays
   // responsive (conversationFilters.search updates immediately for the controlled Input).
   const debouncedSearch = useDebouncedValue(conversationFilters.search, SEARCH_DEBOUNCE_MS)
@@ -83,6 +94,7 @@ export function AllConversationsView({
     isListLoading,
     hasAnyHistory,
     listError,
+    listErrorStatus,
     conversations,
     conversationTotal,
     conversationPage,
@@ -317,6 +329,22 @@ export function AllConversationsView({
   )
   const agentOptions = useMemo(() => buildAgentOptions(unfilteredChatConversations), [unfilteredChatConversations])
   const siteOptions = useMemo(() => buildSiteOptions(unfilteredChatConversations), [unfilteredChatConversations])
+  // Only the 'all' variant filters by attribute: the other three filter their loaded page here,
+  // and a page carries no attribute values.
+  const attributeOptions = useInboxAttributeOptions({ workspaceId, enabled: activeFilter === 'all' })
+  const { reload: reloadAttributeOptions } = attributeOptions
+
+  // The list refuses an attribute filter once its attribute is renamed, deleted or made Private.
+  // The filter came from an older catalog: drop it and show the list, and read the catalog again.
+  const isAttributeFilterRefused = activeFilter === 'all' && listErrorStatus === 400 && conversationFilters.attribute !== null
+  useEffect(() => {
+    if (!isAttributeFilterRefused) {
+      return
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Responds to the list query refusing the filter.
+    setFilterState((current) => ({ workspaceId, filters: { ...current.filters, attribute: null } }))
+    reloadAttributeOptions()
+  }, [isAttributeFilterRefused, reloadAttributeOptions, workspaceId])
 
   // A chat selection always resolves — the response view loads the
   // conversation independently by id (same as the old history drawer), so a
@@ -370,7 +398,7 @@ export function AllConversationsView({
   return (
     <>
       <DashboardPage title="Inbox" contentScroll={false} contentClassName="flex min-h-0 flex-1 flex-col p-0">
-        {listError ? (
+        {listError && !isAttributeFilterRefused ? (
           <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {listError}
           </div>
@@ -386,6 +414,8 @@ export function AllConversationsView({
               items={filteredItems}
               agentOptions={agentOptions}
               siteOptions={siteOptions}
+              attributeChoices={activeFilter === 'all' ? attributeOptions.choices : []}
+              attributeFilterUnavailable={activeFilter === 'all' && attributeOptions.unavailable}
               filters={conversationFilters}
               onFiltersChange={setConversationFilters}
               now={now}

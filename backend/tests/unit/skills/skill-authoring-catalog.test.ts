@@ -238,6 +238,7 @@ describe("SkillAuthoringCatalogService", () => {
         { name: "failed", displayName: "failed", status: "failed" },
       ],
       hasDataOutputs: false,
+      outputs: [],
     });
   });
 

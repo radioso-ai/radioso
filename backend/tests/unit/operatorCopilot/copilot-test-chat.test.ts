@@ -482,6 +482,27 @@ describe("Test Chat tools through the operator MCP catalog", () => {
     expect(output.trace.turnTrace.handoffPreview).toEqual(handoffPreview);
   });
 
+  it("shows the attribute values the AI wrote in a Test Chat turn, and who set each one", async () => {
+    const attributes = {
+      outcome: "written",
+      values: [
+        { name: "topic", value: "billing", label: "Billing", writtenBy: "classifier" },
+        { name: "urgency", value: null, writtenBy: null },
+        { name: "plan", value: "pro", label: "Pro", writtenBy: "operator" },
+      ],
+    };
+    const readTurn = vi.fn(async () => ({
+      testExecutionId: EXECUTION_ID,
+      sideId: SIDE_ID,
+      revision: candidateRevision,
+      turn: turn({ turnTrace: { ...envelope(), attributes } }),
+    }));
+
+    const output = await overMcp(port({ readTurn }), "test_chat_turn_trace", { testExecutionId: EXECUTION_ID, turnId: TURN_ID });
+
+    expect(output.trace.turnTrace.attributes).toEqual(attributes);
+  });
+
   it("reads a hand-off preview stored before previews named their kind", async () => {
     // The shape a Test Chat hand-off turn stored before completion notices existed.
     const handoffPreview = { subject: "Book accommodation: needs a human", lines: ["A conversation needs a human operator."] };

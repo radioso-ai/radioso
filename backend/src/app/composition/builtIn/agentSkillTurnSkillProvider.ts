@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { SkillDefinition } from "@radioso/skill-contract";
 
-import type { AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
+import { ConversationSkills, countLiveSkillFallbacks, type AgentSkillRepositoryPort } from "../../../modules/agentSkills/public.js";
+import { withConversationSkills, type ConversationSkillSet } from "../../../shared/domain/conversationSkills.js";
 import type { AgentSkillKind, AgentSkillSpine } from "../../../modules/agentSkills/public.js";
 import type { FinalPromptContext } from "../../../modules/retrieval/public.js";
 import {
@@ -30,6 +31,8 @@ import { EXTERNAL_SKILLS_ADAPTER } from "../../../modules/externalSkills/executo
 import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../../modules/customerEmail/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../../modules/webhookSkills/public.js";
 import { SLACK_SKILLS_ADAPTER } from "../../../modules/slackSkills/public.js";
+import { API_REQUEST_SKILLS_ADAPTER } from "../../../modules/apiRequestSkills/public.js";
+import { skillContextSnapshot } from "../../../modules/context-variables/public.js";
 import {
   RETRIEVAL_ANSWER_ADAPTER,
   readRetrievalResult,
@@ -73,7 +76,8 @@ interface RepositoryAgentSkillTurnSkillProviderOptions {
  * `retrieve` deliberately returns raw contexts (the chat turn loop owns answer
  * composition — routing it through the retrieval composer is the route-steering
  * follow-up), and the action kinds (webhook, slack, email, notify) settle with
- * outputs only, which leave the reply nothing to be written from.
+ * outputs only, which leave the reply nothing to be written from. `api_request`
+ * runs only from routines, which collect its inputs and branch on its outputs.
  */
 const TURN_BINDABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["external_mcp"]);
 const AGENTIC_STAGEABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["retrieve"]);
@@ -93,6 +97,7 @@ const requiredCapabilitiesForKind = (kind: AgentSkillKind): string[] => {
     case "customer_email":
     case "webhook":
     case "slack":
+    case "api_request":
       return [capabilityNames.externalSkills.invoke];
     case "notify":
       return [];
@@ -200,7 +205,7 @@ const collectedTurnInput = (session: PreparedSession): Record<string, unknown> =
   query: session.effectiveQuery,
   message: session.userMessage.content,
   pageContext: session.pageContext ?? null,
-  context: session.resolvedContext.snapshot,
+  context: skillContextSnapshot(session.resolvedContext),
 });
 
 const registeredChunkFromContext = (
@@ -271,6 +276,8 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
       return { kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER, enqueue: false };
     case "notify":
       return { kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER, enqueue: false };
+    case "api_request":
+      return { kind: "internal", adapter: API_REQUEST_SKILLS_ADAPTER, enqueue: false };
   }
 };
 
@@ -378,6 +385,7 @@ const turnSkillForAgentSkill = (
   recordSuppression: RecordSkillEffectSuppression,
   reportFailure: ReportDispatchFailure,
   renderer: TurnOutcomeRenderer,
+  conversationSkills: ConversationSkillSet,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   return {
@@ -416,6 +424,7 @@ const turnSkillForAgentSkill = (
             conversationId: session.conversation.id,
             conversationDurability: conversationDurability ?? "durable",
             messageId: session.userMessage.id,
+            ...withConversationSkills(conversationSkills),
             turn: {
               agent: toConversationAgentConfig(session.agent),
               sessionId: session.conversation.id,
@@ -465,6 +474,7 @@ const stagedToolFactoryForAgentSkill = (
   skillEffects: SkillEffectPolicy | undefined,
   conversationDurability: ConversationDurability | undefined,
   recordSuppression: RecordSkillEffectSuppression,
+  conversationSkills: ConversationSkillSet,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const toolName = stagedToolNameForSkill(agentSkill.skillName);
@@ -516,6 +526,7 @@ const stagedToolFactoryForAgentSkill = (
           conversationId: session.conversation.id,
           conversationDurability: conversationDurability ?? "durable",
           messageId: session.userMessage.id,
+          ...withConversationSkills(conversationSkills),
           turn: {
             agent: toConversationAgentConfig(session.agent),
             sessionId: session.conversation.id,
@@ -576,7 +587,14 @@ const stagedToolFactoryForAgentSkill = (
 };
 
 export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkillProvider {
-  constructor(private readonly options: RepositoryAgentSkillTurnSkillProviderOptions) {}
+  private readonly conversationSkills: ConversationSkills;
+
+  constructor(private readonly options: RepositoryAgentSkillTurnSkillProviderOptions) {
+    this.conversationSkills = new ConversationSkills({
+      live: options.agentSkills,
+      onLiveFallback: countLiveSkillFallbacks(options.metricsRegistry),
+    });
+  }
 
   async forSession(
     session: PreparedSession,
@@ -592,11 +610,10 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
     const reportFailure = dispatchFailureReporter(this.options.logger);
     // Directives read from the conversation's frozen revision snapshot
     // (session.agent.authoredDirectives) so a pinned turn cannot see an operator's
-    // in-flight live edit. Agent-selectable skills must be frozen the same way: only
-    // fall back to a live lookup when the resolved agent carries no frozen snapshot at
-    // all (no revision was applied — e.g. a trusted historical replay baseline).
-    const records = session.agent.authoredAgentSkills
-      ?? await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
+    // in-flight live edit. Skills are frozen the same way: the release's set decides which
+    // skills this turn offers, and every executor a skill reaches reads its row from that set
+    // (carried on the invocation), live only when the release recorded no skills.
+    const records = await this.conversationSkills.forTurn(session.agent);
     const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean; stagingCapable: boolean; capabilityDenied?: boolean }>();
     const turnSkills: TurnSkill[] = [];
     const stagedRecords: AgentSkillSpine[] = [];
@@ -624,6 +641,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           recordSuppression,
           reportFailure,
           this.options.skillResultRenderer,
+          records,
         ));
       }
       if (!capabilityDenied && stagingCapable) {
@@ -645,6 +663,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               session.skillEffects,
               session.conversationDurability,
               recordSuppression,
+              records,
             )]
           : [];
       }),

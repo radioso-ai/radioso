@@ -7,7 +7,6 @@ import { z } from "zod";
 
 import {
   buildWorkspaceEventDelivery,
-  buildWorkspaceEventDeliveryWake,
   withWorkspaceEvents,
   workspaceEventRecorder,
 } from "../../src/app/composition/workspaceEventLog.js";
@@ -125,7 +124,7 @@ describeIntegration("workspace event subscriptions (Postgres)", () => {
     undefined,
     undefined,
     undefined,
-    buildWorkspaceEventDeliveryWake({ db, queue, logger }),
+    delivery.wake,
   );
   const seededAccountIds: string[] = [];
   let receiver: Awaited<ReturnType<typeof startReceiver>>;

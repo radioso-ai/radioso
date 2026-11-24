@@ -20,7 +20,7 @@ const chatModelReadsImages = (agent: { chatModelOverride?: { provider: string } 
   agent.chatModelOverride?.provider !== "openai-compatible";
 
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
-const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
+export const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
 export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
@@ -34,6 +34,10 @@ type AuthoredDirectiveDraftFixture =
   Partial<AuthoredDirectiveFixture> & Pick<AuthoredDirectiveFixture, "id" | "name" | "action">;
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
 type ContextVariableFixture = ApiSchemas["ContextVariable"];
+const contextVariableOptionsFixture = (
+  options: ApiSchemas["ContextVariableOptionInput"][] | null | undefined,
+): ContextVariableFixture["options"] =>
+  options?.map((option) => ({ ...option, description: option.description ?? null, archived: option.archived ?? false })) ?? null;
 type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
 export type ContextVariableRequestFixture = {
   method: "POST" | "PATCH" | "DELETE" | "PUT";
@@ -167,7 +171,7 @@ export type AgentSkillFixture = {
   workspaceId: string;
   agentId: string;
   name: string;
-  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify" | "api_request";
   storedKind: string;
   target: { kind: string; id: string | null };
   config: Record<string, unknown>;
@@ -271,6 +275,7 @@ const buildRevisionDetail = (
       directives: [],
       routines: [],
       contextVariableEnablements: [],
+      agentSkills: [],
       greeting: {
         before: noGreeting,
         after: greeting,
@@ -547,7 +552,31 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       });
     }
   }
+  // Mirrors the backend validator's variable namespace: a variable a skill step sets is declared
+  // by that assignment, so a field of the same name collides, and a rule may read either.
+  const assignedVariables = new Set<string>();
+  for (const step of routine.steps) {
+    for (const [outputKey, target] of Object.entries(step.metadata?.outputAssignments ?? {})) {
+      assignedVariables.add(target);
+      if (slotKeys.has(target)) {
+        diagnostics.push({
+          code: "variable_name_collision",
+          location: `step:${step.stableStepId}.outputAssignments.${outputKey}`,
+          message: `variable name collision: output assignment target "${target}" collides with a declared slot key.`,
+        });
+      }
+    }
+  }
   for (const transition of routine.transitions) {
+    const approvalStep = routine.steps.find((step) => step.stableStepId === transition.fromStep && step.kind === "approval");
+    const readsApprovalDecision = Boolean(approvalStep?.captureKey) && transition.fieldRef === `${approvalStep?.captureKey}.id`;
+    if (transition.guardKind === "field" && transition.fieldRef && !readsApprovalDecision && !slotKeys.has(transition.fieldRef) && !assignedVariables.has(transition.fieldRef)) {
+      diagnostics.push({
+        code: "field_guard_unknown_reference",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `field guard references "${transition.fieldRef}", which is not a declared variable.`,
+      });
+    }
     if (!stepIds.has(transition.fromStep) || !nodeIds.has(transition.toRef)) {
       diagnostics.push({
         code: "dangling_step_reference",
@@ -2520,6 +2549,7 @@ export const installDashboardApiMocks = async (
           name: body.name,
           description: body.description ?? null,
           valueType: body.valueType,
+          options: contextVariableOptionsFixture(body.options),
           trustTier: body.trustTier,
           sensitivity: body.sensitivity,
           defaultSurfacing: body.defaultSurfacing,
@@ -2550,6 +2580,7 @@ export const installDashboardApiMocks = async (
                 ...item,
                 ...body,
                 description: body.description === undefined ? item.description : body.description,
+                options: body.options === undefined ? item.options : contextVariableOptionsFixture(body.options),
                 updatedAt: nowIso,
               }
             : item

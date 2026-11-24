@@ -22,6 +22,7 @@ export type AgentSkillCapabilityId =
   | 'slack_post'
   | 'webhook_call'
   | 'notify'
+  | 'api_request'
 
 export type AgentSkillTarget = {
   kind: string

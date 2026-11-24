@@ -29,16 +29,18 @@ const recording = (rules: [RegExp, RecordedAnswer][] = []) =>
   createRecordingKysely(({ sql }) => rules.find(([pattern]) => pattern.test(sql))?.[1] ?? { changed: 1 });
 
 describe("ContextVariableValueEraser", () => {
-  it("erases, in one statement, the session values of chat sessions only the erased conversations carry", async () => {
+  it("erases the erased conversations' own values, then the session values of chat sessions only they carry", async () => {
     const { db, statements } = recording();
 
-    expect(await new ContextVariableValueEraser(db).erase(conversations())).toBe(1);
+    expect(await new ContextVariableValueEraser(db).erase(conversations())).toBe(2);
 
-    expect(statements).toHaveLength(1);
+    expect(statements).toHaveLength(2);
     expect(statements[0].sql).toMatch(/^delete from "context_variable_values"/u);
-    expect(statements[0].sql).toMatch(/"anonymous_session_id"/u);
-    expect(statements[0].sql).toMatch(/not exists/u);
-    expect(statements[0].parameters).toContain("session");
+    expect(statements[0].parameters).toEqual([workspaceId, "conversation", [conversationId]]);
+    expect(statements[1].sql).toMatch(/^delete from "context_variable_values"/u);
+    expect(statements[1].sql).toMatch(/"anonymous_session_id"/u);
+    expect(statements[1].sql).toMatch(/not exists/u);
+    expect(statements[1].parameters).toContain("session");
   });
 
   it("sends nothing when no conversation goes, or for a workspace, whose values cascade with its variables", async () => {

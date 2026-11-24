@@ -22,6 +22,7 @@ import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js"
 import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
 import { createAgentPublicIdentityRoutes } from "./agentPublicIdentityRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
+import { createHistoryAttributeRoutes } from "./historyAttributeRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createObservabilityRoutes } from "./observabilityRoutes.js";
@@ -30,6 +31,7 @@ import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
+import { createSettingsApiConnectionRoutes } from "./settingsApiConnectionRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createWorkspaceEventRoutes } from "./workspaceEventLogRoutes.js";
 import { createWorkspaceEventSubscriptionRoutes } from "./workspaceEventSubscriptionRoutes.js";
@@ -123,6 +125,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/notification-deliveries", createRouter: createNotificationDeliveryRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
+  { path: "/api/v1/history", createRouter: createHistoryAttributeRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
   { path: "/api/v1/privacy", createRouter: createPrivacyRoutes },
   { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },
@@ -131,6 +134,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes },
   { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes },
   { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes },
+  { path: "/api/v1/settings/api-connections", createRouter: createSettingsApiConnectionRoutes },
   { path: "/api/v1/connectors", createRouter: createConnectorRoutes },
   { path: "/api/v1/document", createRouter: createDocumentRoutes },
   {

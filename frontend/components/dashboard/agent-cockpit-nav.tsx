@@ -12,7 +12,7 @@ const TABS: Array<{ id: AgentCockpitTab; label: string }> = [
   { id: 'directives', label: 'Directives' },
   { id: 'routines', label: 'Routines' },
   { id: 'skills', label: 'Skills' },
-  { id: 'context-variables', label: 'Context' },
+  { id: 'context-variables', label: 'Attributes' },
 ]
 
 /**

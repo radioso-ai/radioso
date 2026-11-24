@@ -8,14 +8,27 @@ const DEDUPE_TTL_SECONDS = 2 * 24 * 60 * 60
 
 const dataField = (key, label, extra = {}) => ({ key: `data__${key}`, label, ...extra })
 
-/** What every event names: the conversation it belongs to. `data` carries these ahead of what the type adds. */
-const conversationFields = [
-  dataField('conversationId', 'Conversation ID'),
-  dataField('agentId', 'Agent ID'),
-  dataField('channel', 'Channel'),
-  dataField('callerKind', 'Caller kind'),
-  dataField('visitorId', 'Visitor ID'),
-]
+/**
+ * What an event names, ahead of what its type adds in `data`: a conversation event the conversation
+ * it belongs to, a document event the document revision it happened to.
+ */
+const subjectFields = {
+  conversation: [
+    dataField('conversationId', 'Conversation ID'),
+    dataField('agentId', 'Agent ID'),
+    dataField('channel', 'Channel'),
+    dataField('callerKind', 'Caller kind'),
+    dataField('visitorId', 'Visitor ID'),
+  ],
+  document: [
+    dataField('documentId', 'Document ID'),
+    dataField('revision', 'Revision', { type: 'integer' }),
+    dataField('title', 'Title'),
+    dataField('contentKind', 'Content kind'),
+    dataField('sourceKind', 'Source kind'),
+    dataField('sourceId', 'Source ID'),
+  ],
+}
 
 const envelopeFields = [
   { key: 'id', label: 'Event ID' },
@@ -50,7 +63,7 @@ const alreadyDelivered = async (z, key) => {
  * Radioso; every push is verified against the subscription's own signing secret before it reaches
  * the Zap, so a request that did not come from Radioso starts nothing.
  */
-export const eventTrigger = ({ key, type, noun, label, description, sample, detailFields }) => {
+export const eventTrigger = ({ key, type, noun, label, description, sample, detailFields, subject = 'conversation' }) => {
   const subscribe = async (z, bundle) => {
     const body = await radiosoRequest(z, bundle, {
       method: 'POST',
@@ -111,24 +124,35 @@ export const eventTrigger = ({ key, type, noun, label, description, sample, deta
       perform,
       performList,
       sample,
-      outputFields: [...envelopeFields, ...conversationFields, ...detailFields],
+      outputFields: [...envelopeFields, ...subjectFields[subject], ...detailFields],
     },
   }
 }
 
-const sampleSubject = {
-  conversationId: '9c0a1b6e-5a43-4c61-a1f8-2d7e0c7f3b10',
-  agentId: '0f6b3a52-7c1e-4d0e-9a4b-3d2f6a1c8e10',
-  channel: 'website_embed',
-  callerKind: 'human',
-  visitorId: '5b1d7c2e-3f4a-4e8b-9c6d-1a2b3c4d5e6f',
+const sampleSubjects = {
+  conversation: {
+    conversationId: '9c0a1b6e-5a43-4c61-a1f8-2d7e0c7f3b10',
+    agentId: '0f6b3a52-7c1e-4d0e-9a4b-3d2f6a1c8e10',
+    channel: 'website_embed',
+    callerKind: 'human',
+    visitorId: '5b1d7c2e-3f4a-4e8b-9c6d-1a2b3c4d5e6f',
+  },
+  document: {
+    documentId: '2c8e4f1a-9b3d-4a6e-8f2c-7d1b5e9a3c40',
+    revision: 2,
+    title: 'Opening hours',
+    contentKind: 'inline_text',
+    sourceKind: 'website',
+    sourceId: '6d4b2a8e-1c7f-4e3a-9b5d-0f8c2e6a4d17',
+  },
 }
 
-export const sampleEvent = (type, data) => ({
+/** A sample event of `type`, its `data` naming a conversation, or a document when `subject` says so. */
+export const sampleEvent = (type, data, subject = 'conversation') => ({
   id: '4e7a2d90-6b1c-4f35-8a0e-7d3c9b2f1a64',
   type,
   version: 1,
   occurredAt: '2026-01-15T10:30:00.000Z',
   workspaceId: '7a1f0c34-2b6d-4e58-9f13-0c8d5e6a7b92',
-  data: { ...sampleSubject, ...data },
+  data: { ...sampleSubjects[subject], ...data },
 })

@@ -789,6 +789,11 @@ it leaves ownership alone. An approval closes when you choose one
 of its decision options — it needs no separate Done step. For any other conversation, the
 reading pane is read-only, with an outcome footer in place of the composer.
 
+The reading pane's **Attributes** block lists what the conversation holds.
+Anyone who can take conversations over can change a Choice attribute there, or
+hand it back to the AI with **Reset to automatic**. Private, Text and JSON
+attributes stay read-only there.
+
 Below the queue, **Recently closed** lists the last ten items closed — handoffs
 handed back, approvals decided, and negative feedback resolved or dismissed —
 each with what it was and "Closed by Dana Scully · 30 Sept, 2:12 PM". Selecting

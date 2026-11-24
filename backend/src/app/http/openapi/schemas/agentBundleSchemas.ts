@@ -8,13 +8,14 @@ import {
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import { routineDefinitionDraftInputSchema } from "../../../../modules/routines/public.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
+import { CONTEXT_VARIABLE_SOURCES } from "../../../../modules/context-variables/public.js";
 import { nullableComponent } from "../zodOpenApiExtension.js";
 
 // Bundle collections are name-keyed, not id-keyed: see `agentBundle/domain.ts`
 // for why. The enums below mirror the route-level validation in
 // `agentBundleRoutes.ts` rather than importing zod schemas cross-module.
 const AgentConfigPortabilityValueSchema = z.enum(["portable", "ref", "secret"]);
-const AgentBundleContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
+const AgentBundleContextVariableSourceSchema = z.enum(CONTEXT_VARIABLE_SOURCES);
 const AgentBundleContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
 const AgentBundleSkillInvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
 
@@ -299,6 +300,7 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
     "AgentBundleUnresolvedKind",
     z.enum([
       "context_variable_missing",
+      "context_variable_not_classifiable",
       "resolver_skill_missing",
       "skill_target_unbound",
       "skill_capability_unknown",
@@ -317,6 +319,7 @@ export const registerAgentBundleSchemas = (registry: OpenAPIRegistry, dependenci
         "rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that",
         "looks configured and answers wrong.",
         "- context_variable_missing: the bundle names a context variable that does not exist in this workspace.",
+        "- context_variable_not_classifiable: a classified enablement whose variable the AI cannot fill here (not a Choice, Private, or treated as proof), or past the agent's limit; not written.",
         "- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.",
         "- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.",
         "- skill_capability_unknown: no capability with this id is registered in this deployment.",

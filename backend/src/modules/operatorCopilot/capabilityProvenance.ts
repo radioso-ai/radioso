@@ -8,12 +8,12 @@ type ProductionDescriptorName =
   | "eval_results" | "list_event_subscriptions" | "list_notification_deliveries" | "needs_attention" | "operator_notice_destinations" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
-  | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "propose_workspace_setting" | "propose_privacy_setting" | "propose_time_zone_setting" | "start_crawl"
+  | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "prepare_context_variable" | "propose_workspace_setting" | "propose_privacy_setting" | "propose_time_zone_setting" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
-  | "recrawl_source" | "reprocess_document" | "retrieval_probe"
-  | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
+  | "recrawl_source" | "reprocess_document" | "retrieval_probe" | "set_recrawl_cadence"
+  | "routine_definition" | "run_eval_suite" | "set_triage_state" | "set_conversation_attribute" | "reset_conversation_attribute" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_setup_state" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
   | "retrieval_settings" | "prepare_retrieval_settings"
@@ -81,6 +81,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   prepare_ingestion_settings: { backingOperationIds: ["updateIngestionSettings"], applicationPrimitiveIds: ["settings.ingestion.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound settings receipt; it is not a Ray turn capability.") },
   prepare_agent_settings: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound multi-field agent-settings receipt; it is not a Ray turn capability.") },
   prepare_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective", "deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound directive receipt; it is not a Ray turn capability.") },
+  prepare_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["contextVariables.definition.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound context-variable receipt; Ray in the dashboard drafts the same change with propose_context_variable.") },
   propose_workspace_setting: { backingOperationIds: ["updatePlatformSettings"], applicationPrimitiveIds: ["settings.workspace.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the platform settings service receives an assistant or channel change, and marks the draft when applying it would change who can reach the agent.") },
   propose_privacy_setting: { backingOperationIds: ["updatePrivacySettings"], applicationPrimitiveIds: ["privacy.settings.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the privacy settings receive a retention window, and states on the card when applying it lets the retention sweep erase conversations sooner.") },
   propose_time_zone_setting: { backingOperationIds: ["updateTimeZoneSettings"], applicationPrimitiveIds: ["settings.timeZone.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the time zone settings receive a zone, checked against the runtime's IANA zone data and the stored zone it replaces.") },
@@ -96,6 +97,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   quality_signals: { backingOperationIds: ["listLowQualityTurns", "getQualityStats"] },
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
   recrawl_source: { backingOperationIds: ["recrawlDocumentSource"], applicationPrimitiveIds: ["documents.source-recrawl.act"] },
+  set_recrawl_cadence: { backingOperationIds: ["setDocumentSourceRecrawlCadence"], applicationPrimitiveIds: ["websiteCrawler.recrawl-cadence.act"] },
   reprocess_document: { backingOperationIds: ["reprocessDocument", "reprocessDocumentSource"], applicationPrimitiveIds: ["documents.reprocess.act", "documents.source-reprocess.act"] },
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   retrieval_settings: { backingOperationIds: ["getSettingsRetrievalDefaults", "listAgentSkills"], applicationPrimitiveIds: ["agents.configuration.read"] },
@@ -107,6 +109,8 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
+  set_conversation_attribute: { backingOperationIds: ["setHistoryConversationAttribute"] },
+  reset_conversation_attribute: { backingOperationIds: ["resetHistoryConversationAttribute"] },
   test_chat_sessions: { backingOperationIds: ["listAgentTestExecutions", "getAgentTestExecution"] },
   test_chat_transcript: { backingOperationIds: ["getAgentTestExecution"] },
   test_chat_turn_trace: { backingOperationIds: ["getAgentTestExecution"] },

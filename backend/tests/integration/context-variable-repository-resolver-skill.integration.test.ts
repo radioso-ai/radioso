@@ -14,7 +14,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("ContextVariableService resolver skill validation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const agentRepository = new AgentRepository(database.kysely);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const contextVariableService = new ContextVariableService({
@@ -68,6 +68,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
     workspaceId,
     name: `var_${randomUUID().slice(0, 8)}`,
     valueType: "string",
+    options: null,
     trustTier: "unverified",
     sensitivity: "normal",
     defaultSurfacing: "on_reference",
@@ -113,7 +114,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
       workspaceId,
       agentId,
       variableId: null,
-      definition: { name: variableName, description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      definition: { name: variableName, description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
       expectedVariableUpdatedAt: null,
       enablement: { source: "resolver", resolverSkillId: skill.id, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "operator_only", enabled: true },
       expectedEnablementUpdatedAt: null,
@@ -129,6 +130,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
       workspaceId,
       name: `disable_${randomUUID().slice(0, 8)}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -163,6 +165,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
       workspaceId,
       name: `direct_${randomUUID().slice(0, 8)}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -193,6 +196,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
         name: `proposal_${randomUUID().slice(0, 8)}`,
         description: null,
         valueType: "string",
+        options: null,
         trustTier: "unverified",
         sensitivity: "normal",
         defaultSurfacing: "always",
@@ -222,7 +226,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
       workspaceId,
       agentId,
       variableId: null,
-      definition: { name: variableName, description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      definition: { name: variableName, description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
       expectedVariableUpdatedAt: null,
       enablement: { source: "resolver", resolverSkillId: skill.id, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "operator_only", enabled: true },
       expectedEnablementUpdatedAt: null,
@@ -243,7 +247,7 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
       workspaceId,
       agentId,
       variableId: null,
-      definition: { name: variableName, description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      definition: { name: variableName, description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
       expectedVariableUpdatedAt: null,
       enablement: { source: "resolver", resolverSkillId: skill.id, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "operator_only", enabled: true },
       expectedEnablementUpdatedAt: null,

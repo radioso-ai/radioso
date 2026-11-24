@@ -103,6 +103,18 @@ describe("routineContextRenderer", () => {
     })).toBe('<context_variable name="cart">{"items":2,"total":59.9}</context_variable>');
   });
 
+  it("renders an enum value by its option's label, and a sensitive one as the redaction marker", () => {
+    const staged = (sensitive: boolean): StagedContext => ({
+      ...variable("topic", "billing", { sensitive }),
+      data: { kind: "variable", name: "topic", description: null, value: "billing", label: "Billing", trust: "unverified" },
+    });
+
+    expect(routineContextRenderer.render({ name: "topic", stagedContext: [staged(false)] }))
+      .toBe('<context_variable name="topic">Billing</context_variable>');
+    expect(routineContextRenderer.render({ name: "topic", stagedContext: [staged(true)] }))
+      .toBe('<context_variable name="topic">[redacted]</context_variable>');
+  });
+
   it("finds a variable by its metadata name when the staged id differs", () => {
     const staged: StagedContext = { ...variable("cart", { items: 1 }), id: "ctx_123" };
     expect(routineContextRenderer.render({ name: "cart", stagedContext: [staged] })).toContain('{"items":1}');

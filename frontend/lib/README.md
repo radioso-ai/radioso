@@ -41,8 +41,8 @@ constructing ad hoc fetches.
   (`operatorDisplayName`) on visitor surfaces.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution, and
-  `AGENT_DRAFT_SAVED_EVENT`, the window event a draft save, a publication, or Ray
-  applying a greeting proposal sends.
+  `AGENT_DRAFT_SAVED_EVENT`, the window event a draft save, a publication, a skill
+  write, or Ray applying a greeting or skill proposal sends (`announceAgentDraftSaved`).
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,
   keyed by workspace and agent, that keeps selected revisions, sample values,
   composer text, transcripts, and in-flight updates available while dashboard
@@ -60,7 +60,9 @@ constructing ad hoc fetches.
   adds the declaration to the host page's capabilities on every request. It also
   holds card picks: which items can be picked, what a pick sends
   (`item_select` with the card's title as the message), and what each reply's
-  pick was, read from the visitor messages so a reload shows it.
+  pick was, read from the visitor messages so a reload shows it. Test Chat sends
+  the same pick through `test-chat-item-pick.ts`: the card's title as `message`
+  with its `selection`, alone, while the composer keeps its draft.
 - `routine-consent-editor.ts`: a routine's consents in the Document view — the
   sensitive fields each covers, the decline choice, and the wording per language,
   edited through the exact-greeting variant transitions — plus where each is asked

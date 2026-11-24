@@ -316,6 +316,7 @@ const skillDescriptor = (skillName: string): SkillAuthoringDescriptor => ({
     status: "completed",
   }],
   hasDataOutputs: false,
+  outputs: [],
 });
 
 const contextVariable = (name: string, valueType: ContextVariable["valueType"]): ContextVariable => ({
@@ -324,6 +325,7 @@ const contextVariable = (name: string, valueType: ContextVariable["valueType"]):
   name,
   description: null,
   valueType,
+  options: null,
   trustTier: "unverified",
   sensitivity: "normal",
   defaultSurfacing: "on_reference",

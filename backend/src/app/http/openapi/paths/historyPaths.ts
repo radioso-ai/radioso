@@ -27,6 +27,16 @@ export const registerHistoryPaths = (
     },
   };
 
+  const attributeFilter = (list: "merged" | "chat") => ({
+    attribute: z.string().min(1).max(120).optional().openapi({
+      description: "The exact name of a Choice (`enum`) attribute that is not Private. With `attributeOption`, narrows to conversations whose own value of it (its `conversation` scope) is that option; a value set for the visitor's session or customer does not count. Send both or neither."
+        + (list === "merged" ? " Narrows results to chat rows only." : ""),
+    }),
+    attributeOption: z.string().min(1).max(120).optional().openapi({
+      description: "An option key of `attribute`, archived or not, or `_not_set` for the conversations that hold no value of it in their `conversation` scope. An unknown attribute or option, or a Private or non-Choice attribute, is a 400.",
+    }),
+  });
+
   // A factory, not a shared object: the YAML writer turns a reused enum array into an anchor.
   const historyItemsFilters = () => ({
     limit: z.number().int().min(1).max(100).optional(),
@@ -48,6 +58,7 @@ export const registerHistoryPaths = (
     callerKind: z.enum(["human", "agent"]).optional().openapi({
       description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.",
     }),
+    ...attributeFilter("merged"),
   });
 
   registry.registerPath({
@@ -133,6 +144,7 @@ export const registerHistoryPaths = (
         }),
         agentId: z.string().uuid().optional(),
         channel: z.string().min(1).max(100).optional(),
+        ...attributeFilter("chat"),
       }),
     },
     responses: {
@@ -141,6 +153,14 @@ export const registerHistoryPaths = (
         content: {
           "application/json": {
             schema: schemas.ChatHistoryListResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid query, including an attribute filter no conversation can match",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
           },
         },
       },

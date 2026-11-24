@@ -34,6 +34,7 @@ const catalogToolCoverage = {
   listDocumentChunks: "document_chunks",
   getDocumentChunk: "document_chunks",
   recrawlDocumentSource: "recrawl_source",
+  setDocumentSourceRecrawlCadence: "set_recrawl_cadence",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
   createDocument: "propose_document",
@@ -45,6 +46,8 @@ const catalogToolCoverage = {
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
   getMcpConnection: "agent_skills",
+  listApiConnections: "agent_skills",
+  getApiConnection: "agent_skills",
   listExternalSkills: "agent_skills",
   getExternalSkill: "agent_skills",
   getEvalCaseBySourceMessage: "eval_results",
@@ -54,6 +57,8 @@ const catalogToolCoverage = {
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   setQualityTurnTriage: "set_triage_state",
+  setHistoryConversationAttribute: "set_conversation_attribute",
+  resetHistoryConversationAttribute: "reset_conversation_attribute",
   getAudiencePulse: "audience_topics",
   getAudiencePulseRefreshStatus: "audience_topics",
   getPlatformSettings: "workspace_settings",
@@ -184,6 +189,15 @@ const webhookDestinationConfiguration = deferred(
 const webhookDestinationRemoval = deferred(
   "Deferred: deleting a destination silently stops delivery and recreating one mints a new secret the receiver must be reconfigured with, so removal needs its own proposal shape.",
 );
+const apiConnectionCredentialWrite = permanent(
+  "Permanent exclusion: the body carries the connection's write-only credential, which the operator types into the dashboard and the copilot must never handle; Ray proposes the skills that use a connection, through propose_skill_config, not the connection.",
+);
+const apiConnectionRemoval = permanent(
+  "Permanent exclusion: a deleted connection can only be recreated with its credential, which only the operator can supply, so Ray could neither undo nor redo the removal; it is refused anyway while a skill targets the connection.",
+);
+const apiConnectionTestRequest = permanent(
+  "Permanent exclusion: it sends a real request with the stored credential, and its answer carries the API's raw response body, which can hold a customer's records; the model reads API data only through a skill's declared, typed outputs.",
+);
 const channelConnectionStatusRead = deferred(
   "Deferred to Wave 5 channel configuration: non-secret connection, installation, and binding status that no family reader covers; these land with the channel tools that act on them.",
 );
@@ -262,7 +276,7 @@ const voiceRecordingAudio = permanent("Permanent exclusion: the response is the 
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
-const automationEventFeed = permanent("Permanent exclusion: the workspace event log is a feed automations poll by cursor. Ray reads the same facts where they live: conversation_transcript and conversation_history_search for conversations, contact requests, handoffs and routine endings, and pending decisions through needs_attention.");
+const automationEventFeed = permanent("Permanent exclusion: the workspace event log is a feed automations poll by cursor. Ray reads the same facts where they live: conversation_transcript and conversation_history_search for conversations, contact requests, handoffs and routine endings, pending decisions through needs_attention, and a document's processing outcome through document_status and list_documents.");
 // An event subscription is created by the automation client that receives it (a Zapier REST hook,
 // an n8n trigger node): the create response is the only time the signing secret exists in plain
 // text, and the client verifies every push with it. Ray creating one would put the secret in a
@@ -447,6 +461,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateWebhookDestination",
   ], webhookDestinationConfiguration),
   ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
+  ...coverage(["createApiConnection", "updateApiConnection"], apiConnectionCredentialWrite),
+  ...coverage(["deleteApiConnection"], apiConnectionRemoval),
+  ...coverage(["testApiConnectionRequest"], apiConnectionTestRequest),
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["queryHistory"], historyTextSearch),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
@@ -563,6 +580,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
+  // A scheduled recrawl holds a large removal precisely so that a person, not automation, decides it.
+  ...coverage(["removeDocumentSourceHeldPages", "keepDocumentSourceHeldPages"], permanent(
+    "Permanent exclusion: a scheduled recrawl holds pages it no longer finds when they are more than a fifth of the source, because a loss that large is more often a broken or moved site than a pruned one. Removing them deletes documents in bulk and keeping them exempts them from later scheduled removal, so the decision stays with a person on the source in the dashboard. Ray sets the cadence through set_recrawl_cadence and recrawls through recrawl_source.",
+  )),
   ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
   ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
   ...coverage([

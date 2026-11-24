@@ -4,6 +4,7 @@ import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { currentPeriodStart } from "../usageLimits/period.js";
 import { TENTHS_PER_CONVERSATION } from "../usageLimits/usageLimitService.js";
+import { meteredInAnswers } from "../usageLimits/usageMeter.js";
 
 export interface OrganizationDirectoryRow {
   accountId: string;
@@ -16,13 +17,13 @@ export interface OrganizationDirectoryRow {
     used: number;
     limit: number | null;
   };
-  /** Present when the assigned profile meters conversations, in which case
-   *  `monthlyAnswers` is dormant and the headline meter is this one. Values are
-   *  conversations to one decimal: the counter is kept in tenths so the catalog's
-   *  fractional per-surface weights stay integer math. */
+  /** Present unless the tier caps answers, in which case it is null and `monthlyAnswers`
+   *  is the headline meter. `limit` is null for an account without a conversation limit,
+   *  untiered included. Values are conversations to one decimal: the counter is kept in
+   *  tenths so the catalog's fractional per-surface weights stay integer math. */
   monthlyConversations: {
     used: number;
-    limit: number;
+    limit: number | null;
   } | null;
 }
 
@@ -58,6 +59,7 @@ interface OrganizationDirectoryQueryRow {
   monthly_answer_used: number | string | bigint | null;
   monthly_answer_limit: number | string | bigint | null;
   monthly_conversation_used_tenths: number | string | bigint | null;
+  monthly_usage_tenths: number | string | bigint | null;
   monthly_conversation_limit: number | string | bigint | null;
   total_count: number | string | bigint | null;
 }
@@ -80,17 +82,30 @@ const toNullableNumber = (value: number | string | bigint | null | undefined): n
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const conversationMeter = (
-  usedTenths: number | string | bigint | null,
-  limit: number | string | bigint | null,
-): OrganizationDirectoryRow["monthlyConversations"] => {
-  const conversationLimit = toNullableNumber(limit);
-  if (conversationLimit === null) {
-    return null;
+const headlineMeters = (
+  row: OrganizationDirectoryQueryRow,
+): Pick<OrganizationDirectoryRow, "monthlyAnswers" | "monthlyConversations"> => {
+  const caps = row.profile_key === null
+    ? null
+    : {
+      monthlyAnswerLimit: toNullableNumber(row.monthly_answer_limit),
+      monthlyConversationLimit: toNullableNumber(row.monthly_conversation_limit),
+    };
+  if (meteredInAnswers(caps)) {
+    return {
+      monthlyAnswers: { used: toNumber(row.monthly_answer_used), limit: caps.monthlyAnswerLimit },
+      monthlyConversations: null,
+    };
   }
+  const conversationLimit = caps?.monthlyConversationLimit ?? null;
+  // A capped account reads the allowance it has spent. An uncapped one spends no allowance,
+  // so it reads the month's recorded usage across every kind instead.
+  const usedTenths = conversationLimit === null ? row.monthly_usage_tenths : row.monthly_conversation_used_tenths;
   return {
-    used: toNumber(usedTenths) / TENTHS_PER_CONVERSATION,
-    limit: conversationLimit,
+    // The meter is conversations, so any answer cap on the tier is not enforced and
+    // must not be reported; getAccountUsage masks it too.
+    monthlyAnswers: { used: toNumber(row.monthly_answer_used), limit: null },
+    monthlyConversations: { used: toNumber(usedTenths) / TENTHS_PER_CONVERSATION, limit: conversationLimit },
   };
 };
 
@@ -137,6 +152,7 @@ export class OrganizationDirectoryService {
         coalesce(c.used_count, 0) AS monthly_answer_used,
         p.monthly_answer_limit AS monthly_answer_limit,
         coalesce(units.used_tenths, 0) AS monthly_conversation_used_tenths,
+        coalesce(kinds.used_tenths, 0) AS monthly_usage_tenths,
         p.monthly_conversation_limit AS monthly_conversation_limit,
         count(*) OVER () AS total_count
       FROM accounts a
@@ -153,6 +169,13 @@ export class OrganizationDirectoryService {
       LEFT JOIN ee_usage_limit_unit_counters units
         ON units.account_id = a.id
        AND units.period_start = ${periodStart}::date
+      LEFT JOIN (
+        SELECT account_id, sum(used_tenths) AS used_tenths
+        FROM ee_usage_limit_unit_kind_counters
+        WHERE period_start = ${periodStart}::date
+        GROUP BY account_id
+      ) kinds
+        ON kinds.account_id = a.id
       WHERE ${search}::text IS NULL
          OR a.name ILIKE '%' || ${search}::text || '%'
          OR EXISTS (
@@ -167,27 +190,15 @@ export class OrganizationDirectoryService {
     `.execute(this.db);
 
     const fetchedRows = result.rows;
-    const rows = fetchedRows.slice(0, limit).map((row): OrganizationDirectoryRow => {
-      const monthlyConversations = conversationMeter(
-        row.monthly_conversation_used_tenths,
-        row.monthly_conversation_limit,
-      );
-      return {
-        accountId: row.account_id,
-        name: row.name,
-        ownerEmail: row.owner_email,
-        ownerCount: toNumber(row.owner_count),
-        profileKey: row.profile_key,
-        profileDisplayName: row.profile_display_name,
-        monthlyAnswers: {
-          used: toNumber(row.monthly_answer_used),
-          // A conversation-metered profile ignores monthly_answer_limit, so that cap
-          // is not enforced and must not be reported; getAccountUsage masks it too.
-          limit: monthlyConversations ? null : toNullableNumber(row.monthly_answer_limit),
-        },
-        monthlyConversations,
-      };
-    });
+    const rows = fetchedRows.slice(0, limit).map((row): OrganizationDirectoryRow => ({
+      accountId: row.account_id,
+      name: row.name,
+      ownerEmail: row.owner_email,
+      ownerCount: toNumber(row.owner_count),
+      profileKey: row.profile_key,
+      profileDisplayName: row.profile_display_name,
+      ...headlineMeters(row),
+    }));
     const hasMore = fetchedRows.length > limit;
     const total = fetchedRows.length > 0 ? toNumber(fetchedRows[0].total_count) : 0;
 

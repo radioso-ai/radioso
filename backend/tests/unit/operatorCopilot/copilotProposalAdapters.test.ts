@@ -16,6 +16,7 @@ import {
   type AgentContextVariableEnablement,
   type AgentContextVariableEnablementRecord,
   type ApplyContextVariableProposalInput,
+  type ApplyContextVariableProposalOptions,
   type ApplyContextVariableProposalResult,
   type ContextVariable,
   type ContextVariableRepositoryPort,
@@ -76,9 +77,12 @@ const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) =>
     listByAgent: vi.fn(async (_workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> =>
       [...enablements.values()].filter((enablement) => enablement.agentId === agentId)),
     upsertEnablement: vi.fn(async (input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> => upsertEnablement(input)),
+    hasValues: vi.fn(async (): Promise<boolean> => false),
+    classifiedEnablementAgentIds: vi.fn(async (variableId: string): Promise<string[]> =>
+      [...enablements.values()].filter((enablement) => enablement.variableId === variableId && enablement.source === "classified" && enablement.enabled).map((enablement) => enablement.agentId)),
     // In-memory analogue of the real repository's transaction: both version guards are checked
     // before either write is applied, so a failing guard never leaves a partial write behind.
-    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> => {
+    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput, _options?: ApplyContextVariableProposalOptions): Promise<ApplyContextVariableProposalResult> => {
       let variableId = input.variableId;
 
       if (input.definition && variableId) {
@@ -134,6 +138,7 @@ const makeVariable = (overrides: Partial<ContextVariable> = {}): ContextVariable
   name: "loyalty_tier",
   description: null,
   valueType: "string",
+  options: null,
   trustTier: "unverified",
   sensitivity: "normal",
   defaultSurfacing: "on_reference",
@@ -152,6 +157,72 @@ const createContextVariableCopilotProposalAdapter = (deps: {
     agentReader: deps.agentService,
     agentSkillsReader: deps.agentSkillsService,
   }),
+});
+
+describe("createContextVariableCopilotProposalAdapter classified attributes", () => {
+  const choiceOptions = [
+    { key: "billing", label: "Billing", description: "Invoices, refunds and payment methods" },
+    { key: "shipping", label: "Shipping", description: "Delivery times and tracking" },
+  ];
+  const setUp = (seed: ContextVariable[] = []) => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository(seed.map((variable) => ({ ...variable, workspaceId })));
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+    return { workspaceId, agentId, adapter, contextVariableRepository };
+  };
+  const newChoice = (overrides: Record<string, unknown> = {}) => ({
+    name: "topic", valueType: "enum", options: choiceOptions, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    enablement: { source: "classified", surfacing: "on_reference" },
+    ...overrides,
+  });
+
+  it("drafts and applies a new Choice attribute the agent classifies, in one proposal", async () => {
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp();
+    const targetRef = { agentId, variableId: null };
+
+    const validated = await adapter.validatePayload(workspaceId, targetRef, newChoice());
+    const outcome = await adapter.applyIfVersionMatches(workspaceId, validated.targetRef, validated.payload, validated.versionToken);
+
+    expect(outcome.outcome).toBe("applied");
+    const [enablement] = await contextVariableRepository.listByAgent(workspaceId, agentId);
+    expect(enablement).toMatchObject({ source: "classified", surfacing: "on_reference", enabled: true });
+  });
+
+  it.each([
+    ["a Text attribute", { valueType: "string", options: null }, /Only a Choice \(enum\) attribute/u],
+    ["a Private attribute", { sensitivity: "sensitive" }, /Private \(sensitive\)/u],
+    ["an attribute treated as proof", { trustTier: "signed" }, /proof \(signed\)/u],
+  ])("refuses to draft %s the agent classifies, with the reason", async (_label, overrides, reason) => {
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp();
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, newChoice(overrides)))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(reason) });
+    expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ninth classified attribute on one agent", async () => {
+    const seeded = Array.from({ length: 9 }, (_, index) => makeVariable({ name: `topic_${index}`, valueType: "enum", options: choiceOptions.map((option) => ({ ...option, archived: false })) }));
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp(seeded);
+    for (const variable of seeded.slice(0, 8)) {
+      await contextVariableRepository.upsertEnablement({ agentId, variableId: variable.id, source: "classified", surfacing: "on_reference", enabled: true });
+    }
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: seeded[8].id }, { enablement: { source: "classified", surfacing: "on_reference" } }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 8/u) });
+  });
+
+  it("refuses to make an attribute its agent classifies private without moving the agent off it", async () => {
+    const choice = makeVariable({ name: "topic", valueType: "enum", options: choiceOptions.map((option) => ({ ...option, archived: false })) });
+    const { workspaceId, agentId, adapter, contextVariableRepository } = setUp([choice]);
+    await contextVariableRepository.upsertEnablement({ agentId, variableId: choice.id, source: "classified", surfacing: "on_reference", enabled: true });
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: choice.id }, { sensitivity: "sensitive" }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/source "classified"/u) });
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: choice.id }, { sensitivity: "sensitive", enablement: { source: "pushed", surfacing: "on_reference" } }))
+      .resolves.toBeDefined();
+  });
 });
 
 describe("createContextVariableCopilotProposalAdapter", () => {
@@ -289,7 +360,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort([skillId]) });
 
     const validated = await adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
-      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      name: "loyalty_tier", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       enablement: { source: "resolver", resolverSkillId: skillId, surfacing: "operator_only" },
     });
 
@@ -307,7 +378,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort([]) });
 
     await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
-      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      name: "loyalty_tier", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       enablement: { source: "resolver", resolverSkillId: foreignSkillId, surfacing: "operator_only" },
     })).rejects.toMatchObject({ statusCode: 400 });
   });
@@ -394,7 +465,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     });
 
     await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
-      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      name: "loyalty_tier", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       enablement: { source: "resolver", resolverSkillId: disabledSkillId, surfacing: "operator_only" },
     })).rejects.toMatchObject({ statusCode: 400 });
   });
@@ -408,7 +479,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     const targetRef = { agentId, variableId: null };
     const validated = await adapter.validatePayload(workspaceId, targetRef, {
-      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      name: "loyalty_tier", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
     });
 
     // applyProposal's create branch never gates on the agent's updatedAt - only the
@@ -424,7 +495,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
       workspaceId,
       agentId,
       variableId: null,
-      definition: { name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      definition: { name: "loyalty_tier", description: null, valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
       expectedVariableUpdatedAt: null,
       enablement: null,
       expectedEnablementUpdatedAt: null,
@@ -450,7 +521,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     await expect(
       adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
-        name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+        name: "loyalty_tier", valueType: "string", options: null, trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
@@ -484,6 +555,102 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     const validated = await adapter.validatePayload(workspaceId, { agentId, variableId: variableA.id }, { name: "tier_loyalty" });
     expect((validated.payload as { name: string }).name).toBe("tier_loyalty");
+  });
+
+  it("drafts an enum attribute with its described options and applies it as one definition", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository();
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }), contextVariableRepository, agentSkillsService: makeAgentSkillsPort(),
+    });
+
+    const validated = await adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
+      name: "topic", valueType: "enum", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      options: [{ key: "billing", label: "Billing", description: "Invoices and payments." }, { key: "shipping", label: "Shipping" }],
+    });
+    const options = [
+      { key: "billing", label: "Billing", description: "Invoices and payments.", archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ];
+    expect(validated.payload).toMatchObject({ definition: { valueType: "enum", options } });
+
+    const applied = await adapter.applyIfVersionMatches(workspaceId, validated.targetRef, validated.payload, validated.versionToken);
+    expect(applied.outcome).toBe("applied");
+    // A dashboard apply carries no reviewed receipt, so no commit hook is passed through.
+    expect(contextVariableRepository.applyProposal).toHaveBeenCalledWith(expect.objectContaining({
+      definition: expect.objectContaining({ valueType: "enum", options }),
+    }), undefined);
+  });
+
+  it("keeps an enum's stored options through an edit that names none, and refuses one that drops an option", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const options = [
+      { key: "billing", label: "Billing", description: null, archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ];
+    const topic = makeVariable({ workspaceId, name: "topic", valueType: "enum", options });
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }),
+      contextVariableRepository: makeContextVariableRepository([topic]),
+      agentSkillsService: makeAgentSkillsPort(),
+    });
+    const targetRef = { agentId, variableId: topic.id };
+
+    const described = await adapter.validatePayload(workspaceId, targetRef, { description: "What the conversation is about." });
+    expect(described.payload).toMatchObject({ definition: { options } });
+    const preview = await adapter.preview(workspaceId, described.targetRef, described.payload);
+    expect(preview.current).toMatchObject({ definition: { options } });
+
+    await expect(adapter.validatePayload(workspaceId, targetRef, { options: [{ key: "billing", label: "Billing" }] }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    const archived = await adapter.validatePayload(workspaceId, targetRef, {
+      options: [{ key: "billing", label: "Billing" }, { key: "shipping", label: "Shipping", archived: true }],
+    });
+    expect(archived.payload).toMatchObject({ definition: { options: [options[0], { ...options[1], archived: true }] } });
+  });
+
+  it("reports an edit drafted before a teammate added an option as stale, not as a removed option", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const options = [
+      { key: "billing", label: "Billing", description: null, archived: false },
+      { key: "shipping", label: "Shipping", description: null, archived: false },
+    ];
+    const topic = makeVariable({ workspaceId, name: "topic", valueType: "enum", options });
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }),
+      contextVariableRepository: makeContextVariableRepository([topic]),
+      agentSkillsService: makeAgentSkillsPort(),
+    });
+    const drafted = await adapter.validatePayload(workspaceId, { agentId, variableId: topic.id }, { description: "What the conversation is about." });
+
+    Object.assign(topic, {
+      options: [...options, { key: "returns", label: "Returns", description: null, archived: false }],
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+    });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, drafted.targetRef, drafted.payload, drafted.versionToken))
+      .toEqual({ outcome: "stale" });
+  });
+
+  it("reports a type change refused because the variable now has values as failed, with that reason", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const plan = makeVariable({ workspaceId, name: "plan" });
+    const contextVariableRepository = makeContextVariableRepository([plan]);
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService: makeAgentService({ [workspaceId]: [agentId] }), contextVariableRepository, agentSkillsService: makeAgentSkillsPort(),
+    });
+    const drafted = await adapter.validatePayload(workspaceId, { agentId, variableId: plan.id }, { valueType: "json" });
+
+    contextVariableRepository.hasValues.mockResolvedValue(true);
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, drafted.targetRef, drafted.payload, drafted.versionToken)).toEqual({
+      outcome: "failed",
+      reason: "The value type of a context variable that has values cannot change",
+    });
   });
 });
 

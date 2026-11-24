@@ -6,6 +6,9 @@ export type PlanModels = "managed" | "byok";
 
 export type PlanSupport = "community" | "email" | "priority";
 
+/** How often a website source may recrawl itself on its own, at fastest. */
+export type PlanRecrawlCadence = "daily" | "weekly" | "monthly";
+
 /**
  * How the app finds a plan in Stripe. Prices are looked up by `lookup_key` at checkout time, so a
  * price change is a new Stripe price with the key transferred (`transfer_lookup_key`) — no app
@@ -30,6 +33,11 @@ export interface Plan {
   readonly monthlyConversations: number;
   /** Contact and operator-notification recipient emails allowed per workspace per UTC day. */
   readonly dailyNotificationEmails: number;
+  /**
+   * The fastest scheduled recrawl a website source may run at. A workspace that moves to a plan with
+   * a slower one keeps its sources' chosen cadence and recrawls at this one.
+   */
+  readonly fastestRecrawlCadence: PlanRecrawlCadence;
   readonly storedBytes: number;
   readonly monthlyIndexedBytes: number;
   readonly documents: number;

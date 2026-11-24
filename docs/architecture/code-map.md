@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-19
+last_updated: 2026-11-21
 ---
 
 # Code Map
@@ -561,11 +561,21 @@ Related docs:
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
-webhook skills (`webhookSkills`), and Slack skills (`slackSkills`) share one persistence spine: `agent_skills`
+webhook skills (`webhookSkills`), Slack skills (`slackSkills`), and API request skills (`apiRequestSkills`, capability `api_request`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
-`config` object. Database triggers enforce the current target references for MCP
-connections, customer email connections, and webhook destinations. Each module's
+`config` object. A target in use cannot be deleted: one SQL function,
+`agent_skill_target_uses` (migration `276_skill_target_delete_checks_published_release.sql`),
+lists the agents and skills that use an API connection, MCP connection, webhook
+destination, customer email connection, or Slack installation, from the live
+rows (the draft) and from each agent's published release snapshot. The per-kind
+`BEFORE DELETE` triggers call it through `block_agent_skill_target_delete`, and
+each target's service reads it through `SkillTargetUseReader`
+(`backend/src/shared/domain/skillTargetUses.ts`, implemented by
+`agentSkills/targetUses.ts`, wired in `app/server/builders/integrations.ts`) to
+answer a `409` that names each agent and skill, and maps the trigger's refusal
+with `isForeignKeyViolationOn` (`shared/infra/kysely/sqlHelpers.ts`). The MCP
+connection's `usedByAgents` reads the same uses. Each module's
 repository port and record shape own kind-specific config validation, so future
 config-backed skill kinds should not add a table or migration unless they need
 genuinely relational state outside the shared skill definition.
@@ -575,7 +585,8 @@ consumed by both MCP and customer email.
 
 Public surfaces and key files:
 
-- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
+- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type, `AgentSkillTargetUses`)
+- `backend/src/shared/domain/skillTargetUses.ts` (target-in-use port and the shared `409` message)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
 - `backend/src/modules/externalSkills/public.ts` (MCP skill executor and routine resolver)
 - `backend/src/modules/webhookSkills/public.ts` (webhook skill executor and routine resolver)
@@ -586,6 +597,7 @@ Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
 
 - `cd backend && pnpm exec vitest run tests/integration/externalSkills/repositories.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/customerEmail/email-skill-definition-repository.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/skill-target-published-release-guard.integration.test.ts` (every target kind, draft and published release)
 
 ## Integration Connections
 
@@ -622,6 +634,33 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/webhook-destinations-service.test.ts tests/unit/webhook-delivery.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/webhook-destination-repository.integration.test.ts`
+
+## API Request Skills
+
+Owns API connections (workspace-owned base URL and encrypted credential) and the
+`api_request` skill: parameter placement, typed input resolution with the
+verified-only gate, the executor, outcome mapping, and the connection test
+request. Routines run these skills; the typed output contract is shared. The
+routine resolver and the executor read the skill row from the conversation's
+release (`app/composition/conversationSkills.ts`); the connection is read live.
+
+Public surfaces and key files:
+
+- `backend/src/modules/apiRequestSkills/public.ts`
+- `backend/src/modules/apiRequestSkills/connections/apiConnectionService.ts`
+- `backend/src/modules/apiRequestSkills/executor/apiRequestSkillExecutor.ts`
+- `backend/src/modules/apiRequestSkills/routineSkillResolver.ts`
+- `backend/src/db/repositories/apiConnectionRepository.ts`
+- `backend/src/app/http/routes/settingsApiConnectionRoutes.ts`
+- `backend/src/shared/domain/skillDataContract/` (typed contract, pure)
+- `backend/src/shared/infra/http/publicHttpRequest.ts` (egress transport)
+- `backend/src/db/migrations/269_api_connections.sql`
+- Module brief: `backend/src/modules/apiRequestSkills/README.md`; docs: `docs/api-request-skills.md`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/apiRequestSkills tests/unit/skillDataContract tests/unit/public-http-request.test.ts tests/unit/release-pinned-skill-runtime.test.ts tests/contract/settings-api-connections.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/api-connection-repository.integration.test.ts tests/integration/agent-revision-skill-draft.integration.test.ts`
 
 ## Notify
 
@@ -835,7 +874,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
+- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules; the context-variable adapter lives in `contextVariableProposalAdapter.ts`)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `backend/src/modules/operatorCopilot/proposalContribution.ts`, `tools/contributedProposals.ts`, and `proposalCard.ts` (a contributed proposal target type, the propose tool Ray builds for it, and both card producers); `backend/src/app/composition/copilotContributions.ts` assembles the target-type set
@@ -1085,17 +1124,46 @@ Public surfaces and key files:
 
 ## Context Variables
 
-Owns workspace context-variable definitions, per-agent enablements, pushed
-values, resolver-backed values, and the bounded projections staged into an
-agent turn. `ContextVariableService` is the authoring boundary used by HTTP and
-Ray: it resolves agents and variables inside the workspace, validates resolver
+Owns workspace context-variable definitions (the dashboard and docs call them
+attributes), per-agent enablements, stored values, resolver-backed values, and
+the bounded projections staged into an agent turn. A definition's `valueType`
+is `string`, `json` or `enum`; an enum carries `options` (`key`, `label`,
+`description`, `archived`), whose keys never change and which are archived,
+never removed. `ContextVariableService` is the authoring boundary used by HTTP
+and Ray: it resolves agents and variables inside the workspace, checks options
+and refuses a type change on a variable that has values, validates resolver
 skills against the target agent, and applies definition and enablement writes.
-The resolver service owns turn-time reads, caching, timeouts, and compatibility
-checks.
+Every value write goes through `validateValue` and records its writer
+(`written_by_kind` `api | operator | routine | classifier`, `written_by_ref`);
+the repository applies `mayOverwrite` inside the upsert, so the classifier
+fills only an empty or classifier-written value. `contextScopeLadder` is the
+resolution order, `conversation → session → customer → agent → workspace`;
+chat builds each turn's scopes with it. The resolver service owns turn-time
+reads, caching, timeouts, and compatibility checks. It caches under the chat
+session or verified customer, or under the conversation when the turn has
+neither, never under the agent or workspace, and hands its skill the first
+scope past the conversation.
+
+An enablement's source is `pushed`, `resolver` or `classified` (`browser` and
+`request` are refused at authoring). `pushed` and `classified` values are
+stored ones, and both resolve paths read the store for them (`readsStoredValue`).
+`classified` takes only a Choice variable that is neither sensitive nor signed,
+at most `CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent` (8) per agent; the
+service refuses any other, and refuses a definition edit that would leave a
+classified variable in such a state (`classificationRefusal`). The module gives
+the classifier its two ports: `ClassifiedVariableReader` (each target says
+whether another writer set it for the conversation, its session or its
+customer, `classificationTargetFrom`; an agent or workspace value is a default
+that holds nothing) and `ConversationValueWriter` (`conversationValueWriter.ts`, which plans each write
+with `planConversationWrite` and counts it in
+`radioso_context_value_writes_total{writer, outcome}`).
 
 Public surfaces and key files:
 
 - `backend/src/modules/context-variables/public.ts`
+- `backend/src/modules/context-variables/domain.ts` (types, `mayOverwrite`, `contextScopeLadder`)
+- `backend/src/modules/context-variables/valueValidation.ts` (`validateValue`, `validateOptions`; limits in `CONTEXT_VARIABLES_BEHAVIOR.enumOptions`)
+- `backend/src/modules/context-variables/optionSchema.ts` (the one option schema and key pattern the routes, OpenAPI, Ray and `validateOptions` share)
 - `backend/src/modules/context-variables/repository.ts`
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
@@ -1103,21 +1171,72 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/modules/context-variables/identitySigning.ts` (`verifySignedIdentityOutcome` names why a visitor identity token did not verify, from a closed set; `verifySignedIdentity` is its null-or-identity form) and `backend/src/app/http/shared/publicChatIdentity.ts` (the public chat message's use of it: `radioso_public_chat_identity_verifications_total{outcome}`, one log line per refusal with ids and the outcome)
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
-- `backend/src/db/repositories/contextVariableRepository.ts`
-- `backend/src/app/http/routes/contextVariableRoutes.ts`
-- `backend/src/modules/operatorCopilot/proposalAdapters.ts`
+- `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
+- `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
+- `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevisionEnablements`, which reads only the release's enablements, with what its ladder holds for each)
+- `backend/src/db/migrations/273_classified_context_variables.sql` (the `classified` enablement source)
+- `backend/src/db/repositories/contextVariableRowLocks.ts` (the row locks the repository's writes take: a definition edit's variable lock, under which option keys and the type are checked, and a value write's conversation share lock)
+- `backend/src/db/migrations/270_typed_context_variables.sql` (enum type, `options`, `conversation` scope, writer columns; catalog changes only, CHECKs `NOT VALID`) and `271_typed_context_variables_validate_and_index.sql` (validates those CHECKs and builds the filter index, under locks no read waits for)
+- `backend/src/app/http/routes/contextVariableRoutes.ts` (stamps `api` provenance from the credential or session user)
+- `backend/src/modules/operatorCopilot/contextVariableProposalAdapter.ts` and `backend/src/modules/operatorCopilot/tools/contextVariables.ts` (Ray's `propose_context_variable`, options included)
+- `backend/src/modules/operatorCopilot/tools/contextVariableReviewedPreparation.ts` (operator MCP's `prepare_context_variable`: `create`, `edit` and `set_enablement`, reviewed and applied through the same adapter, whose apply commits the execution's receipt in the owner's transaction; a definition is `live` and needs signed-in approval, an enablement is an `agent_draft`)
+- `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
+- `backend/src/modules/context-variables/conversationAttributes.ts` (`ConversationAttributeService`: a conversation's attributes as the operator reads them, the most specific of its `conversation`, `session` and `customer` values, a Private value redacted; and `resolveFilter`, which turns an attribute name and option key, or `_not_set`, into the list filter and refuses anything but a non-Private Choice) with its read port in `backend/src/db/repositories/conversationAttributeReads.ts`; the list filter is `conversationHoldsValue` in `contextVariableValueReads.ts`, used by `historyItemsRepository.ts` and `conversationRepository.ts`. `ChatHistoryService` takes it as its attribute reader (default in `historyReaderDefaults.ts`): it adds `attributes` to the first page of an operator detail read and resolves `attribute` + `attributeOption` on the history lists, so REST and Ray's `conversation_transcript` and `conversation_history_search` (`operatorCopilot/tools/chat.ts`) read through the history service alike
+- `backend/src/modules/context-variables/conversationAttributeEdits.ts` (`ConversationAttributeEditService`: a teammate's set and reset of one conversation's Choice attribute, refusing Private and non-Choice attributes; a reset of an attribute the conversation's release classifies queues the classification job; content-free audit and the `radioso_conversation_attribute_edits_total` counter), composed in `backend/src/app/composition/conversationAttributeEdits.ts` and called by the Inbox's `PUT`/`DELETE /api/v1/history/chat/{conversationId}/attributes/{name}` (`historyAttributeRoutes.ts`) and by Ray and operator MCP's `set_conversation_attribute` and `reset_conversation_attribute` (`operatorCopilot/tools/conversationAttributes.ts`)
+- `frontend/components/dashboard/conversation-attributes.tsx` (the **Attributes** block in the Inbox reading pane and the conversation drawer, kept current by `use-live-conversation-attributes.ts`) and the Inbox's **Attribute** filter in `frontend/components/dashboard/inbox/all-conversations-list-pane.tsx`, fed by `use-inbox-attribute-options.ts` (one cached catalog read per workspace, shared with the block's menus) and `frontend/lib/conversation-attributes.ts`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts tests/unit/context-variable-attribute-rules.test.ts tests/unit/context-variable-service-attributes.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/identity-signing.test.ts tests/unit/identity-nonce-prune.test.ts tests/integration/identity-nonce-repository.integration.test.ts` and the signed-identity case in `tests/contract/public-chat.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/context-variable-attributes.integration.test.ts tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
+- `cd frontend && pnpm exec playwright test tests/e2e/context-variables-settings.spec.ts` (the Attributes page: a Choice attribute with options, archiving one)
+- `cd backend && pnpm exec vitest run tests/unit/conversation-attributes.test.ts tests/contract/history-attributes.contract.test.ts tests/integration/conversation-attributes.integration.test.ts tests/integration/classified-attribute-readers.integration.test.ts` (a conversation's attributes and the list filter; the integration test runs `EXPLAIN` to prove the filter uses the partial index from migration 271)
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-attributes.test.ts && pnpm exec playwright test tests/e2e/conversation-attributes.spec.ts` (the drawer block and the Inbox filter)
+- `cd backend && pnpm exec vitest run tests/unit/conversation-attribute-edits.test.ts tests/unit/operatorCopilot/copilot-conversation-attribute-tools.test.ts tests/contract/history-attribute-edits.contract.test.ts tests/integration/conversation-attribute-edits.integration.test.ts` (a teammate's set and reset over REST, Ray and MCP, and how they meet the classifier)
 
 Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
-- Issues `#1036`, `#1046`, and `#1115`
+- `specs/1884-typed-attributes/`
+- Issues `#1036`, `#1046`, `#1115`, and `#1884`
+
+## Context Classification
+
+Fills an agent's classified attributes from the conversation: one
+`rewrite`-tier call per run reads the rolling summary and the visitor's latest
+messages and picks, per attribute, one active option key or none, under a
+strict JSON schema (`backend/prompts/context-classification.md`). It knows the
+recipe, the schema, the parse, the job kind and the model tier; how values are
+stored and overwritten belongs to context-variables, and how a conversation is
+read belongs to chat, which implements its `ConversationExcerptReader`.
+
+A committed turn writes the `context.classification` job (`rerun`, keyed by
+conversation) beside the summary refresh when its revision classifies an
+attribute (`chat/services/turnBackgroundJobs.ts`). Test Chat sides are not
+stored conversations, so the trusted Test Chat runner classifies each test turn
+itself once its answer is out (`chat/services/testChatClassification.ts`, bounded
+at 5 s, never after a turn that held a sensitive slot), carries the values and the
+withheld message ids in the side's continuation and shows every classified
+attribute on the turn trace as `attributes`, which `test_chat_turn_trace` returns
+and the dashboard's turn debug renders.
+
+Public surfaces and key files:
+
+- `backend/src/modules/contextClassification/README.md`
+- `backend/src/modules/contextClassification/public.ts`
+- `backend/src/modules/contextClassification/conversationClassifier.ts` (`classifyNow`, `classifyTranscript`, `radioso_context_classification_runs_total{trigger, outcome}`, the `context_classification.run` span)
+- `backend/src/modules/contextClassification/classificationJob.ts`
+- `backend/src/app/composition/contextClassification.ts` and `backend/src/app/composition/backgroundJobHandlers.ts`
+- `backend/src/modules/chat/services/contextClassificationExcerptReader.ts`
+- `backend/scripts/runClassificationEvals.ts` and `backend/tests/fixtures/context-classification/` (the labelled set and its baseline)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/context-classification.test.ts tests/unit/context-variable-conversation-value-writer.test.ts tests/unit/context-classification-excerpt-reader.test.ts tests/unit/test-chat-classification.test.ts tests/unit/turn-background-jobs.test.ts tests/unit/eval-suite/context-classification-cases.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/classified-context-variables.integration.test.ts tests/integration/context-classification-excerpt.integration.test.ts tests/integration/context-classification-turn.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm run evals:classification` (live; one rewrite-tier call per case and sample)
 
 ## Visitors
 
@@ -1278,7 +1397,7 @@ about which tables exist.
 Rows a foreign key cannot reach belong to the module that owns them, which
 implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
 customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
-context-variable session and customer values (an eraser reads the session ids
+context-variable conversation, session and customer values (an eraser reads the session ids
 it keys by from the conversations before they go), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the
@@ -1973,20 +2092,72 @@ text extraction keeps as main content, with its alt text, its figure's caption
 and its offset in the page text. The provider passes them to ingestion as
 document image candidates; the documents module fetches and stores them.
 
+A source runs one crawl at a time: `WebsiteCrawlJobRepository.createForSource`
+holds the source row's lock and returns the source's queued or processing crawl
+instead of inserting a second, and every path that crawls an existing source
+(recrawl, scheduled recrawl, a new crawl of the same URL) goes through it. A job
+records its `crawl_trigger` (`manual` or `scheduled`).
+
+Scheduled recrawl (migration `272_scheduled_website_recrawl.sql`): a website
+source's `recrawl_cadence` (`off`, `monthly`, `weekly`, `daily`) and `next_recrawl_at` live
+on `document_sources`. `recrawlSchedule.ts` is the pure cadence arithmetic and
+plan clamp, with the `RecrawlPlanPort` the plan's ceiling arrives through;
+`recrawlScheduleService.ts` sets a cadence (`PUT
+/api/v1/document/sources/:sourceId/recrawl-cadence`, refusing a cadence over the
+plan with `403 recrawl_cadence_not_in_plan`); `recrawlSweep.ts` claims due
+sources (`db/repositories/websiteRecrawlRepository.ts`, `FOR UPDATE SKIP
+LOCKED`) and queues their recrawls through the documents module's
+`DocumentSourceRecrawlService`; `app/composition/websiteRecrawl.ts` wires it as
+the `website-recrawl` periodic task. A crawl removes missing pages only when
+`crawlSawWholeSite` (`missingPages.ts`) says it saw the whole site: the last
+slice's provider reported `frontierExhausted` (`crawlSiteStream` in
+`packages/crawler/src/transport/crawler.ts` returns it), no slice dropped a link
+at a limit (the checkpoint's sticky `linksDroppedAtLimit`) or failed to read
+`robots.txt` or a sitemap (sticky `sitemapUnread`), no page failed, and the
+checkpoint's lists were not cut. Then `reconcileMissingPages` asks the worker
+whether the job is still the source's newest
+(`WebsiteCrawlJobRepository.isNewestForSource`). The pages it did not find are
+the source's pages published under this site's external-id prefix
+(`websiteExternalDocumentIdPrefix` in `pageUrls.ts`) before the job started,
+less the ones the operator kept. Whatever started the crawl, it holds them when
+they are more than a fifth of the source's pages other than kept ones
+(`missingPageRemoval.ts`) in
+`website_source_missing_pages` (`db/repositories/websiteMissingPageRepository.ts`).
+Otherwise it asks the site about each one first (`missingPageVerification.ts`:
+the `WebsitePageProbe` port, the pure `judgePageAnswer` and
+`decideVerifiedRemoval`, at most `MAX_VERIFIED_MISSING_PAGES` per crawl) and
+removes exactly the ones the site says are gone
+(`DocumentRepository.deleteMissingSourcePages`). The probe is
+`createRadiosoWebsitePageProbe` in `radiosoCrawlerProvider.ts` over
+`probePages` (`packages/crawler/src/transport/pageProbe.ts`), the crawler's own
+guarded fetch, wired into the crawl worker in
+`app/server/builders/documentsRetrieval.ts`;
+`heldPagesService.ts` removes the pages still held (`DocumentRepository.deleteHeldSourcePages`)
+or keeps them (`POST .../held-pages/remove|keep`). The plan's ceiling
+is the catalog's `fastestRecrawlCadence`, read by the EE usage limit service's
+`getFastestRecrawlCadence`. The dashboard's controls are
+`frontend/components/dashboard/documents/source-recrawl-controls.tsx`; Ray's
+tool is `set_recrawl_cadence` in `operatorCopilot/tools/documents.ts`.
+
 Public surfaces and key files:
 
 - `backend/src/modules/websiteCrawler/public.ts`
 - `backend/src/modules/websiteCrawler/service.ts`
 - `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
-- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`)
+- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts` (`toWebsiteCrawlPage`, `createRadiosoWebsitePageProbe`)
 - `backend/src/modules/websiteCrawler/routes.ts`
+- `backend/src/modules/websiteCrawler/recrawlSchedule.ts`, `recrawlScheduleService.ts`, `recrawlSweep.ts`, `missingPages.ts`, `missingPageRemoval.ts`, `missingPageVerification.ts`, `heldPagesService.ts`
+- `backend/src/app/composition/websiteRecrawl.ts`
 - `packages/crawler/src/transport/htmlImageExtraction.ts`
+- `packages/crawler/src/transport/pageProbe.ts`
 
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
-- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/websiteCrawler tests/unit/app-composition/website-recrawl-composition.test.ts tests/contract/website-recrawl.contract.test.ts`
+- `cd packages/crawler && pnpm exec vitest run tests/unit/htmlImageExtraction.test.ts tests/unit/crawlFrontier.test.ts tests/unit/pageProbe.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts tests/integration/website-recrawl-repositories.integration.test.ts tests/integration/website-recrawl-held-pages.integration.test.ts tests/integration/website-recrawl-multi-slice.integration.test.ts`
+- `cd frontend && PLAYWRIGHT_SERVER_MODE=development pnpm exec playwright test tests/e2e/source-recrawl.spec.ts`
 
 Related docs:
 
@@ -2358,11 +2529,11 @@ Primary internals:
 - `packages/conversation-engine/src/routineReask.ts` (what a step asked again is told it lacks, whether its reply went unread, and which turns count as progress toward the re-ask limit)
 - `backend/src/modules/routines/selectorCompletionTelemetry.ts` (counts every next-step selector completion in `routine_next_step_completions_total` by model, step kind, call, and result, and logs an unreadable one)
 - `packages/conversation-engine/src/routineTraceSlots.ts` (what the routine trace records about slots: the keys each step captured or replaced, and the capped values only when the runner opts in); `frontend/lib/routine-run-trace.ts` reads that sub-trace for the turn inspector, and `frontend/components/dashboard/routine-filled-slots.tsx` lists the filled slots, beside their values on a Test Chat trace
-- `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, and collects the `contextEvidence` the referenced context variables carry to the step reply; the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
+- `packages/conversation-engine/src/stepReferences.ts` (fills `{{slot.<key>}}` and `{{context.<name>}}` into a step instruction, collects the `contextEvidence` the referenced context variables carry to the step reply, and gives it the turn's typed tool results (`skillResults`, read by `turnSkillResults` in `routineStepContext.ts` and written by `packages/conversation-defaults/src/routineStepToolResults.ts`); the host renders both in `backend/src/modules/context-variables/routineContextRenderer.ts`)
 - `packages/conversation-engine/src/routineActivation.ts` and `routineResume.ts` (`claimRoutine` → the host renders or streams the reply → `settle`; `attemptRoutine` is that sequence rendered whole)
 - `backend/src/modules/chat/services/routines/routineReplyDelivery.ts` (the delivery rule: a claimed reply streams when its turn only moves the routine to its next step, and is persisted first and shown whole when a skill acted outside the conversation, the turn queued an action, or ended the routine; `skillActsOutsideConversation` in `backend/src/modules/retrieval/public.ts` is the one rule for which skills act outside, shared with safe-test suppression), consulted through `routineReplyFor.ts` by both live streaming chat (`ChatService`) and streamed Test Chat replay (`WorkbenchReplayRunner.stream`)
 - `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
-- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), `routine-step-sources.md` and `routine-step-sources-none.md` (which quoted sources the reply has), `routine-step-ending.md` (what the run did, on an ending's reply and inside `routine-step-terminal-handoff-with-message.md`), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
+- `backend/prompts/chat/routine-next-step.md` with `routine-next-step-slots.md`, `routine-next-step-filled-slots.md`, and `routine-next-step-date-rule.md` (the selector's declared slots and the rules for filling them), `routine-next-step-slot-fallback.md` (the selector's slot-only reading when its decision stays unreadable), `routine-step-reply.md` with `routine-step-progress.md` (a chat step's reply ends on its question), `routine-step-context-evidence.md` (frames the visitor's page as evidence), `routine-step-sources.md` and `routine-step-sources-none.md` (which quoted sources the reply has), `routine-step-tool-results.md` (what the turn's tool steps returned, by their output contracts), `routine-step-ending.md` (what the run did, on an ending's reply and inside `routine-step-terminal-handoff-with-message.md`), and `routine-step-reask.md` with `routine-step-reask-unanswered.md` or `routine-step-reask-unreadable.md`, `routine-step-reask-gap.md`, `routine-step-reask-exhausted-gap.md`, `routine-step-reask-missing-slots.md`, and `routine-step-reask-exhausted.md` (a step asked again, and past the re-ask limit), `routine-step-stuck-handoff.md` (a routine that ends stuck and hands the visitor to a person), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Every one of these but `routine-ranked-activation.md` and `routine-step-answer-steering.md` reaches `RoutineNextStepSelector` or `RoutineStepRenderer` as a template option from `backend/src/modules/routines/turnProvider.ts`, and `pnpm run generate:prompts` copies each into `packages/conversation-defaults/src/generated/defaultPrompts.ts` as the package default. `routine-ranked-activation.md` reaches the routine activator instead, as a `turnProvider.ts`-loaded option on its ranked-activation registry; `routine-step-answer-steering.md` is loaded directly by `backend/src/shared/infra/prompts/steeringPromptRenderer.ts`, outside the generator's manifest. `packages/conversation-defaults/tests/routineModelInputGolden.test.ts` pins the exact model input both send. Before editing any of them (or the fragments still built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
@@ -2577,7 +2748,7 @@ Related docs:
 
 Owns the workspace event log (#1851): business events an automation acts on
 (`conversation.started`, `contact_request.created`, `handoff.requested`,
-`routine.completed`, `decision.pending`), each written in the transaction of the
+`routine.completed`, `decision.pending`, `context_value.changed`), each written in the transaction of the
 change it records and listed at `GET /api/v1/workspace/events` by a cursor that
 never passes a row still being committed. It is not the dashboard's
 `GET /api/v1/events` invalidation stream ([Realtime](#realtime)). The owning
@@ -2600,6 +2771,18 @@ Where each type is recorded:
   transition (`modules/chat/services/routines/routineRunEvents.ts`)
 - `handoff.requested`: every `handoff_requested` conversation activity, through
   `withWorkspaceEvents` in the composition seam
+- `context_value.changed`: every write or delete that changes a conversation's
+  attribute value (`db/repositories/contextVariableValueWrites.ts`), from the
+  draft `modules/context-variables/contextValueChangedEvent.ts` builds; the
+  repository a turn's resolver caches through is built without the recorder
+- `document.processed`, `document.failed`: a vectorize job's terminal write
+  (`db/repositories/documentProcessingJobOutcomes.ts`), only when its claim
+  fence (`status = 'processing'` and the claimed attempt) hits, from drafts the
+  worker builds (`modules/documents/services/documentWorkspaceEvents.ts`); the
+  log copies the document's title, content kind and source from its row, and
+  records nothing for a revision the document has moved past. Deleting a
+  document removes its events through `DocumentEventEraser`, which
+  `DocumentRepository` takes from the composition seam
 
 Reads run in one repeatable-read snapshot and stop at
 `pg_snapshot_xmin(pg_current_snapshot())`, ordered by (`tx_id`, `position`). A
@@ -2626,7 +2809,8 @@ subscription's cursor, `410` deletes it, anything else backs off
 (five tries at least) disables it. The built-in `workspace-event-delivery`
 periodic task (every minute; Cloud Scheduler `workspace_event_delivery` in
 `infra/terraform/scheduler.tf`) starts every due drain, and the chat turn's
-`afterCommit` wakes its workspace's drains sooner. Target URLs pass the outbound
+`afterCommit` and the document worker's event-bearing completions and failures
+wake their workspace's drains sooner. Target URLs pass the outbound
 URL rule (`normalizeWebhookTargetUrl` in `shared/infra/http/signedWebhook.ts`,
 shared with webhook destinations) at create and the DNS-pinned guard at every
 hop; the URL and secret are sealed under `CONNECTOR_ENCRYPTION_KEY`, and a keyed
@@ -3204,7 +3388,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set, whether prices include
+  top-up, managed service, the managed-plan model set, the fastest scheduled
+  website recrawl (`fastestRecrawlCadence`), whether prices include
   VAT). Entry point `src/index.ts` (`PLAN_CATALOG`, `findPlan`, `formatPrice`);
   data in `src/plans.json`, all of it public through `GET /api/v1/plans`. The
   staff-only model spend estimate (list prices, `eurPerUsd`, the conversation

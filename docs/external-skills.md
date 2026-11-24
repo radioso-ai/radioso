@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-11-16
+last_updated: 2026-11-22
 ---
 
 # External Skills via MCP
@@ -118,8 +118,12 @@ The skill is validated against the tool before it is saved: the tool must still
 exist, and the tool's required inputs must each be bound or exposed.
 
 A connection cannot be deleted while a skill on any agent in the workspace still
-uses it. The error names those agents, so remove their skills first. Deleting an
-agent removes its skills and leaves the connection in place.
+uses it, in the agent's draft or in its published release. The error names each
+agent and skill. Remove or retarget those skills first; when the message says
+the published version still uses one, publish that agent too. The connection's
+**Used by** line (`usedByAgents` in the API) lists the same agents, so a
+connection that shows "No skills yet" can be deleted. Deleting an agent removes
+its skills and leaves the connection in place.
 
 ## 3. Use a skill in a routine
 

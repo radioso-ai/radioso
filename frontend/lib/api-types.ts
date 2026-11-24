@@ -62,6 +62,7 @@ export type AgentGreetingValidationIssue = NonNullable<AgentGreetingValidation['
 export type AgentGreetingDraftResponse = ApiSchemas['AgentGreetingDraftResponse']
 
 export type ContextVariable = ApiSchemas['ContextVariable']
+export type ContextVariableOption = ApiSchemas['ContextVariableOption']
 export type ContextVariableCreateRequest = ApiSchemas['ContextVariableCreateRequest']
 export type ContextVariableUpdateRequest = ApiSchemas['ContextVariableUpdateRequest']
 export type ContextVariableResponse = ApiSchemas['ContextVariableResponse']
@@ -70,6 +71,9 @@ export type AgentContextVariableEnablement = ApiSchemas['AgentContextVariableEna
 export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVariableEnablementRequest']
 export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
+export type ContextVariableSource = Extract<AgentContextVariableEnablementRequest['source'], 'pushed' | 'classified'>
+export type ContextVariableSurfacing = AgentContextVariableEnablementRequest['surfacing']
+export type ContextVariableValueType = ContextVariableCreateRequest['valueType']
 
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'item'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
@@ -245,6 +249,9 @@ export type DocumentMetadataRecord = Record<string, string | number | boolean | 
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
 export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']
+export type DocumentSourceRecrawlCadence = ApiSchemas['DocumentSourceRecrawlCadenceRequest']['recrawlCadence']
+export type DocumentSourceHeldPagesRemoved = ApiSchemas['DocumentSourceHeldPagesRemoved']
+export type DocumentSourceHeldPagesKept = ApiSchemas['DocumentSourceHeldPagesKept']
 export type SourceReprocessResponse = ApiSchemas['SourceReprocessResponse']
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
@@ -504,6 +511,8 @@ export type OperatorReplySpeech = ApiSchemas['OperatorReplySpeech']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }
+export type ConversationAttribute = ApiSchemas['ConversationAttribute']
+export type ConversationAttributeChange = ApiSchemas['ConversationAttributeChange']
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages' | 'channelContext'> & {
   messages: ChatConversationTurn[]
   tailCursor: string | null

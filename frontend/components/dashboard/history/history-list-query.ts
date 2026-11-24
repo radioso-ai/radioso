@@ -47,7 +47,7 @@ export const keepHistoryListPlaceholderData = (
 )
 
 // Positional tail appended by dashboardQueryKeys.history.list only when `searchParams` was
-// given (see its own comment) — [q, outcome, agentId, sourceOrigin, callerKind], each optional(...)'d to
+// given (see its own comment) — [q, outcome, agentId, sourceOrigin, callerKind, attribute, attributeOption], each optional(...)'d to
 // `null` when absent. Read back here rather than threaded as a separate queryFn argument, so
 // `fetchHistory` stays a plain `QueryFunctionContext` function (existing callers pass it
 // directly as `queryFn: fetchHistory`).
@@ -57,6 +57,7 @@ const searchParamsFromKey = (queryKey: readonly unknown[]): ConversationSearchPa
   ...(queryKey[9] ? { agentId: queryKey[9] as string } : {}),
   ...(queryKey[10] ? { sourceOrigin: queryKey[10] as string } : {}),
   ...(queryKey[11] ? { callerKind: queryKey[11] as ConversationSearchParams['callerKind'] } : {}),
+  ...(queryKey[12] && queryKey[13] ? { attribute: queryKey[12] as string, attributeOption: queryKey[13] as string } : {}),
 })
 
 export const fetchHistory = async ({

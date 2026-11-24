@@ -41,6 +41,13 @@ export class InMemorySlackSkillDefinitionRepository implements SlackSkillDefinit
     return clone(record);
   }
 
+  /** The skills on one installation in a workspace, by agent and name. */
+  skillsOnInstallation(workspaceId: string, installationId: string): Array<{ agentId: string; skillName: string }> {
+    return [...this.rows.values()]
+      .filter((row) => row.workspaceId === workspaceId && row.installationId === installationId)
+      .map((row) => ({ agentId: row.agentId, skillName: row.skillName }));
+  }
+
   async findById(workspaceId: string, agentId: string, id: string): Promise<SlackSkillDefinitionSummary | null> {
     const record = this.rows.get(id);
     return record && record.workspaceId === workspaceId && record.agentId === agentId ? clone(record) : null;

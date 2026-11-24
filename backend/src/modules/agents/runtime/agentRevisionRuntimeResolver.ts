@@ -1,6 +1,7 @@
 import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
-import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
+import { withContactHumanSkill } from "../contactHumanSkill.js";
+import type { AgentRevision, AgentRevisionSnapshot, ContextVariableEnablementSnapshot } from "../agentRevision.js";
 import type { AgentSkillSpine } from "../../agentSkills/public.js";
 
 /**
@@ -10,6 +11,15 @@ import type { AgentSkillSpine } from "../../agentSkills/public.js";
 export interface AgentRevisionRuntimeReaderPort {
   findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null>;
   findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
+}
+
+/**
+ * The context-variable enablements one release froze, without the rest of its snapshot: what a
+ * reader that only asks which variables a release selects needs. Null when the agent has no such
+ * release.
+ */
+export interface AgentRevisionEnablementReader {
+  findRevisionEnablements(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<ContextVariableEnablementSnapshot[] | null>;
 }
 
 /**
@@ -39,7 +49,9 @@ interface ResolvedAgentRevision {
 }
 
 export const applyAgentRevisionSnapshot = (agent: AgentRecord, revision: AgentRevision): AgentRecord => ({
-  ...agent,
+  // The contact switch and delivery follow the release's `contact_human` skill, not the live one
+  // the agent was read with, so the contact routine's gate matches the skill that will deliver.
+  ...withContactHumanSkill(agent, revision.snapshot.agentSkills?.find((skill) => skill.skillName === "contact_human")),
   customInstruction: revision.snapshot.customInstruction ?? "",
   authoredDirectives: revision.snapshot.directives,
   // `agentSkills` is absent on snapshots predating skill tracking (see

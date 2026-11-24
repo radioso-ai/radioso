@@ -14,6 +14,7 @@ const baseFilters: ConversationFilterState = {
   agentId: null,
   siteOrigin: null,
   callerKind: null,
+  attribute: null,
 }
 
 const conversation = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
@@ -175,6 +176,7 @@ describe('filterConversations', () => {
         agentId: 'agent-1',
         siteOrigin: 'https://books.valmora.example',
         callerKind: null,
+        attribute: null,
       },
       NOW,
     )
@@ -220,6 +222,12 @@ describe('buildConversationSearchParams', () => {
     expect(buildConversationSearchParams({ ...baseFilters, callerKind: null })).toEqual({})
   })
 
+  it('sends an attribute filter as the attribute name and its option key, omitting null', () => {
+    expect(buildConversationSearchParams({ ...baseFilters, attribute: { name: 'topic', option: 'billing' } }))
+      .toEqual({ attribute: 'topic', attributeOption: 'billing' })
+    expect(buildConversationSearchParams({ ...baseFilters, attribute: null })).toEqual({})
+  })
+
   it('combines every active filter into one params object', () => {
     expect(buildConversationSearchParams({
       search: ' recupero ',
@@ -227,12 +235,15 @@ describe('buildConversationSearchParams', () => {
       agentId: 'agent-1',
       siteOrigin: 'https://books.valmora.example',
       callerKind: 'agent',
+      attribute: { name: 'topic', option: 'billing' },
     })).toEqual({
       q: 'recupero',
       outcome: 'completed',
       agentId: 'agent-1',
       sourceOrigin: 'https://books.valmora.example',
       callerKind: 'agent',
+      attribute: 'topic',
+      attributeOption: 'billing',
     })
   })
 })

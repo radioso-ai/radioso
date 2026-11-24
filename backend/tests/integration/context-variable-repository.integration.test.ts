@@ -9,10 +9,11 @@ import { AppError } from "../../src/shared/domain/errors.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+const apiWriter = { kind: "api" as const, ref: null };
 
 describeIntegration("ContextVariableRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ContextVariableRepository(database.kysely);
+  const repository = new ContextVariableRepository(database.kysely, null);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -62,6 +63,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       name: `cart_${randomUUID().replaceAll("-", "_")}`,
       description: "Current shopping cart",
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -71,6 +73,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       description: "Current shopping cart",
       valueType: "json",
+      options: null,
       defaultSurfacing: "always",
     });
     expect(await repository.get(workspaceId, variable.id)).toMatchObject({ id: variable.id });
@@ -123,6 +126,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `pinned_${randomUUID().replaceAll("-", "_")}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -155,21 +159,22 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `order_status_${randomUUID().replaceAll("-", "_")}`,
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
     });
     const scope = { type: "session" as const, id: `session-${randomUUID()}` };
 
-    const created = await repository.upsertValue(variable.id, scope, { status: "processing", lines: ["a", "b"] });
-    expect(created).toMatchObject({ workspaceId, variableId: variable.id, scope });
-    expect(created.data).toEqual({ status: "processing", lines: ["a", "b"] });
+    const created = await repository.upsertValue(variable.id, scope, { status: "processing", lines: ["a", "b"] }, apiWriter);
+    expect(created).toMatchObject({ workspaceId, variableId: variable.id, scope, writtenBy: apiWriter });
+    expect(created?.data).toEqual({ status: "processing", lines: ["a", "b"] });
 
-    const updated = await repository.upsertValue(variable.id, scope, { status: "shipped" });
-    expect(updated.id).toBe(created.id);
+    const updated = await repository.upsertValue(variable.id, scope, { status: "shipped" }, apiWriter);
+    expect(updated?.id).toBe(created?.id);
     expect(await repository.readValue(variable.id, scope)).toMatchObject({ data: { status: "shipped" } });
 
-    expect(await repository.deleteValue(variable.id, scope)).toBe(true);
+    expect(await repository.deleteValue(variable.id, scope, { kind: "api", ref: null })).toBe(true);
     expect(await repository.readValue(variable.id, scope)).toBeNull();
   });
 
@@ -179,6 +184,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       name: `profile_${randomUUID().replaceAll("-", "_")}`,
       description: "Verified visitor profile",
       valueType: "json",
+      options: null,
       trustTier: "signed",
       sensitivity: "sensitive",
       defaultSurfacing: "on_reference",
@@ -197,10 +203,10 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       { type: "agent" as const, id: agentId },
       { type: "workspace" as const, id: workspaceId },
     ];
-    await repository.upsertValue(variable.id, scopes[3], { rung: "workspace" });
-    await repository.upsertValue(variable.id, scopes[2], { rung: "agent" });
-    await repository.upsertValue(variable.id, scopes[1], { rung: "customer" });
-    await repository.upsertValue(variable.id, scopes[0], { rung: "session" });
+    await repository.upsertValue(variable.id, scopes[3], { rung: "workspace" }, apiWriter);
+    await repository.upsertValue(variable.id, scopes[2], { rung: "agent" }, apiWriter);
+    await repository.upsertValue(variable.id, scopes[1], { rung: "customer" }, apiWriter);
+    await repository.upsertValue(variable.id, scopes[0], { rung: "session" }, apiWriter);
 
     await expect(repository.resolveForAgent(workspaceId, agentId, scopes)).resolves.toEqual([
       {
@@ -213,11 +219,11 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       },
     ]);
 
-    await repository.deleteValue(variable.id, scopes[0]);
+    await repository.deleteValue(variable.id, scopes[0], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "customer" });
-    await repository.deleteValue(variable.id, scopes[1]);
+    await repository.deleteValue(variable.id, scopes[1], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "agent" });
-    await repository.deleteValue(variable.id, scopes[2]);
+    await repository.deleteValue(variable.id, scopes[2], { kind: "api", ref: null });
     expect((await repository.resolveForAgent(workspaceId, agentId, scopes))[0]?.value).toEqual({ rung: "workspace" });
   });
 
@@ -234,6 +240,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `active_${randomUUID().replaceAll("-", "_")}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -242,6 +249,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `valueless_${randomUUID().replaceAll("-", "_")}`,
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -250,6 +258,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `disabled_${randomUUID().replaceAll("-", "_")}`,
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -258,6 +267,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `browser_${randomUUID().replaceAll("-", "_")}`,
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -266,6 +276,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `resolver_${randomUUID().replaceAll("-", "_")}`,
       valueType: "json",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -298,10 +309,10 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       resolverTimeoutMs: 1000,
       surfacing: "always",
     });
-    await repository.upsertValue(active.id, scopes[0], "active-value");
-    await repository.upsertValue(disabled.id, scopes[0], "disabled-value");
-    await repository.upsertValue(browser.id, scopes[0], "browser-value");
-    await repository.upsertValue(resolver.id, scopes[0], "resolver-value");
+    await repository.upsertValue(active.id, scopes[0], "active-value", apiWriter);
+    await repository.upsertValue(disabled.id, scopes[0], "disabled-value", apiWriter);
+    await repository.upsertValue(browser.id, scopes[0], "browser-value", apiWriter);
+    await repository.upsertValue(resolver.id, scopes[0], "resolver-value", apiWriter);
 
     expect((await repository.resolveForAgent(workspaceId, isolatedAgentId, scopes)).map((row) => row.name)).toEqual([
       active.name,
@@ -325,6 +336,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
         name: `proposed_${randomUUID().replaceAll("-", "_")}`,
         description: "Proposed by copilot",
         valueType: "string",
+        options: null,
         trustTier: "unverified",
         sensitivity: "normal",
         defaultSurfacing: "on_reference",
@@ -360,6 +372,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       name,
       description: null,
       valueType: "string" as const,
+      options: null,
       trustTier: "unverified" as const,
       sensitivity: "normal" as const,
       defaultSurfacing: "on_reference" as const,
@@ -401,6 +414,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `stale_def_${randomUUID().replaceAll("-", "_")}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -415,6 +429,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
           name: variable.name,
           description: "hijacked",
           valueType: "string",
+          options: null,
           trustTier: "unverified",
           sensitivity: "normal",
           defaultSurfacing: "always",
@@ -434,6 +449,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       name: `atomic_${randomUUID().replaceAll("-", "_")}`,
       description: "Original description",
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -465,6 +481,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
           name: variable.name,
           description: "Changed by the proposal",
           valueType: "string",
+          options: null,
           trustTier: "unverified",
           sensitivity: "normal",
           defaultSurfacing: "always",
@@ -499,6 +516,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       name: `both_${randomUUID().replaceAll("-", "_")}`,
       valueType: "string",
+      options: null,
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "always",
@@ -526,6 +544,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
         name: variable.name,
         description: "Updated together",
         valueType: "string",
+        options: null,
         trustTier: "unverified",
         sensitivity: "sensitive",
         defaultSurfacing: "always",

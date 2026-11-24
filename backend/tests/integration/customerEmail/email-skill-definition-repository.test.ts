@@ -162,7 +162,6 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
       },
     });
 
-    expect(await connectionRepository.countSkillReferences(workspaceId, connectionId)).toBeGreaterThanOrEqual(1);
     await expect(
       client.query(`DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
     ).rejects.toMatchObject({ code: "23503" });

@@ -1083,6 +1083,10 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "workspace_event_delivery"');
     expect(schedulerTf).toContain("schedule         = local.workspace_event_delivery_schedule");
     expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/workspace-event-delivery/run");
+    // So is the website recrawl sweep, which queues a crawl for each website source whose recrawl is due.
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "website_recrawl"');
+    expect(schedulerTf).toContain("schedule         = local.website_recrawl_schedule");
+    expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/website-recrawl/run");
     // How long deleted conversation data survives in backups and logs is what the data retention
     // docs state, so the windows are pinned rather than left to provider defaults. Turning
     // point-in-time recovery on restarts the instance, so it stays a per-stack choice defaulting to
@@ -1104,6 +1108,7 @@ describe("runtime configuration", () => {
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-voice-recording-erasure-recovery",');
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-identity-nonce-prune",');
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-workspace-event-delivery",');
+    expect(monitoringTf).toContain('"${local.resource_name_prefix}-website-recrawl",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
     // An environment that keeps its logs in its own region holds them for the same 30 days.

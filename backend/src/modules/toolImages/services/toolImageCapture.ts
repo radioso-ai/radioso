@@ -17,14 +17,25 @@ import {
   type ToolImageObject,
   type ToolImageObjectStore,
   type ToolImageRendition,
+  type ToolImageState,
   type ToolImageStore,
 } from "../domain.js";
 
 /** What started a capture: the job after the reply, or a browser asking for the picture first. */
 export type ToolImageCaptureTrigger = "job" | "on_demand";
 
-/** A capture's result: how it ended, or `held` when another capture holds the picture. */
-export type ToolImageCaptureResult = ToolImageCaptureOutcome | "held";
+/**
+ * A capture's result: how it ended; or, when there was nothing to capture, where the picture stood:
+ * `stored` already, `held` by another capture, `failed` for good earlier, or `missing`.
+ */
+export type ToolImageCaptureResult = ToolImageCaptureOutcome | Exclude<ToolImageState, "waiting">;
+
+/** A capture that ran or found no turn, whose outcome is counted, or a picture with nothing to capture, which is not. */
+type Attempt =
+  | { readonly kind: "captured"; readonly outcome: ToolImageCaptureOutcome }
+  | { readonly kind: "skipped"; readonly state: Exclude<ToolImageState, "waiting"> };
+
+const captured = (outcome: ToolImageCaptureOutcome): Attempt => ({ kind: "captured", outcome });
 
 /**
  * Tool images decode one at a time in their own pool, then within the process-wide pool, so a
@@ -96,31 +107,39 @@ interface ToolImageCaptureDependencies {
   /** Captures this process runs at once. */
   concurrentCaptures?: number;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
   now?: () => Date;
   /** The tag one capture's objects are named by; random, so two captures never share a name. */
   newCaptureTag?: () => string;
+  /** The decoder pool tool images take a slot of; the module's own by default. */
+  decodeSlots?: NormalizationSlots;
 }
 
 /**
- * Copies one tool image: takes one of the process's capture turns, claims the row, fetches the
- * address through the bounded public fetch, re-encodes it with the shared codec into one WebP per
- * served width under names of its own, and marks the row stored if its claim still holds it. One
- * deadline covers all of it, the wait for a turn included. A failure a later attempt may get past
- * hands the row back; any other fails it for good, with its reason. Logs and metrics carry ids
- * and outcomes only, never an address, a title or a byte.
+ * Copies one tool image: reads where the picture stands, takes one of the process's capture turns,
+ * claims the row, fetches the address through the bounded public fetch, re-encodes it with the
+ * shared codec into one WebP per served width under names of its own, and marks the row stored if
+ * its claim still holds it. One deadline covers all of it, the wait for a turn included. A failure
+ * a later attempt may get past hands the row back; any other fails it for good, with its reason.
+ * Logs and metrics carry ids and outcomes only, never an address, a title or a byte.
  */
 export class ToolImageCapture {
   private readonly turns: NormalizationSlots;
+  private readonly onDemandWaitingLimit: number;
 
   constructor(private readonly deps: ToolImageCaptureDependencies) {
-    this.turns = new NormalizationSlots(deps.concurrentCaptures ?? TOOL_IMAGE_LIMITS.concurrentCaptures, TOOL_IMAGE_LIMITS.jobCaptureDeadlineMs);
+    const turns = deps.concurrentCaptures ?? TOOL_IMAGE_LIMITS.concurrentCaptures;
+    this.turns = new NormalizationSlots(turns, TOOL_IMAGE_LIMITS.jobCaptureDeadlineMs);
+    this.onDemandWaitingLimit = turns * TOOL_IMAGE_LIMITS.onDemandWaitingPerTurn;
   }
 
   /**
-   * Captures the picture within `deadlineMs`. An on-demand capture that finds every turn taken
-   * returns `busy` at once and leaves the picture to the job; a job waits for a turn within its
-   * deadline. `signal` cancels the capture, as a job run's own deadline does.
+   * Captures the picture within `deadlineMs`. A picture with nothing to capture (stored, failed,
+   * missing, or held by a fresh claim) is answered from its row at once, without a turn. One still
+   * waiting waits for a turn when every one is taken, as a carousel's browser asks for all its
+   * pictures together, until less than `minCaptureMs` of the deadline is left; it is `busy` then,
+   * or at once on demand when the queue for turns is already full, without touching the picture.
+   * `signal` cancels the capture, as a job run's own deadline does.
    */
   capture(
     imageId: string,
@@ -142,45 +161,45 @@ export class ToolImageCapture {
   ): Promise<ToolImageCaptureResult> {
     const deadlineMs = options.deadlineMs
       ?? (trigger === "on_demand" ? TOOL_IMAGE_LIMITS.onDemandCaptureDeadlineMs : TOOL_IMAGE_LIMITS.jobCaptureDeadlineMs);
-    const deadline = AbortSignal.timeout(deadlineMs);
-    const signal = options.signal ? AbortSignal.any([deadline, options.signal]) : deadline;
+    const deadlineAt = Date.now() + deadlineMs;
     const started = performance.now();
-    const result = await this.turns.run(
-      () => this.claimAndCapture(imageId, trigger, signal),
-      { waitMs: trigger === "on_demand" ? 0 : deadlineMs },
-    );
-    const outcome: ToolImageCaptureResult = result === "busy" ? "busy" : result;
-    if (outcome !== "held") {
-      this.deps.metrics?.incrementCounter("tool_image_capture_total", {
-        help: "Tool image captures by what started them and how they ended",
-        labels: { trigger, outcome },
-      });
-      this.deps.metrics?.observeHistogram("tool_image_capture_duration_seconds", {
-        help: "Time to copy one tool image, from asking for a turn to stored or failed",
-        labels: { trigger },
-        value: (performance.now() - started) / 1_000,
-      });
-    }
-    return outcome;
+    const attempt = await this.attempt(imageId, trigger, deadlineAt, options.signal);
+    if (attempt.kind === "skipped") return attempt.state;
+    this.deps.metrics?.incrementCounter("tool_image_capture_total", {
+      help: "Tool image captures by what started them and how they ended",
+      labels: { trigger, outcome: attempt.outcome },
+    });
+    this.deps.metrics?.observeHistogram("tool_image_capture_duration_seconds", {
+      help: "Time to copy one tool image, from asking for a turn to stored or failed",
+      labels: { trigger },
+      value: (performance.now() - started) / 1_000,
+    });
+    return attempt.outcome;
   }
 
-  private async claimAndCapture(imageId: string, trigger: ToolImageCaptureTrigger, signal: AbortSignal): Promise<ToolImageCaptureResult> {
-    if (signal.aborted) return "timeout";
+  private async attempt(imageId: string, trigger: ToolImageCaptureTrigger, deadlineAt: number, callerSignal?: AbortSignal): Promise<Attempt> {
+    const state = await this.deps.store.peek(imageId, this.now());
+    if (state !== "waiting") return { kind: "skipped", state };
+    const waitMs = deadlineAt - Date.now() - TOOL_IMAGE_LIMITS.minCaptureMs;
+    if (waitMs < 0 || (trigger === "on_demand" && this.turns.queued >= this.onDemandWaitingLimit)) return captured("busy");
+    const result = await this.turns.run(() => this.claimAndCapture(imageId, trigger, deadlineAt, callerSignal), { waitMs });
+    return result === "busy" ? captured("busy") : result;
+  }
+
+  private async claimAndCapture(imageId: string, trigger: ToolImageCaptureTrigger, deadlineAt: number, callerSignal?: AbortSignal): Promise<Attempt> {
+    const remainingMs = deadlineAt - Date.now();
+    // A turn that came free this late leaves too little time to copy anything: the row stays as it is.
+    if (remainingMs < TOOL_IMAGE_LIMITS.minCaptureMs) return captured("busy");
+    const deadline = AbortSignal.timeout(remainingMs);
+    const signal = callerSignal ? AbortSignal.any([deadline, callerSignal]) : deadline;
+    if (signal.aborted) return captured("timeout");
     const claim = await this.deps.store.claim(imageId, this.now());
-    switch (claim.kind) {
-      case "stored":
-        return "stored";
-      case "held":
-        return "held";
-      case "failed":
-      case "missing":
-        return "source_missing";
-      case "claimed":
-        break;
-    }
+    if (claim.kind !== "claimed") return { kind: "skipped", state: claim.kind };
     const written: ToolImageObject[] = [];
     try {
-      return await this.captureClaimed(claim.image, signal, written);
+      const outcome = await this.captureClaimed(claim.image, trigger, signal, written);
+      // A capture that outlived its claim lost the picture to the one that took it over.
+      return outcome === "held" ? { kind: "skipped", state: "held" } : captured(outcome);
     } catch (error) {
       // The deadline passed, or storage or the database failed mid-way: the picture is not at
       // fault, so a later attempt may pass. Whatever this capture wrote goes.
@@ -189,34 +208,42 @@ export class ToolImageCapture {
         this.deps.logger?.warn({ imageId, workspaceId: claim.image.workspaceId, trigger, errorClass: errorClassOf(error) }, "tool_image_capture_errored");
       }
       await this.deps.store.release({ image: claim.image, reason, leftovers: written }).catch(() => undefined);
-      return reason;
+      return captured(reason);
     }
   }
 
-  private async captureClaimed(image: ClaimedToolImage, signal: AbortSignal, written: ToolImageObject[]): Promise<ToolImageCaptureResult> {
-    const source = await this.readSource(image, signal);
+  private async captureClaimed(
+    image: ClaimedToolImage,
+    trigger: ToolImageCaptureTrigger,
+    signal: AbortSignal,
+    written: ToolImageObject[],
+  ): Promise<ToolImageCaptureOutcome | "held"> {
+    if (image.url === null) {
+      return this.finish(image, trigger, "source_missing");
+    }
+    const source = await this.readSource(image.url, signal);
     if (source.kind === "failed") {
-      return this.finish(image, source.outcome);
+      return this.finish(image, trigger, source.outcome);
     }
     const decoded = await untilAborted(decodeGuarded(
       source.bytes,
-      { accepted: TOOL_IMAGE_TYPES, maxInputPixels: TOOL_IMAGE_LIMITS.maxInputPixels, slots: TOOL_IMAGE_DECODE_SLOTS },
+      { accepted: TOOL_IMAGE_TYPES, maxInputPixels: TOOL_IMAGE_LIMITS.maxInputPixels, slots: this.deps.decodeSlots ?? TOOL_IMAGE_DECODE_SLOTS },
       async (open) => ({
         metadata: await open().metadata(),
         renditions: await encodeWebpRenditions(open, { widthsPx: this.deps.renditionWidths }),
       }),
     ), signal);
     if (decoded.kind === "rejected") {
-      const outcome: ToolImageCaptureOutcome = decoded.reason === "busy" ? "busy"
+      const outcome: ToolImageCaptureOutcome = decoded.reason === "busy" ? "decoder_busy"
         : decoded.reason === "too_many_pixels" ? "too_large"
         : decoded.reason === "unsupported_type" ? "unsupported_type"
         : "decode_error";
-      return this.finish(image, outcome);
+      return this.finish(image, trigger, outcome);
     }
     const width = decoded.value.metadata.width ?? 0;
     const height = decoded.value.metadata.height ?? 0;
     if (width < TOOL_IMAGE_LIMITS.minSidePx || height < TOOL_IMAGE_LIMITS.minSidePx) {
-      return this.finish(image, "too_small");
+      return this.finish(image, trigger, "too_small");
     }
     const tag = (this.deps.newCaptureTag ?? (() => randomBytes(6).toString("hex")))();
     const renditions: ToolImageRendition[] = [];
@@ -240,12 +267,11 @@ export class ToolImageCapture {
       sha256: createHash("sha256").update(source.bytes).digest("hex"),
       renditions,
     });
-    // A capture that outlived its claim lost the picture to the one that took it over.
     return stored ? "stored" : "held";
   }
 
-  private async readSource(image: ClaimedToolImage, signal: AbortSignal): Promise<SourceRead> {
-    const fetched = await this.deps.fetchBytes(image.url, {
+  private async readSource(url: string, signal: AbortSignal): Promise<SourceRead> {
+    const fetched = await this.deps.fetchBytes(url, {
       // The fetch ends with the capture's deadline; the larger figure only bounds it from above.
       timeoutMs: TOOL_IMAGE_LIMITS.jobCaptureDeadlineMs,
       maxBytes: TOOL_IMAGE_LIMITS.maxSourceBytes,
@@ -258,11 +284,13 @@ export class ToolImageCapture {
     return { kind: "failed", outcome: fetched.kind === "not_modified" ? "http_error" : fetchFailure(fetched) };
   }
 
-  private async finish(image: ClaimedToolImage, outcome: ToolImageCaptureOutcome): Promise<ToolImageCaptureOutcome> {
+  private async finish(image: ClaimedToolImage, trigger: ToolImageCaptureTrigger, outcome: ToolImageCaptureOutcome): Promise<ToolImageCaptureOutcome> {
     if (TRANSIENT_CAPTURE_OUTCOMES.has(outcome)) {
       await this.deps.store.release({ image, reason: outcome, leftovers: [] });
     } else {
       await this.deps.store.markFailed({ image, reason: outcome });
+      // Logged once, as it fails: every later request for the picture is a miss counted as `failed`.
+      this.deps.logger?.info({ imageId: image.id, workspaceId: image.workspaceId, trigger, outcome }, "tool_image_capture_failed");
     }
     return outcome;
   }

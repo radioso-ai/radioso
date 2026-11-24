@@ -176,6 +176,8 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
         return skills.find((skill) => skill.name === name)?.id ?? null;
       },
       enable: async (workspaceId, agentId, enablement) => {
+        const refused = await deps.contextVariableService.classificationFitRefusal(workspaceId, agentId, enablement.variableId, enablement);
+        if (refused) return { refused };
         await deps.contextVariableService.upsertEnablement({ workspaceId, agentId, ...enablement });
       },
     },

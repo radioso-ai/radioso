@@ -1,14 +1,14 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-11-16
+last_updated: 2026-11-19
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # Embed on your website
 
-This walks you through putting the hosted Radioso website widget on a public site and proving it's locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.
+This is how you put your Radioso agent on your website: one script tag opens the hosted chat widget on every page that carries it. The walkthrough then proves the widget is locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.
 
 ## The happy path
 
@@ -57,7 +57,7 @@ Opening either URL loads a config form, not a working widget yet: it asks for yo
 
 ## Example launcher snippet
 
-In production, the Enterprise launcher is a normal script include with the embed token. Branding, visitor-facing wording, theme colors, and expert overrides are stored in Radioso settings — the **Web chat** page under the agent's Channels section previews them live as you edit. **Look** holds the logo, brand color, and surface style; **Wording** holds the thirteen visitor-facing strings, with **Add a translation** for a per-language pack the widget serves to visitors in that language; **Footer** holds the privacy policy URL; **Privacy notice** holds the line and policy link a visitor sees before their first message, per language.
+In production, the launcher is a normal script include with the embed token. Branding, visitor-facing wording, theme colors, and expert overrides are stored in Radioso settings — the **Web chat** page under the agent's Channels section previews them live as you edit. **Look** holds the logo, brand color, and surface style; **Wording** holds the thirteen visitor-facing strings, with **Add a translation** for a per-language pack the widget serves to visitors in that language; **Footer** holds the privacy policy URL; **Privacy notice** holds the line and policy link a visitor sees before their first message, per language. [Customize the website widget](/guides/customize-the-widget) walks through every control, including the button's text and position, the welcome message, and suggested questions, and says when each change reaches visitors.
 
 With a privacy notice set, the widget shows it word for word with the agent's name and AI marker, as one block above the conversation: in the empty panel before the visitor types, and at the top of the thread once they do. The message that starts the conversation reports the notice's `version`, and the conversation records it, so the **Visitor** panel in Activity says which notice that visitor saw. The public chat link and Test Chat show the same block; an agent with no notice shows none. A visitor whose language has no notice sees the English one, or else the first language you wrote.
 
@@ -140,7 +140,7 @@ For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata
 
 ## What the widget records
 
-Every conversation the widget starts records what the visit looked like at that moment: the request's IP address, country, region, and city when a load balancer or CDN supplied them, the browser's `User-Agent` and `Accept-Language` header, the page the widget opened on, and the page that referred the visitor there. None of this reaches the model directly. The page, referrer, language, and region make up the `visitor_request` context variable a directive can read — see [Context variables](/operators/context-variables#visitor-request) for the six fields and how the entry page is gated. The IP address and raw browser string stay operator-only, visible in the Inbox conversation drawer's Visitor panel.
+Every conversation the widget starts records what the visit looked like at that moment: the request's IP address, country, region, and city when a load balancer or CDN supplied them, the browser's `User-Agent` and `Accept-Language` header, the page the widget opened on, and the page that referred the visitor there. None of this reaches the model directly. The page, referrer, language, and region make up the `visitor_request` context variable a directive can read — see [Attributes and context](/operators/context-variables#visitor-request) for the six fields and how the entry page is gated. The IP address and raw browser string stay operator-only, visible in the Inbox conversation drawer's Visitor panel.
 
 The widget also sends the browser's time zone, such as `America/Los_Angeles`, with every message, so "today" and "tomorrow" in a question mean the visitor's day. Radioso stores the zone on each visitor message and uses it to date a routine resumed by an approval click. It never appears in a trace or the history API, and it is erased with the conversation. See [Visitor data](/operators/visitor-data).
 
@@ -174,6 +174,8 @@ Use **Any website** only when the widget should launch from any site that has th
 ### Install the launcher snippet
 
 Use the workspace embed snippet or script URL exposed by settings. The frontend serves the launcher script at `/radioso-embed.js`; it boots the widget with the public launch token and then loads server-side widget settings. Public launch-token rotation is managed from the signed-in dashboard and is separate from personal and service API credentials.
+
+On Wix, Shopify, Webflow, Squarespace, WordPress, or Google Tag Manager, [Install the widget on a site builder](/guides/install-on-site-builders) shows where each one takes the snippet and which addresses to allow.
 
 ### Test bootstrap and session reuse
 
@@ -244,6 +246,8 @@ The production sign-off question is: can our approved site launch the assistant,
 
 ## Read next
 
+- [Customize the website widget](/guides/customize-the-widget) — match your brand, move the button, and set the welcome message and suggested questions.
+- [Install the widget on a site builder](/guides/install-on-site-builders) — paste the snippet into Wix, Shopify, Webflow, Squarespace, WordPress, or Google Tag Manager.
 - [Invite your team](/quickstarts/invite-team) — give the people who handle hand-offs access to the workspace.
 - [Deployment](/operators/deployment) — prepare the widget and the rest of the stack for production.
 - [Visitor data](/operators/visitor-data) — see what a visit records and where operators read it.

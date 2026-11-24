@@ -40,7 +40,7 @@ const PROBE_INPUT_METHODS = ["typed", "suggestion_click", "intent_click"] as con
  * block on that message, and the item's key in the block. Ids only: the server reads the item
  * itself from the stored block.
  */
-const itemSelectionSchema = z.object({
+export const itemSelectionSchema = z.object({
   messageId: z.string().uuid(),
   blockId: z.string().min(1).max(64),
   itemKey: z.string().min(1).max(128),

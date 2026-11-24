@@ -96,10 +96,10 @@ export class InMemoryWebhookSkillDefinitionRepository implements WebhookSkillDef
     ).length;
   }
 
-  async listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]> {
+  /** The skills on one destination in a workspace, by agent and name. */
+  skillsOnDestination(workspaceId: string, destinationId: string): Array<{ agentId: string; skillName: string }> {
     return [...this.rows.values()]
-      .filter((row) => row.destinationId === destinationId && row.workspaceId === workspaceId)
-      .map((row) => row.skillName)
-      .sort((left, right) => left.localeCompare(right));
+      .filter((row) => row.workspaceId === workspaceId && row.destinationId === destinationId)
+      .map((row) => ({ agentId: row.agentId, skillName: row.skillName }));
   }
 }

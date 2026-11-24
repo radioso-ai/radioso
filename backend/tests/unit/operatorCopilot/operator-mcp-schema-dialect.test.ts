@@ -77,6 +77,20 @@ describe("operator MCP catalog contract", () => {
   });
 });
 
+describe("prepare_context_variable in tools/list", () => {
+  it("is advertised with one object input schema, no union, that MCP clients validate", () => {
+    const descriptor = eligible.find((candidate) => candidate.name === "prepare_context_variable");
+    expect(descriptor?.mcpDisposition).toMatchObject({ scope: "operator:propose" });
+    const { inputSchema, outputSchema } = operatorMcpToolSchemas(descriptor!);
+
+    expect(inputSchema).toMatchObject({ type: "object", properties: { kind: { enum: ["create", "edit", "set_enablement"] } } });
+    expect(Object.keys(inputSchema).filter((keyword) => ["anyOf", "oneOf", "allOf"].includes(keyword))).toEqual([]);
+    expect(() => metaschema.compile(inputSchema)).not.toThrow();
+    expect(() => metaschema.compile(outputSchema)).not.toThrow();
+    expect(descriptor!.description.length).toBeLessThan(2_048);
+  });
+});
+
 describe("operator MCP tool schema assembly", () => {
   const descriptor = (inputSchema: z.ZodType<unknown>) =>
     ({ name: "tuple_tool", inputSchema, outputSchema: z.object({ ok: z.boolean() }) } as unknown as CopilotToolDescriptor);

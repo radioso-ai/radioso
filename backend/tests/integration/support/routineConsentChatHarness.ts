@@ -18,6 +18,9 @@ import { AgentRevisionRuntimeResolver, type AgentRevision } from "../../../src/m
 import type { RoutineRegistration } from "../../../src/modules/chat/composition.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { ChatHistoryService } from "../../../src/modules/chat/services/chatHistoryService.js";
+import { BackgroundJobRepository } from "../../../src/db/repositories/backgroundJobRepository.js";
+import type { AgentContextVariableEnablement } from "../../../src/modules/context-variables/public.js";
+import { DefaultBackgroundJobQueue, NoopBackgroundJobWake } from "../../../src/shared/background-jobs/index.js";
 import { ChatService, type ChatGateway } from "../../../src/modules/chat/services/chatService.js";
 import { buildChatTurnRuntime } from "../../../src/modules/chat/services/chatTurnRuntime.js";
 import { MissingFallbackReplyComposer } from "../../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -84,8 +87,17 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
   const metrics = new MetricsRegistry();
   const logged: Array<Record<string, unknown>> = [];
 
-  /** A workspace whose published agent runs `definition`, and one conversation with it on `sourceChannel`. */
-  const startConversation = async (input: { definition: RoutineDefinition; sourceChannel?: string }) => {
+  /**
+   * A workspace whose published agent runs `definition`, and one conversation with it on
+   * `sourceChannel`. `contextVariableEnablements` go into the release; with `backgroundJobs`, a
+   * turn writes the jobs it hands the worker in its own transaction, as production does.
+   */
+  const startConversation = async (input: {
+    definition: RoutineDefinition;
+    sourceChannel?: string;
+    contextVariableEnablements?: (agentId: string) => AgentContextVariableEnablement[];
+    backgroundJobs?: boolean;
+  }) => {
     const { definition } = input;
     const account = await new AccountRepository(database.kysely).create({
       name: "Consent chat",
@@ -114,7 +126,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
 
     const revision = {
       id: revisionId,
-      snapshot: { customInstruction: "", directives: [], routines: [definition], contextVariableEnablements: [] },
+      snapshot: { customInstruction: "", directives: [], routines: [definition], contextVariableEnablements: input.contextVariableEnablements?.(agentId) ?? [] },
       sourceDraftGeneration: 1,
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
@@ -150,11 +162,14 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       clusteringEmbeddings: {},
       embeddingModelForWorkspace: async () => "unused",
       metricsRegistry: metrics,
-      routineInvocableSkillNames: { listByKindForAgent: async () => ({ webhook: [], customer_email: [], slack: [] }) },
       routineTriggerEmbeddingService: { persistPublished: async () => undefined },
     } as unknown as Parameters<typeof composeRoutineTurnProvider>[0]);
 
+    const backgroundJobs = input.backgroundJobs
+      ? new DefaultBackgroundJobQueue({ writer: new BackgroundJobRepository(database.kysely), wake: new NoopBackgroundJobWake(), logger })
+      : undefined;
     const chat = new ChatService({
+      ...(backgroundJobs ? { backgroundJobs } : {}),
       conversationRepository: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messageRepository: new MessageRepository(database.kysely),
       retrievalTurn: {
@@ -188,7 +203,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
         undefined,
         undefined,
         undefined,
-        undefined,
+        backgroundJobs,
         createRoutineConsentTelemetry({ logger, metricsRegistry: metrics }),
         bindConsentMessageWithholding,
       ),

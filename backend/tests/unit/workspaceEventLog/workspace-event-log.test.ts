@@ -157,8 +157,14 @@ describe("readable event types", () => {
       "contact_request.created",
       "handoff.requested",
       "routine.completed",
+      "context_value.changed",
     ]);
-    expect(await resolveReadableEventTypes(holding("workspace.history.read", "workspace.conversation.takeover"))).toEqual(ALL_TYPES);
+    expect(await resolveReadableEventTypes(holding("workspace.history.read", "workspace.conversation.takeover", "workspace.documents.read"))).toEqual(ALL_TYPES);
     expect(await resolveReadableEventTypes(holding("workspace.conversation.takeover"))).toEqual([]);
+  });
+
+  it("gives document events to whoever reads the workspace's documents, and only to them", async () => {
+    expect(await resolveReadableEventTypes(holding("workspace.documents.read"))).toEqual(["document.processed", "document.failed"]);
+    expect(await resolveReadableEventTypes(holding("workspace.history.read", "workspace.conversation.takeover"))).not.toContain("document.processed");
   });
 });

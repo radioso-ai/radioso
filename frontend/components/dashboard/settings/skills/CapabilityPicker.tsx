@@ -5,6 +5,7 @@ import { useState } from 'react'
 import {
   BellRing,
   Cable,
+  Braces,
   DatabaseZap,
   Mail,
   MessageSquareText,
@@ -26,6 +27,7 @@ import type { AgentSkillCapabilityId, SkillCapabilityDescriptor } from '@/lib/ap
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { cn } from '@/lib/utils'
 import { formatCapabilityLabel } from './skill-form-model'
+import { ApiConnectionsPanel } from './ApiConnectionsPanel'
 import { McpServersPanel } from './McpServersPanel'
 
 const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: string }> = {
@@ -48,6 +50,10 @@ const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: 
   webhook_call: {
     icon: Webhook,
     tone: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900/70 dark:bg-cyan-950/50 dark:text-cyan-300',
+  },
+  api_request: {
+    icon: Braces,
+    tone: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/70 dark:bg-teal-950/50 dark:text-teal-300',
   },
   notify: {
     icon: BellRing,
@@ -117,10 +123,11 @@ export function CapabilityPicker({
   onConnectionsChanged?: () => void
 }) {
   const [serversOpen, setServersOpen] = useState(false)
+  const [apiConnectionsOpen, setApiConnectionsOpen] = useState(false)
   const accountId = useOptionalAuth()?.user?.accountId ?? null
   return (
     <>
-      <Dialog open={open && !serversOpen} onOpenChange={onOpenChange}>
+      <Dialog open={open && !serversOpen && !apiConnectionsOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Add new skill</DialogTitle>
@@ -167,6 +174,14 @@ export function CapabilityPicker({
                           >
                             Manage MCP connections
                           </button>
+                        ) : capability.id === 'api_request' ? (
+                          <button
+                            type="button"
+                            onClick={() => setApiConnectionsOpen(true)}
+                            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            Manage API connections
+                          </button>
                         ) : connectionUrl ? (
                           <NextLink
                             href={connectionUrl}
@@ -206,6 +221,13 @@ export function CapabilityPicker({
         </div>
       </DialogContent>
     </Dialog>
+    <ApiConnectionsPanel
+      open={open && apiConnectionsOpen}
+      onOpenChange={(nextOpen) => {
+        setApiConnectionsOpen(nextOpen)
+        if (!nextOpen) onConnectionsChanged?.()
+      }}
+    />
     <McpServersPanel
       agentId={agentId}
       open={open && serversOpen}

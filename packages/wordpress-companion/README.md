@@ -4,6 +4,10 @@ A small WordPress plugin that pushes published, updated, and deleted content to
 a Radioso workspace via a signed HTTP webhook (HMAC-SHA256). It handles any post
 type, including WooCommerce products.
 
+This plugin syncs your content into Radioso and publishes agent-discovery
+files. It does not add a chat to your pages; to put the chat widget on your
+site, see [Install the widget on a site builder](https://docs.radioso.ai/guides/install-on-site-builders#wordpress).
+
 Pairs with the `wordpress` connector in the Radioso backend
 (`backend/src/modules/connectors/plugins/wordpress/`).
 

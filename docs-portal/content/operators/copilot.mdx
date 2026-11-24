@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-11-12
+last_updated: 2026-11-22
 ---
 
 # Ray
@@ -45,11 +45,13 @@ result reads as a knowledge gap when the real cause is a setting. Scoping needs
 against your per-operator limit for calls that spend model budget.
 
 With `workspace.documents.manage`, Ray can reprocess one document or the
-existing documents in one source, and it can recrawl an existing website
-source. These are maintenance acts, so they queue immediately and appear in the
-turn's activity instead of becoming proposal cards. Recrawl uses the source's
-stored URL, page limit, and policy. Creating a source, supplying a different
-URL, and reprocessing the whole workspace stay in the Knowledge Base and
+existing documents in one source, recrawl an existing website source, and set
+how often a website source recrawls itself (off, monthly, weekly, or daily, up to what
+the plan allows). These are maintenance acts, so they take effect immediately
+and appear in the turn's activity instead of becoming proposal cards. Recrawl
+uses the source's stored URL, page limit, and policy. Creating a source,
+supplying a different URL, reprocessing the whole workspace, and removing or
+keeping the pages a crawl held stay in the Knowledge Base and
 Settings surfaces.
 
 For a skill, Ray sees every setting's name. It also sees the
@@ -61,11 +63,13 @@ stays name-only, including a notify skill's recipient list and webhook URL, so
 Ray can tell you that a notify skill has no delivery destination configured
 without ever reading the address or URL you put there.
 
-Ray also reads the workspace's context variable definitions and which of them
-an agent has enabled — the source (pushed, browser, or a resolver skill) and
-how the variable surfaces to the model. It never reads a variable's value for
-a particular visitor session or customer, because that value belongs to a
-conversation Ray was not asked to inspect.
+Ray also reads the workspace's attribute definitions, the API's context
+variables, with a Choice attribute's options, and which of them an agent has
+enabled — the source (pushed, a resolver skill, or classified, where the AI
+picks a Choice attribute's option from the conversation) and how the attribute
+surfaces to the model. It never reads an attribute's value for a
+particular conversation, visitor session or customer, because that value
+belongs to a conversation Ray was not asked to inspect.
 
 ## Open the panel
 
@@ -134,7 +138,7 @@ The MCP catalog has this boundary:
 
 - `operator:read` — read workspace and agent state that the user can already access, including workspace settings and `proposal_detail`, which returns a dashboard-safe proposal preview and tells the client whether it is a reviewed operation.
 - `operator:probe` — run bounded diagnostics, including a retrieval probe against an agent's configured source scope and retrieval settings.
-- `operator:propose` — prepare a reviewable routine, retrieval, publication, document, agent-settings, ingestion-settings, or directive operation without applying it. `prepare_directive` supports `create`, `edit`, `set_enabled`, and `remove`; supplied structured fields stay verbatim, while coaching and the advisory coherence check run only during preparation. Removal is irreversible and shows references to the directive, so disabling is the reversible alternative. Directive changes remain an agent draft until publication. A directive create is fenced only on its agent existing, so an unrelated agent change made after preparing it does not invalidate it. Reviewed directive edits, enablement changes, and removals use the directive version and become stale after another change to that directive executes. Preparation and execution require the target's manage permission. `prepare_agent_settings` applies all named settings for one agent together after confirmation; its review identifies `customInstruction` and `visitorImagesEnabled` as drafts that need publication, while other fields are live at execution. `prepare_ingestion_settings` affects documents processed after execution; use `prepare_document_reprocess` for documents that are already indexed. `prepare_document_import` accepts 100 documents with bodies up to 20,000 characters, requires stable external document ids, limits the complete JSON input to 2,000,000 UTF-8 bytes, and checks stored-document capacity before it writes. `prepare_document_removal` records the exact documents and their versions. `prepare_document_reprocess` reviews one tagged selector and its eligible and skipped counts.
+- `operator:propose` — prepare a reviewable routine, retrieval, publication, document, agent-settings, ingestion-settings, attribute, or directive operation without applying it. `prepare_directive` supports `create`, `edit`, `set_enabled`, and `remove`; supplied structured fields stay verbatim, while coaching and the advisory coherence check run only during preparation. Removal is irreversible and shows references to the directive, so disabling is the reversible alternative. Directive changes remain an agent draft until publication. A directive create is fenced only on its agent existing, so an unrelated agent change made after preparing it does not invalidate it. Reviewed directive edits, enablement changes, and removals use the directive version and become stale after another change to that directive executes. Preparation and execution require the target's manage permission. `prepare_agent_settings` applies all named settings for one agent together after confirmation; its review identifies `customInstruction` and `visitorImagesEnabled` as drafts that need publication, while other fields are live at execution. `prepare_context_variable` creates or edits an attribute's definition, which is live for every agent at execution and needs signed-in approval, or sets one agent's use of it (`set_enablement`, including `source: classified`), which stays an agent draft until publication. `prepare_ingestion_settings` affects documents processed after execution; use `prepare_document_reprocess` for documents that are already indexed. `prepare_document_import` accepts 100 documents with bodies up to 20,000 characters, requires stable external document ids, limits the complete JSON input to 2,000,000 UTF-8 bytes, and checks stored-document capacity before it writes. `prepare_document_removal` records the exact documents and their versions. `prepare_document_reprocess` reviews one tagged selector and its eligible and skipped counts.
 - `operator:write` — execute, inspect the outcome of, or cancel one reviewed operation bound to the same grant and client. These tools reach only an operation a `prepare_*` tool created, and each checks the caller's current permission for that operation's target before returning a result; a person approves or dismisses a `propose_*` proposal in the dashboard, which an external client reads with `proposal_detail`.
 - `operator:act` — set a version-fenced triage state.
 
@@ -357,6 +361,9 @@ a new skill for either of those.
 
 A context variable proposal can create or update the variable's definition,
 enable or reconfigure it for the agent, or do both in the same card. A
+definition can be a Choice attribute (`enum`) with its options: the proposal
+lists every option, existing keys included, and retires one by archiving it.
+An edit that leaves the options out keeps the stored list. A
 resolver-sourced enablement needs the skill that resolves the value, and that
 skill must already exist and be enabled on the agent the proposal targets;
 every other source refuses one. If that skill is disabled or removed before
@@ -761,7 +768,8 @@ the change should have moved, read the result, then ask for the next batch.
   affected turn honestly. The answer identifies the data it could not access.
 - **Document maintenance is unavailable** — your session can read documents
   but does not hold `workspace.documents.manage`. Chunk inspection remains
-  available; reprocess and recrawl do not appear in Ray's tool set.
+  available; reprocess, recrawl, and the recrawl cadence do not appear in
+  Ray's tool set.
 - **Held replies or email facts are unavailable** — your session can read
   workspace settings but does not hold `workspace.conversation.takeover`. The
   mailbox and event-log reads remain available.

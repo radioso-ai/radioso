@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createRadiosoCrawlerUtilityProvider,
+  createRadiosoWebsitePageProbe,
   RadiosoCrawlerProvider,
 } from "../../../src/modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { fetchPublicUrl } from "../../../src/shared/infra/http/publicUrlFetch.js";
 
 const mocks = vi.hoisted(() => ({
   crawlSite: vi.fn(),
   crawlSiteStream: vi.fn(),
   fetchPageWithScreenshot: vi.fn(),
   isPlaywrightAvailable: vi.fn(),
+  probePages: vi.fn(),
 }));
 
 vi.mock("@radioso/crawler", () => ({
@@ -17,6 +20,7 @@ vi.mock("@radioso/crawler", () => ({
   crawlSiteStream: mocks.crawlSiteStream,
   fetchPageWithScreenshot: mocks.fetchPageWithScreenshot,
   isPlaywrightAvailable: mocks.isPlaywrightAvailable,
+  probePages: mocks.probePages,
 }));
 
 describe("RadiosoCrawlerProvider", () => {
@@ -211,6 +215,7 @@ describe("RadiosoCrawlerProvider", () => {
       await expect(resultPromise).resolves.toMatchObject({
         provider: "radioso-crawler",
         outcome: "yielded",
+        frontierExhausted: false,
       });
     } finally {
       vi.useRealTimers();
@@ -280,6 +285,76 @@ describe("RadiosoCrawlerProvider", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reports whether the crawler exhausted its frontier, sizing discovery from the whole crawl's limit", async () => {
+    mocks.crawlSiteStream.mockResolvedValueOnce({ pages: 2, frontierExhausted: true });
+    mocks.crawlSiteStream.mockResolvedValueOnce({ pages: 3, frontierExhausted: false });
+    const provider = new RadiosoCrawlerProvider();
+
+    const exhausted = await provider.crawlStream({ url: "https://example.com", limit: 3, totalLimit: 10 }, async () => {});
+    const capped = await provider.crawlStream({ url: "https://example.com", limit: 3, totalLimit: 10 }, async () => {});
+
+    expect(mocks.crawlSiteStream).toHaveBeenCalledWith(expect.objectContaining({ pageLimit: 3, totalPageLimit: 10 }));
+    expect(exhausted).toMatchObject({ outcome: "completed", frontierExhausted: true });
+    expect(capped).toMatchObject({ outcome: "completed", frontierExhausted: false });
+  });
+
+  it("records a link the crawler dropped at its discovery limit as a checkpoint event", async () => {
+    mocks.crawlSiteStream.mockImplementation(async ({ onCandidateUrl }: {
+      onCandidateUrl: (decision: { url: string; decision: "rejected"; reason: string; canonicalUrl: string | null }) => Promise<void>;
+    }) => {
+      await onCandidateUrl({ url: "https://example.com/dup", decision: "rejected", reason: "duplicate", canonicalUrl: "https://example.com/dup" });
+      await onCandidateUrl({ url: "https://example.com/late", decision: "rejected", reason: "page_limit_reached", canonicalUrl: "https://example.com/late" });
+      return { pages: 1, frontierExhausted: false };
+    });
+    const onCheckpointEvent = vi.fn().mockResolvedValue(undefined);
+
+    await new RadiosoCrawlerProvider().crawlStream({ url: "https://example.com", limit: 3, onCheckpointEvent }, async () => {});
+
+    expect(onCheckpointEvent.mock.calls).toEqual([
+      [{ type: "dropped", url: "https://example.com/late", canonicalUrl: "https://example.com/late" }],
+    ]);
+  });
+
+  it("records a sitemap the crawler could not read as a checkpoint event", async () => {
+    mocks.crawlSiteStream.mockImplementation(async ({ onSitemapUnread }: { onSitemapUnread: () => Promise<void> }) => {
+      await onSitemapUnread();
+      return { pages: 1, frontierExhausted: false };
+    });
+    const onCheckpointEvent = vi.fn().mockResolvedValue(undefined);
+
+    await new RadiosoCrawlerProvider().crawlStream({ url: "https://example.com", limit: 3, onCheckpointEvent }, async () => {});
+
+    expect(onCheckpointEvent.mock.calls).toEqual([[{ type: "sitemap_unread" }]]);
+  });
+
+  it("asks a site about pages through the crawler's guarded fetch, a few at a time", async () => {
+    process.env.WEBSITE_CRAWLER_USER_AGENT = "RadiosoBot/1.0";
+    mocks.probePages.mockResolvedValue([
+      { kind: "answered", status: 404, url: "https://example.com/gone" },
+      { kind: "unreachable" },
+    ]);
+    const signal = new AbortController().signal;
+
+    const answers = await createRadiosoWebsitePageProbe().probePages(["https://example.com/gone", "https://example.com/down"], { signal });
+
+    expect(answers).toEqual([
+      { kind: "answered", status: 404, url: "https://example.com/gone" },
+      { kind: "unreachable" },
+    ]);
+    const [urls, options] = mocks.probePages.mock.calls[0] as [string[], {
+      validateNavigationUrl: (url: string) => Promise<void>;
+      fetchImpl: typeof fetch;
+      userAgent: string;
+      concurrency: number;
+      signal: AbortSignal;
+    }];
+    expect(urls).toEqual(["https://example.com/gone", "https://example.com/down"]);
+    expect(options).toMatchObject({ fetchImpl: fetchPublicUrl, userAgent: "RadiosoBot/1.0", signal });
+    expect(options.concurrency).toBeGreaterThan(1);
+    expect(options.concurrency).toBeLessThanOrEqual(8);
+    await expect(options.validateNavigationUrl("http://127.0.0.1/admin")).rejects.toThrow();
   });
 
   it("does not turn caller cancellation into a yielded slice", async () => {

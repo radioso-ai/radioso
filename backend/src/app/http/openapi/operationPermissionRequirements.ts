@@ -34,6 +34,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   updateAgentDirective: ["workspace.agents.manage"],
   deleteAgentDirective: ["workspace.agents.manage"],
   recrawlDocumentSource: ["workspace.documents.manage"],
+  setDocumentSourceRecrawlCadence: ["workspace.documents.manage"],
   reprocessDocumentSource: ["workspace.documents.manage"],
   reprocessDocument: ["workspace.documents.manage"],
   createDocument: ["workspace.documents.manage"],
@@ -52,4 +53,6 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   listDeliveryFailures: ["workspace.conversation.takeover"],
   listHeldReplies: ["workspace.conversation.takeover"],
   getCurrentHeldReply: ["workspace.conversation.takeover"],
+  setHistoryConversationAttribute: ["workspace.conversation.takeover"],
+  resetHistoryConversationAttribute: ["workspace.conversation.takeover"],
 };

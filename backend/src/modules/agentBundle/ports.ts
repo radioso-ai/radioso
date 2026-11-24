@@ -1,6 +1,6 @@
 import type { AgentInput, ConversationAgent, InternalAgentExternalSkillsConfig } from "../agents/public.js";
 import type { AgentSkillInvocationMode } from "../agentSkills/public.js";
-import type { ContextVariableSource } from "../context-variables/public.js";
+import type { ClassificationFitRefusal, ContextVariableSource } from "../context-variables/public.js";
 import type { ContextVariableSurfacing } from "../context-variables/public.js";
 import type { RoutineDefinition, RoutineDefinitionDraftInput } from "../routines/public.js";
 import type {
@@ -108,6 +108,10 @@ export interface AgentBundleSkillWriterPort {
 export interface AgentBundleContextVariableWriterPort {
   findVariableIdByName(workspaceId: string, name: string): Promise<string | null>;
   findSkillIdByName(workspaceId: string, agentId: string, name: string): Promise<string | null>;
+  /**
+   * Writes the enablement, or, for a `classified` one this workspace's variable or the agent cannot
+   * take, writes nothing and says why.
+   */
   enable(workspaceId: string, agentId: string, enablement: {
     variableId: string;
     source: ContextVariableSource;
@@ -116,7 +120,7 @@ export interface AgentBundleContextVariableWriterPort {
     resolverTimeoutMs: number | null;
     surfacing: ContextVariableSurfacing;
     enabled: boolean;
-  }): Promise<void>;
+  }): Promise<{ refused: ClassificationFitRefusal } | void>;
 }
 
 /**

@@ -5,6 +5,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { getActiveTraceCorrelation } from "../../../shared/observability/tracing/operations.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import type { TestChatAttributesPreview } from "./testChatClassification.js";
 import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 import { buildTurnTraceSummary } from "./turnTraceSummary.js";
 import type { PageReadCandidateSource, PageReadCapability, PageReadRequest } from "./pageRead/pageReadDecision.js";
@@ -61,6 +62,13 @@ export interface TurnTraceEnvelope {
    * on a real conversation's envelope — a live notice actually sends, so it needs no preview.
    */
   handoffPreview?: OperatorNoticePreview;
+  /**
+   * Present only on a Test Chat turn whose revision classifies attributes: each classified
+   * attribute's value after the turn, its option label, and who set it (`classifier`, or `operator`
+   * for a sample). Test Chat classifies in its own runner, since its sides are not stored
+   * conversations (`testChatClassification.ts`). Never set on a real conversation's envelope.
+   */
+  attributes?: TestChatAttributesPreview;
 }
 
 /** The operator notice a replayed turn would have sent; see `TurnTraceEnvelope.handoffPreview`. */

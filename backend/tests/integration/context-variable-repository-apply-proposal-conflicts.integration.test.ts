@@ -29,7 +29,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("ContextVariableRepository.applyProposal conflict translation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const contextVariableRepository = new ContextVariableRepository(database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(database.kysely, null);
   const agentRepository = new AgentRepository(database.kysely);
 
   const accountId = randomUUID();
@@ -62,6 +62,7 @@ describeIntegration("ContextVariableRepository.applyProposal conflict translatio
     workspaceId,
     name,
     valueType: "string",
+    options: null,
     trustTier: "unverified",
     sensitivity: "normal",
     defaultSurfacing: "on_reference",
@@ -79,6 +80,7 @@ describeIntegration("ContextVariableRepository.applyProposal conflict translatio
         name: variableB.name,
         description: null,
         valueType: "string",
+        options: null,
         trustTier: "unverified",
         sensitivity: "normal",
         defaultSurfacing: "on_reference",

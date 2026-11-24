@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRevision } from "../../agents/public.js";
-import { freezeTestValues, type ContextVariableTestValueCatalogPort, type ContextVariableTestValueSelection, type FrozenTestValue, type ResolvedVariableInput, type TestValue } from "../../context-variables/public.js";
+import { freezeTestValues, frozenTestValueInput, type ContextVariableTestValueCatalogPort, type ContextVariableTestValueSelection, type FrozenTestValue, type ResolvedVariableInput, type TestValue } from "../../context-variables/public.js";
 import type { EvalCase, EvalRunMode, EvalSnapshot } from "../domain/types.js";
 import type { FrozenRevisionEvalCaseResult } from "./evalRunService.js";
 
@@ -164,5 +164,5 @@ export class RevisionEvalRunService {
 const variablesForRevision = (values: readonly FrozenRevisionEvalTestValue[], revision: AgentRevision): ResolvedVariableInput[] => values.map((value) => {
   const enablement = revision.snapshot.contextVariableEnablements.find((item) => item.variableId === value.contextVariableId && item.enabled);
   if (!enablement) throw new Error("frozen_revision_eval_sample_not_enabled");
-  return { name: value.name, description: value.description, value: value.value, surfacing: enablement.surfacing, sensitive: value.sensitive, trust: value.trust };
+  return frozenTestValueInput(value, enablement);
 });

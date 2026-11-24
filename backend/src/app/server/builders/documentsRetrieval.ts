@@ -71,9 +71,10 @@ import type { EmbeddingModelId } from "../../../modules/settings/contracts/inges
 import { TimeZoneSettingsService, type TimeZoneSettingsStore } from "../../../modules/settings/public.js";
 import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobService.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
-import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { createRadiosoWebsitePageProbe, RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
 import { createWebsiteCrawlerIngestionPort } from "../../composition/websiteCrawlerIngestionPort.js";
+import { createWebsiteRecrawlComposition } from "../../composition/websiteRecrawl.js";
 import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
@@ -81,6 +82,7 @@ import { Database } from "../../../shared/infra/database.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { WorkspaceEventDeliveryWake } from "../../../shared/domain/workspaceEventSubscriptions.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type { Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
@@ -162,6 +164,8 @@ export const buildDocumentServices = (input: {
   /** The zone a document's relative dates are read in when it is enriched. */
   workspaceTimeZones: WorkspaceTimeZoneReader;
   metricsRegistry?: MetricsRegistry | null;
+  /** Wakes event subscription delivery after the worker records a document event. */
+  workspaceEventDelivery?: WorkspaceEventDeliveryWake;
 }) => {
   const {
     auditService,
@@ -260,6 +264,16 @@ export const buildDocumentServices = (input: {
     crawlJobs: websiteCrawlJobService,
     crawlerConfig: resolveWebsiteCrawlerConfig(),
   });
+  const websiteRecrawl = createWebsiteRecrawlComposition({
+    schedule: repositories.websiteRecrawlRepository,
+    missingPages: repositories.websiteMissingPageRepository,
+    sources: documentSourceRepository,
+    usageLimits: usageLimitPolicy,
+    recrawls: { recrawlSource: (recrawl) => documentSourceRecrawlService.recrawlSource(recrawl) },
+    pages: { removeHeldPages: (removal) => documentIngestionService.removeHeldSourcePages(removal) },
+    audit: auditService,
+    logger,
+  });
   const documentImportService = new DocumentImportService(
     repositories.documentRepository,
     auditService,
@@ -288,6 +302,7 @@ export const buildDocumentServices = (input: {
     input.embeddingProfileTerminalFailures,
     input.workspaceInvalidationPublisher,
     documentImageCapture.stage,
+    input.workspaceEventDelivery,
   );
   const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
     env,
@@ -300,6 +315,8 @@ export const buildDocumentServices = (input: {
     dispatcher: websiteCrawlJobDispatcher,
     documentIngestionService: websiteCrawlerIngestionPort,
     auditService,
+    missingPages: repositories.websiteMissingPageRepository,
+    pageProbe: createRadiosoWebsitePageProbe(),
     errorReporter: input.errorReporter,
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
@@ -349,6 +366,7 @@ export const buildDocumentServices = (input: {
     websiteCrawlJobService,
     websiteCrawlerProvider,
     websiteCrawlWorker,
+    websiteRecrawl,
     workspaceIngestionReprocessService,
   };
 };

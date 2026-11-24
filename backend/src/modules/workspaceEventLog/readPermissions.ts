@@ -10,7 +10,7 @@ export const WORKSPACE_EVENTS_READ_PERMISSION = "workspace.events.read" as const
  * pending decision also the takeover permission the Inbox's decisions need. A pending decision is a
  * notification: the decision list and its resolution are dashboard-session routes, so an API token
  * that reads `decision.pending` can neither list nor resolve the decision over the API, and a
- * teammate acts on it in the Inbox.
+ * teammate acts on it in the Inbox. Document events need what reads the document itself.
  */
 const READ_PERMISSIONS: Readonly<Record<WorkspaceEventType, readonly AccountPermission[]>> = {
   "conversation.started": ["workspace.history.read"],
@@ -18,6 +18,10 @@ const READ_PERMISSIONS: Readonly<Record<WorkspaceEventType, readonly AccountPerm
   "handoff.requested": ["workspace.history.read"],
   "routine.completed": ["workspace.history.read"],
   "decision.pending": ["workspace.history.read", "workspace.conversation.takeover"],
+  // A conversation's attributes are read with its history, in the Inbox and on its detail.
+  "context_value.changed": ["workspace.history.read"],
+  "document.processed": ["workspace.documents.read"],
+  "document.failed": ["workspace.documents.read"],
 };
 
 /**

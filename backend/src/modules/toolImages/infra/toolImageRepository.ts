@@ -11,6 +11,7 @@ import {
   type ToolImageClaim,
   type ToolImageObject,
   type ToolImageRendition,
+  type ToolImageState,
   type ToolImageStore,
 } from "../domain.js";
 import { handOffToolImageObjects, toolImageCaptureRequests } from "../services/toolImageJobs.js";
@@ -81,6 +82,24 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
     return toolImageCaptureRequests(input.sources.map((source) => source.imageId));
   }
 
+  async peek(imageId: string, now: Date): Promise<ToolImageState> {
+    const row = await this.db
+      .selectFrom("conversation_tool_images")
+      .select(["status", "claimed_at"])
+      .where("id", "=", imageId)
+      .executeTakeFirst();
+    if (!row) return "missing";
+    switch (row.status) {
+      case "stored":
+      case "failed":
+        return row.status;
+      case "capturing":
+        return row.claimed_at !== null && row.claimed_at.getTime() >= now.getTime() - TOOL_IMAGE_LIMITS.claimTimeoutMs ? "held" : "waiting";
+      default:
+        return "waiting";
+    }
+  }
+
   async claim(imageId: string, now: Date): Promise<ToolImageClaim> {
     const staleBefore = new Date(now.getTime() - TOOL_IMAGE_LIMITS.claimTimeoutMs);
     const claimed = await this.db
@@ -94,12 +113,7 @@ export class PostgresToolImageStore implements ToolImageStore, ToolImageRowWrite
       .returning(["id", "workspace_id", "source_url"])
       .executeTakeFirst();
     if (claimed) {
-      const image: ClaimedToolImage = { id: claimed.id, workspaceId: claimed.workspace_id, url: claimed.source_url ?? "", claimedAt: now };
-      if (claimed.source_url) {
-        return { kind: "claimed", image };
-      }
-      await this.markFailed({ image, reason: "source_missing" });
-      return { kind: "failed" };
+      return { kind: "claimed", image: { id: claimed.id, workspaceId: claimed.workspace_id, url: claimed.source_url, claimedAt: now } };
     }
     const row = await this.db.selectFrom("conversation_tool_images").select("status").where("id", "=", imageId).executeTakeFirst();
     if (!row) return { kind: "missing" };

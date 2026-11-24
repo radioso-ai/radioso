@@ -204,6 +204,7 @@ describeIfDatabase("organization directory service", () => {
       profileKey: null,
       profileDisplayName: null,
       monthlyAnswers: { used: 0, limit: null },
+      monthlyConversations: { used: 0, limit: null },
     });
     expect(firstPage.rows[1]).toMatchObject({
       accountId: alphaAccountId,
@@ -267,6 +268,39 @@ describeIfDatabase("organization directory service", () => {
       profileDisplayName: cometPlan.name,
       monthlyAnswers: { used: 0, limit: null },
       monthlyConversations: { used: 12.5, limit: cometPlan.monthlyConversations },
+    });
+  });
+
+  it("reads an untiered account's conversation meter as uncapped", async () => {
+    const untieredAccountId = randomUUID();
+    await database.query(
+      `INSERT INTO accounts (id, name, email) VALUES ($1, 'Untiered Customer', 'untiered@example.com')`,
+      [untieredAccountId],
+    );
+    // An uncapped account spends no allowance, so it reads every kind it recorded this month:
+    // 45.5 conversations here. The unit counter (left from an earlier tier) is not its usage.
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_kind_counters (account_id, period_start, kind, used_tenths) VALUES
+        ($1, '2026-06-01', 'conversation', 400),
+        ($1, '2026-06-01', 'test_run', 55),
+        ($1, '2026-05-01', 'conversation', 999)`,
+      [untieredAccountId],
+    );
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths) VALUES ($1, '2026-06-01', 120)`,
+      [untieredAccountId],
+    );
+
+    const service = new OrganizationDirectoryService(database, {
+      now: () => new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    const page = await service.listOrganizations({ limit: 10, search: "Untiered Customer" });
+
+    expect(page.rows[0]).toMatchObject({
+      profileKey: null,
+      monthlyAnswers: { used: 0, limit: null },
+      monthlyConversations: { used: 45.5, limit: null },
     });
   });
 });

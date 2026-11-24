@@ -163,6 +163,31 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("runs a read-only skill in probe mode, since it changes nothing outside the conversation", async () => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed", outputs: { status: "shipped" } } as unknown as SkillOutcome,
+    }));
+    const registry = new SkillExecutorRegistry();
+    registry.register({ kind: "internal", adapter: "api-request-skills", executor: { dispatch } });
+    const readOnly = { ...skillNamed("order_status", { kind: "internal", adapter: "api-request-skills", enqueue: false }), readOnly: true };
+    const writes = skillNamed("create_ticket", { kind: "internal", adapter: "api-request-skills", enqueue: false });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([readOnly, writes]),
+      registry,
+      { skillEffects: "suppressed" },
+    );
+
+    expect(dispatcher.actsOutsideConversation("order_status")).toBe(false);
+    expect(dispatcher.actsOutsideConversation("create_ticket")).toBe(true);
+    const read = await dispatcher.dispatch({ skillName: "order_status", state: routineState({}), turn });
+    const write = await dispatcher.dispatch({ skillName: "create_ticket", state: routineState({}), turn });
+
+    expect(read).toMatchObject({ status: "completed", actsOutsideConversation: false });
+    expect(write).toMatchObject({ status: "failed", outputs: { reason: "suppressed_for_safe_test" } });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["webhook", WEBHOOK_SKILLS_ADAPTER],
     ["external MCP", EXTERNAL_SKILLS_ADAPTER],
@@ -434,6 +459,18 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("carries the skill's typed output contract onto the routine result", async () => {
+    const outputContract = { status: { type: "text" as const, description: "Order status" } };
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("order_status")]),
+      registryWith(settledExecutor({ status: "completed", outputs: { status: "shipped" }, outputContract } as unknown as SkillOutcome)),
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "order_status", state: routineState({}), turn });
+
+    expect(result).toMatchObject({ status: "completed", outputs: { status: "shipped" }, outputContract });
+  });
+
   it("preserves non-model skill metadata for host-side routine renderers", async () => {
     const outcome = {
       status: "context_ready",
@@ -625,6 +662,56 @@ describe("RoutineSkillExecutorDispatcher", () => {
       plan: "enterprise",
     });
     expect(captured?.collectedOrigins).toEqual({ page: "context", cart: "context", plan: "context" });
+  });
+
+  it("marks a context-variable argument the host verified (or signed) as verified_context", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("order_lookup")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "order_lookup",
+      state: routineState({ typed_email: "typed@example.com" }),
+      inputBindings: {
+        email: { kind: "contextVariableRef", contextVariable: "customer_email" },
+        account: { kind: "contextVariableRef", contextVariable: "account_id" },
+        page: { kind: "contextVariableRef", contextVariable: "page_title" },
+        typed: { kind: "variableRef", ref: "typed_email" },
+      },
+      turn: turnWithStagedContext([
+        {
+          kind: "context_variable",
+          id: "customer_email",
+          data: { kind: "variable", name: "customer_email", value: "signed@example.com" },
+          metadata: { variableName: "customer_email", trustTier: "verified" },
+        },
+        {
+          kind: "context_variable",
+          id: "account_id",
+          data: { kind: "variable", name: "account_id", value: "acct-1" },
+          metadata: { variableName: "account_id", trustTier: "signed" },
+        },
+        {
+          kind: "context_variable",
+          id: "page_title",
+          data: { kind: "variable", name: "page_title", value: "Orders" },
+          metadata: { variableName: "page_title", trustTier: "unverified" },
+        },
+      ]),
+    });
+
+    expect(captured?.collectedOrigins).toEqual({
+      email: "verified_context",
+      account: "verified_context",
+      page: "context",
+      typed: "slot",
+    });
   });
 
   it("threads the turn and agent id into the executor context", async () => {

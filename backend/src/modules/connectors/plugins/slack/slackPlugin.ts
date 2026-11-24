@@ -84,13 +84,19 @@ export class SlackPlugin implements ConnectorPlugin {
     // catch. A time-boxed sweep would only risk marking a still-retrying event failed early.
     const persistence = new PostgresSlackPersistence(db, this.options.workspaceEvents, this.options.backgroundJobs);
     const extendedContext = context as SlackConnectorContext;
-    const installationService = new SlackInstallationService({
+    const installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation"> = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
       installations,
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(db),
       encryptionKey: this.options.encryptionKey,
+      // Inbound Slack events never disconnect Slack, which is the one thing that reads skill uses.
+      skillTargetUses: {
+        async listSkillTargetUses() {
+          throw new Error("slack_disconnect_unavailable");
+        },
+      },
     });
     const operatorIdentityResolver = new SlackOperatorIdentityResolver({
       workspaceMembers: new PostgresWorkspaceMemberLookup(db),

@@ -34,7 +34,7 @@ For a public link:
 }
 ```
 
-For an Enterprise website embed, call the route from an origin admitted by the website embed origin setting:
+For the website widget, call the route from an origin admitted by the website embed origin setting:
 
 ```json
 {
@@ -266,7 +266,7 @@ The website embed and the hosted chat page declare `item_list` with `carousel` a
 
 On a stream, each block arrives as a `block` event after the last `chunk` and before `done`, carrying `conversationId`, `assistantMessageId` and the `block`; `done.blocks` repeats them. History returns the same blocks on the assistant message.
 
-Images are served by `GET /api/v1/public/reply-images/{imageId}/{width}` as WebP, at a `width` of exactly `320` or `640` pixels. The address is the permission: it needs no session, so an `<img>` on any page can load it, and responses are `Cache-Control: private`. Take `src` and `srcSet` from the block rather than building them. Once the document an image came from is deleted, its address answers `404`; an older conversation keeps the card and its link, so draw the card without its picture when the image fails to load.
+Images are served by `GET /api/v1/public/reply-images/{imageId}/{width}` as WebP, at a `width` of exactly `320` or `640` pixels. The address is the permission: it needs no session, so an `<img>` on any page can load it, and responses are `Cache-Control: private`. Take `src` and `srcSet` from the block rather than building them. The picture on a card built from a skill's records is copied the first time it is asked for, so that request can take up to 6 seconds; keep the card's frame in place while it loads. Once the document an image came from is deleted, its address answers `404`. So does a skill's picture that could not be copied, and one the server did not copy in time, which a later request may serve. An older conversation keeps the card and its link, so draw the card without its picture when the image fails to load.
 
 ### Let the visitor pick a card
 

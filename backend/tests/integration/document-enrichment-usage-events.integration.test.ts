@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { ModelDocumentEnrichmentGateway } from "../../src/modules/documents/infra/modelDocumentEnrichmentGateway.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -61,7 +62,7 @@ describeIntegration("document enrichment usage events", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl);
-    documents = new DocumentRepository(database.kysely);
+    documents = new DocumentRepository(database.kysely, documentEventEraser);
     await database.query(
       `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
       [accountId, "Enrichment Spend Co", `enrichment-spend-${accountId}@example.com`, "hash"],

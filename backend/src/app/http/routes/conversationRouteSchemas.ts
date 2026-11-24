@@ -6,6 +6,17 @@ export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+/** One attribute of a conversation, by its name as stored, matched exactly (#1884). */
+export const conversationAttributeParamsSchema = z.object({
+  conversationId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+});
+
+/** A teammate's value for a conversation's Choice attribute: one of its active option keys. */
+export const conversationAttributeValueBodySchema = z.object({
+  value: z.string().min(1).max(120).describe("The key of one of the attribute's active options, such as `billing`."),
+}).strict();
+
 /** One consent record of a conversation (#1544). */
 export const conversationConsentParamsSchema = z.object({
   conversationId: z.string().uuid(),
@@ -42,11 +53,34 @@ export const collectionPageQuerySchema = z.object({
   sourceScope: z.enum(["end_user", "operator_test", "all"]).default("end_user"),
 });
 
-export const chatHistoryPageQuerySchema = collectionPageQuerySchema.extend({
+/**
+ * The history lists' attribute filter: a Choice attribute's name and one of its option keys,
+ * which a caller sends together. Parsed into the one `attribute` the history service resolves.
+ */
+// Matched exactly as stored, untrimmed, the same as Ray's filter: an attribute's name is the identifier it was created with.
+const attributeFilterFields = {
+  attribute: z.string().min(1).max(120).optional(),
+  attributeOption: z.string().min(1).max(120).optional(),
+};
+
+const withAttributeFilter = <Query extends { attribute?: string; attributeOption?: string }>(
+  schema: z.ZodType<Query>,
+) => schema
+  .refine((query) => (query.attribute === undefined) === (query.attributeOption === undefined), {
+    message: "Send attribute and attributeOption together",
+    path: ["attributeOption"],
+  })
+  .transform(({ attribute, attributeOption, ...rest }) => ({
+    ...rest,
+    ...(attribute !== undefined && attributeOption !== undefined ? { attribute: { name: attribute, option: attributeOption } } : {}),
+  }));
+
+export const chatHistoryPageQuerySchema = withAttributeFilter(collectionPageQuerySchema.extend({
   ownership: z.enum(["human_owned"]).optional(),
   agentId: z.string().uuid().optional(),
   channel: z.string().trim().min(1).max(100).optional(),
-});
+  ...attributeFilterFields,
+}));
 
 export const historyItemsPageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -64,20 +98,21 @@ const historyItemsFilterFields = {
   // Who was on the other side (spec 1290, FR-051). Absent means both, because the unfiltered
   // list is the one an operator triages from; the filter narrows it rather than defining it.
   callerKind: z.enum(["human", "agent"]).optional(),
+  ...attributeFilterFields,
 };
 
-export const historyItemsListQuerySchema = historyItemsPageQuerySchema.extend(historyItemsFilterFields);
+export const historyItemsListQuerySchema = withAttributeFilter(historyItemsPageQuerySchema.extend(historyItemsFilterFields));
 
 // Text search travels in a request body: a URL's query string reaches Cloud Run's request log,
 // which conversation erasure cannot reach, and operators type visitors' words into this search.
-export const historyItemsQueryBodySchema = z.object({
+export const historyItemsQueryBodySchema = withAttributeFilter(z.object({
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).optional(),
   sourceScope: z.enum(["end_user", "operator_test", "all"]).default("end_user"),
   // Case-insensitive substring over the conversation's title or its first user message.
   q: z.string().trim().min(1).max(200).optional(),
   ...historyItemsFilterFields,
-}).strict();
+}).strict());
 
 export const conversationWindowQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),

@@ -279,6 +279,7 @@ describe("createRoutineGroundedAnswerRenderer", () => {
     );
     const stepRenderer = new RoutineStepRenderer({ complete: async () => ({ text: "unused" }) }, {
       stepEndingPromptTemplate: loadPromptTemplate("chat/routine-step-ending.md"),
+      stepToolResultsPromptTemplate: loadPromptTemplate("chat/routine-step-tool-results.md"),
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session: { ...session(), directiveSteering: { rules: [], matches: [], omissions: [] } },
         turnSkills: [createRetrievalTurnSkill(composer)],

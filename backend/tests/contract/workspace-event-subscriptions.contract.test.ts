@@ -111,7 +111,7 @@ describe("workspace event subscriptions contract", () => {
     const post = (body: unknown) => request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer).send(body as object);
 
     await post({ targetUrl: zapierHook, eventTypes: [], label: "zapier" }).expect(400);
-    await post({ targetUrl: zapierHook, eventTypes: ["document.processed"], label: "zapier" }).expect(400);
+    await post({ targetUrl: zapierHook, eventTypes: ["source.synced"], label: "zapier" }).expect(400);
     await post({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "make" }).expect(400);
     await post({ targetUrl: zapierHook, eventTypes: ["handoff.requested"], label: "zapier", secret: "mine" }).expect(400);
     await request(h.app).get("/api/v1/workspace/event-subscriptions/not-a-uuid").set(h.bearer).expect(400);
@@ -212,6 +212,19 @@ describe("workspace event subscriptions contract", () => {
 
     expect(refused.body.error.code).toBe("event_type_not_permitted");
     expect(h.store.rows.size).toBe(0);
+  });
+
+  it("subscribes document events only for a caller who may read the workspace's documents", async () => {
+    const h = await harness();
+    const allowed = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: zapierHook, eventTypes: ["document.processed", "document.failed"], label: "zapier" }).expect(201);
+    expect(allowed.body.subscription.eventTypes).toEqual(["document.processed", "document.failed"]);
+
+    vi.spyOn(h.dependencies.accountAccessService, "hasPermission")
+      .mockImplementation(async ({ permission }) => permission !== "workspace.documents.read");
+    const refused = await request(h.app).post("/api/v1/workspace/event-subscriptions").set(h.bearer)
+      .send({ targetUrl: `${zapierHook}/documents`, eventTypes: ["handoff.requested", "document.failed"], label: "zapier" }).expect(403);
+    expect(refused.body.error).toMatchObject({ code: "event_type_not_permitted", details: { types: ["document.failed"] } });
   });
 
   it("records a dashboard teammate as the creator of a subscription made in a session", async () => {

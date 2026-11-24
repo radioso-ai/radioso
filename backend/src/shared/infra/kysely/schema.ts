@@ -386,6 +386,19 @@ export interface AnswerCoverageReactionTraces {
   workspace_id: string;
 }
 
+export interface ApiConnections {
+  auth_header_name: string | null;
+  auth_scheme: Generated<string>;
+  base_url: string;
+  created_at: Generated<Timestamp>;
+  credential_ciphertext: string | null;
+  default_headers: Generated<Json>;
+  id: Generated<string>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface ApiCredentialExpiryWarnings {
   claimed_at: Generated<Timestamp>;
   credential_id: string;
@@ -655,6 +668,7 @@ export interface ContextVariables {
   description: string | null;
   id: Generated<string>;
   name: string;
+  options: Json | null;
   sensitivity: string;
   trust_tier: string;
   updated_at: Generated<Timestamp>;
@@ -670,6 +684,8 @@ export interface ContextVariableValues {
   scope_type: string;
   variable_id: string;
   workspace_id: string;
+  written_by_kind: Generated<string>;
+  written_by_ref: string | null;
 }
 
 export interface ConversationActivity {
@@ -933,6 +949,8 @@ export interface DocumentSources {
   last_synced_at: Timestamp | null;
   metadata: Generated<Json>;
   name: string;
+  next_recrawl_at: Timestamp | null;
+  recrawl_cadence: Generated<string>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -2203,6 +2221,7 @@ export interface WebsiteCrawlJobs {
   claimed_at: Timestamp | null;
   completed_at: Timestamp | null;
   crawl_limit: number;
+  crawl_trigger: Generated<string>;
   created_at: Generated<Timestamp>;
   id: string;
   last_error: string | null;
@@ -2213,6 +2232,15 @@ export interface WebsiteCrawlJobs {
   source_id: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface WebsiteSourceMissingPages {
+  decided_at: Timestamp | null;
+  decision: Generated<string>;
+  document_id: string;
+  missing_since: Generated<Timestamp>;
+  source_id: string;
   workspace_id: string;
 }
 
@@ -2396,6 +2424,7 @@ export interface DB {
   agents: Agents;
   answer_coverage_assessments: AnswerCoverageAssessments;
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
+  api_connections: ApiConnections;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
   approval_resume_effect_decisions: ApprovalResumeEffectDecisions;
@@ -2517,6 +2546,7 @@ export interface DB {
   voice_recording_erasures: VoiceRecordingErasures;
   voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
+  website_source_missing_pages: WebsiteSourceMissingPages;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
   workspace_event_subscriptions: WorkspaceEventSubscriptions;

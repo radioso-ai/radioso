@@ -1,5 +1,6 @@
 import { getEnv } from "../src/app/config/env.js";
 import { Database } from "../src/shared/infra/database.js";
+import { workspaceEventRecorder } from "../src/app/composition/workspaceEventLog.js";
 import { DocumentProcessingJobRepository } from "../src/db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingCoverageReconciler } from "../src/modules/embeddingProfiles/services/embeddingCoverageReconciler.js";
 
@@ -32,7 +33,7 @@ const main = async (): Promise<void> => {
   });
 
   try {
-    const jobs = new DocumentProcessingJobRepository(database.kysely);
+    const jobs = new DocumentProcessingJobRepository(database.kysely, workspaceEventRecorder);
     const gaps = await jobs.listWorkspaceCanonicalEmbeddingGaps();
 
     if (gaps.length === 0) {

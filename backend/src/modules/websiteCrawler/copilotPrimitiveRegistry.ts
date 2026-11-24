@@ -1,1 +1,1 @@
-export const websiteCrawlerCopilotPrimitives = ["websiteCrawler.crawl.propose"] as const;
+export const websiteCrawlerCopilotPrimitives = ["websiteCrawler.crawl.propose", "websiteCrawler.recrawl-cadence.act"] as const;

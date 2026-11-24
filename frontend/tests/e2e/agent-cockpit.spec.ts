@@ -84,7 +84,13 @@ type CockpitMockOptions = {
   retainedSideIds?: string[]
   greetingBySide?: string[]
   assistantDefaultLocale?: string
-  contextVariables?: Array<{ id: string; name: string; description: string | null; valueType: 'string' | 'json' }>
+  contextVariables?: Array<{
+    id: string
+    name: string
+    description: string | null
+    valueType: 'string' | 'json' | 'enum'
+    options?: Array<{ key: string; label: string; description: string | null; archived: boolean }>
+  }>
   enabledContextVariableIds?: string[]
   failFirstPublish?: boolean
   failEvalCase?: boolean
@@ -324,7 +330,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: options.enabledContextVariableIds ?? [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [{ code: 'routine_reference', message: 'One routine is pinned.' }],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'New', changed: true }, directives: [{ id: 'directive-1', change: 'changed', before: { name: 'Welcome directive', content: 'Old direction' }, after: { name: 'Welcome directive', content: 'New direction' } }], routines: [{ definitionId: 'routine-1', change: 'changed', before: { name: 'Order lookup', steps: ['old'] }, after: { name: 'Order lookup', steps: ['new'] } }], contextVariableEnablements: [{ contextVariableId: 'tier', change: 'added' }], agentSkills: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${publishedId}$`), async (route) => {
@@ -334,7 +340,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       enabledContextVariableIds: [],
       scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true },
       dependencyWarnings: [],
-      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
+      scopedChanges: { customInstruction: { before: 'Old', after: 'Old', changed: false }, directives: [], routines: [], contextVariableEnablements: [], agentSkills: [], greeting: { before: { exactWordsEnabled: false, exactContent: null }, after: { exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: 'en', body: 'Welcome aboard!', chipLabels: {} }] } }, changed: true } },
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${candidateId}/publish$`), async (route) => {
@@ -426,10 +432,21 @@ test('uses named typed values from the immutable selected revision', async ({ pa
   const requestBodies: unknown[] = []
   await installCockpitMocks(page, {
     requestBodies,
-    enabledContextVariableIds: ['tier', 'cart'],
+    enabledContextVariableIds: ['tier', 'cart', 'topic'],
     contextVariables: [
       { id: 'tier', name: 'Customer tier', description: 'Current account tier', valueType: 'string' },
       { id: 'cart', name: 'Cart', description: 'Active basket', valueType: 'json' },
+      {
+        id: 'topic',
+        name: 'Topic',
+        description: 'What the conversation is about',
+        valueType: 'enum',
+        options: [
+          { key: 'billing', label: 'Billing', description: null, archived: false },
+          { key: 'shipping', label: 'Shipping', description: null, archived: false },
+          { key: 'legacy_returns', label: 'Old returns', description: null, archived: true },
+        ],
+      },
     ],
   })
   await page.goto(testUrl)
@@ -439,12 +456,18 @@ test('uses named typed values from the immutable selected revision', async ({ pa
   await expect(contextDialog.getByLabel('Cart')).toBeVisible()
   await contextDialog.getByLabel('Customer tier').fill('enterprise')
   await contextDialog.getByLabel('Cart').fill('{"items":2}')
+  // A Choice sample is picked from the active options by label and sent as its key.
+  await contextDialog.getByLabel('Topic').click()
+  await expect(page.getByRole('option', { name: 'Old returns' })).toHaveCount(0)
+  await page.getByRole('option', { name: 'Billing' }).click()
+  await expect(contextDialog.getByLabel('Topic')).toHaveText('Billing')
   await page.keyboard.press('Escape')
   await testChatComposer(page).fill('Typed values')
   await page.getByRole('button', { name: 'Send' }).click()
   expect(requestBodies).toContainEqual(expect.objectContaining({ testValues: [
     { contextVariableId: 'tier', value: 'enterprise' },
     { contextVariableId: 'cart', value: { items: 2 } },
+    { contextVariableId: 'topic', value: 'billing' },
   ] }))
 })
 
@@ -1585,7 +1608,7 @@ test('keeps Test and Channels outside the Build tab bar while preserving deep li
   const sidebar = page.locator('[data-sidebar="sidebar"]')
   await sidebar.getByRole('link', { name: /^Build/ }).click()
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  await expect(cockpit.getByRole('tab')).toHaveText(['Profile', 'Directives', 'Routines', 'Skills', 'Context'])
+  await expect(cockpit.getByRole('tab')).toHaveText(['Profile', 'Directives', 'Routines', 'Skills', 'Attributes'])
   await expect(page).toHaveURL(/anchor=assistant-profile/)
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
   await expect(page.getByText('Draft changes')).toBeVisible()
@@ -1730,7 +1753,7 @@ test('keeps a deep-linked mobile tab visible and supports roving keyboard focus'
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`)
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
-  const context = cockpit.getByRole('tab', { name: 'Context' })
+  const context = cockpit.getByRole('tab', { name: 'Attributes' })
   await expect(context).toBeInViewport()
   await context.focus()
   await page.keyboard.press('ArrowLeft')
@@ -2045,9 +2068,9 @@ test('captures Fable recheck evidence for live settings and publication review',
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'agent-cockpit-fable-profile-live-caption.png'), fullPage: true })
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-context-variables`)
-  await expect(page.getByText('Shared variable definitions apply live')).toBeVisible()
+  await expect(page.getByText('Shared attribute definitions apply live')).toBeVisible()
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'agent-cockpit-fable-context-live-caption.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Add variable' }).click()
+  await page.getByRole('button', { name: 'Add attribute' }).click()
   await expect(page.getByRole('dialog')).toContainText('Shared definition — changes apply live')
   await page.waitForTimeout(300)
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'agent-cockpit-fable-shared-definition-dialog.png'), fullPage: true })

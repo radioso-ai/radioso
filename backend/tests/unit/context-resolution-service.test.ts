@@ -69,6 +69,19 @@ describe("resolveContextForTurn", () => {
     });
   });
 
+  it("snapshots an enum value as its key and label, redacts a sensitive one whole, and stages the key beside the label", () => {
+    const result = resolveContextForTurn(null, [
+      { name: "topic", value: "billing", label: "Billing", surfacing: "always" },
+      { name: "care_need", value: "dental", label: "Dental care", surfacing: "on_reference", sensitive: true },
+    ]);
+
+    expect(result.snapshot).toEqual({ topic: { key: "billing", label: "Billing" }, care_need: "[redacted]" });
+    expect(result.renderFragments).toEqual([
+      { kind: "variable", name: "topic", description: null, value: "billing", label: "Billing", trust: "unverified" },
+    ]);
+    expect(result.staged[0]?.data).toMatchObject({ value: "billing", label: "Billing" });
+  });
+
   it("stages visitor_request from the narrowed facts object when present (FR-031)", () => {
     const facts = {
       country: "DE",

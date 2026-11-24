@@ -1,12 +1,70 @@
 import type { RoutineDefinition } from "./domain.js";
 import { collectContextVariableRefs, presentBindingOf, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
 import { consentDiagnostics, safeConsentValidationMessages } from "./consentValidation.js";
 import { presentBindingDiagnostics, safePresentBindingValidationMessages } from "./presentBindingValidation.js";
 import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export { routineValidationCodes, type RoutineValidationCode };
+
+type AssignmentEntry = { stepId: string; outputKey: string; target: string };
+
+/**
+ * Whether a skill step's output is a list, by the step and output name, from the skill catalog.
+ * Without a catalog nothing is known to be a list, as on the compile path.
+ */
+const listOutputReader = (
+  steps: ReadonlyArray<RoutineDefinition["steps"][number]>,
+  skillDescriptors: ReadonlyMap<string, SkillAuthoringDescriptor> | undefined,
+): ((entry: AssignmentEntry) => boolean) => {
+  const toolRefByStep = new Map(steps.map((step) => [step.stableStepId, step.toolRef]));
+  return (entry) => {
+    const toolRef = toolRefByStep.get(entry.stepId);
+    const output = toolRef ? skillDescriptors?.get(toolRef)?.outputs.find((candidate) => candidate.name === entry.outputKey) : undefined;
+    return output?.type === "list";
+  };
+};
+
+/**
+ * A step or ending that writes `{{slot.<name>}}` for a variable only a skill step's outputs set
+ * reads it as text once that step has run. Like a required input bound to a variable not yet set
+ * (`unsatisfiable_required_input`), a reference no way to the node guarantees renders empty; a
+ * list renders as nothing a visitor can read, and is shown as cards or checked in a rule instead.
+ */
+const assignedVariableReferenceDiagnostics = (
+  nodes: ReadonlyArray<{ stableStepId: string; instruction: string | null }>,
+  assignments: readonly AssignmentEntry[],
+  context: {
+    slotKeys: ReadonlySet<string>;
+    guaranteedVariablesOnEntry: ReadonlyMap<string, ReadonlySet<string>>;
+    listOutputsOf: (entry: AssignmentEntry) => boolean;
+  },
+): RoutineValidationDiagnostic[] => {
+  const assignedOnly = new Set(assignments.map((entry) => entry.target).filter((name) => !context.slotKeys.has(name)));
+  const lists = new Set(assignments.filter(context.listOutputsOf).map((entry) => entry.target));
+  return nodes.flatMap((node) => {
+    const location = `step:${node.stableStepId}.instruction`;
+    const guaranteed = context.guaranteedVariablesOnEntry.get(node.stableStepId) ?? new Set<string>();
+    return [...new Set(collectSlotReferences(node.instruction))].filter((key) => assignedOnly.has(key)).flatMap((key) => [
+      ...(lists.has(key)
+        ? [{
+            code: "referenced_list_variable" as const,
+            location,
+            message: `referenced list variable: "${node.stableStepId}" writes "${key}", which a skill step sets from a list, into its text; show it as cards or check it in a rule.`,
+          }]
+        : []),
+      ...(guaranteed.has(key)
+        ? []
+        : [{
+            code: "referenced_variable_not_guaranteed" as const,
+            location,
+            message: `referenced variable not guaranteed: "${node.stableStepId}" writes "${key}" into its text, but not every way to it runs the skill step that sets it first.`,
+          }]),
+    ]);
+  });
+};
 
 const formatKnownStepList = (stepIds: ReadonlySet<string>): string => {
   const ids = [...stepIds].slice(0, 10);
@@ -47,6 +105,7 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   declared_unused_slot: declaredUnusedSlotMessage,
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
   operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
+  context_variable_option_not_accepted: "A Choice attribute is bound to a skill input that does not accept every one of its option keys.",
   ...safeConsentValidationMessages,
   ...safePresentBindingValidationMessages,
 };
@@ -82,7 +141,7 @@ export interface RoutineValidationResult {
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
-  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" }>;
+  availableContextVariables?: ReadonlyMap<string, AvailableContextVariable>;
   /**
    * The agent's default language. The consent rules (#1544) run only when it is given: authoring
    * and the publish gate pass it, the compile path does not, so a published revision always
@@ -129,23 +188,49 @@ const expectedRuntimeType = (inputType: SkillAuthoringInput["type"]): "string" |
   return "string";
 };
 
+/**
+ * The skill kinds whose executor coerces each input to its declared type and fails closed: a value
+ * that does not fit settles `invalid_input`, a missing one `missing_input` or `unverified`, and
+ * nothing is sent. Their text inputs take any scalar slot, and a required input bound to a context
+ * variable is checked when the skill runs rather than refused when the routine is saved.
+ */
+const coercingSkillCategories: ReadonlySet<SkillAuthoringDescriptor["category"]> = new Set(["api_request"]);
+
 const isSlotTypeCompatibleWithInput = (
   slotType: RoutineDefinition["slots"][number]["type"],
   inputType: SkillAuthoringInput["type"],
+  category: SkillAuthoringDescriptor["category"],
 ): boolean => {
+  // A picked card is never a typed input's value.
+  if (slotType === "item") return false;
+  if (inputType === "text" && coercingSkillCategories.has(category)) return true;
   if (inputType === "number") return slotType === "number";
   if (inputType === "boolean") return slotType === "boolean";
   return slotType === "text" || slotType === "email" || slotType === "date";
 };
 
 const isContextVariableTypeCompatibleWithInput = (
-  valueType: "string" | "json",
+  valueType: ContextVariableValueType,
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
   if (valueType === "json") {
     return true;
   }
+  // An enum value is an option key: text, or a choice from an enum input.
+  if (valueType === "enum") {
+    return inputType === "text" || inputType === "enum";
+  }
   return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
+};
+
+/**
+ * The keys of an enum variable that a choice input bound to it does not accept. Every key counts,
+ * archived ones too, because a value that already holds an archived key keeps it.
+ */
+const optionKeysOutsideInput = (variable: AvailableContextVariable, input: SkillAuthoringInput): string[] => {
+  if (variable.valueType !== "enum" || input.type !== "enum" || !input.enumValues) return [];
+  const accepted = new Set(input.enumValues);
+  return (variable.optionKeys ?? []).filter((key) => !accepted.has(key));
 };
 
 const parsePositiveInteger = (value: string | null): number | null => {
@@ -430,6 +515,15 @@ export const validateRoutineDefinition = (
               location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
               message: `input type mismatch: context variable "${binding.contextVariable}" has type ${contextVariable.valueType}, but skill "${step.toolRef}" input "${inputKey}" expects ${input.type}.`,
             });
+          } else if (contextVariable) {
+            const refused = optionKeysOutsideInput(contextVariable, input);
+            if (refused.length > 0) {
+              diagnostics.push({
+                code: "context_variable_option_not_accepted",
+                location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+                message: `context variable option not accepted: context variable "${binding.contextVariable}" can hold ${refused.map((key) => `"${key}"`).join(", ")}, which skill "${step.toolRef}" input "${inputKey}" does not accept. Add the key to the input's choices, or bind another attribute.`,
+              });
+            }
           }
         } else if (!knownVariableNames.has(binding.ref)) {
           diagnostics.push({
@@ -439,7 +533,7 @@ export const validateRoutineDefinition = (
           });
         } else {
           const slot = slotByKey.get(binding.ref);
-          if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type)) {
+          if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type, descriptor.category)) {
             diagnostics.push({
               code: "input_type_mismatch",
               location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
@@ -460,7 +554,7 @@ export const validateRoutineDefinition = (
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,
             message: `unsatisfiable required input: skill "${step.toolRef}" requires input "${input.key}", but the routine does not bind it.`,
           });
-        } else if (binding.kind === "contextVariableRef") {
+        } else if (binding.kind === "contextVariableRef" && !coercingSkillCategories.has(descriptor.category)) {
           diagnostics.push({
             code: "unsatisfiable_required_input",
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,
@@ -678,8 +772,10 @@ export const validateRoutineDefinition = (
     }
   }
 
+  // A step or ending that writes `{{slot.<name>}}` reads a declared slot or a variable a tool
+  // step's outputs set, by the same name-level rule a field guard and an input binding follow.
   for (const key of referencedSlotKeys) {
-    if (!slotKeys.has(key)) {
+    if (!knownVariableNames.has(key)) {
       diagnostics.push({
         code: "referenced_undeclared_slot",
         location: `slot:${key}`,
@@ -687,6 +783,11 @@ export const validateRoutineDefinition = (
       });
     }
   }
+  diagnostics.push(...assignedVariableReferenceDiagnostics(
+    [...steps, ...terminals],
+    outputAssignmentEntries,
+    { slotKeys, guaranteedVariablesOnEntry, listOutputsOf: listOutputReader(steps, context.skillDescriptors) },
+  ));
   for (const slot of definition.slots) {
     if (!referencedSlotKeys.has(slot.key)) {
       diagnostics.push({

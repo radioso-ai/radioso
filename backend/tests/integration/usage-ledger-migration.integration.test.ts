@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -49,7 +50,7 @@ describeIfDatabase("usage ledger OSS migration", () => {
     database = new Database(integrationDatabaseUrl!);
     accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database.kysely);
-    documentRepository = new DocumentRepository(database.kysely);
+    documentRepository = new DocumentRepository(database.kysely, documentEventEraser);
     await runAllTestMigrations(database);
   });
 

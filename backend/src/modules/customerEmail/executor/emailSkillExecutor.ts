@@ -28,7 +28,15 @@ interface EmailSkillActivitySinkPort {
 }
 
 interface EmailSkillExecutorOptions {
-  skills: Pick<EmailSkillDefinitionRepositoryPort, "findEnabledByName">;
+  /** The skill's row for the conversation the invocation runs for (its context carries that conversation's skills). */
+  skills: {
+    findEnabledByName(
+      workspaceId: string,
+      agentId: string,
+      skillName: string,
+      context?: Readonly<Record<string, unknown>>,
+    ): ReturnType<EmailSkillDefinitionRepositoryPort["findEnabledByName"]>;
+  };
   delivery: Pick<CustomerEmailDeliveryService, "deliver">;
   activity?: EmailSkillActivitySinkPort;
 }
@@ -66,7 +74,7 @@ export class EmailSkillExecutor implements SkillExecutorPort {
     const workspaceId = typeof invocation.context?.workspaceId === "string" ? invocation.context.workspaceId : "";
     if (!agentId || !workspaceId) return failure("context_missing");
 
-    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name);
+    const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name, invocation.context);
     if (!definition) return failure("skill_not_found");
 
     setTraceAttributes({
@@ -150,9 +158,10 @@ export class EmailSkillExecutor implements SkillExecutorPort {
 }
 
 // A routine slot holds what the visitor typed, and a context variable what the host page or
-// visitor sent; either one in `bodyHtml` would otherwise ship as live markup in the email.
+// visitor sent; either one in `bodyHtml` would otherwise ship as live markup in the email. A
+// verified context variable vouches for who the visitor is, not for its markup.
 const isVisitorSupplied = (origin: SkillArgumentOrigin | undefined): boolean =>
-  origin === "slot" || origin === "context";
+  origin === "slot" || origin === "context" || origin === "verified_context";
 
 /**
  * The message inputs: what the skill definition binds, as the author wrote it, then what the

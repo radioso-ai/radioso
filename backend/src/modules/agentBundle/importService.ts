@@ -16,6 +16,8 @@ import {
   type AgentBundleUnresolvedReference,
 } from "./domain.js";
 import type { AgentInput } from "../agents/public.js";
+import type { ClassificationFitRefusal } from "../context-variables/public.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { projectAgentConfigForImport } from "./importProjection.js";
 import type {
   AgentBundleAgentWriterPort,
@@ -381,7 +383,7 @@ export class AgentBundleImportService {
         }
       }
 
-      await this.options.contextVariables.enable(workspaceId, agentId, {
+      const written = await this.options.contextVariables.enable(workspaceId, agentId, {
         variableId,
         source: enablement.source,
         resolverSkillId,
@@ -390,6 +392,13 @@ export class AgentBundleImportService {
         surfacing: enablement.surfacing,
         enabled: enablement.enabled,
       });
+      if (written?.refused) {
+        unresolved.push({
+          kind: "context_variable_not_classifiable",
+          element: `contextVariable:${enablement.variableName}`,
+          detail: `The AI cannot fill "${enablement.variableName}" in this workspace: ${notClassifiableReasons[written.refused]} Change the attribute, or enable it on the agent with another source.`,
+        });
+      }
     }
   }
 
@@ -454,6 +463,13 @@ export class AgentBundleImportService {
     }
   }
 }
+
+const notClassifiableReasons: Record<ClassificationFitRefusal, string> = {
+  not_choice: "it is not a Choice attribute.",
+  private: "it is Private (sensitive).",
+  proof: "it is treated as proof (signed).",
+  too_many: `the agent already has the AI fill ${CONTEXT_VARIABLES_BEHAVIOR.maxClassifiedPerAgent} attributes.`,
+};
 
 /**
  * Shared by both outcomes of a skill create. A skill that failed for a missing target

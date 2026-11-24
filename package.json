@@ -1,6 +1,6 @@
 {
   "name": "radioso",
-  "version": "1.34.0",
+  "version": "1.36.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -17,7 +17,8 @@
     "lint:dead-code:ci": "node scripts/knip-ratchet.mjs",
     "lint:dead-code:baseline": "node scripts/knip-ratchet.mjs --update",
     "lint:file-size": "node scripts/file-size-ratchet.mjs",
-    "lint:file-size:baseline": "node scripts/file-size-ratchet.mjs --update"
+    "lint:file-size:baseline": "node scripts/file-size-ratchet.mjs --update",
+    "prepare": "test ! -f scripts/install-git-hooks.mjs || node scripts/install-git-hooks.mjs"
   },
   "pnpm": {
     "overrides": {
@@ -28,7 +29,8 @@
       "@types/react": "19.2.14",
       "@types/react-dom": "19.2.3",
       "@tootallnate/once": "3.0.1",
-      "@xmldom/xmldom": "0.9.12",
+      "@xmldom/xmldom@<0.8.15": "^0.8.15",
+      "@xmldom/xmldom@>=0.9.0 <0.9.12": "^0.9.12",
       "adm-zip@<0.6.1": "^0.6.1",
       "body-parser@<1.20.9": "~1.20.9",
       "body-parser@>=2.0.0 <2.4.0": "^2.4.0",

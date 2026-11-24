@@ -6,6 +6,7 @@ import type {
   ChatHistoryListResponse,
   ContactHistoryDetailResponse,
   ContactHistoryListResponse,
+  ConversationAttributeChange,
   ConversationConsent,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -32,6 +33,10 @@ export const chatApi = {
     sourceOrigin?: string
     outcome?: 'in_progress' | 'completed' | 'handed_off'
     callerKind?: 'human' | 'agent'
+    // A Choice attribute's name and one of its option keys, sent together: conversations
+    // whose own value is that option.
+    attribute?: string
+    attributeOption?: string
   }, signal?: AbortSignal): Promise<HistoryItemsResponse> {
     const filters = {
       limit: input?.limit,
@@ -40,6 +45,8 @@ export const chatApi = {
       sourceOrigin: input?.sourceOrigin,
       outcome: input?.outcome,
       callerKind: input?.callerKind,
+      attribute: input?.attribute,
+      attributeOption: input?.attributeOption,
     }
     // A text search travels in the request body: request logs record a URL's query string, and
     // operators type visitors' words into this search.
@@ -101,6 +108,24 @@ export const chatApi = {
       method: 'GET',
       ...(signal ? { signal } : {}),
     }, { withSession: true })
+  },
+
+  /** Sets a Choice attribute's option for this conversation, as the signed-in teammate. */
+  async setHistoryConversationAttribute(conversationId: string, name: string, value: string): Promise<ConversationAttributeChange> {
+    return request<ConversationAttributeChange>(
+      `/history/chat/${conversationId}/attributes/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify({ value }) },
+      { withSession: true },
+    )
+  },
+
+  /** Deletes the conversation's own value; an attribute its agent classifies goes back to the AI. */
+  async resetHistoryConversationAttribute(conversationId: string, name: string): Promise<ConversationAttributeChange> {
+    return request<ConversationAttributeChange>(
+      `/history/chat/${conversationId}/attributes/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+      { withSession: true },
+    )
   },
 
   async getHistoryConversation(

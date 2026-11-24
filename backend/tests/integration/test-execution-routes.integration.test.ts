@@ -104,6 +104,36 @@ describe("test execution HTTP streaming", () => {
     expect(streamMessage.mock.calls[1]?.[0].userTimeZone).toBeUndefined();
   });
 
+  // #1763: Test Chat picks a card as live chat does, and the runner's record of a reply stays on the server.
+  it("hands a card pick to the service, and keeps the runner's record of an answer out of the history it returns", async () => {
+    const selection = { messageId: "60000000-0000-4000-8000-000000000009", blockId: "b1", itemKey: "122" };
+    const streamMessage = vi.fn(async function* (_input: Record<string, unknown>) { yield* []; });
+    const side = { id: "50000000-0000-4000-8000-000000000002", revision: { id: "50000000-0000-4000-8000-000000000001", publishedVersion: 2, publishedAt: new Date(0), createdAt: new Date(0), snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] }, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null }, conversationId: "50000000-0000-4000-8000-000000000003", state: "completed" as const, retryable: false, continuation: null,
+      history: [{ turnId, attemptId, role: "assistant" as const, content: "Two phones.", messageId: selection.messageId, createdAt: new Date(0), messageMetadata: { blocks: [{ origin: { kind: "routine_step" } }] } }] };
+    const execution = { id: executionId, generation: 1, mode: "single" as const, state: "completed" as const, createdAt: new Date(0), skillEffects: "suppressed" as const, seededTurnCount: 0, testValues: [], sides: [side] };
+    const testExecutionService = { streamMessage, detail: async () => ({ execution, attempts: [] }), retainSide: async () => execution } as unknown as TestExecutionService;
+    const { app } = createTestApp({ testExecutionService });
+    const session = await issueTestSession(app);
+    const send = (body: Record<string, unknown>) => request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions/${executionId}/messages`)
+      .set(adminSessionHeaders(session))
+      .send({ executionGeneration: 1, turnId, attemptId, ...body });
+
+    await send({ message: "Phone Two", selection }).expect(200);
+    expect(streamMessage.mock.calls[0]?.[0]).toMatchObject({ message: "Phone Two", selection });
+    // A pick is sent with the card's words, and alone.
+    await send({ selection }).expect(400);
+    await send({ message: "Phone Two", selection, imageIds: ["90000000-0000-4000-8000-000000000001"] }).expect(400);
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+
+    const detail = await request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}`).set(adminSessionHeaders(session)).expect(200);
+    const retained = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${side.id}/retain`).set(adminSessionHeaders(session)).expect(201);
+    for (const history of [detail.body.execution.sides[0].history, retained.body.sides[0].history]) {
+      expect(history).toEqual([expect.objectContaining({ messageId: selection.messageId, content: "Two phones." })]);
+      expect(history[0]).not.toHaveProperty("messageMetadata");
+    }
+  });
+
   it.each([
     ["missing execution", notFound("Test execution is unavailable."), 404, "not_found"],
     ["stale generation", conflict("Test execution generation is stale."), 409, "conflict"],

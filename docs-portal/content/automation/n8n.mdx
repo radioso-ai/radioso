@@ -105,10 +105,12 @@ Choose at least one of these events in the node's **Events** field:
 | Handoff Requested | The agent hands a conversation to a person |
 | Routine Completed | A routine run ends, whichever way it ends |
 | Decision Pending | A routine stops at a decision step and waits for a teammate |
+| Document Processed | A document revision finishes processing and is ready for retrieval |
+| Document Failed | Processing a document revision fails |
 
 Decision Pending only notifies. A teammate decides in the Radioso Inbox, because a service-account token can't list or resolve decisions.
 
-The service account needs the `member` role, which holds the permission to manage event subscriptions. Conversation events also need access to history, and Decision Pending also needs the takeover permission. A token that lacks one gets `403` with `event_type_not_permitted`.
+The service account needs the `member` role, which holds the permission to manage event subscriptions. Conversation events also need access to history, Decision Pending also needs the takeover permission, and document events need access to documents. A token that lacks one gets `403` with `event_type_not_permitted`.
 
 ### Radioso Trigger
 
@@ -147,7 +149,7 @@ Every operation works with a service account on the `member` role.
 | Radioso Trigger | `/api/v1/workspace/event-subscriptions` | `workspace.event_subscriptions.manage` |
 | Radioso Poll Trigger | `GET /api/v1/workspace/events` | `workspace.events.read` |
 
-Each event type also needs its own read permission: conversation events, Contact Request Created, Handoff Requested and Routine Completed need `workspace.history.read`, and Decision Pending needs `workspace.history.read` and `workspace.conversation.takeover`. The `member` role holds all of these.
+Each event type also needs its own read permission: conversation events, Contact Request Created, Handoff Requested and Routine Completed need `workspace.history.read`, Decision Pending needs `workspace.history.read` and `workspace.conversation.takeover`, and Document Processed and Document Failed need `workspace.documents.read`. The `member` role holds all of these.
 
 The nodes do not reply as an operator or resolve decisions. Those routes accept a signed-in dashboard session only, so a service-account token can't call them.
 

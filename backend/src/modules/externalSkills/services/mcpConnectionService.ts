@@ -1,4 +1,5 @@
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../../shared/domain/skillTargetUses.js";
 import {
   encryptField,
   decryptField,
@@ -21,8 +22,8 @@ import {
   resolveFreshAccessToken,
   type FetchLike,
 } from "../../integrationOauth/public.js";
+import { isForeignKeyViolationOn } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type {
-  McpConnectionAgentUsage,
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
@@ -43,7 +44,10 @@ interface McpConnectionSummary {
   authMethod: McpConnectionRecord["authMethod"];
   status: McpConnectionRecord["status"];
   hasCredential: boolean;
-  /** Every agent whose skills use this connection, so a change to it can be weighed first. */
+  /**
+   * Every agent whose draft or published release has a skill on this connection, so a change to
+   * it can be weighed first. The same uses keep the connection from being deleted.
+   */
   usedByAgents: Array<{ id: string; name: string }>;
   createdAt: string;
   updatedAt: string;
@@ -55,18 +59,23 @@ interface DiscoveredTool {
   inputSchema?: unknown;
 }
 
-const agentLabel = (usage: McpConnectionAgentUsage): string => usage.agentName || "Unnamed agent";
+/** Each agent with a skill on the connection, once, in the uses' order (by agent name). */
+const agentsUsing = (uses: readonly SkillTargetUse[]): McpConnectionSummary["usedByAgents"] => {
+  const agents = new Map<string, string>();
+  for (const use of uses) {
+    if (!agents.has(use.agentId)) agents.set(use.agentId, use.agentName || "Unnamed agent");
+  }
+  return [...agents].map(([id, name]) => ({ id, name }));
+};
 
-const toSummary = (record: McpConnectionRecord, usage: McpConnectionAgentUsage[]): McpConnectionSummary => ({
+const toSummary = (record: McpConnectionRecord, uses: readonly SkillTargetUse[]): McpConnectionSummary => ({
   id: record.id,
   displayName: record.displayName,
   serverUrl: record.serverUrl,
   authMethod: record.authMethod,
   status: record.status,
   hasCredential: Boolean(record.credentialCiphertext),
-  usedByAgents: usage
-    .filter((row) => row.connectionId === record.id)
-    .map((row) => ({ id: row.agentId, name: agentLabel(row) })),
+  usedByAgents: agentsUsing(uses),
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
 });
@@ -101,7 +110,13 @@ interface McpConnectionServiceOptions {
   fetchImpl?: FetchLike;
   /** Optional logger for status-transition signals (identity-only, no secrets). */
   logger?: AppLogger;
+  /** The skills that use a connection, which keep it from being deleted. */
+  skillTargetUses: SkillTargetUseReader;
 }
+
+/** The refusal to delete a connection skills use, in an agent's draft or its published release. */
+const connectionInUse = (uses: readonly SkillTargetUse[]): AppError =>
+  skillTargetInUseError({ code: "conflict", targetLabel: "MCP connection", uses });
 
 /** Adapt Node's global fetch to the narrow {@link FetchLike} the OAuth client expects. */
 const globalFetchAdapter: FetchLike = async (url, init) => {
@@ -174,11 +189,8 @@ export class McpConnectionService {
   }
 
   async list(workspaceId: string): Promise<McpConnectionSummary[]> {
-    const [records, usage] = await Promise.all([
-      this.options.repository.listByWorkspace(workspaceId),
-      this.options.repository.listAgentUsage(workspaceId),
-    ]);
-    return records.map((record) => toSummary(record, usage));
+    const records = await this.options.repository.listByWorkspace(workspaceId);
+    return Promise.all(records.map((record) => this.summarize(workspaceId, record)));
   }
 
   async get(workspaceId: string, id: string): Promise<McpConnectionSummary> {
@@ -190,7 +202,7 @@ export class McpConnectionService {
   }
 
   private async summarize(workspaceId: string, record: McpConnectionRecord): Promise<McpConnectionSummary> {
-    return toSummary(record, await this.options.repository.listAgentUsage(workspaceId, record.id));
+    return toSummary(record, await this.skillUses(workspaceId, record.id));
   }
 
   /** Rename a connection and/or rotate its access token (re-encrypted). */
@@ -225,23 +237,25 @@ export class McpConnectionService {
   }
 
   async remove(workspaceId: string, id: string): Promise<void> {
+    const uses = await this.skillUses(workspaceId, id);
+    if (uses.length > 0) throw connectionInUse(uses);
     let removed: boolean;
     try {
       removed = await this.options.repository.remove(workspaceId, id);
     } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "23503") {
-        const usage = await this.options.repository.listAgentUsage(workspaceId, id);
-        throw conflict(
-          usage.length > 0
-            ? `Connection is still used by a skill on ${usage.map(agentLabel).join(", ")}`
-            : "Connection is still used by a skill on an agent in this workspace",
-        );
+      // A skill took the connection after the check above, and the database's guard refused.
+      if (isForeignKeyViolationOn(error, "agent_skills_external_mcp_target_fk")) {
+        throw connectionInUse(await this.skillUses(workspaceId, id));
       }
       throw error;
     }
     if (!removed) {
       throw notFound("MCP connection not found");
     }
+  }
+
+  private skillUses(workspaceId: string, connectionId: string): Promise<SkillTargetUse[]> {
+    return this.options.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "mcp_connection", targetId: connectionId });
   }
 
   /** Live `tools/list` for the skill builder; requires a usable credential. */

@@ -17,6 +17,7 @@ import type {
   RoutineUnreadableReason,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { renderSkillOutputLines } from "@radioso/conversation-contract";
 import { checkSlotValue, collectedSlotsForStep } from "@radioso/conversation-engine";
 
 import {
@@ -40,12 +41,19 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   { role: "user", content: turn.inputEvent.content },
 ];
 
+// A result whose skill declares an output contract reads as typed, described lines; any other
+// keeps its outputs as JSON.
 const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
   if (!skillResult) {
     return "";
   }
+  const ran = `A tool just ran for this step with status "${skillResult.status}".`;
+  if (skillResult.outputContract) {
+    const lines = renderSkillOutputLines(skillResult.outputs ?? {}, skillResult.outputContract);
+    return lines.length > 0 ? `${ran} Outputs:\n${lines.join("\n")}` : ran;
+  }
   const outputs = skillResult.outputs ? ` Outputs: ${JSON.stringify(skillResult.outputs)}.` : "";
-  return `A tool just ran for this step with status "${skillResult.status}".${outputs}`;
+  return `${ran}${outputs}`;
 };
 
 // An instruction is quoted, and marked as the assistant's: spliced in as plain text, one that

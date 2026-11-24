@@ -9,6 +9,82 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.36.0] - 2026-11-22
+
+### Added
+
+- **attributes:** see and filter by a conversation's attributes in the Inbox and over MCP ([#1900](https://github.com/radioso-ai/radioso/pull/1900))
+- **crawler:** add a monthly recrawl cadence and make it the free plan's only one ([#1896](https://github.com/radioso-ai/radioso/pull/1896))
+- **attributes:** the AI fills a Choice attribute from the conversation, set up through MCP ([#1892](https://github.com/radioso-ai/radioso/pull/1892))
+- **crawler:** keep website sources up to date with scheduled recrawl ([#1891](https://github.com/radioso-ai/radioso/pull/1891))
+- **attributes:** plain-language attribute settings with a collapsed Advanced section ([#1890](https://github.com/radioso-ai/radioso/pull/1890))
+- **attributes:** typed context variables with choice options, a conversation scope and value provenance ([#1888](https://github.com/radioso-ai/radioso/pull/1888))
+- **skills:** API request skills that return typed response data to routines ([#1885](https://github.com/radioso-ai/radioso/pull/1885))
+
+### Fixed
+
+- **skills:** refuse deleting a connection that an agent's published release still uses ([#1898](https://github.com/radioso-ai/radioso/pull/1898))
+- **tool-images:** copy every picture a carousel asks for, and show a plain frame when one is missing ([#1897](https://github.com/radioso-ai/radioso/pull/1897))
+- **routines:** fixes from end-to-end testing of API request skills ([#1889](https://github.com/radioso-ai/radioso/pull/1889))
+- **skills:** skill edits are draft changes, and conversations run their release's skills ([#1843](https://github.com/radioso-ai/radioso/pull/1843))
+- **chat:** make answer links readable and citation markers quieter ([#1880](https://github.com/radioso-ai/radioso/pull/1880))
+
+### Documentation
+
+- **faq:** drop the topic list from the description and name availability in the booking question ([#1882](https://github.com/radioso-ai/radioso/pull/1882))
+
+### Database migrations
+
+This release adds 9 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `268_drop_incomplete_agent_skill_snapshots.sql`
+- `269_api_connections.sql`
+- `270_typed_context_variables.sql`
+- `271_typed_context_variables_validate_and_index.sql`
+- `272_scheduled_website_recrawl.sql`
+- `273_classified_context_variables.sql`
+- `274_monthly_recrawl_cadence.sql`
+- `275_monthly_recrawl_cadence_validate.sql`
+- `276_skill_target_delete_checks_published_release.sql`
+
+[1.36.0]: https://github.com/radioso-ai/radioso/compare/v1.35.0...v1.36.0
+
+## [1.35.0] - 2026-11-20
+
+### Added
+
+- **events:** record document processed and failed events ([#1875](https://github.com/radioso-ai/radioso/pull/1875))
+- **docs-importer:** import the radioso.ai pricing page and keep it current ([#1862](https://github.com/radioso-ai/radioso/pull/1862))
+- **zapier:** add REST hook triggers for Radioso events ([#1869](https://github.com/radioso-ai/radioso/pull/1869))
+- **n8n:** add webhook and polling triggers for Radioso events ([#1868](https://github.com/radioso-ai/radioso/pull/1868))
+- **events:** deliver workspace events to subscribed URLs ([#1866](https://github.com/radioso-ai/radioso/pull/1866))
+
+### Fixed
+
+- **docs-importer:** stop importing the MCP server README ([#1878](https://github.com/radioso-ai/radioso/pull/1878))
+- **documents:** parse DOCX uploads again by keeping mammoth on xmldom 0.8 ([#1877](https://github.com/radioso-ai/radioso/pull/1877))
+- **ee:** meter untiered accounts so the operator console shows their usage ([#1864](https://github.com/radioso-ai/radioso/pull/1864))
+- **docs-importer:** keep the website page under the common source so pruning keeps it ([#1874](https://github.com/radioso-ai/radioso/pull/1874))
+- **docs-importer:** import only product-facing READMEs ([#1859](https://github.com/radioso-ai/radioso/pull/1859))
+- **approvals:** resolve a decision without holding back the event log ([#1865](https://github.com/radioso-ai/radioso/pull/1865))
+
+### Documentation
+
+- answer the questions visitors actually ask, in their words ([#1879](https://github.com/radioso-ai/radioso/pull/1879))
+- make widget customization, site-builder installs, and booking findable; drop stale Enterprise labels ([#1860](https://github.com/radioso-ai/radioso/pull/1860))
+
+### Internal
+
+- **lint:** run the file-size and dead-code gates on git push ([#1867](https://github.com/radioso-ai/radioso/pull/1867))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `265_workspace_event_subscriptions.sql`
+
+[1.35.0]: https://github.com/radioso-ai/radioso/compare/v1.34.0...v1.35.0
+
 ## [1.34.0] - 2026-11-19
 
 ### Added

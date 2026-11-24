@@ -100,6 +100,7 @@ import type { ChatModelImageReading, VisitorImageAvailability, VisitorImageServi
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
+import type { ApiConnectionService } from "../../modules/apiRequestSkills/public.js";
 import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -135,12 +136,14 @@ import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.
 import type {
   ContextVariableResolutionReaderPort,
   ContextVariableService,
+  ConversationAttributeEdits,
 } from "../../modules/context-variables/public.js";
 import type { IdentityNonceRepositoryPort } from "../../db/repositories/identityNonceRepository.js";
 import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/emailSkillActivityRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
+import type { WebsiteRecrawlComposition } from "../composition/websiteRecrawl.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
@@ -285,6 +288,7 @@ export interface AppDependencies {
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;
+  apiConnections: ApiConnectionService;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   llmCapabilityResolver: LlmCapabilityResolver;
   auditService: AuditService;
@@ -324,6 +328,8 @@ export interface AppDependencies {
   facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
+  /** A website source's recrawl cadence and the operator's decision on pages a crawl held. */
+  websiteRecrawl: Pick<WebsiteRecrawlComposition, "scheduleService" | "heldPagesService">;
   websiteCrawlWorker: WebsiteCrawlWorker;
   websiteCrawlJobConsumer?: JobConsumerPort;
   documentDeletionService: DocumentDeletionService;
@@ -431,6 +437,8 @@ export interface AppDependencies {
   conversationErasure: ConversationErasure;
   /** A conversation's routine consent records, and an operator's withdrawal of one on the visitor's request. */
   conversationConsents: ConversationConsents;
+  /** A teammate's sets and resets of a conversation's attributes, from the Inbox, Ray and operator MCP. */
+  conversationAttributeEdits: ConversationAttributeEdits;
   /** How long the workspace keeps conversations; the retention sweep enforces it. */
   privacySettingsService: PrivacySettingsService;
   /** The zone the workspace reads "today" in when a visitor's client reports none. */

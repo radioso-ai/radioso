@@ -5,6 +5,7 @@ import { ExternalLink } from 'lucide-react'
 
 import { operatorVisitorImages } from '@/components/chat/visitor-image-thumbnails'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
+import { attributeEditingFor, ConversationAttributes } from '@/components/dashboard/conversation-attributes'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import {
   useHistoryDetailState,
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConversationActivity } from '@/hooks/use-conversation-activity'
+import { useLiveConversationAttributes } from '@/components/dashboard/use-live-conversation-attributes'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
@@ -180,6 +182,12 @@ export function InboxResponseView({
     additionalConversationMessages: conversationTail.messages,
     anchorMessageId,
     isAudiencePulseEvidence,
+  })
+
+  const { attributes, applyChange: applyAttributeChange } = useLiveConversationAttributes({
+    conversationId,
+    loaded: conversationDetail?.attributes,
+    tail: conversationTail,
   })
 
   // The freshest ownership the pane has seen: the detail fetch loads once (then
@@ -464,6 +472,7 @@ export function InboxResponseView({
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
+            <ConversationAttributes attributes={attributes} editing={attributeEditingFor(conversationDetail, applyAttributeChange)} />
             {effectiveItem?.type === 'approval' && !effectiveItem.heldReplyId ? (
               approvalDecision ? (
                 <ApprovalDecisionPanel

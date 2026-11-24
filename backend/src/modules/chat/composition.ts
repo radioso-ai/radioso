@@ -13,6 +13,7 @@ export { AgentConverseAudit } from "./services/agentConverseAudit.js";
 export { AgentConverseService } from "./services/agentConverseService.js";
 export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
+export { ContextClassificationExcerptReader } from "./services/contextClassificationExcerptReader.js";
 export { RevisionGreetingStarterPromptReader } from "./services/agentStarterPromptReader.js";
 export type { AgentStarterPromptReader } from "./contracts/index.js";
 export { ChatService } from "./services/chatService.js";

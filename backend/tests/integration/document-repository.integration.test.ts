@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
+import { documentEventEraser } from "../../src/app/composition/workspaceEventLog.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import type {
   DocumentCreateInput,
@@ -30,7 +31,7 @@ const settledDocument = async (
 
 describeIntegration("DocumentRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new DocumentRepository(database.kysely);
+  const repository = new DocumentRepository(database.kysely, documentEventEraser);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -1035,49 +1036,67 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(state?.documentId).toBe(created.id);
   });
 
-  it("deleteMissingPagesBySourceAndExternalIds deletes pages not in the keep set and sums freed bytes", async () => {
-    const keep = await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "keep-1", contentSizeBytes: 100 }),
-      status: "ready",
-    });
-    await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "drop-1", contentSizeBytes: 200 }),
-      status: "ready",
-    });
-    await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "drop-2", contentSizeBytes: 300 }),
-      status: "ready",
-    });
+  it("deleteMissingSourcePages deletes exactly the given pages of the source, never a kept one, and sums freed bytes", async () => {
+    const page = (externalDocumentId: string, contentSizeBytes: number, pageSourceId = sourceId) =>
+      repository.create({ ...baseCreateInput({ sourceId: pageSourceId, externalDocumentId, contentSizeBytes }), status: "ready" });
+    const gone = await page("gone-1", 200);
+    const alsoGone = await page("gone-2", 300);
+    const notListed = await page("live-1", 100);
+    const kept = await page("kept-1", 50);
+    await database.query(
+      "INSERT INTO website_source_missing_pages (document_id, workspace_id, source_id, decision) VALUES ($1, $2, $3, 'kept')",
+      [kept.id, workspaceId, sourceId],
+    );
+    const otherSourceId = randomUUID();
+    await database.query(
+      `INSERT INTO document_sources (id, workspace_id, kind, name, external_id, config, metadata)
+       VALUES ($1, $2, 'website', 'Other Site', 'site-ext-other', '{}'::jsonb, '{}'::jsonb)`,
+      [otherSourceId, workspaceId],
+    );
+    const otherSource = await page("other-1", 400, otherSourceId);
 
-    const result = await repository.deleteMissingPagesBySourceAndExternalIds({
+    const result = await repository.deleteMissingSourcePages({
       workspaceId,
       sourceId,
-      keepExternalDocumentIds: ["keep-1"],
+      documentIds: [gone.id, alsoGone.id, kept.id, otherSource.id],
     });
 
-    expect(result.deletedCount).toBe(2);
-    expect(result.deletedContentBytes).toBe(500);
-    expect(await repository.findByIdAndWorkspaceId(keep.id, workspaceId)).not.toBeNull();
+    expect(result).toEqual({ deletedCount: 2, deletedContentBytes: 500 });
+    for (const deleted of [gone, alsoGone]) {
+      expect(await repository.findByIdAndWorkspaceId(deleted.id, workspaceId)).toBeNull();
+    }
+    for (const remaining of [notListed, kept, otherSource]) {
+      expect(await repository.findByIdAndWorkspaceId(remaining.id, workspaceId)).not.toBeNull();
+    }
+    await expect(repository.deleteMissingSourcePages({ workspaceId, sourceId, documentIds: [] }))
+      .resolves.toEqual({ deletedCount: 0, deletedContentBytes: 0 });
   });
 
-  it("deleteMissingPagesBySourceAndExternalIds deletes all sourced pages when the keep set is empty", async () => {
-    await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "all-1", contentSizeBytes: 10 }),
-      status: "ready",
-    });
-    await repository.create({
-      ...baseCreateInput({ sourceId, externalDocumentId: "all-2", contentSizeBytes: 20 }),
-      status: "ready",
-    });
+  it("deleteHeldSourcePages deletes only the source's pages still held for review and sums freed bytes", async () => {
+    const page = (externalDocumentId: string, contentSizeBytes: number) =>
+      repository.create({ ...baseCreateInput({ sourceId, externalDocumentId, contentSizeBytes }), status: "ready" });
+    const held = await page("held-1", 40);
+    const kept = await page("kept-1", 50);
+    const back = await page("back-1", 60);
+    const live = await page("live-1", 70);
+    const hold = (documentId: string, decision: "pending" | "kept") => database.query(
+      "INSERT INTO website_source_missing_pages (document_id, workspace_id, source_id, decision) VALUES ($1, $2, $3, $4)",
+      [documentId, workspaceId, sourceId, decision],
+    );
+    await hold(held.id, "pending");
+    await hold(kept.id, "kept");
+    // Held, then seen again by a crawl, which clears its hold before the operator removes the rest.
+    await hold(back.id, "pending");
+    await database.query("DELETE FROM website_source_missing_pages WHERE document_id = $1", [back.id]);
 
-    const result = await repository.deleteMissingPagesBySourceAndExternalIds({
-      workspaceId,
-      sourceId,
-      keepExternalDocumentIds: [],
-    });
+    const result = await repository.deleteHeldSourcePages({ workspaceId, sourceId });
 
-    expect(result.deletedCount).toBe(2);
-    expect(result.deletedContentBytes).toBe(30);
+    expect(result).toEqual({ deletedCount: 1, deletedContentBytes: 40 });
+    expect(await repository.findByIdAndWorkspaceId(held.id, workspaceId)).toBeNull();
+    for (const remaining of [kept, back, live]) {
+      expect(await repository.findByIdAndWorkspaceId(remaining.id, workspaceId)).not.toBeNull();
+    }
+    await expect(repository.deleteHeldSourcePages({ workspaceId, sourceId })).resolves.toEqual({ deletedCount: 0, deletedContentBytes: 0 });
   });
 
   it("lists a filtered, cursor-paginated document inventory without reading document content", async () => {

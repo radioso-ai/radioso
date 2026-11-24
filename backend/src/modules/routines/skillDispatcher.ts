@@ -14,6 +14,7 @@ import { traceOperation } from "../../shared/observability/tracing/operations.js
 import { resolveSkillArguments, resolveUntypedSkillArguments } from "./skillArgumentResolver.js";
 import { skillActsOutsideConversation } from "../retrieval/public.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import { withConversationSkills, type ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 
 type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
 
@@ -25,6 +26,8 @@ interface RoutineSkillExecutorDispatcherOptions {
   throwIfCancelled?: () => void;
   skillEffects?: SkillEffectPolicy;
   conversationDurability?: ConversationDurability;
+  /** The skills the conversation runs (its release's), handed to every executor this dispatches. */
+  conversationSkills?: ConversationSkillSet;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -61,10 +64,16 @@ const contextVariableValueFor = (name: string, data: unknown): unknown => {
   return data;
 };
 
+/** A context variable the host verified: staged at the `verified` tier, which a `signed` definition maps to. */
+const isVerifiedContextVariable = (staged: StagedContext): boolean =>
+  isRecord(staged.metadata) && (staged.metadata.trustTier === "verified" || staged.metadata.trustTier === "signed");
+
+/** The turn's context variable values, and which of them the host verified, for argument origins. */
 const contextValuesFromStagedContext = (
   stagedContext: readonly StagedContext[],
-): Record<string, unknown> => {
-  const contextValues: Record<string, unknown> = {};
+): { values: Record<string, unknown>; verified: Set<string> } => {
+  const values: Record<string, unknown> = {};
+  const verified = new Set<string>();
   for (const staged of stagedContext) {
     if (staged.kind !== "context_variable") {
       continue;
@@ -73,9 +82,11 @@ const contextValuesFromStagedContext = (
     if (!name) {
       continue;
     }
-    contextValues[name] = contextVariableValueFor(name, staged.data);
+    values[name] = contextVariableValueFor(name, staged.data);
+    if (isVerifiedContextVariable(staged)) verified.add(name);
+    else verified.delete(name);
   }
-  return contextValues;
+  return { values, verified };
 };
 
 /**
@@ -102,7 +113,11 @@ export interface RoutineExternalEffectInterceptor {
 
 /** Whether running a resolved skill can reach outside the conversation (an email, a webhook). */
 const definitionActsOutsideConversation = (skill: SkillDefinition): boolean =>
-  skillActsOutsideConversation({ retrieval: skill.owner === "retrieval", execution: skill.execution });
+  skillActsOutsideConversation({
+    retrieval: skill.owner === "retrieval",
+    execution: skill.execution,
+    readOnly: skill.readOnly === true,
+  });
 
 /** Resolves routine skill references against a fixed set of skill definitions. */
 export class StaticRoutineSkillResolver implements RoutineSkillResolver {
@@ -137,6 +152,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly throwIfCancelled?: () => void;
   private readonly skillEffects: SkillEffectPolicy;
   private readonly conversationDurability: ConversationDurability;
+  private readonly conversationSkills?: ConversationSkillSet;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -150,6 +166,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.throwIfCancelled = options.throwIfCancelled;
     this.skillEffects = options.skillEffects ?? "allowed";
     this.conversationDurability = options.conversationDurability ?? "durable";
+    this.conversationSkills = options.conversationSkills;
   }
 
   async dispatch(
@@ -232,8 +249,9 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     // through so external-skill slotBinding routing keeps working — a sensitive slot's
     // masked, since no binding named it. This is the one place a skill's arguments are
     // built, so every executor (webhook, Slack, email, MCP, notify) gets the same rule.
+    const context = contextValuesFromStagedContext(turn.stagedContext);
     const { values: collected, origins: collectedOrigins } = inputBindings && Object.keys(inputBindings).length > 0
-      ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
+      ? resolveSkillArguments(inputBindings, state.variables ?? {}, context.values, context.verified)
       : resolveUntypedSkillArguments(state.variables ?? {}, input.sensitiveSlotKeys);
     // A binding that names a sensitive slot hands the skill the value itself; the executor masks it
     // in every copy it keeps beyond the delivery (the workspace event log's contact request).
@@ -266,6 +284,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
             ...(sensitiveInputKeys.length > 0 ? { sensitiveInputKeys } : {}),
             ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
             ...(this.accountId ? { accountId: this.accountId } : {}),
+            ...withConversationSkills(this.conversationSkills),
           },
           emit: noopSkillEmitPort,
         });
@@ -289,6 +308,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       return {
         status: result.outcome.status,
         outputs: result.outcome.outputs,
+        ...(result.outcome.outputContract ? { outputContract: result.outcome.outputContract } : {}),
         answer: result.outcome.answer,
         ...(metadata ? { metadata } : {}),
         actsOutsideConversation,

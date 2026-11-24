@@ -21,6 +21,7 @@ import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../sr
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { resolveSkillEffectPolicy } from "../../src/shared/domain/turnExecutionMode.js";
+import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 
 const workspaceId = randomUUID();
 const agentId = randomUUID();
@@ -348,6 +349,34 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       },
     });
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
+  });
+
+  it("hands a directive-bound skill a Choice attribute's key, and a sensitive one masked", async () => {
+    let invocation: SkillInvocation | undefined;
+    const executor: SkillExecutorPort = {
+      async dispatch(nextInvocation): Promise<SkillDispatchResult> {
+        invocation = nextInvocation;
+        return { disposition: "settled", outcome: { status: "completed", answer: "Order 123 is in transit." } };
+      },
+    };
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor }]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      skillResultRenderer,
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.resolvedContext = resolveContextForTurn(null, [
+      { name: "topic", value: "billing", label: "Billing", surfacing: "on_reference", sensitive: false },
+      { name: "diagnosis", value: "dermatology", label: "Dermatology", surfacing: "on_reference", sensitive: true },
+      { name: "plan", value: "pro", surfacing: "always", sensitive: false },
+    ]);
+
+    const runtime = await provider.forSession(session);
+    const selector = new ChatTurnSkillSelector([defaultTurnSkill, ...runtime.turnSkills], strategy, { agentSkillStates: runtime.skillStates });
+    await selector.select(session).skill.dispatch(session);
+
+    expect(invocation?.collected.context).toEqual({ topic: "billing", diagnosis: "[redacted]", plan: "pro" });
   });
 
   // Finding 2 (agent-revision-versioning audit): directives already read from the

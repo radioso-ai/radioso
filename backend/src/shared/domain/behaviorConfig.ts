@@ -67,6 +67,16 @@ export const CONTEXT_VARIABLES_BEHAVIOR = {
     perValueMaxChars: 300,
     sectionTokenBudget: 600,
   },
+  // Bounds on an enum variable's options. Keys follow the slot-key pattern and are what a value
+  // stores; the filter index on stored values holds keys up to `maxKeyChars` (migration 271).
+  enumOptions: {
+    maxOptions: 50,
+    maxKeyChars: 120,
+    maxLabelChars: 120,
+    maxDescriptionChars: 300,
+  },
+  // How many variables one agent may have the classifier fill. They all go in one model call.
+  maxClassifiedPerAgent: 8,
 } as const;
 
 export const CHAT_BEHAVIOR = {

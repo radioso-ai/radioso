@@ -5,7 +5,7 @@ const meta = {
   'data-residency': 'Data residency',
   encryption: 'Encryption',
   'clarification-behavior': 'Clarification behavior',
-  'context-variables': 'Context variables',
+  'context-variables': 'Attributes and context',
   'visitor-data': 'Visitor data',
   'deleting-conversation-data': 'Deleting conversation data',
   'data-retention': 'Data retention',

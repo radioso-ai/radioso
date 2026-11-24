@@ -1024,6 +1024,52 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("a tool result with a typed output contract", () => {
+    const skillStep: RoutineStep = { id: "lookup_order", kind: "skill", skillName: "order_lookup" };
+    const decision = '{"variables": {}, "claimsAuthority": false, "condition": 1, "offTopic": false}';
+
+    it("renders each output as a typed, described line instead of raw JSON", async () => {
+      const gw = gateway(decision);
+      await new RoutineNextStepSelector(gw).select({
+        routine,
+        state,
+        currentStep: skillStep,
+        transitions,
+        turn,
+        skillResult: {
+          status: "completed",
+          outputs: { status: "shipped", items: [{ name: "Lamp", price: 30 }] },
+          outputContract: {
+            status: { type: "text", description: "Order status" },
+            carrier: { type: "text" },
+            items: { type: "list", fields: { name: { type: "text", role: "title" }, price: { type: "number" } } },
+          },
+        },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain('status — Order status (text): "shipped"');
+      expect(systemPrompt).toContain("carrier (text): not returned");
+      expect(systemPrompt).toContain('items (list of 1; fields: name (text), price (number)):\n  1. name: "Lamp"; price: 30');
+      expect(systemPrompt).not.toContain("Outputs: {");
+    });
+
+    it("keeps the JSON outputs line when the result carries no contract", async () => {
+      const gw = gateway(decision);
+      await new RoutineNextStepSelector(gw).select({
+        routine,
+        state,
+        currentStep: skillStep,
+        transitions,
+        turn,
+        skillResult: { status: "completed", outputs: { orderStatus: "shipped" } },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain('Outputs: {"orderStatus":"shipped"}.');
+    });
+  });
+
   describe("unreadable decision retry", () => {
     // Unlike `gateway`, returns a different completion (or throws) on each successive
     // call — needed to prove the selector's retry actually sends a second request rather

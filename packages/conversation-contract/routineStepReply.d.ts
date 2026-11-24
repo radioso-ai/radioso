@@ -4,7 +4,7 @@
 import type { RoutineContextRenderer, SteeringRule, TurnContext } from "./index.js";
 import type { PendingRenderableTurn, RenderableTurn } from "./renderableTurn.js";
 import type { RoutineStep, RoutineStepReask } from "./routineGraph.js";
-import type { RoutineSkillOutcomeStatus } from "./skillOutcome.js";
+import type { RoutineSkillOutcomeStatus, SkillOutputContract } from "./skillOutcome.js";
 
 /** What a routine step's reply is written from. */
 export interface RoutineStepReplyInput {
@@ -26,6 +26,26 @@ export interface RoutineStepReplyInput {
    * is a `terminal` the run reached; a chat step's reply and a stuck hand-off carry none.
    */
   ending?: RoutineEndingRun;
+  /**
+   * What the tool steps this turn ran before `step` returned, in the order they ran, one per step
+   * (the latest when a step ran twice), each only when its skill declares an output contract
+   * (#1883). A skill without one, such as an MCP tool, is not listed: its outcome reaches an ending
+   * as `ending.skillOutcomes` alone. A tool step an earlier turn ran is not listed either; its
+   * values reach a later step through the variables it assigned.
+   */
+  skillResults?: readonly RoutineStepSkillResult[];
+}
+
+/**
+ * A tool step's result as a step reply reads it (#1883): its status, and only the outputs its
+ * contract declares, which the reply renders as typed, described lines, never as raw JSON.
+ */
+export interface RoutineStepSkillResult {
+  skillName: string;
+  status: RoutineSkillOutcomeStatus;
+  /** The outputs the contract declares that the skill returned; an absent one is not returned. */
+  outputs: Record<string, unknown>;
+  outputContract: SkillOutputContract;
 }
 
 /**

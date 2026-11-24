@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type ExpressionBuilder, type SelectQueryBuilder } from "kysely";
+import { sql, type Expression, type ExpressionBuilder, type SelectQueryBuilder, type SqlBool } from "kysely";
 
 import type {
   BulkDocumentProcessingJobOptions,
@@ -23,6 +23,7 @@ import type {
 import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/contracts/retrieval.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
+import type { DocumentEventEraser } from "../../shared/domain/workspaceEventLog.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -155,7 +156,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     const counts = await scoped.executeTakeFirst();
     return { eligible: Number(counts?.eligible_count ?? "0"), skipped: Number(counts?.skipped_count ?? "0") };
   }
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly documentEvents: DocumentEventEraser) {}
 
   async hasReadyDocuments(workspaceId: string): Promise<boolean> {
     const row = await this.db
@@ -993,10 +994,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       if (!document) {
         return false;
       }
-      await appendVectorTombstonesForDocuments(trx, {
-        workspaceId,
-        documentIds: [documentId],
-      });
+      await this.releaseDeletedDocuments(trx, workspaceId, [documentId]);
       await trx
         .deleteFrom("documents")
         .where("id", "=", documentId)
@@ -1084,10 +1082,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         .where("workspace_id", "=", workspaceId)
         .forUpdate()
         .execute();
-      await appendVectorTombstonesForDocuments(trx, {
-        workspaceId,
-        documentIds: documents.map((document) => document.id),
-      });
+      await this.releaseDeletedDocuments(trx, workspaceId, documents.map((document) => document.id));
       return trx
         .deleteFrom("documents")
         .where("source_id", "=", sourceId)
@@ -1164,52 +1159,43 @@ export class DocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteMissingPagesBySourceAndExternalIds(input: {
-    workspaceId: string;
-    sourceId: string;
-    keepExternalDocumentIds: string[];
-  }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
+  /** Deletes exactly the given pages of the source, leaving any the operator kept, locking each one it deletes. */
+  async deleteMissingSourcePages(input: { workspaceId: string; sourceId: string; documentIds: readonly string[] }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    if (input.documentIds.length === 0) return { deletedCount: 0, deletedContentBytes: 0 };
+    return this.deleteSourcePages(input, (eb) => eb.and([eb("id", "in", [...new Set(input.documentIds)]), eb.not(eb.exists(eb.selectFrom("website_source_missing_pages as k")
+      .select("k.document_id").whereRef("k.document_id", "=", "documents.id").where("k.decision", "=", "kept")))]));
+  }
 
+  /** Deletes the source's pages still held for review, locking each hold so a crawl cannot clear it mid-deletion. */
+  async deleteHeldSourcePages(input: { workspaceId: string; sourceId: string }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    return this.deleteSourcePages(input, (eb) => eb("id", "in", eb.selectFrom("website_source_missing_pages").select("document_id").forUpdate()
+      .where("workspace_id", "=", input.workspaceId).where("source_id", "=", input.sourceId).where("decision", "=", "pending")));
+  }
+
+  private async deleteSourcePages(
+    input: { workspaceId: string; sourceId: string },
+    pages: (eb: ExpressionBuilder<DB, "documents">) => Expression<SqlBool>,
+  ): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    // Deletes exactly the rows it locked, so what it releases and what it deletes cannot drift apart.
     const rows = await this.db.transaction().execute(async (trx) => {
-      let documentsQuery = trx
-        .selectFrom("documents")
-        .select("id")
-        .where("source_id", "=", input.sourceId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("external_document_id", "is not", null);
-      if (keep.length > 0) {
-        documentsQuery = documentsQuery.where(
-          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
-        );
-      }
-      const documents = await documentsQuery.forUpdate().execute();
-      await appendVectorTombstonesForDocuments(trx, {
-        workspaceId: input.workspaceId,
-        documentIds: documents.map((document) => document.id),
-      });
-      let deleteQuery = trx
-        .deleteFrom("documents")
-        .where("source_id", "=", input.sourceId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("external_document_id", "is not", null);
-      if (keep.length > 0) {
-        deleteQuery = deleteQuery.where(
-          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
-        );
-      }
-      return deleteQuery.returning(["id", "content_size_bytes"]).execute();
+      const ids = (await trx.selectFrom("documents").select("id")
+        .where("source_id", "=", input.sourceId).where("workspace_id", "=", input.workspaceId).where(pages)
+        .forUpdate().execute()).map((document) => document.id);
+      if (ids.length === 0) return [];
+      await this.releaseDeletedDocuments(trx, input.workspaceId, ids);
+      return trx.deleteFrom("documents").where("id", "in", ids).returning(["id", "content_size_bytes"]).execute();
     });
-
-    let deletedContentBytes = 0;
-    for (const row of rows) {
-      const raw = row.content_size_bytes;
-      const bytes = typeof raw === "string" ? Number(raw) : raw;
-      if (typeof bytes === "number" && Number.isFinite(bytes)) {
-        deletedContentBytes += bytes;
-      }
-    }
+    const deletedContentBytes = rows.reduce((total, row) => {
+      const bytes = Number(row.content_size_bytes ?? Number.NaN);
+      return Number.isFinite(bytes) ? total + bytes : total;
+    }, 0);
     return { deletedCount: rows.length, deletedContentBytes };
+  }
+
+  /** What goes with documents a deletion has locked: their vectors' tombstones and their workspace events. */
+  private async releaseDeletedDocuments(trx: Db, workspaceId: string, documentIds: string[]): Promise<void> {
+    await appendVectorTombstonesForDocuments(trx, { workspaceId, documentIds });
+    await this.documentEvents.forgetDocuments(trx, { workspaceId, documentIds });
   }
 
   private async insertProcessingJob(

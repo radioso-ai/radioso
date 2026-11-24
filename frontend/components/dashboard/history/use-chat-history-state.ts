@@ -15,7 +15,8 @@ import {
 } from '@/lib/api'
 import { shouldClampHistoryPage, shouldResetAllLensPageForFilterChange, useHistoryListQuery } from './history-list-query'
 import type { ConversationSearchParams } from '@/lib/conversation-filters'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { mergeOlderMessages } from '@/lib/merge-older-messages'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
   audiencePulseApi,
   type AudiencePulseEvidenceAnchorResponse,
@@ -102,6 +103,7 @@ export function useHistoryListState({
           ? 'Failed to load contact activity.'
           : 'Failed to load activity.',
   ) : null
+  const listErrorStatus = historyQuery.error ? getApiErrorStatus(historyQuery.error) : undefined
   const historyItems = historyQuery.data?.variant === 'all' ? historyQuery.data.response.items : []
   const historyItemsTotal = historyQuery.data?.variant === 'all' ? historyQuery.data.response.total : 0
   const hasHistoryItemsNextPage = historyQuery.data?.variant === 'all' ? historyQuery.data.response.hasMore : false
@@ -301,6 +303,7 @@ export function useHistoryListState({
     isListLoading,
     hasAnyHistory,
     listError,
+    listErrorStatus,
     conversations,
     conversationTotal,
     conversationPage,
@@ -737,15 +740,7 @@ export function useHistoryDetailState({
             limit: MESSAGE_WINDOW_SIZE,
             ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
           })
-      setConversationDetail((current) => {
-        if (!current) {
-          return older
-        }
-        return {
-          ...older,
-          messages: [...older.messages, ...current.messages],
-        }
-      })
+      setConversationDetail((current) => mergeOlderMessages(current, older))
     } catch (error) {
       setDetailError(getApiErrorMessage(error, 'Failed to load older messages.'))
     } finally {

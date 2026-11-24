@@ -54,11 +54,6 @@ const mapFromIntegration = (record: IntegrationConnectionRecord): CustomerEmailC
 
 export class InMemoryCustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
   private readonly integrationConnections = new InMemoryIntegrationConnectionRepository();
-  private referenceChecker: (connectionId: string) => number | Promise<number> = () => 0;
-
-  setReferenceChecker(checker: (connectionId: string) => number | Promise<number>): void {
-    this.referenceChecker = checker;
-  }
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
     const record = await this.integrationConnections.create({
@@ -114,14 +109,6 @@ export class InMemoryCustomerEmailConnectionRepository implements CustomerEmailC
       EMAIL_INTEGRATION_PROVIDERS,
     );
     return record ? clone(mapFromIntegration(record)) : null;
-  }
-
-  async countSkillReferences(workspaceId: string, id: string): Promise<number> {
-    const record = await this.integrationConnections.findById(workspaceId, id, EMAIL_INTEGRATION_PROVIDERS);
-    if (!record) {
-      return 0;
-    }
-    return this.referenceChecker(id);
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {

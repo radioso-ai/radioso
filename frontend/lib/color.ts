@@ -1,4 +1,4 @@
-export type Rgb = { r: number; g: number; b: number }
+type Rgb = { r: number; g: number; b: number }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
@@ -29,7 +29,7 @@ export const parseHex = (hex: string): Rgb | null => {
   }
 }
 
-export const rgbToHex = ({ r, g, b }: Rgb): string => {
+const rgbToHex = ({ r, g, b }: Rgb): string => {
   const toHex = (component: number) =>
     clamp(Math.round(component), 0, 255).toString(16).padStart(2, '0')
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
@@ -85,6 +85,38 @@ export const contrastRatio = (a: string, b: string): number => {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+const SHADE_SEARCH_STEPS = 12
+
+/**
+ * `color` mixed toward the pole on its own side of `background` (white for a colour lighter than it,
+ * black for a darker one) just far enough to read at `minContrast` on it, so it keeps its hue and its
+ * polarity; toward the other pole only when its own cannot reach `minContrast`. `color` itself when it
+ * already reads, and unchanged when either is not a hex colour. The pole is reached at most, which
+ * every background reads against at 4.58:1 or better in one direction.
+ */
+export const shadeToContrast = (color: string, background: string, minContrast: number): string => {
+  if (!parseHex(color) || !parseHex(background) || contrastRatio(background, color) >= minContrast) {
+    return color
+  }
+  const ownPole = relativeLuminance(color) >= relativeLuminance(background) ? '#ffffff' : '#000000'
+  const otherPole = ownPole === '#ffffff' ? '#000000' : '#ffffff'
+  const ownPoleContrast = contrastRatio(background, ownPole)
+  const pole = ownPoleContrast >= minContrast || ownPoleContrast >= contrastRatio(background, otherPole) ? ownPole : otherPole
+  // Readability rises with the weight toward the pole, past a dip when the mix crosses the
+  // background, and the unmixed colour already falls short; so it flips from short to readable once.
+  let readable = 1
+  let unreadable = 0
+  for (let step = 0; step < SHADE_SEARCH_STEPS; step += 1) {
+    const weight = (readable + unreadable) / 2
+    if (contrastRatio(background, mixHex(color, pole, weight)) >= minContrast) {
+      readable = weight
+    } else {
+      unreadable = weight
+    }
+  }
+  return mixHex(color, pole, readable)
+}
+
 export const pickForeground = (
   background: string,
   options: { light?: string; dark?: string } = {},
@@ -93,5 +125,3 @@ export const pickForeground = (
   const dark = options.dark ?? '#0f172a'
   return contrastRatio(background, light) >= contrastRatio(background, dark) ? light : dark
 }
-
-export const isLightHex = (hex: string): boolean => relativeLuminance(hex) >= 0.5

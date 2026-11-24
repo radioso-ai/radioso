@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink, Globe } from 'lucide-react'
 
+import { ProposalValue } from '@/components/dashboard/copilot-proposal-value'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +30,7 @@ import {
   type CopilotProposalSummary,
   type CopilotProposalStatus,
 } from '@/lib/api-copilot'
-import { announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
+import { announceAgentDraftSaved, announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   createCopilotProposalCardState,
@@ -114,17 +115,6 @@ export const buildCopilotProposalDiff = (preview: CopilotProposalPreview): Copil
   const rows: CopilotProposalDiffRow[] = []
   appendDiff(rows, '$', preview.current, preview.proposed)
   return rows
-}
-
-const formatValue = (value: unknown) => {
-  if (value === undefined) return '—'
-  if (value === null) return 'null'
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return '[unserializable value]'
-  }
 }
 
 export const targetReference = (
@@ -318,6 +308,11 @@ export function CopilotProposalCard({
         const greetingAgentId = targetReference(proposal, detail, result.appliedRef ?? null, defaultAgentId)?.agentId
         if (greetingAgentId) announceAgentGreetingChanged(greetingAgentId)
       }
+      if (result.status === 'applied' && proposal.targetType === 'agent_skill') {
+        // A skill write moves the agent's draft: Publish and Test Chat read it again.
+        const skillAgentId = targetReference(proposal, detail, result.appliedRef ?? null, defaultAgentId)?.agentId
+        if (skillAgentId) announceAgentDraftSaved(skillAgentId)
+      }
     } catch (error) {
       if (isCopilotApiErrorStatus(error, 409)) {
         await reconcileFromServer('This proposal was already resolved.')
@@ -400,8 +395,8 @@ export function CopilotProposalCard({
                 {diff.map((row) => (
                   <div className="grid grid-cols-[minmax(5rem,.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-border/50 px-3 py-2 last:border-b-0" key={row.path}>
                     <span className="font-medium text-muted-foreground">{displayPath(row.path)}</span>
-                    <span className="break-words text-muted-foreground">{formatValue(row.current)}</span>
-                    <span className="break-words">{formatValue(row.proposed)}</span>
+                    <span className="break-words text-muted-foreground"><ProposalValue value={row.current} /></span>
+                    <span className="break-words"><ProposalValue value={row.proposed} /></span>
                   </div>
                 ))}
               </div>

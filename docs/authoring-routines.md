@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-11-21
+last_updated: 2026-11-24
 ---
 
 # Authoring Routines
@@ -181,6 +181,8 @@ on a later branch. Open a value's row in **Information** to set its switches:
 - **Sensitive** when the value is something the visitor would not want copied
   around, such as an injury they mention while booking a class. See
   [Sensitive values](#sensitive-values).
+- **Save to** an attribute, so the value outlives the routine. See
+  [Save a field to an attribute](#save-a-field-to-an-attribute).
 
 An `@` reference uses the same stored value throughout the routine. A skill
 output can also supply a value that later steps and branches read.
@@ -431,6 +433,8 @@ and **Wording** shows the exact text the visitor saw. Owners and admins see
 
 - The values of the fields the consent covered are erased from the
   conversation's routine state, a routine that already finished included.
+- Every value the routine [saved to an attribute](#save-a-field-to-an-attribute)
+  for the conversation or its verified person is deleted.
 - Each message that carried one of them keeps `[redacted]` as its text and
   reads **Withheld after consent was withdrawn** in the conversation, for you
   and for the visitor. Radioso's copies of that message are withheld with it:
@@ -509,6 +513,68 @@ completion** does nothing on its fields. The field's row says so beside the
 switch, and Ray's `validate_routine` reports each such field as
 `mutable_slot_not_correctable`. Neither stops the routine from saving or
 publishing.
+
+#### Save a field to an attribute
+
+A routine holds what it collects for its own run. To keep a value where the
+rest of Radioso reads it, pick **Save to** on the field's row. When the routine
+ends with a finish or a hand-off, the value the visitor gave is saved to that
+[attribute](../docs-portal/content/operators/context-variables.mdx), and
+directive conditions, `{{context.<name>}}` in any routine's steps, skills, the
+Inbox and your API read it from then on.
+
+Say a booking routine collects `@guests`, a number field. Save it to
+`party_size` for **This conversation**, and a visitor who books for four leaves
+the conversation's `party_size` at `4`. **The verified person** keeps the value
+on the visitor's verified customer id instead, so their next conversation reads
+it too. A conversation with no verified person saves nothing for that field,
+and the routine ends as it would anyway.
+
+Over the API, the field carries the choice as `saveTo`:
+
+```json
+{
+  "stableSlotId": "slot_guests",
+  "key": "guests",
+  "type": "number",
+  "required": true,
+  "ordinal": 0,
+  "saveTo": { "contextVariable": "party_size", "scope": "conversation" }
+}
+```
+
+`scope` is `conversation` or `person`. Leave `saveTo` out to save nothing.
+Saving and publishing check the target against the agent's attributes:
+
+| Code | What it means |
+|---|---|
+| `save_to_unknown_attribute` | The agent has no enabled attribute of that name. |
+| `save_to_attribute_not_stored` | The agent doesn't keep the attribute's value: its **Set by** must be your website or API (`pushed`) or the AI (`classified`). |
+| `save_to_type_mismatch` | The attribute's type doesn't take the field's value. A text or email field saves to Text (`string`); a number, Yes/no or date field saves to its own type. An `item` field saves to none. |
+| `save_to_attribute_signed` | The attribute is treated as proof. A visitor typed the value, so it never is. |
+| `save_to_sensitive_slot_not_private` | The field is **Sensitive** and the attribute isn't Private. |
+| `save_to_duplicate_target` | Another field of the routine saves to the same attribute and scope. |
+
+The value is saved with the reply that ends the routine, in the same
+transaction, so the two commit together or not at all. A routine that gets
+stuck or ends on a declined consent saves nothing, and Test Chat runs a routine
+without saving. A change the visitor makes afterwards to a field marked
+**Editable after completion** saves the new value too. Each save checks the
+attribute as it is at that moment, since its definition can change after the
+routine was published. A routine's value replaces one the AI picked; after
+that, the last writer wins among the routine, your team and your API. The
+saved value's `writtenBy` is `{ "kind": "routine", "ref": "<routineId>:<executionId>" }`,
+and a conversation value's change is a `context_value.changed` event whose
+`routineId` names the routine.
+
+The ending turn's trace lists each save on the routine stage as `saves`: the
+field, the attribute, the scope, and an outcome, never the value. The outcomes
+are `written`, `unchanged`, `kept`, `no_person_key` (no verified person),
+`gone` (the attribute was deleted), and `refused_type`, `refused_trust` or
+`refused_sensitive` when the attribute's type, proof setting or Private setting
+no longer fits. The turn inspector shows them under **Slots filled**, and the
+`radioso_context_value_writes_total{writer="routine", outcome}` counter counts
+them.
 
 #### Read the visitor's context
 

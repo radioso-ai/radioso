@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-11-22
+last_updated: 2026-11-24
 ---
 
 # Agents and skills
@@ -399,9 +399,11 @@ The catalog endpoints create and update the definitions:
 
 - `name`
 - `description`
-- `valueType`: `string`, `enum`, or `json`. A variable that has a value keeps
-  its type; a `PATCH` that changes it returns `409` with the code
-  `context_variable_has_values`.
+- `valueType`: `string`, `enum`, `boolean`, `number`, `date`, or `json`. A
+  `boolean` value is `true` or `false`, a `number` value a finite JSON number,
+  and a `date` value a calendar date string such as `"2026-11-24"`. A variable
+  that has a value keeps its type; a `PATCH` that changes it returns `409` with
+  the code `context_variable_has_values`.
 - `options`: required for `enum` and refused for other types. Each option is
   `{ "key", "label", "description", "archived" }`; `description` and
   `archived` are optional on input. Keys use letters, digits and underscores,
@@ -714,7 +716,7 @@ The bundle looks like this, trimmed:
 }
 ```
 
-`routines` carries the agent's [routines](/concepts), each with its own `enabled` flag, so a routine parked out of service arrives parked rather than going live in the destination workspace. A routine names its own skills and context variables (`toolRef`, slot bindings) rather than a database id, so nothing in it needs remapping on import. `contextVariables` re-keys each enablement to `variableName` and `resolverSkillName` in place of the ids the source database used. `surfaceSettings.websiteEmbed.voiceCallsOffered` always exports as `false`, so an imported agent's website widget offers no voice calls until an operator in the destination workspace turns them on. `agent.contactRequestDelivery` is always redacted: its recipients and webhook URL stay in the source workspace, because an imported agent that kept them would quietly route contact requests to the original workspace's people and endpoint. `agentSkills` carries only the config fields the skill's capability marked portable — a webhook URL or delivery recipient stays home — and replaces `target.id`, the workspace connection the skill points at, with a `{ "__ref": "agentSkillTarget" }` placeholder, because that connection is where the credential lives. Each skill also carries `omittedConfigKeys`: the names — never the values — of the settings that stayed behind, so import can tell you exactly what to re-enter.
+`routines` carries the agent's [routines](/concepts), each with its own `enabled` flag, so a routine parked out of service arrives parked rather than going live in the destination workspace. A routine names its own skills and context variables (`toolRef`, slot bindings, a slot's `saveTo`) rather than a database id, so nothing in it needs remapping on import. `contextVariables` re-keys each enablement to `variableName` and `resolverSkillName` in place of the ids the source database used. `surfaceSettings.websiteEmbed.voiceCallsOffered` always exports as `false`, so an imported agent's website widget offers no voice calls until an operator in the destination workspace turns them on. `agent.contactRequestDelivery` is always redacted: its recipients and webhook URL stay in the source workspace, because an imported agent that kept them would quietly route contact requests to the original workspace's people and endpoint. `agentSkills` carries only the config fields the skill's capability marked portable — a webhook URL or delivery recipient stays home — and replaces `target.id`, the workspace connection the skill points at, with a `{ "__ref": "agentSkillTarget" }` placeholder, because that connection is where the credential lives. Each skill also carries `omittedConfigKeys`: the names — never the values — of the settings that stayed behind, so import can tell you exactly what to re-enter.
 
 Authored directives travel with the agent configuration, including any
 `coverageCriteria`. Import preserves those values, so a directive conditioned on
@@ -769,7 +771,7 @@ Each `kind` names one thing to go fix, and where:
 - `context_variable_missing`: no context variable with this name exists in the destination workspace. Create it, then re-enable the enablement on the agent.
 - `context_variable_not_classifiable`: the enablement has the AI fill the attribute (`source: "classified"`), but the destination workspace's attribute of that name is not a Choice attribute, is Private, or is treated as proof, or the agent already has the AI fill 8 attributes. The enablement is not written; the `detail` names the reason. Change the attribute, or enable it on the agent with another source.
 - `resolver_skill_missing`: the enablement's resolver skill isn't on the imported agent — often because that skill itself hit `skill_capability_unknown`. Re-enable the variable once the skill exists.
-- `routine_invalid`: the routine could not be written into the destination workspace. A completion export pointing at a webhook destination that only exists in the source workspace is the usual cause. The `detail` names the reason; create what it names, then add the routine through the routine endpoints.
+- `routine_invalid`: the routine could not be written into the destination workspace, or it was written out of service because it doesn't pass validation there. A completion export pointing at a webhook destination that only exists in the source workspace is the usual cause, as is a field that saves to an attribute the imported agent doesn't have. The `detail` names the reason; create what it names, then fix or enable the routine.
 - `document_source_unresolved`: the source agent answered from a specific set of documents. Document ids don't carry across workspaces, so the imported agent starts with no sources selected — pick its sources under Knowledge.
 - `surface_credential_unbound`: a chat surface (public chat link, website embed) was on, but its access token stayed in the source workspace. The surface imports off; turn it on to mint a new token.
 - `mcp_connection_unbound`: an external MCP connection, or a skill built on one. Connect the server under **Skills → Manage MCP connections** with its credential, or use a connection the workspace already has, then re-create the skill.

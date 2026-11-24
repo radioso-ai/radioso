@@ -829,7 +829,9 @@ imports from `services/`.
   it — `beginTurnEmission` before the first chunk, `observeFirstAnswerChunk("routine", "live")`
   on live chat (`chat_replay_stream_first_answer_chunk_latency_ms` on Test Chat) — then
   checks the turn was not cancelled meanwhile. `ChatService`'s `completeAssistantTurn` saves
-  the message and routine state in one transaction; Test Chat's `settleRoutineTurn` commits
+  the message and routine state in one transaction, with the values a run that ends saves to
+  attributes (`slotSaves` on the captured transition, written by `infra/routineSlotSaveWrites.ts`
+  and traced on the routine's stage; Test Chat saves none); Test Chat's `settleRoutineTurn` commits
   the same routine, clarification, and directive state its non-stream settlement
   (`routineTurn`) does. A turn whose skill step acted outside the
   conversation (`effects.skillsWithExternalEffects`, from the routine skill dispatcher's

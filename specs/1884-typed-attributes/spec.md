@@ -302,6 +302,25 @@ It is added to `routineSlotSchemaFor` (`packages/routine-definition/src/index.ts
 
 **Consent withdrawal.** Withdrawing a routine's consent removes its events by routine id and slot keys (`backend/src/modules/workspaceEventLog/README.md`, the consent withholder). `written_by_ref` lets the same withdrawal delete the values that execution wrote.
 
+### Slice 3a settled
+
+- **Types.** `boolean` is stored as a JSON boolean, `number` as a finite JSON number, `date` as an ISO calendar date string (`YYYY-MM-DD`, checked by a `Date.UTC` round-trip in `shared/domain/calendarDate.ts`). Migration 277 widens `context_variables_value_type_check` and adds `routine_slot.save_to_context_variable` / `save_to_scope` with a pairing CHECK, all `NOT VALID`; 278 validates them, as 270/271 do. `{{context.x}}` and directive conditions read the JSON value as is (`true`, `4`, `2026-11-24`); the Inbox shows a Yes/no value as Yes or No. Classification and the Inbox filter stay Choice-only, and Inbox editing stays Choice-only: a typed editor per type is its own change across REST, MCP and the block.
+- **Which slot types save where** is `routineSlotSavesToValueType` in `routine-definition/src/saveTo.ts`, shared by the validator and the editor's picker. There is no fixed-option slot type, so nothing maps to `enum`.
+- **Validation** (`routines/saveTargetValidation.ts`) emits `save_to_unknown_attribute`, `save_to_attribute_not_stored`, `save_to_type_mismatch`, `save_to_attribute_signed`, `save_to_sensitive_slot_not_private` and `save_to_duplicate_target` at `slot:<key>.saveTo`. "Exists" means enabled for the agent; "stored" means `pushed` or `classified`. The duplicate rule runs without the agent's attributes; the others need them, as the binding rules do.
+- **The write.** The captured save transition carries `slotSaves` (`routineSlotSaves`, only a `completed` state with `terminalKind` `complete` or `handoff`). `PostgresAssistantTurnPersistence` hands them to `ContextValueSaver.saveAll(trx, …)` just before it inserts the turn's audit event, so the values, their `context_value.changed` events and `routine.completed` commit or roll back with the turn. The saver locks the definition by name `FOR KEY SHARE` after the turn's conversation row lock (`conversationLockOrder.ts`), re-checks trust, sensitivity and type against the definition as it is now, and stores under `mayOverwrite`. The writer is `{ kind: "routine", ref: "<routineId>:<executionId>" }`; the event's `routineId` is passed explicitly. Delivery is woken by the turn's existing after-commit wake. A visitor's post-completion correction re-saves the ended state, so the corrected value is saved too.
+- **Outcomes.** `written`, `unchanged` (same writer kind, ref and value), `kept`, `no_person_key`, `gone`, `refused_type`, `refused_trust`, `refused_sensitive`, on the routine stage's sub-trace as `saves` (slot key, attribute, scope, outcome; never the value) and counted in `radioso_context_value_writes_total{writer="routine", outcome}`, `failed` included.
+- **Withdrawal.** `ContextValueConsentWithholder` deletes, in the withholding's transaction, every value whose writer is a run of a withdrawn routine, in the conversation's scope and its verified customer's; it records no event, and the event withholder removes the routine's `context_value.changed`.
+- **Test Chat** saves nothing: its sides persist through the ephemeral replay runner, which has no conversation row to save to.
+- **Queue review.** No new queue, worker payload or retry: the write is inside the turn's transaction, and event delivery reuses the existing wake.
+
+**Decisions to confirm:**
+
+1. Withdrawal deletes every value the routine saved, not only the consented fields', matching the event withholder; a `person` value goes even when another conversation's run of the same routine saved it.
+2. `unchanged` is reported only for the same writer and run with the same value; a later run saving the same value rewrites the provenance and reports `written`, with no event (the value did not change).
+3. The picker lists only compatible attributes; a stored target that no longer qualifies stays visible, marked, and validation reports it.
+4. Inbox editing stays Choice-only; the Yes/no, Number and Date rows are read-only.
+5. The conversation-kit host's `parseRoutineSlot` drops `saveTo`: a kit host has no attribute store.
+
 ## 10. The WhatsApp number as a person key
 
 ### Today

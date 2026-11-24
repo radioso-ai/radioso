@@ -41,7 +41,9 @@ the document event eraser that deleting documents calls (a title can name a pers
 redaction of a newly Private attribute's values, the snapshot read, the 30-day retention rule and
 the consent withholder, which removes a withdrawn routine's
 events (its `routine.completed` and the `context_value.changed` it wrote) by structure (routine id,
-slot keys) as well as by value.
+slot keys) as well as by value. A `context_value.changed` a routine's save recorded names the
+routine in `routineId`, set by the writer rather than read from the value's writer reference; the
+values themselves are deleted by `contextValueConsentWithholder.ts` in the same transaction.
 
 ## Subscriptions and delivery (#1852)
 

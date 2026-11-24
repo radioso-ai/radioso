@@ -1,7 +1,7 @@
 ---
 title: "Attributes and context"
 description: "How operators define typed attributes, wire them to agents, and how page, identity and host values reach an agent's turns."
-last_updated: 2026-11-23
+last_updated: 2026-11-24
 ---
 
 # Attributes and context
@@ -98,9 +98,13 @@ page:
 - **Name** is how directives, routines and the API refer to it, as in
   `{{context.topic}}`.
 - **Description** tells operators, and the agent, what the value means.
-- **Type** is **Text** (`string`), **Choice** (`enum`), or **JSON** (`json`),
-  which holds structured data your site sends, such as a cart. Every value has
-  this type, and the type is fixed once the attribute has a value anywhere.
+- **Type** is **Text** (`string`), **Choice** (`enum`), **Yes/no**
+  (`boolean`, stored as `true` or `false`), **Number** (`number`), **Date**
+  (`date`, a calendar date such as `"2026-11-24"`), or **JSON** (`json`), which
+  holds structured data your site sends, such as a cart. Every value has this
+  type, and the type is fixed once the attribute has a value anywhere. A step's
+  `{{context.<name>}}` shows a Yes/no value as `true` or `false` and a date as
+  written.
 
 The **Advanced** section is closed on a new attribute and opens by itself when
 the attribute has a non-default setting:
@@ -555,7 +559,9 @@ credential that made the call, or the teammate's user id when a dashboard
 session did. A value a resolver cached, or one stored before writers were
 recorded, reads as `api` with a `ref` of `null`. A value the AI set has `kind`
 `classifier`, and its `ref` names the version of the instructions it was chosen
-with, such as `context-classification/1`.
+with, such as `context-classification/1`. A value a routine saved when it
+ended has `kind` `routine` and a `ref` of `<routineId>:<executionId>`; see
+[Save a field to an attribute](/guides/authoring-routines#save-a-field-to-an-attribute).
 
 Conversation-scope values are deleted with their conversation, and a data
 subject export lists them with the kind of writer that set each one.
@@ -585,8 +591,9 @@ for this conversation by your team, your API or a routine can be undone:
 **Reset to automatic** hands the attribute back to the AI when the agent fills
 it, and the block shows the AI's value within seconds; where nothing fills it,
 **Clear** removes it. **Set attribute** sets a Choice attribute the
-conversation holds no value of. Private, Text and JSON attributes stay
-read-only, so a teammate never overwrites a value they can't read.
+conversation holds no value of. Other types and Private attributes stay
+read-only, so a teammate never overwrites a value they can't read. A Yes/no
+value reads "Yes" or "No".
 
 To find the conversations about one thing, pick an option from the **Attribute**
 filter on the All list. It offers every Choice attribute that is not Private,

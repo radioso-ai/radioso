@@ -23,7 +23,7 @@ const seedWorkspace = async (email: string) => {
     .expect(201)).body.contextVariable.id as string;
   const topicId = await createAttribute({ name: "topic", valueType: "enum", options: [choice("billing", "Billing"), choice("shipping", "Shipping")] });
   const careNeedId = await createAttribute({ name: "care_need", valueType: "enum", sensitivity: "sensitive", options: [choice("dental", "Dental")] });
-  await createAttribute({ name: "plan", valueType: "string" });
+  const planId = await createAttribute({ name: "plan", valueType: "string" });
   const conversationId = (await request(app)
     .post("/api/v1/assistant/chat")
     .set(bearer)
@@ -35,7 +35,7 @@ const seedWorkspace = async (email: string) => {
     .set(bearer)
     .send({ source: "classified", surfacing: "on_reference" })
     .expect(200);
-  return { app, dependencies, repositories, issued, bearer, session, userId, conversationId, topicId, careNeedId, classify };
+  return { app, dependencies, repositories, issued, bearer, session, userId, conversationId, topicId, careNeedId, planId, classify };
 };
 
 type Seeded = Awaited<ReturnType<typeof seedWorkspace>>;
@@ -141,7 +141,6 @@ describe("a teammate sets and resets a conversation's attribute from the Inbox (
 
   it.each([
     ["a Private attribute", "care_need", "dental", 400, { code: "attribute_not_editable", details: { reason: "private" } }],
-    ["one that is not a Choice", "plan", "pro", 400, { code: "attribute_not_editable", details: { reason: "not_choice" } }],
     ["an attribute nobody defined", "urgency", "high", 404, { message: "No attribute is named urgency" }],
   ])("refuses %s on both routes", async (_case, name, value, status, error) => {
     const h = await seedWorkspace(`attribute-edits-refused-${name}@example.com`);
@@ -149,6 +148,22 @@ describe("a teammate sets and resets a conversation's attribute from the Inbox (
     expect((await setAttribute(h, name, value).expect(status)).body.error).toMatchObject(error);
     expect((await resetAttribute(h, name).expect(status)).body.error).toMatchObject(error);
     expect(editAudits(h)).toEqual([]);
+  });
+
+  it("sets only a Choice, and clears the conversation's value of any other type, such as one the host saved", async () => {
+    const h = await seedWorkspace("attribute-edits-not-choice@example.com");
+    await request(h.app)
+      .put(`/api/v1/context-variables/${h.planId}/values`)
+      .set(h.bearer)
+      .send({ scope: { type: "conversation", id: h.conversationId }, data: "pro" })
+      .expect(200);
+
+    const refused = await setAttribute(h, "plan", "basic").expect(400);
+    const cleared = await resetAttribute(h, "plan").expect(200);
+
+    expect(refused.body.error).toMatchObject({ code: "attribute_not_editable", details: { reason: "not_choice" } });
+    expect(cleared.body).toEqual({ attribute: null, classificationQueued: false });
+    expect((await detail(h)).attributes).toEqual([]);
   });
 
   it("refuses an option the attribute lacks, naming its option keys", async () => {

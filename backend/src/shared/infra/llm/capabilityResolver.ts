@@ -17,6 +17,9 @@ export type { LlmCapabilityResolveInput } from "./workspaceContext.js";
 /** The call-time half of the resolver: what a client factory needs to build a credentialed client. */
 export type LlmCapabilityConfigResolver = Pick<LlmCapabilityResolver, "resolve">;
 
+/** What the provider registry needs: the call-time half, plus the check its readiness probe makes. */
+export type LlmRegistryCapabilityResolver = Pick<LlmCapabilityResolver, "resolve" | "assertResolvable">;
+
 export interface LlmCapabilityResolver {
   resolve(
     capability: LlmCapabilityName,
@@ -30,4 +33,13 @@ export interface LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilitySelection>;
+  /**
+   * Fails with the error `resolve` would give (a missing or unreadable API key, a missing base URL)
+   * but returns no config and logs nothing above debug. For a readiness check that asks whether a
+   * call could run, often enough that `resolve`'s logging would be noisy.
+   */
+  assertResolvable(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<void>;
 }

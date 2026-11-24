@@ -1035,18 +1035,19 @@ test('walks Back and Forward through two history-opened tests and the history vi
   await expect(page).toHaveURL(new RegExp(`testExecution=${idB}`))
 })
 
-test('New chat then Back returns to the test left behind', async ({ page }) => {
-  const idA = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
-  const savedA = {
-    id: idA, generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+const testLeftBehindId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+const openTestLeftBehind = async (page: Page) => {
+  const saved = {
+    id: testLeftBehindId, generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Question before New chat',
     sides: [{ id: 'side-c', revision: published, conversationId: 'conversation-c', state: 'completed', retryable: false }],
   }
   await installCockpitMocks(page, {
-    executionHistory: [savedA],
+    executionHistory: [saved],
     executionDetail: {
-      ...savedA, testValues: [],
-      sides: [{ ...savedA.sides[0], history: [{ turnId: 'turn-c', role: 'user', content: 'Answer before New chat', attemptId: 'attempt-c', createdAt: nowIso }] }],
+      ...saved, testValues: [],
+      sides: [{ ...saved.sides[0], history: [{ turnId: 'turn-c', role: 'user', content: 'Answer before New chat', attemptId: 'attempt-c', createdAt: nowIso }] }],
       attempts: [],
     },
   })
@@ -1054,7 +1055,11 @@ test('New chat then Back returns to the test left behind', async ({ page }) => {
   await clickTestChatAction(page, 'Conversation history')
   await page.getByRole('button', { name: 'Open', exact: true }).click()
   await expect(page.getByText('Answer before New chat', { exact: true })).toBeVisible()
-  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testLeftBehindId}`))
+}
+
+test('New chat then Back returns to the test left behind', async ({ page }) => {
+  await openTestLeftBehind(page)
 
   await clickTestChatAction(page, 'New chat')
   await expect(page).not.toHaveURL(/testExecution=/)
@@ -1062,7 +1067,20 @@ test('New chat then Back returns to the test left behind', async ({ page }) => {
 
   await page.goBack()
   await expect(page.getByText('Answer before New chat', { exact: true })).toBeVisible()
-  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testLeftBehindId}`))
+})
+
+test('Back pressed before New chat has rendered its entry still returns to the test left behind', async ({ page }) => {
+  await openTestLeftBehind(page)
+
+  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
+  // Back in the same task as New chat reaches the router before New chat's own entry renders.
+  await testChatMenuItem(page, 'New chat').evaluate((item: HTMLElement) => {
+    item.click()
+    window.history.back()
+  })
+  await expect(page.getByText('Answer before New chat', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testLeftBehindId}`))
 })
 
 test('retaining a comparison side writes the retained test\'s own id into the URL', async ({ page }) => {

@@ -94,6 +94,7 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: false,
       sampleDocumentsImported: false,
       websiteCrawlerEnabled: true,
+      llmConfigured: true,
     })
     const mounted = mountOnboarding()
 
@@ -121,6 +122,7 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: true,
       sampleDocumentsImported: false,
       websiteCrawlerEnabled: true,
+      llmConfigured: true,
     })
     const mounted = mountOnboarding()
 
@@ -148,6 +150,7 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: false,
       sampleDocumentsImported: false,
       websiteCrawlerEnabled: true,
+      llmConfigured: true,
       setup: {
         purpose: null,
         dismissed: false,
@@ -203,6 +206,7 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: true,
       sampleDocumentsImported: true,
       websiteCrawlerEnabled: true,
+      llmConfigured: true,
       setup: {
         purpose: null,
         dismissed: false,

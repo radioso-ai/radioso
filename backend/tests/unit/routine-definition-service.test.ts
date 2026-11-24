@@ -707,6 +707,20 @@ describe("RoutineDefinitionService", () => {
     expect(auditService.record).not.toHaveBeenCalled();
   });
 
+  it("audits an externally committed routine as an update by default, and as a create when the caller created it", async () => {
+    const { auditService, service } = createService();
+    const { routine } = await service.createDraft(workspaceId, agentId, validDraft());
+    vi.mocked(auditService.record).mockClear();
+
+    await service.completeExternalDraftMutation(workspaceId, agentId, routine);
+    await service.completeExternalDraftMutation(workspaceId, agentId, routine, "create");
+
+    expect(vi.mocked(auditService.record).mock.calls.map(([event]) => event.eventType)).toEqual([
+      "routine_definition.update",
+      "routine_definition.create",
+    ]);
+  });
+
   it("emits create and update audit events carrying the routine's authoring identity", async () => {
     const { auditService, service } = createService();
     const created = await service.createDraft(workspaceId, agentId, validDraft());

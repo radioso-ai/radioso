@@ -19,6 +19,7 @@ describeIntegration("workspace setup signals (Postgres)", () => {
     new DocumentRepository(database.kysely, documentEventEraser),
     new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
     new WorkspaceSetupStateRepository(database.kysely),
+    { websiteCrawlerEnabled: true, chatReadiness: { isChatConfigured: async () => true } },
   );
   const accountId = randomUUID();
   const workspaceId = randomUUID();

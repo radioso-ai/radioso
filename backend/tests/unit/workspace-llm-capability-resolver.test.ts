@@ -975,6 +975,125 @@ describe("WorkspaceLlmCapabilityResolver managed plans", () => {
   });
 });
 
+describe("WorkspaceLlmCapabilityResolver.assertResolvable", () => {
+  const buildLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn() });
+  const spiedCredentials = (keys: Record<string, string>) => {
+    const credentials = buildCredentials(keys);
+    return { ...credentials, getApiKey: vi.fn(credentials.getApiKey), hasCredentials: vi.fn(credentials.hasCredentials) };
+  };
+
+  it("passes when the workspace holds a readable key for the selected provider", async () => {
+    const credentials = spiedCredentials({ "ws-1:openai": "ws-openai" });
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials,
+      envKeys: envKeyResolver({}),
+    });
+
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).resolves.toBeUndefined();
+    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai", { quiet: true });
+  });
+
+  it("reads the key quietly for the probe only, so resolve keeps the decrypt-failure warning", async () => {
+    const credentials = spiedCredentials({ "ws-1:openai": "ws-openai" });
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials,
+      envKeys: envKeyResolver({}),
+    });
+
+    await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai", undefined);
+  });
+
+  it("fails as resolve does when the stored workspace key cannot be read, without falling back to the deployment key", async () => {
+    const unreadable = new ProviderConfigurationError("Workspace credential cannot be read", {
+      kind: "credential_unreadable",
+      provider: "openai",
+    });
+    const credentials = { ...buildCredentials({}), getApiKey: vi.fn(async () => { throw unreadable; }), hasCredentials: vi.fn(async () => true) };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials,
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    await expect(resolver.resolve("chat", { workspaceId: "ws-1" })).rejects.toBe(unreadable);
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).rejects.toBe(unreadable);
+  });
+
+  it("passes on the deployment's key when the workspace has none", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).resolves.toBeUndefined();
+  });
+
+  it("fails with the same error resolve gives when neither the workspace nor the deployment has a key", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({}),
+    });
+
+    const fromResolve = await resolver.resolve("chat", { workspaceId: "ws-1" }).catch((error: unknown) => error);
+    const fromProbe = await resolver.assertResolvable("chat", { workspaceId: "ws-1" }).catch((error: unknown) => error);
+
+    expect(fromProbe).toBeInstanceOf(ProviderConfigurationError);
+    expect(fromProbe).toEqual(fromResolve);
+  });
+
+  it("checks the provider a capability override selects, not the workspace preference", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([{ workspaceId: "ws-1", capability: "chat", provider: "openai", model: "gpt-5.2", updatedAt: new Date() }]),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai" }),
+      envKeys: envKeyResolver({}),
+    });
+
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1", capabilityOverride: { provider: "claude", model: "claude-sonnet-5" } }))
+      .rejects.toMatchObject({ code: "provider_misconfigured", details: expect.objectContaining({ kind: "missing_api_key", provider: "claude" }) });
+  });
+
+  it("fails for an openai-compatible selection without a base URL, as resolve does", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai-compatible": "ws-compatible" }),
+      envKeys: envKeyResolver({}),
+    });
+
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1", capabilityOverride: { provider: "openai-compatible", model: "local-model" } }))
+      .rejects.toMatchObject({ details: expect.objectContaining({ kind: "missing_base_url" }) });
+  });
+
+  it("logs nothing above debug, so a polled readiness read stays quiet", async () => {
+    const logger = buildLogger();
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai", claude: "env-claude" }),
+      managedModelPolicy: managedForAll,
+      logger,
+    });
+
+    await resolver.assertResolvable("chat", { workspaceId: "ws-1", capabilityOverride: { provider: "openai", model: "gpt-5.2" } });
+
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
 // Pin the import so the resolver's expected preference shape stays in sync.
 const _preferenceShape: WorkspaceLlmCapabilityPreferenceInput = { provider: "openai", model: "x" };
 void _preferenceShape;

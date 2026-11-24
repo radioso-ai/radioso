@@ -74,8 +74,12 @@ export {
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,
+  coherenceUnavailableVerdict,
   isDirectiveNameConflict,
+  pendingDirectiveId,
   type AuthoredDirectiveServiceOptions,
+  type DirectiveCoherenceAssessment,
+  type DirectiveCoherenceCandidate,
 } from "./services/authoredDirectiveService.js";
 export {
   createRoutineScopedReferenceGuard,
@@ -161,6 +165,7 @@ export {
   authoredDirectiveInputSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
+  validateDirectiveReplacementNames,
   type AuthoredDirective,
   type AuthoredDirectiveBinding,
   type AuthoredDirectiveLifecycle,

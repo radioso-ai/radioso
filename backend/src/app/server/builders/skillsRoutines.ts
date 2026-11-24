@@ -30,6 +30,9 @@ import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInfe
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { registeredCapabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import type { buildInfrastructure, buildRepositories } from "./infra.js";
+import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 
 
 
@@ -144,19 +147,24 @@ export const buildRoutineAuthoringServices = (input: {
   skillAuthoringCatalog: SkillAuthoringCatalog;
   webhookDestinations: WebhookDestinationExistencePort;
 }) => {
-  const authoredDirectiveService = new AuthoredDirectiveService({
-    repository: input.repositories.agentRepository,
-    coherenceChecker: createDirectiveCoherenceChecker({
-      modelGateway: createConversationModelGateway(input.chatInferencePipeline),
-    }),
+  const coherenceChecker = createDirectiveCoherenceChecker({
+    modelGateway: createConversationModelGateway(input.chatInferencePipeline),
+  });
+  const authoredDirectiveServiceOn = (agentRepository: AgentRepositoryPort) => new AuthoredDirectiveService({
+    repository: agentRepository,
+    coherenceChecker,
     registeredCapabilityNames,
     agentSkills: input.agentSkillRepository,
   });
-  const routineDefinitionService = new RoutineDefinitionService({
-    agentRepository: input.repositories.agentRepository,
-    repository: input.repositories.routineDefinitionRepository,
+  const hostQueuedActionTypes = chatTurnQueuedActionTypes(input.composition.actionHandlerRegistrations);
+  const routineDefinitionServiceOn = (
+    stores: { agentRepository: AgentRepositoryPort; routineDefinitionRepository: RoutineDefinitionRepository },
+    followUps: Pick<ConstructorParameters<typeof RoutineDefinitionService>[0], "auditService" | "triggerEmbeddingService">,
+  ) => new RoutineDefinitionService({
+    agentRepository: stores.agentRepository,
+    repository: stores.routineDefinitionRepository,
     actionCapabilities: input.composition.routineActionCapabilityMap,
-    hostQueuedActionTypes: chatTurnQueuedActionTypes(input.composition.actionHandlerRegistrations),
+    hostQueuedActionTypes,
     capabilityPolicy: input.composition.capabilityPolicy,
     skillAuthoringCatalog: input.skillAuthoringCatalog,
     contextVariableReader: input.contextVariableReader,
@@ -165,15 +173,37 @@ export const buildRoutineAuthoringServices = (input: {
       existsByIdAndWorkspace: async (workspaceId, destinationId) =>
         input.webhookDestinations.existsByIdAndWorkspace(workspaceId, destinationId),
     },
-    auditService: input.infrastructure.auditService,
-    triggerEmbeddingService: input.routineTriggerEmbeddingService,
+    ...followUps,
     logger: input.logger,
   });
+  const authoredDirectiveService = authoredDirectiveServiceOn(input.repositories.agentRepository);
+  const routineDefinitionService = routineDefinitionServiceOn(
+    {
+      agentRepository: input.repositories.agentRepository,
+      routineDefinitionRepository: input.repositories.routineDefinitionRepository,
+    },
+    { auditService: input.infrastructure.auditService, triggerEmbeddingService: input.routineTriggerEmbeddingService },
+  );
+  /**
+   * The same directive and routine services, bound to a caller's transaction, for a
+   * composition-owned atomic write. The routine follow-ups (trigger embedding, authoring audit)
+   * use their own connections, so they are left out here; the caller runs them after commit with
+   * `routineDefinitionService.completeExternalDraftMutation`.
+   */
+  const authoringServicesOn = (db: Db) => {
+    const agentRepository = input.repositories.agentRepositoryOn(db);
+    return {
+      authoredDirectiveService: authoredDirectiveServiceOn(agentRepository),
+      routineDefinitionService: routineDefinitionServiceOn(
+        { agentRepository, routineDefinitionRepository: new RoutineDefinitionRepository(db) },
+        {},
+      ),
+    };
+  };
   const routineDraftAssistService = new RoutineDraftAssistService({
     repository: input.repositories.agentRepository,
     textGenerationClient: {
-      complete: async ({ signal: _signal, ...request }) =>
-        (await input.chatInferencePipeline.complete(request)).text,
+      complete: async (request) => (await input.chatInferencePipeline.complete(request)).text,
     },
     actionCatalog: [
       ...routineAuthoringBuiltInSkills.map((skill) => ({
@@ -195,12 +225,11 @@ export const buildRoutineAuthoringServices = (input: {
   const directiveAuthorService = new DirectiveAuthorService({
     repository: input.repositories.agentRepository,
     textGenerationClient: {
-      complete: async ({ signal: _signal, ...request }) =>
-        (await input.chatInferencePipeline.complete(request)).text,
+      complete: async (request) => (await input.chatInferencePipeline.complete(request)).text,
     },
     logger: input.logger,
     telemetryService: input.infrastructure.telemetryService,
     buildStepScopeTag: scopeTag.step,
   });
-  return { authoredDirectiveService, directiveAuthorService, routineDefinitionService, routineDraftAssistService };
+  return { authoredDirectiveService, authoringServicesOn, directiveAuthorService, routineDefinitionService, routineDraftAssistService };
 };

@@ -29,7 +29,8 @@ interface WorkspaceCapabilityPreferencePort {
 }
 
 interface WorkspaceCapabilityCredentialPort {
-  getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined>;
+  /** `quiet` reads without raising the decrypt-failure alarm; the read still throws. */
+  getApiKey(workspaceId: string, provider: LlmProviderName, options?: { quiet?: boolean }): Promise<string | undefined>;
   /** Presence only; never decrypts. */
   hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean>;
   /**
@@ -109,6 +110,17 @@ interface CapabilityDecision {
   replaced?: LlmCapabilitySelection;
 }
 
+const missingApiKeyError = (provider: LlmProviderName, capability: LlmCapabilityName): ProviderConfigurationError =>
+  new ProviderConfigurationError(
+    `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
+    {
+      kind: "missing_api_key",
+      provider,
+      capability,
+      remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
+    },
+  );
+
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
 
@@ -116,8 +128,6 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilityConfig> {
-    const envDefault = this.deps.defaults[capability];
-
     const { selection, replaced } = await this.decide(capability, input);
     if (replaced) {
       // Logged here, where a call runs, and not on a settings read asking what would run.
@@ -131,13 +141,39 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Platform key cannot serve the requested LLM model; running the environment default",
       );
     }
-    const { provider, model, resolvedBy } = selection;
+    return this.credentialedConfig(capability, input, selection);
+  }
 
-    const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
+  async resolveSelection(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<LlmCapabilitySelection> {
+    return (await this.decide(capability, input)).selection;
+  }
+
+  async assertResolvable(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<void> {
+    // The same steps resolve runs, key read included: a stored key that cannot be decrypted fails a
+    // call without falling back to the deployment key, so it must fail this check too. The probe
+    // is polled, so its key read stays quiet; a real call's read still warns.
+    const { selection } = await this.decide(capability, input, { logManagedReplacement: false });
+    await this.credentialedConfig(capability, input, selection, { quiet: true });
+  }
+
+  private async credentialedConfig(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+    selection: LlmCapabilitySelection,
+    keyRead?: { quiet: boolean },
+  ): Promise<LlmCapabilityConfig> {
+    const { provider, model, resolvedBy } = selection;
+    const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability, keyRead);
     const { baseUrl, openAIDataResidency, openAIAzureBaseUrl } = await this.resolveProviderEndpoint(
       provider,
       capability,
-      envDefault,
+      this.deps.defaults[capability],
       input.capabilityOverride?.baseUrl,
       source,
       input.workspaceId,
@@ -155,23 +191,17 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     };
   }
 
-  async resolveSelection(
-    capability: LlmCapabilityName,
-    input: LlmCapabilityResolveInput,
-  ): Promise<LlmCapabilitySelection> {
-    return (await this.decide(capability, input)).selection;
-  }
-
   private async decide(
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
+    options: { logManagedReplacement: boolean } = { logManagedReplacement: true },
   ): Promise<CapabilityDecision> {
     const candidate = await this.resolveCandidate(capability, input);
     const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
     const planned: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
-    if (managed && candidate.resolvedBy !== "environment_default") {
+    if (managed && candidate.resolvedBy !== "environment_default" && options.logManagedReplacement) {
       this.deps.logger?.info(
         {
           ...selectionLogFields(capability, input.workspaceId, planned),
@@ -264,8 +294,9 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
+    keyRead?: { quiet: boolean },
   ): Promise<ResolvedApiKey> {
-    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
+    const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider, keyRead);
     if (workspaceKey) {
       return { apiKey: workspaceKey, source: "workspace" };
     }
@@ -273,15 +304,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     if (envKey) {
       return { apiKey: envKey, source: "environment" };
     }
-    throw new ProviderConfigurationError(
-      `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
-      {
-        kind: "missing_api_key",
-        provider,
-        capability,
-        remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
-      },
-    );
+    throw missingApiKeyError(provider, capability);
   }
 
   private async resolveProviderEndpoint(
@@ -299,23 +322,29 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     if (provider !== "openai-compatible") {
       return {};
     }
+    return { baseUrl: this.openAICompatibleBaseUrl(capability, envDefault, overrideBaseUrl) };
+  }
 
-    const inheritedBaseUrl = provider === envDefault.provider ? envDefault.baseUrl : undefined;
-    const envBaseUrl = this.deps.envBaseUrls?.[provider];
-    const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? envBaseUrl;
+  private openAICompatibleBaseUrl(
+    capability: LlmCapabilityName,
+    envDefault: LlmCapabilityDefault,
+    overrideBaseUrl: string | undefined,
+  ): string {
+    const inheritedBaseUrl = envDefault.provider === "openai-compatible" ? envDefault.baseUrl : undefined;
+    const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? this.deps.envBaseUrls?.["openai-compatible"];
     if (!baseUrl) {
       throw new ProviderConfigurationError(
         "openai-compatible requires OPENAI_COMPATIBLE_BASE_URL to be configured; selecting this provider for a workspace without a base URL would silently call the default OpenAI endpoint.",
         {
           kind: "missing_base_url",
-          provider,
+          provider: "openai-compatible",
           capability,
           setting: "OPENAI_COMPATIBLE_BASE_URL",
           remediation: "Set OPENAI_COMPATIBLE_BASE_URL on the backend and restart Radioso.",
         },
       );
     }
-    return { baseUrl };
+    return baseUrl;
   }
 
   /**

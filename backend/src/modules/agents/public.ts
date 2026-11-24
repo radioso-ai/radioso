@@ -132,6 +132,7 @@ export {
   equalScopedAuthoringSnapshots,
   withoutWriteTimestamps,
   parseAgentRevisionSnapshot,
+  parseContextVariableEnablementSnapshots,
   readAgentRevisionGreeting,
   visitorImagesSwitchChanged,
   type AgentGreetingSnapshot,
@@ -140,6 +141,7 @@ export {
   type AgentRevisionRepositoryPort,
   type AgentRevisionSnapshot,
   type AgentRevisionState,
+  type ContextVariableEnablementSnapshot,
   type PublicationResult,
 } from "./agentRevision.js";
 export { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
@@ -149,6 +151,7 @@ export {
   agentNotPublished,
   applyAgentRevisionSnapshot,
   type AgentPublicationReader,
+  type AgentRevisionEnablementReader,
   type AgentRevisionRuntimeReaderPort,
 } from "./runtime/agentRevisionRuntimeResolver.js";
 export {

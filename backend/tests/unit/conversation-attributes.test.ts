@@ -67,6 +67,7 @@ const stored = (
 const serviceOver = (
   values: StoredConversationAttributeValue[],
   definitions: ContextVariable[] = [],
+  classifiedIds: string[] = [],
 ) => {
   const asked: Array<readonly ConversationScope[]> = [];
   const reads: ConversationAttributeReadPort = {
@@ -74,6 +75,8 @@ const serviceOver = (
       asked.push(scopes);
       return workspace === workspaceId ? values : [];
     },
+    readClassifiedVariableIds: async (workspace, conversation) =>
+      new Set(workspace === workspaceId && conversation === conversationId ? classifiedIds : []),
     findByName: async (workspace, name) =>
       definitions.find((definition) => definition.workspaceId === workspace && definition.name === name) ?? null,
   };
@@ -114,6 +117,7 @@ describe("a conversation's attributes", () => {
         scope: "session",
         writtenBy: { kind: "operator", ref: "user-1" },
         updatedAt: new Date("2026-11-20T10:00:00.000Z"),
+        classified: false,
       },
       {
         name: "topic",
@@ -124,6 +128,7 @@ describe("a conversation's attributes", () => {
         scope: "conversation",
         writtenBy: { kind: "classifier", ref: "context-classification/1" },
         updatedAt: new Date("2026-11-20T10:00:00.000Z"),
+        classified: false,
       },
     ]);
   });
@@ -161,6 +166,7 @@ describe("a conversation's attributes", () => {
       scope: "conversation",
       writtenBy: { kind: "operator", ref: "user-1" },
       updatedAt: new Date("2026-11-20T10:00:00.000Z"),
+      classified: false,
     });
   });
 
@@ -168,6 +174,17 @@ describe("a conversation's attributes", () => {
     const service = serviceOver([stored(cart, { type: "session", id: "session-1" }, { items: 2 })]);
 
     await expect(service.read(workspaceId, keys)).resolves.toMatchObject([{ name: "cart", value: { items: 2 } }]);
+  });
+
+  it("says which attributes the AI fills on this conversation, from the release the conversation runs", async () => {
+    const service = serviceOver([
+      stored(topic, { type: "conversation", id: conversationId }, "billing", { kind: "operator", ref: "user-1" }),
+      stored(plan, { type: "session", id: "session-1" }, "basic"),
+    ], [], ["topic-id"]);
+
+    const attributes = await service.read(workspaceId, keys);
+
+    expect(attributes.map((attribute) => [attribute.name, attribute.classified])).toEqual([["plan", false], ["topic", true]]);
   });
 
   it("has none for a conversation with no stored values", async () => {

@@ -6,6 +6,7 @@ import type {
   ChatHistoryListResponse,
   ContactHistoryDetailResponse,
   ContactHistoryListResponse,
+  ConversationAttributeChange,
   ConversationConsent,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
@@ -107,6 +108,24 @@ export const chatApi = {
       method: 'GET',
       ...(signal ? { signal } : {}),
     }, { withSession: true })
+  },
+
+  /** Sets a Choice attribute's option for this conversation, as the signed-in teammate. */
+  async setHistoryConversationAttribute(conversationId: string, name: string, value: string): Promise<ConversationAttributeChange> {
+    return request<ConversationAttributeChange>(
+      `/history/chat/${conversationId}/attributes/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify({ value }) },
+      { withSession: true },
+    )
+  },
+
+  /** Deletes the conversation's own value; an attribute its agent classifies goes back to the AI. */
+  async resetHistoryConversationAttribute(conversationId: string, name: string): Promise<ConversationAttributeChange> {
+    return request<ConversationAttributeChange>(
+      `/history/chat/${conversationId}/attributes/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+      { withSession: true },
+    )
   },
 
   async getHistoryConversation(

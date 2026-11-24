@@ -138,6 +138,7 @@ import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.
 import type {
   ContextVariableResolutionReaderPort,
   ContextVariableService,
+  ConversationAttributeEdits,
 } from "../../modules/context-variables/public.js";
 import type { IdentityNonceRepositoryPort } from "../../db/repositories/identityNonceRepository.js";
 import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/emailSkillActivityRepository.js";
@@ -440,6 +441,8 @@ export interface AppDependencies {
   conversationErasure: ConversationErasure;
   /** A conversation's routine consent records, and an operator's withdrawal of one on the visitor's request. */
   conversationConsents: ConversationConsents;
+  /** A teammate's sets and resets of a conversation's attributes, from the Inbox, Ray and operator MCP. */
+  conversationAttributeEdits: ConversationAttributeEdits;
   /** How long the workspace keeps conversations; the retention sweep enforces it. */
   privacySettingsService: PrivacySettingsService;
   /** The zone the workspace reads "today" in when a visitor's client reports none. */

@@ -3119,7 +3119,7 @@ export interface paths {
         };
         /**
          * List workspace events
-         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
+         * @description Business events in this workspace, kept 30 days: a conversation started, a contact request, a handoff, a routine run ended, a decision waiting, a conversation's attribute changed. Without `after`, returns the newest events, oldest first, and a `nextCursor` at the end of the log; pass it back as `after` to page forward. Paging is complete: an event whose transaction commits after a later-numbered one is still returned to a client that paged past that number. Each type needs the permission that reads its subject elsewhere: `workspace.history.read`, and for `decision.pending` also `workspace.conversation.takeover`. Payloads carry ids and the values an automation acts on, never a transcript; fetch one with `GET /api/v1/history/chat/{conversationId}`. This is not the dashboard's `GET /api/v1/events` stream.
          */
         get: operations["listWorkspaceEvents"];
         put?: never;
@@ -3867,6 +3867,30 @@ export interface paths {
          */
         post: operations["withdrawHistoryConversationConsent"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat/{conversationId}/attributes/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a conversation's attribute
+         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
+         */
+        put: operations["setHistoryConversationAttribute"];
+        post?: never;
+        /**
+         * Reset a conversation's attribute
+         * @description Deletes the value this conversation holds for a Choice attribute, whoever wrote it. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session or verified customer holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
+         */
+        delete: operations["resetHistoryConversationAttribute"];
         options?: never;
         head?: never;
         patch?: never;
@@ -10253,11 +10277,13 @@ export interface components {
             writtenBy: {
                 /** @enum {string} */
                 kind: "api" | "operator" | "routine" | "classifier";
-                /** @description What wrote the value: the API credential's or teammate's id for `api`, the version of the instructions for `classifier`. */
+                /** @description What wrote the value: the API credential's or teammate's id for `api`, the teammate's user id for `operator` (in the Inbox, through Ray or through an operator MCP client), the version of the instructions for `classifier`. */
                 ref: string | null;
             };
             /** Format: date-time */
             updatedAt: string;
+            /** @description True when the AI fills this attribute on this conversation: the agent release the conversation runs classifies it. Resetting the conversation's value hands it back to the AI. */
+            classified: boolean;
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -10306,6 +10332,8 @@ export interface components {
             };
             /** @description On `getHistoryConversation` and `getLegacyHistoryConversation`, on the first page of messages: the conversation's attributes, in name order, each the value set for this conversation, its chat session or its verified customer, and who set it. Empty when none is set. An older page (`cursor`, or an `offset` above 0) leaves them out. */
             attributes?: components["schemas"]["ConversationAttribute"][];
+            /** @description With `attributes`, on a dashboard session's read: true when the teammate holds `workspace.conversation.takeover` and so may set a Choice attribute with `setHistoryConversationAttribute` and reset one with `resetHistoryConversationAttribute`. Absent for an API credential, which writes values through the context variable values API. */
+            attributesEditable?: boolean;
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
@@ -10432,6 +10460,12 @@ export interface components {
         };
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        ConversationAttributeChange: {
+            /** @description The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value. */
+            attribute: components["schemas"]["ConversationAttribute"] | null;
+            /** @description True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued. */
+            classificationQueued: boolean;
+        };
         ContactHistorySummary: {
             /** Format: uuid */
             id: string;
@@ -12349,6 +12383,79 @@ export interface components {
                 deadline: string | null;
             };
         };
+        ContextValueChangedEvent: {
+            /**
+             * Format: uuid
+             * @description The event's id: stable, and the key a delivery or a poller deduplicates on.
+             */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "context_value.changed";
+            /**
+             * @description The version of this type's `data` schema the event was written with.
+             * @enum {number}
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description When the change the event records happened.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            data: {
+                /** Format: uuid */
+                conversationId: string;
+                /**
+                 * Format: uuid
+                 * @description The agent the conversation was with when the event was recorded.
+                 */
+                agentId: string | null;
+                /** @description The channel the conversation arrived on, as history's `sourceChannel` names it. */
+                channel: string | null;
+                /**
+                 * @description `human` for a person, `agent` for software calling the agent.
+                 * @enum {string}
+                 */
+                callerKind: "human" | "agent";
+                /**
+                 * Format: uuid
+                 * @description The visitor the conversation belonged to when the event was recorded, when the channel identifies one.
+                 */
+                visitorId: string | null;
+                /**
+                 * Format: uuid
+                 * @description The attribute's id, as `GET /api/v1/context-variables` lists it. It stays the same when the attribute is renamed.
+                 */
+                variableId: string;
+                /** @description The attribute's name when the value changed, as `GET /api/v1/context-variables` lists it. */
+                variable: string;
+                /**
+                 * @description The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
+                 * @enum {string}
+                 */
+                valueType: "string" | "json" | "enum";
+                /**
+                 * @description Where the value is kept. Version 1 records the values kept for the conversation.
+                 * @enum {string}
+                 */
+                scope: "conversation";
+                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute. */
+                value: unknown;
+                /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded. */
+                redacted: boolean;
+                /**
+                 * @description Who changed it: `classifier` (the AI), `operator` (a teammate, in the Inbox, through Ray or through an operator MCP client), `api` (an API token or the dashboard's values API) or `routine`.
+                 * @enum {string}
+                 */
+                writtenBy: "api" | "operator" | "routine" | "classifier";
+                /** @description The routine that wrote the value when `writtenBy` is `routine`; null otherwise. */
+                routineId: string | null;
+            };
+        };
         DocumentProcessedEvent: {
             /**
              * Format: uuid
@@ -12445,7 +12552,7 @@ export interface components {
                 failureCode: string | null;
             };
         };
-        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
+        WorkspaceEvent: components["schemas"]["ConversationStartedEvent"] | components["schemas"]["ContactRequestCreatedEvent"] | components["schemas"]["HandoffRequestedEvent"] | components["schemas"]["RoutineCompletedEvent"] | components["schemas"]["DecisionPendingEvent"] | components["schemas"]["ContextValueChangedEvent"] | components["schemas"]["DocumentProcessedEvent"] | components["schemas"]["DocumentFailedEvent"];
         WorkspaceEventPage: {
             events: components["schemas"]["WorkspaceEvent"][];
             /** @description Pass back as `after` for the events that follow. Present on every page, empty ones included, so a client keeps its place. */
@@ -12463,7 +12570,7 @@ export interface components {
             label: "zapier" | "n8n" | "custom";
             /** @description The host events are POSTed to. The full target URL is never returned after create. */
             targetHost: string;
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "context_value.changed" | "document.processed" | "document.failed")[];
             /**
              * @description `disabled` receives nothing more until its client subscribes the same URL again.
              * @enum {string}
@@ -12505,7 +12612,7 @@ export interface components {
             /** @description The https URL each event is POSTed to, without a username or password. Its host must resolve to a public address. Never returned after this response. Subscribing a URL the workspace already subscribed replaces that subscription with a new one under a new id. */
             targetUrl: string;
             /** @description The event types to receive. Each needs the permission that reads it from the event log. */
-            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "document.processed" | "document.failed")[];
+            eventTypes: ("conversation.started" | "contact_request.created" | "handoff.requested" | "routine.completed" | "decision.pending" | "context_value.changed" | "document.processed" | "document.failed")[];
             /**
              * @description Which client registered it: `zapier`, `n8n`, or `custom`. Shown in Settings.
              * @enum {string}
@@ -30497,6 +30604,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsentNotWithdrawableError"];
+                };
+            };
+        };
+    };
+    setHistoryConversationAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The key of one of the attribute's active options, such as `billing`. */
+                    value: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The attribute as the conversation reads it now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAttributeChange"];
+                };
+            };
+            /** @description Request validation failed, an option the attribute doesn't offer, or an attribute a teammate doesn't edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A signed-in teammate is required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.conversation.takeover */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such conversation, or no attribute by that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resetHistoryConversationAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The attribute as the conversation reads it now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAttributeChange"];
+                };
+            };
+            /** @description Request validation failed, or an attribute a teammate doesn't edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A signed-in teammate is required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.conversation.takeover */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No such conversation, or no attribute by that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

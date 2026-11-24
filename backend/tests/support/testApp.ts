@@ -3,6 +3,7 @@ import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { createWebsiteRecrawlComposition } from "../../src/app/composition/websiteRecrawl.js";
 import { createCopilotContext } from "../../src/app/composition/copilotContext.js";
+import { conversationAttributeEditAudit } from "../../src/app/composition/conversationAttributeEdits.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
@@ -309,8 +310,14 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
-import type { ConversationAttributeReadPort, ConversationScope, StoredConversationAttributeValue } from "../../src/modules/context-variables/public.js";
+import { ContextVariableService, ConversationAttributeEditService, ConversationAttributeService, mayOverwrite } from "../../src/modules/context-variables/public.js";
+import type {
+  ConversationAttributeEditReads,
+  ConversationAttributeReadPort,
+  ConversationScope,
+  EditedConversation,
+  StoredConversationAttributeValue,
+} from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalMessageCaseService,
@@ -683,8 +690,29 @@ class InMemoryDirectiveStateStore implements DirectiveStateStore {
 }
 
 /** A conversation's attributes from the in-memory context-variable store: each variable's most specific value on the rungs. */
-class InMemoryConversationAttributeReads implements ConversationAttributeReadPort {
-  constructor(private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values">) {}
+class InMemoryConversationAttributeReads implements ConversationAttributeReadPort, ConversationAttributeEditReads {
+  constructor(
+    private readonly variables: Pick<InMemoryContextVariableRepository, "variables" | "values" | "enablements">,
+    private readonly conversations: Pick<InMemoryConversationRepository, "findByIdAndWorkspaceId">,
+  ) {}
+
+  async readConversation(workspaceId: string, conversationId: string): Promise<EditedConversation | null> {
+    const conversation = await this.conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
+    return conversation
+      ? {
+        keys: { conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId ?? null, verifiedCustomerId: conversation.verifiedCustomerId ?? null },
+        classifiedVariableIds: await this.readClassifiedVariableIds(workspaceId, conversationId),
+      }
+      : null;
+  }
+
+  /** The in-memory app pins no release snapshot of enablements, so the agent's draft stands in for it. */
+  async readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>> {
+    const conversation = await this.conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
+    return new Set([...this.variables.enablements.values()]
+      .filter((enablement) => enablement.agentId === conversation?.agentId && enablement.source === "classified" && enablement.enabled)
+      .map((enablement) => enablement.variableId));
+  }
 
   async readMostSpecificValues(workspaceId: string, scopes: readonly ConversationScope[]): Promise<StoredConversationAttributeValue[]> {
     const rungOf = (value: ContextVariableValue) => scopes.findIndex((scope) => scope.type === value.scope.type && scope.id === value.scope.id);
@@ -860,11 +888,16 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return this.values.get(this.valueKey(variableId, scope)) ?? null;
   }
 
-  async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
+  async deleteValue(variableId: string, scope: ContextVariableScope, _deletedBy: ContextValueWriter): Promise<boolean> {
     return this.values.delete(this.valueKey(variableId, scope));
   }
 
-  async deleteValueWrittenBy(variableId: string, scope: ContextVariableScope, writerKinds: readonly ContextValueWriterKind[]): Promise<boolean> {
+  async deleteValueWrittenBy(
+    variableId: string,
+    scope: ContextVariableScope,
+    writerKinds: readonly ContextValueWriterKind[],
+    _deletedBy: ContextValueWriter,
+  ): Promise<boolean> {
     const stored = this.values.get(this.valueKey(variableId, scope));
     return stored && writerKinds.includes(stored.writtenBy.kind) ? this.values.delete(this.valueKey(variableId, scope)) : false;
   }
@@ -2331,8 +2364,16 @@ export const createTestDependencies = (overrides: {
   }).reads;
   const documentImages = overrides.documentImages ?? new InMemoryDocumentImages();
   const replyBlocks = createReplyBlocksComposition({ env, evidenceImages: documentImages, metrics: metricsRegistry, logger });
-  const conversationAttributeReads = new InMemoryConversationAttributeReads(contextVariableRepository);
+  const conversationAttributeReads = new InMemoryConversationAttributeReads(contextVariableRepository, conversationRepository);
   conversationRepository.setAttributeValueMatcher(conversationAttributeReads.holdsValue);
+  // The in-memory app runs no classification job; a reset reports it queued, and the Postgres
+  // enqueue is covered by tests/integration/conversation-attribute-edits.integration.test.ts.
+  const conversationAttributeEdits = new ConversationAttributeEditService({
+    reads: conversationAttributeReads,
+    values: contextVariableRepository,
+    reclassification: { request: async () => undefined },
+    audit: conversationAttributeEditAudit(auditService),
+  });
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -2979,6 +3020,7 @@ export const createTestDependencies = (overrides: {
     notificationDeliveries,
     eventSubscriptions: workspaceEventSubscriptions,
     contextVariables: contextVariableService,
+    conversationAttributeEdits,
     contextVariableUsers: {
       listContextVariableUsers: async () => {
         throw new Error("contextVariableUsers reads agent snapshots in Postgres; the test app does not wire it");
@@ -3477,6 +3519,7 @@ export const createTestDependencies = (overrides: {
     chatModelImageReading,
     voiceRuntimeConnections,
     assistantHistoryService,
+    conversationAttributeEdits,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by
       // tests/integration/conversation-erasure.integration.test.ts.

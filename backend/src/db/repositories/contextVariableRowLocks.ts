@@ -4,7 +4,11 @@
  * update; a conversation-scope value write share-locks its conversation.
  */
 
-import { typeChangeWithValuesRefused, type ContextVariableValueType } from "../../modules/context-variables/public.js";
+import {
+  typeChangeWithValuesRefused,
+  type ContextVariableSensitivity,
+  type ContextVariableValueType,
+} from "../../modules/context-variables/public.js";
 import { notFound } from "../../shared/domain/errors.js";
 import { optionalTimestampMatch } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -27,10 +31,11 @@ export const requireConversation = async (db: Db, workspaceId: string, conversat
   return conversation.id;
 };
 
-/** A variable's type and options as an edit of its definition reads them under the row lock. */
+/** A variable's type, options and sensitivity as an edit of its definition reads them under the row lock. */
 interface LockedDefinition {
   readonly id: string;
   readonly valueType: ContextVariableValueType;
+  readonly sensitivity: ContextVariableSensitivity;
   /** The `options` column as stored; the repository maps it. */
   readonly storedOptions: unknown;
 }
@@ -49,14 +54,19 @@ export const lockDefinition = async (
 ): Promise<LockedDefinition | null> => {
   const row = await trx
     .selectFrom("context_variables")
-    .select(["id", "value_type", "options"])
+    .select(["id", "value_type", "options", "sensitivity"])
     .where("workspace_id", "=", workspaceId)
     .where("id", "=", variableId)
     .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), expectedUpdatedAt))
     .forUpdate()
     .executeTakeFirst();
   return row
-    ? { id: row.id, valueType: row.value_type as ContextVariableValueType, storedOptions: row.options }
+    ? {
+      id: row.id,
+      valueType: row.value_type as ContextVariableValueType,
+      sensitivity: row.sensitivity as ContextVariableSensitivity,
+      storedOptions: row.options,
+    }
     : null;
 };
 

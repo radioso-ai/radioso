@@ -146,6 +146,7 @@ export interface OpenApiSchemaCatalog {
   CandidateCountsSchema: z.ZodTypeAny;
   ChatBootstrapResponseSchema: z.ZodTypeAny;
   ChatConversationDetailSchema: z.ZodTypeAny;
+  ConversationAttributeChangeSchema: z.ZodTypeAny;
   ChatConversationMessageDebugSchema: z.ZodTypeAny;
   ChatConversationMessageSchema: z.ZodTypeAny;
   ChatConversationTailSchema: z.ZodTypeAny;

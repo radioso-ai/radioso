@@ -346,11 +346,11 @@ describe("copilot chat readers", () => {
       attributes: [
         {
           name: "care_need", valueType: "enum", value: null, redacted: true, scope: "conversation",
-          writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: new Date("2026-11-20T10:00:03.000Z"),
+          writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: new Date("2026-11-20T10:00:03.000Z"), classified: false,
         },
         {
           name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false,
-          scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
+          scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: new Date("2026-11-20T10:00:04.000Z"), classified: true,
         },
       ],
     });
@@ -361,11 +361,11 @@ describe("copilot chat readers", () => {
     expect(result.transcript.attributes).toEqual([
       {
         name: "care_need", valueType: "enum", value: null, option: null, redacted: true, truncated: false, scope: "conversation",
-        writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: "2026-11-20T10:00:03.000Z",
+        writtenBy: { kind: "operator", ref: "user-1" }, updatedAt: "2026-11-20T10:00:03.000Z", classified: false,
       },
       {
         name: "topic", valueType: "enum", value: "billing", option: { label: "Billing", archived: false }, redacted: false, truncated: false,
-        scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: "2026-11-20T10:00:04.000Z",
+        scope: "conversation", writtenBy: { kind: "classifier", ref: "context-classification/1" }, updatedAt: "2026-11-20T10:00:04.000Z", classified: true,
       },
     ]);
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
@@ -378,7 +378,7 @@ describe("copilot chat readers", () => {
     const cart = { items: Array.from({ length: 80 }, (_, index) => ({ sku: `sku-${index}`, quantity: 1 })) };
     const attribute = (name: string, valueType: "string" | "json", value: unknown) => ({
       name, valueType, value, redacted: false, scope: "session" as const,
-      writtenBy: { kind: "api" as const, ref: null }, updatedAt: new Date("2026-11-20T10:00:04.000Z"),
+      writtenBy: { kind: "api" as const, ref: null }, updatedAt: new Date("2026-11-20T10:00:04.000Z"), classified: false,
     });
     ports.getConversation.mockResolvedValue({
       conversationId, agentId: null, agentName: null, sourceChannel: "website_embed", callerKind: "human" as const,

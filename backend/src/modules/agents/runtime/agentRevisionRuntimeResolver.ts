@@ -1,7 +1,7 @@
 import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
 import { withContactHumanSkill } from "../contactHumanSkill.js";
-import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
+import type { AgentRevision, AgentRevisionSnapshot, ContextVariableEnablementSnapshot } from "../agentRevision.js";
 import type { AgentSkillSpine } from "../../agentSkills/public.js";
 
 /**
@@ -11,6 +11,15 @@ import type { AgentSkillSpine } from "../../agentSkills/public.js";
 export interface AgentRevisionRuntimeReaderPort {
   findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null>;
   findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
+}
+
+/**
+ * The context-variable enablements one release froze, without the rest of its snapshot: what a
+ * reader that only asks which variables a release selects needs. Null when the agent has no such
+ * release.
+ */
+export interface AgentRevisionEnablementReader {
+  findRevisionEnablements(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<ContextVariableEnablementSnapshot[] | null>;
 }
 
 /**

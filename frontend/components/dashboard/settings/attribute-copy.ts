@@ -54,6 +54,18 @@ export const attributeValueText = (attribute: ConversationAttribute): string => 
 export const attributeWrittenText = (attribute: ConversationAttribute): string =>
   `Set by ${writerLabels[attribute.writtenBy.kind]}${attribute.scope === 'conversation' ? '' : ' for this visitor'}`
 
+/** The Inbox's words for a teammate's edits of a conversation's attributes. */
+export const attributeEditCopy = {
+  editLabel: (name: string) => `Change ${name}`,
+  setAttribute: 'Set attribute',
+  setFor: 'For this conversation',
+  overridesVisitor: "Replaces the visitor's value here",
+  keepAsTeams: "Choosing the current option keeps it as your team's value",
+  reset: 'Reset to automatic',
+  clear: 'Clear',
+  failed: "Couldn't save the attribute",
+} as const
+
 export const surfacingLabels: Record<SurfacingOption, string> = {
   always: 'Every reply, and rules, routines and skills',
   on_reference: 'Only rules, routines and skills that name it',

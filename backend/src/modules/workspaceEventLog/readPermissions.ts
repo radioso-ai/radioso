@@ -18,6 +18,8 @@ const READ_PERMISSIONS: Readonly<Record<WorkspaceEventType, readonly AccountPerm
   "handoff.requested": ["workspace.history.read"],
   "routine.completed": ["workspace.history.read"],
   "decision.pending": ["workspace.history.read", "workspace.conversation.takeover"],
+  // A conversation's attributes are read with its history, in the Inbox and on its detail.
+  "context_value.changed": ["workspace.history.read"],
   "document.processed": ["workspace.documents.read"],
   "document.failed": ["workspace.documents.read"],
 };

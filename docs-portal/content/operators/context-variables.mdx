@@ -1,7 +1,7 @@
 ---
 title: "Attributes and context"
 description: "How operators define typed attributes, wire them to agents, and how page, identity and host values reach an agent's turns."
-last_updated: 2026-11-22
+last_updated: 2026-11-23
 ---
 
 # Attributes and context
@@ -205,8 +205,11 @@ A few things to know in practice:
   your API set for this visitor or conversation: the conversation, the visitor's
   session or customer. While one is set, the AI leaves that attribute alone for
   the conversation, and clears a value it chose earlier so yours is the one the
-  conversation reads. Delete your value and the next run fills the attribute
-  again.
+  conversation reads. **Reset to automatic** in the Inbox hands the attribute
+  back, and the AI fills it again within seconds; a value deleted through the
+  API is filled by the run after the next reply. That run reads the
+  conversation again for every attribute the AI fills, as the run after a reply
+  does, so another of them can change with it.
 - **Agent-wide and workspace-wide values are defaults.** A value set for the
   agent or the workspace applies until the AI picks one. The AI's choice is the
   conversation's own value, so the conversation reads it instead; when the AI
@@ -573,6 +576,18 @@ shows no block. While the conversation is open, the block reads its attributes
 again a few seconds after each new message, so a value the AI sets after a reply
 appears without a reload.
 
+If you can take conversations over, you can change a Choice attribute from its
+row: pick another option, and it becomes the conversation's own value, set by
+your team, which the AI leaves alone. Pick the option the AI chose to keep it as
+your team's: the value stays, and the AI stops changing it. On a value kept for
+the visitor, the menu says yours replaces it in this conversation. A value set
+for this conversation by your team, your API or a routine can be undone:
+**Reset to automatic** hands the attribute back to the AI when the agent fills
+it, and the block shows the AI's value within seconds; where nothing fills it,
+**Clear** removes it. **Set attribute** sets a Choice attribute the
+conversation holds no value of. Private, Text and JSON attributes stay
+read-only, so a teammate never overwrites a value they can't read.
+
 To find the conversations about one thing, pick an option from the **Attribute**
 filter on the All list. It offers every Choice attribute that is not Private,
 archived options included, plus **Not set** for each. The filter reads only
@@ -599,7 +614,8 @@ returns `attributes`:
       "redacted": false,
       "scope": "conversation",
       "writtenBy": { "kind": "classifier", "ref": "context-classification/1" },
-      "updatedAt": "2026-11-22T09:30:00.000Z"
+      "updatedAt": "2026-11-22T09:30:00.000Z",
+      "classified": true
     }
   ]
 }
@@ -612,7 +628,28 @@ for example `?attribute=topic&attributeOption=billing`, or
 The name matches exactly as written. An unknown attribute or option, or an
 attribute that is not a Choice or is Private, returns `400` with the reason.
 `attributes` comes with the first page of messages; an older page (`cursor`, or
-an `offset` above 0) leaves it out.
+an `offset` above 0) leaves it out. `classified` says whether the
+conversation's agent fills the attribute, and `attributesEditable` is `true`
+when the signed-in teammate may change them.
+
+`PUT /api/v1/history/chat/{conversationId}/attributes/{name}` with
+`{ "value": "shipping" }` sets an option, and `DELETE` on the same path resets
+it. Both take a signed-in session with the takeover permission and answer
+`{ "attribute": …, "classificationQueued": true }`, where `attribute` is what
+the conversation reads afterwards, or `null`. A Private attribute, or one that
+is not a Choice, returns `400` `attribute_not_editable` with `details.reason`
+`private` or `not_choice`; an option the attribute lacks returns `400` naming
+its option keys. Setting the option a teammate already set changes nothing, so
+a retried request is safe; setting the option the AI, your API or a routine set
+makes it your team's without changing it.
+
+A write that changes the value a conversation holds for itself is recorded as
+[`context_value.changed`](/api/workspace-event-log#event-types): the AI's
+choices, a teammate's set or reset in the Inbox, through Ray or an operator MCP
+client, and a write or delete through the values API with `conversation` scope.
+These record no event: a write that leaves the value as it was, a value the
+agent fetches through a resolver skill, a value kept for the visitor's session
+or customer, and deleting the attribute, which removes its values with it.
 
 ## Read next
 

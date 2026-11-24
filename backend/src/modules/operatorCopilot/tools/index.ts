@@ -13,6 +13,8 @@ import { createEventSubscriptionsCopilotTools, type EventSubscriptionsCopilotToo
 import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
 import { createContextVariableProposalCopilotTools, createContextVariablesCopilotTools } from "./contextVariables.js";
 import type { ContextVariableProposalCopilotToolDependencies, ContextVariablesCopilotToolDependencies, CopilotContextVariablesAgentPort } from "./contextVariables.js";
+import { createConversationAttributeCopilotTools } from "./conversationAttributes.js";
+import type { ConversationAttributeCopilotToolDependencies } from "./conversationAttributes.js";
 import type { AudiencePulseCopilotToolDependencies } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
 import { createReplyDraftCopilotTools } from "./replyDraft.js";
@@ -99,6 +101,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & NotificationDeliveriesCopilotToolDependencies
   & EventSubscriptionsCopilotToolDependencies
   & ContextVariablesCopilotToolDependencies
+  & ConversationAttributeCopilotToolDependencies
   & { readonly workspaceSettings: CopilotWorkspaceSettingsPort }
   & Omit<WorkspaceTriageCopilotToolDependencies, "agentLookup">
   & Omit<RoutineDefinitionCopilotToolDependencies, "agentLookup">
@@ -151,6 +154,7 @@ export const createCopilotToolDescriptors = (
   ...createNotificationDeliveriesCopilotTools(deps),
   ...createEventSubscriptionsCopilotTools(deps),
   ...createContextVariablesCopilotTools(deps),
+  ...createConversationAttributeCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createWorkspaceSetupStateCopilotTools(deps),
   ...createEmailChannelCopilotTools(deps),
@@ -190,6 +194,7 @@ export type { CopilotNotificationDeliveriesPort } from "./notificationDeliveries
 export type { CopilotEventSubscriptionsPort } from "./eventSubscriptions.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
+export type { ConversationAttributeCopilotToolDependencies } from "./conversationAttributes.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
 export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";

@@ -27,7 +27,7 @@ const option = (key: string, archived = false): ContextVariableOption => ({
 
 describeIntegration("typed attributes (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new ContextVariableRepository(database.kysely);
+  const repository = new ContextVariableRepository(database.kysely, null);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();

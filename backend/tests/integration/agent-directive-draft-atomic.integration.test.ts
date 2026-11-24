@@ -68,7 +68,7 @@ describeDb("agent directive draft mutations", () => {
     await runAllTestMigrations(database);
     agents = new AgentRepository(database.kysely);
     revisions = new AgentRevisionRepository(database.kysely);
-    contextVariables = new ContextVariableRepository(database.kysely);
+    contextVariables = new ContextVariableRepository(database.kysely, null);
     routines = new RoutineDefinitionRepository(database.kysely);
     await database.query(
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)",

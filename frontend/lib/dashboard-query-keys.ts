@@ -45,6 +45,9 @@ export const dashboardQueryKeys = {
     crawlActivity: (workspaceId: string, input: { recentSinceMinutes: number }) =>
       workspaceKey(workspaceId, 'documents', 'crawl-activity', input.recentSinceMinutes),
   },
+  attributes: {
+    catalog: (workspaceId: string) => workspaceKey(workspaceId, 'attributes', 'catalog'),
+  },
   sources: {
     list: (workspaceId: string) => workspaceKey(workspaceId, 'sources', 'list'),
     crawlState: (workspaceId: string) => workspaceKey(workspaceId, 'sources', 'crawl-state'),

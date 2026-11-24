@@ -63,7 +63,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     workspaceRepository = new WorkspaceRepository(database.kysely);
     agentRepository = new AgentRepository(database.kysely);
     agentSkillRepository = new AgentSkillRepository(database.kysely);
-    contextVariableRepository = new ContextVariableRepository(database.kysely);
+    contextVariableRepository = new ContextVariableRepository(database.kysely, null);
     routineDefinitionRepository = new RoutineDefinitionRepository(database.kysely);
     await runAllTestMigrations(database);
   });

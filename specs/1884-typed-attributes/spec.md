@@ -149,7 +149,7 @@ There is no `integration` kind. Zapier and n8n call the bearer API, the server s
 - `api`, `operator`, `routine`: last writer wins.
 - `classifier`: writes only when there is no value or the existing value was written by the classifier.
 
-An operator's value and a host's value therefore stick with no prompt involved. **Reset to automatic** deletes the value, and the next classification fills it.
+An operator's value and a host's value therefore stick with no prompt involved. **Reset to automatic** deletes the conversation's value; when the conversation's pinned release classifies the attribute, the reset enqueues `context.classification` for the conversation at once (the same request a turn writes, folded into one already waiting), so the AI fills it without waiting for a turn that may never come. Where nothing classifies the attribute the same route clears the value, labelled **Clear** in the Inbox.
 
 **Which human values hold a variable.** A human value (`api`, `operator`, `routine`) at the `conversation`, `session` or `customer` scope is a fact about this visitor or conversation. The classifier skips the variable and clears its own older conversation value, which would otherwise hide that fact. An `agent` or `workspace` value is a default: the classifier ignores it and writes its conversation value as usual, which outranks the default in the ladder. The default applies until the classifier picks a value, and again once it clears its own.
 
@@ -362,6 +362,19 @@ No new resource. Changes to existing shapes:
 
 The operator route exists because the value routes require `workspace.agents.manage` (`contextVariableRoutes.ts:141`, `:289-292`), which a teammate answering in the Inbox should not need. It takes the takeover permission, stamps `operator` provenance from the session and writes a content-free audit event. Both routes call one service.
 
+Slice 2 settled the operator routes as follows (`ConversationAttributeEditService`, `backend/src/modules/context-variables/conversationAttributeEdits.ts`):
+
+- Session-only, like the Inbox's other conversation actions: the signed-in teammate is the writer (`ref` is their user id). A bearer credential gets `401`; the values API is the machine path.
+- Choice attributes only. `PUT` takes `{ "value": "<option key>" }`, validated by `validateValue`, so an archived or unknown key is refused with `400` naming the active keys. Text and JSON attributes are read-only on every operator surface: a free-text editor adds little over the values API, and `not_choice` says so.
+- A Private attribute is refused with `400 attribute_not_editable` and `details.reason: "private"`, rather than `403`, which callers read as a permission problem: a teammate never sees a Private value, so they neither overwrite nor clear one. `not_choice` uses the same code.
+- An unknown attribute or conversation answers `404`.
+- `DELETE` is idempotent: a conversation with no value of its own answers `200` unchanged, with no audit event and no classification run.
+- `PUT` is idempotent too. Setting the option a teammate already set for the conversation writes nothing, audits nothing and counts `unchanged`. Setting the option the classifier, the host's API or a routine set rewrites only the provenance to `operator`, which pins it against the classifier: it is audited and counts `written`, and records no `context_value.changed`, since the value did not change.
+- An edit reads the conversation once (its rungs and the variables its pinned release classifies, through the agents module's narrow `findRevisionEnablements`, which returns the release's enablements without the rest of its snapshot) and passes that read through the write and the read-back.
+- Both answer `ConversationAttributeChange`: `{ attribute: ConversationAttribute | null, classificationQueued: boolean }`, the attribute as the conversation reads it afterwards (after a reset, an inherited session or customer value).
+- The audit event (`conversation_attribute.set` / `conversation_attribute.reset`, metadata: actor user id, surface, conversation id, variable id) is written after the value commits, as `set_triage_state` does; a failed audit write is logged, not thrown, because a retry would edit again.
+- `ConversationAttribute` gains `classified` (the conversation's pinned release classifies it), and the conversation detail gains `attributesEditable`, true for a signed-in teammate holding the takeover permission, so the Inbox shows the block read-only otherwise.
+
 Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm run sync` and commits the snapshot; the MCP server package's generated types follow (`packages/radioso-mcp-server/src/generated/openapiTypes.ts`).
 
 ### Workspace event (slice 2)
@@ -369,13 +382,23 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 `context_value.changed`, version 1:
 
 ```
-{ variable: string, valueType, scope: "conversation" | "customer" | "whatsapp_contact",
+{ variableId: uuid, variable: string, valueType, scope: "conversation",
   value: <typed value> | null, redacted: boolean,
-  writtenBy: "api" | "operator" | "routine" | "classifier" }
+  writtenBy: "api" | "operator" | "routine" | "classifier",
+  routineId: string | null }
 ```
 
-- Recorded through `WorkspaceEventRecorder` in the writer's transaction, only when the stored value changed.
+`variableId` keys the attribute across a rename. `value` is required and null for a cleared or Private value. `operator` covers a teammate in the Inbox, through Ray and through an operator MCP client.
+
+- **Scopes that emit (decided in slice 2).** Only `conversation`-scope values. The log's subject is a conversation, the event cascades with it, and the consent withholder keys on it. A session value spans conversations, a customer value has none, and an agent or workspace value is a default, so none has a conversation to attach to. `customer` and `whatsapp_contact` join with the person scopes in slice 4, which needs a person-keyed subject. Writes the resolver cache makes do not emit: composition builds that repository with `null` events, explicitly, and every other construction is handed the recorder and the delivery wake. Deleting an attribute cascades its values away and records no event.
+- `routineId` names the routine whose write it was (the part of the writer ref before the run id), null for any other writer, so the consent withholder deletes a withdrawn routine's value events the way it deletes its `routine.completed`.
+- "Changed" compares the value alone: the same value from a different writer records nothing. A delete records `value: null`.
+- No migration: `workspace_events.type` is checked by pattern, not by list.
+
+- Recorded through `WorkspaceEventRecorder` in the writer's transaction, only when the stored value changed. Once that transaction commits, the shared write path (`ContextVariableValueWrites`) calls the `WorkspaceEventDeliveryWake`, so every writer (Inbox, Ray, MCP, classifier, values API) wakes delivery once, without the minute sweep.
 - A `sensitive` variable's event carries `value: null, redacted: true`, following `sensitiveSlotKeys` on `routine.completed` (`workspaceEventLog.ts:93-99`).
+- Making a variable `sensitive` (a definition edit or an applied proposal) redacts its earlier `context_value.changed` events to `value: null, redacted: true` in the same transaction, keyed on `data.variableId`. The log is not append-only (no trigger, no hash chain; the withholder and the document eraser already remove rows), so the redaction is an `UPDATE`. The edit locks the definition row for update, so a value write in flight (which key-shares it) commits its event first and is redacted with the rest. Already-delivered webhook payloads are not recalled. No migration.
+- Two writers of one conversation's value queue on a per-value advisory lock, so each compares against what the one before committed (READ COMMITTED); an integration test races a teammate's set against a classifier write and checks the final value follows the overwrite rule and the events match the stored changes one to one.
 - Read permission is the history permission, as for other conversation events.
 - It cascades with its conversation and joins the consent withholder.
 
@@ -390,7 +413,8 @@ Each row changes the OpenAPI contract. Each PR runs `cd typescript-sdk && pnpm r
 
 - `contextVariables.definition.propose` (`copilotPrimitiveRegistry.ts:2`) learns `valueType`, `options` and the `classified` source, so Ray can propose an attribute and its classification as one draft diff.
 - Routine proposals pick up `saveTo` through the shared schema.
-- The per-scope value routes stay a stated exclusion in the coverage map: they are visitor data. The operator set route has an excluded disposition for the same reason (`backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`).
+- The per-scope value routes stay a stated exclusion in the coverage map: they are visitor data.
+- The operator set and reset routes are reached through `set_conversation_attribute` and `reset_conversation_attribute` (slice 2), not excluded: correcting the AI's label is the task an operator brings to Ray, and the tools call the same edit service with the same refusals. They follow `set_triage_state`: shape `act`, scope `operator:act`, retry `{ effect: "act", idempotent: true, operationIdentity: "client" }`, since a repeated set lands on the same value and a repeated reset finds nothing to delete. They need `workspace.history.read` and `workspace.conversation.takeover`, take an explicit conversation id, and return the attribute as `conversation_transcript` reads it.
 - A conversation's attributes are read the way the Inbox reads them (slice 1c): `conversation_transcript` returns them, Private values redacted, and `conversation_history_search` filters by a Choice option. Both map to the history routes already covered (`getHistoryConversation`, `listHistory`).
 - Tool descriptions stay under the 2,048-character cap.
 
@@ -402,7 +426,7 @@ A trigger **Attribute changed** on the new event, in the REST-hook pattern of th
 
 - **Catalog** (`assistant-context-variables-section.tsx`, 672 lines): renamed **Attributes**; a type picker; an options editor as its own component, because the file is near the 1,000-line ratchet.
 - **Agent Context section:** **Classify automatically** per enum attribute.
-- **Inbox reading pane:** an **Attributes** block, after the situation card and before the messages, showing each value and who set it; the conversation drawer shows it too. Read-only in 1c; edit and **Reset to automatic** in slice 2.
+- **Inbox reading pane:** an **Attributes** block, after the situation card and before the messages, showing each value and who set it; the conversation drawer shows it too. Read-only in 1c. In slice 2 a Choice row opens a menu of its active options; a conversation-scope value whose writer is not the classifier (a teammate, the host's API or a routine) offers **Reset to automatic** where the conversation's agent classifies the attribute, **Clear** where nothing does, matching the route, which resets any conversation-scope value (a takeover teammate can already overwrite an API value with a set, so refusing a reset of one protects nothing); when someone other than a teammate wrote the value, its current option stays selectable, and picking it keeps it as the team's; **Set attribute** lists the non-Private Choice attributes with no row. An edit's response replaces the row at once and stays over any read that started before it, a reloaded detail included, until a read the block starts after it returns. A reset that queued the AI reads the attributes again about 3 s and 10 s later, the schedule the live re-read uses after a message, so the AI's value appears on a finished conversation. The workspace catalog the menus offer is one cached read per workspace, shared with the Inbox's attribute filter. Other open viewers of the conversation see an edit on their next re-read or reload: no workspace invalidation kind refreshes an open conversation's detail (the existing kinds refresh lists), and slice 2 adds no invalidation contract.
 - **Inbox filter** by attribute.
 - **Routine editor:** **Save to** on a slot row (3a); a context chip in the Rule builder (3b).
 
@@ -471,6 +495,7 @@ Playwright covers the journeys.
 
 - `radioso_context_classification_runs_total{trigger, outcome}`: trigger `after_turn | handoff_notice`; outcome `written | unchanged | no_option | skipped_sensitive | skipped_override | skipped_timeout | invalid | failed`
 - `radioso_context_value_writes_total{writer, outcome}`, including `refused_type`, `refused_trust`, `no_person_key`. It ships in PR 1b, when the classifier becomes a second writer and a refused or kept write stops being an HTTP response a caller sees. In 1a the API is the only writer, and its outcomes (written, `409` kept or changed mid-write, `404` no conversation) are already counted by `http_requests_total{method, route, status_code}`.
+- `radioso_conversation_attribute_edits_total{action, outcome}` (slice 2): action `set | reset`; outcome `written | cleared | unchanged | not_found | refused_type | refused_private | refused_option | failed`. The `context_value.changed` event is the per-change record; the counter never carries an attribute or value.
 - one span per classification run with counts and the prompt version
 - the notice handler's span records the classification outcome beside the summary outcome
 

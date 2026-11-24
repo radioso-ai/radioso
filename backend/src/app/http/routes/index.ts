@@ -22,6 +22,7 @@ import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js"
 import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
 import { createAgentPublicIdentityRoutes } from "./agentPublicIdentityRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
+import { createHistoryAttributeRoutes } from "./historyAttributeRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createObservabilityRoutes } from "./observabilityRoutes.js";
@@ -124,6 +125,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/notification-deliveries", createRouter: createNotificationDeliveryRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
+  { path: "/api/v1/history", createRouter: createHistoryAttributeRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
   { path: "/api/v1/privacy", createRouter: createPrivacyRoutes },
   { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },

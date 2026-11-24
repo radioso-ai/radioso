@@ -15,6 +15,7 @@ import {
 } from '@/lib/api'
 import { shouldClampHistoryPage, shouldResetAllLensPageForFilterChange, useHistoryListQuery } from './history-list-query'
 import type { ConversationSearchParams } from '@/lib/conversation-filters'
+import { mergeOlderMessages } from '@/lib/merge-older-messages'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
   audiencePulseApi,
@@ -739,17 +740,7 @@ export function useHistoryDetailState({
             limit: MESSAGE_WINDOW_SIZE,
             ...(conversationDetail.nextCursor ? { cursor: conversationDetail.nextCursor } : {}),
           })
-      setConversationDetail((current) => {
-        if (!current) {
-          return older
-        }
-        return {
-          ...older,
-          // An older page carries no attributes; the first page's stay.
-          ...(current.attributes ? { attributes: current.attributes } : {}),
-          messages: [...older.messages, ...current.messages],
-        }
-      })
+      setConversationDetail((current) => mergeOlderMessages(current, older))
     } catch (error) {
       setDetailError(getApiErrorMessage(error, 'Failed to load older messages.'))
     } finally {

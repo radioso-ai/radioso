@@ -65,4 +65,27 @@ describe("typed context variable migrations", () => {
     expect(statements[0]).toBe("SET LOCAL lock_timeout = '3s'");
     expect(statements[1]).toContain("ADD CONSTRAINT agent_context_variables_source_check CHECK (source IN ('pushed', 'browser', 'resolver', 'request', 'classified'))");
   });
+
+  it("widen in 280 the value scope CHECK to whatsapp_contact NOT VALID with the lock wait bounded, and validate it in 281", async () => {
+    const statements = await statementsOf("280_whatsapp_contact_attribute_scope.sql");
+
+    expect(statements[0]).toBe("SET LOCAL lock_timeout = '3s'");
+    expect(statements).toHaveLength(2);
+    expect(statements[1]).toContain(
+      "CHECK (scope_type IN ('conversation', 'session', 'customer', 'whatsapp_contact', 'agent', 'workspace')) NOT VALID",
+    );
+    expect(await statementsOf("281_whatsapp_contact_attribute_scope_validate.sql"))
+      .toEqual(["ALTER TABLE context_variable_values VALIDATE CONSTRAINT context_variable_values_scope_type_check"]);
+  });
+
+  it("record in 282 each WhatsApp conversation's number, cascading with the conversation, with the lock wait bounded", async () => {
+    const statements = await statementsOf("282_whatsapp_conversation_numbers.sql");
+
+    expect(statements[0]).toBe("SET LOCAL lock_timeout = '3s'");
+    expect(statements[1]).toContain("conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE");
+    expect(statements[1]).toContain("workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE");
+    expect(statements).toContain(
+      "CREATE INDEX idx_connector_whatsapp_conversations_workspace_wa ON connector_whatsapp_conversations (workspace_id, wa_id)",
+    );
+  });
 });

@@ -17,6 +17,12 @@ import {
   refreshEmbedConfigsOnVoiceReadinessChange,
 } from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
+import { buildStarterPackDraftService } from "../../src/app/composition/agentStarterPackComposition.js";
+import { StarterPackApplyService } from "../../src/modules/agentStarterPack/public.js";
+import { createInMemoryStarterPackApply } from "./inMemoryStarterPackApplyUnitOfWork.js";
+import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
+import { createChatReadiness, type ChatPipelineProbe } from "../../src/shared/infra/llm/chatReadiness.js";
+import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -1101,6 +1107,13 @@ export const createTestDependencies = (overrides: {
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
+  /** Replaces the default resolver, whose `resolve` and `assertResolvable` fail for every workspace. */
+  llmCapabilityResolver?: AppDependencies["llmCapabilityResolver"];
+  /**
+   * Replaces the default chat pipeline probe, which reports every workspace as having no chat
+   * model. Feeds the workspace summary's `llmConfigured` and Ray's availability.
+   */
+  chatPipelineProbe?: ChatPipelineProbe;
   logger?: AppDependencies["logger"];
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
@@ -1771,8 +1784,26 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
+  const llmCapabilityResolver: AppDependencies["llmCapabilityResolver"] = overrides.llmCapabilityResolver ?? {
+    async resolve() {
+      throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
+    },
+    async assertResolvable() {
+      throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
+    },
+    // Selection needs no keys, so the real decision runs against the in-memory
+    // preference and credential stores; `resolve` stays unconfigured because a
+    // credentialed config would let tests reach a live provider.
+    resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input),
+  };
+  const chatReadiness = createChatReadiness(overrides.chatPipelineProbe ?? {
+    async assertChatPipelineResolvable() {
+      throw new ProviderConfigurationError("No chat model is configured in the in-memory test app", { kind: "missing_api_key", capability: "chat" });
+    },
+  });
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, new InMemoryWorkspaceSetupStateRepository(), {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
+    chatReadiness,
   });
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
@@ -2289,6 +2320,31 @@ export const createTestDependencies = (overrides: {
     actionCatalog: [{ type: "contact.send", kind: "action" }],
     logger,
     telemetryService,
+  });
+  const starterPackDraftService = buildStarterPackDraftService({
+    agentRepository,
+    authoredDirectiveService,
+    routineDefinitionService,
+    routineDraftAssistService,
+    chatInferencePipeline,
+    languageDetector: new LlmResponseLanguageDetector(chatInferencePipeline),
+    // The in-memory app answers every model call through its fake chat pipeline, so its
+    // workspaces always count as having a chat model.
+    chatReadiness: { assertChatConfigured: async () => undefined },
+    logger,
+    telemetryService,
+  });
+  const inMemoryStarterPackApply = createInMemoryStarterPackApply({ authoredDirectiveService, routineDefinitionService });
+  const starterPackApplyService = new StarterPackApplyService({
+    unitOfWork: inMemoryStarterPackApply.unitOfWork,
+    findCompletedApply: inMemoryStarterPackApply.findCompletedApply,
+    readNames: inMemoryStarterPackApply.readNames,
+    assessCoherence: (inputWorkspaceId, agentId, candidates) =>
+      authoredDirectiveService.assessCoherence(inputWorkspaceId, agentId, candidates),
+    afterRoutineCommitted: (inputWorkspaceId, agentId, routine) =>
+      routineDefinitionService.completeExternalDraftMutation(inputWorkspaceId, agentId, routine, "create"),
+    audit: auditService,
+    logger,
   });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
@@ -3283,15 +3339,8 @@ export const createTestDependencies = (overrides: {
     webhookDestinations,
     apiConnections,
     workspaceLlmCapabilitySettingsService,
-    llmCapabilityResolver: {
-      async resolve() {
-        throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
-      },
-      // Selection needs no keys, so the real decision runs against the in-memory
-      // preference and credential stores; `resolve` stays unconfigured because a
-      // credentialed config would let tests reach a live provider.
-      resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input),
-    },
+    llmCapabilityResolver,
+    chatReadiness,
     authService,
     apiPrincipalAuthenticator,
     apiPrincipalRouteInventory,
@@ -3516,6 +3565,8 @@ export const createTestDependencies = (overrides: {
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,
+    starterPackDraftService,
+    starterPackApplyService,
     agentSurfaceExtensions,
     skillCatalogService,
     skillAuthoringCatalog,
@@ -3611,6 +3662,13 @@ export const createTestApp = (overrides: {
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
+  /** Replaces the default resolver, whose `resolve` and `assertResolvable` fail for every workspace. */
+  llmCapabilityResolver?: AppDependencies["llmCapabilityResolver"];
+  /**
+   * Replaces the default chat pipeline probe, which reports every workspace as having no chat
+   * model. Feeds the workspace summary's `llmConfigured` and Ray's availability.
+   */
+  chatPipelineProbe?: ChatPipelineProbe;
   logger?: AppDependencies["logger"];
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;

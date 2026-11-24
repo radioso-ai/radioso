@@ -1,6 +1,14 @@
+import { createHash } from "node:crypto";
+
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
+import { canonicalJson } from "../../../shared/domain/canonicalContentHash.js";
 import { addressesSurface, effectiveSurfaces } from "../../../shared/domain/steeringRule.js";
-import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
+import type {
+  Directive,
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceVerdict,
+} from "@radioso/conversation-contract";
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
@@ -96,11 +104,72 @@ export interface AuthoredDirectiveServiceOptions {
   agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">;
 }
 
-const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
+/** The verdict saved when the coherence check could not run, or ran on inputs that have since changed. Advisory, like every verdict. */
+export const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
   coherent: true,
   conflicts: [],
   rationale: "Coherence check unavailable.",
 });
+
+/** One directive to check before it is saved; `ref` stays stable until it has a real id. */
+export interface DirectiveCoherenceCandidate {
+  ref: string;
+  input: AuthoredDirectiveInput;
+}
+
+export interface DirectiveCoherenceAssessment {
+  verdicts: Array<{ ref: string; verdict: DirectiveCoherenceVerdict }>;
+  /** SHA-256 over every input the checker read, as built by `buildCoherenceCheckInput`. */
+  contextToken: string;
+}
+
+const PENDING_DIRECTIVE_ID_PREFIX = "pending-directive:";
+
+/** How a not-yet-saved candidate is referenced in coherence inputs and conflicts. */
+export const pendingDirectiveId = (ref: string): string => `${PENDING_DIRECTIVE_ID_PREFIX}${ref}`;
+
+/** What a candidate is compared with: enabled directives, then earlier candidates, then built-ins. */
+const comparisonPool = (existingDirectives: AuthoredDirective[], earlierCandidates: Directive[] = []): Directive[] => [
+  // A disabled directive cannot fire, so it cannot conflict with the candidate;
+  // including it would flag noise the operator can't act on.
+  ...existingDirectives.filter((directive) => directive.enabled).map((directive) => authoredDirectiveToDirective(directive)),
+  ...earlierCandidates,
+  ...defaultAnswerDirectives,
+];
+
+/**
+ * The one place a coherence check's input is built. The checker receives exactly this, and the
+ * context token hashes exactly this, so every model input (agent instructions, locale and model
+ * override, the candidate, the comparison set narrowed to the candidate's generation surfaces,
+ * and the built-in defaults) is covered by the token.
+ *
+ * The model that judges coherence is not part of the input because it cannot vary per workspace:
+ * the chat pipeline the checker runs on pins the deployment's chat provider and model, and the
+ * checker's prompt is a constant shipped with `@radioso/conversation-defaults`. If either becomes
+ * workspace-configurable, add it here. `directive-coherence-inference-config.test.ts` fails first.
+ */
+const buildCoherenceCheckInput = (
+  workspaceId: string,
+  agent: AuthoredDirectiveAgentContext,
+  candidate: Directive,
+  pool: Directive[],
+): DirectiveCoherenceCheckInput => ({
+  invocationContext: { workspaceId, agentId: agent.id },
+  agent: {
+    id: agent.id,
+    name: agent.name,
+    instructions: [agent.customInstruction, agent.greetingInstruction].filter((instruction) => instruction.trim().length > 0),
+    defaultLocale: agent.assistantDefaultLocale,
+    model: agent.chatModelOverride,
+  },
+  candidate,
+  existingDirectives: pool.filter((directive) =>
+    effectiveSurfaces(candidate.surfaces).some((surface) => addressesSurface(directive.surfaces, surface)),
+  ),
+});
+
+const coherenceContextTokenOf = (inputs: ReadonlyArray<{ input: DirectiveCoherenceCheckInput }>): string =>
+  createHash("sha256").update(canonicalJson(JSON.parse(JSON.stringify(inputs.map((entry) => entry.input))) as unknown)).digest("hex");
 
 const disabledCandidateVerdict = (): DirectiveCoherenceVerdict => ({
   coherent: true,
@@ -134,17 +203,31 @@ export class AuthoredDirectiveService {
     return this.options.repository.listDirectives(agentId, workspaceId);
   }
 
-  async create(workspaceId: string, agentId: string, input: AuthoredDirectiveInput, options?: AuthoredDirectiveVersionOptions): Promise<AuthoredDirectiveSaveResult> {
+  /**
+   * `options.assessedCoherence` is a verdict `assessCoherence` produced for this exact input,
+   * and is used instead of checking again. Pass it only after confirming, with
+   * `coherenceContextToken`, that nothing the check read has changed since.
+   */
+  async create(
+    workspaceId: string,
+    agentId: string,
+    input: AuthoredDirectiveInput,
+    options: AuthoredDirectiveVersionOptions & { assessedCoherence?: DirectiveCoherenceVerdict } = {},
+  ): Promise<AuthoredDirectiveSaveResult> {
+    const { assessedCoherence, ...versionOptions } = options;
     const agent = await this.requireAgent(workspaceId, agentId);
     const directive = this.validateInput(input);
     await this.validateBinding(workspaceId, agentId, directive);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
     this.validateReplacementNames(directive.excludes, existingDirectives);
-    const coherence = options?.coherence === "skip" ? coherenceSkippedVerdict() : await this.checkCoherence(workspaceId, agent, directive, existingDirectives);
+    const coherence = assessedCoherence
+      ?? (versionOptions.coherence === "skip"
+        ? coherenceSkippedVerdict()
+        : await this.checkCoherence(workspaceId, agent, directive, existingDirectives));
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
       ...directive,
       routes: [],
-    }, options);
+    }, versionOptions);
     return { directive: saved, coherence };
   }
 
@@ -330,6 +413,17 @@ export class AuthoredDirectiveService {
     candidate: NormalizedAuthoredDirectiveInput,
     existingDirectives: AuthoredDirective[],
   ): Promise<DirectiveCoherenceVerdict> {
+    return this.runCoherenceCheck(
+      candidate,
+      buildCoherenceCheckInput(workspaceId, agent, authoredDirectiveToDirective(candidate), comparisonPool(existingDirectives)),
+    );
+  }
+
+  /** Runs the checker on an input from `buildCoherenceCheckInput`, keeping its skip and fail-open rules. */
+  private async runCoherenceCheck(
+    candidate: NormalizedAuthoredDirectiveInput,
+    input: DirectiveCoherenceCheckInput,
+  ): Promise<DirectiveCoherenceVerdict> {
     // A disabled candidate is out of play and cannot fire, so it cannot conflict with
     // anything - skip the LLM round-trip entirely. This matters because disabling is the
     // emergency action an operator takes when a rule misfires; it must not cost a provider
@@ -338,41 +432,86 @@ export class AuthoredDirectiveService {
     // reintroduced conflict would matter.
     if (!candidate.enabled) return disabledCandidateVerdict();
     try {
-      return await this.checkCoherenceStrict(workspaceId, agent, candidate, existingDirectives);
+      return await this.options.coherenceChecker.check(input);
     } catch {
       return coherenceUnavailableVerdict();
     }
   }
 
+  /** The checker's own verdict, or its error: no disabled-candidate skip and no fail-open. */
   private async checkCoherenceStrict(
     workspaceId: string,
     agent: AuthoredDirectiveAgentContext,
     candidate: NormalizedAuthoredDirectiveInput,
     existingDirectives: AuthoredDirective[],
   ): Promise<DirectiveCoherenceVerdict> {
-      const candidateDirective = authoredDirectiveToDirective(candidate);
-      const comparisonDirectives = [
-        // A disabled directive cannot fire, so it cannot conflict with the candidate;
-        // including it would flag noise the operator can't act on.
-        ...existingDirectives.filter((directive) => directive.enabled).map((directive) => authoredDirectiveToDirective(directive)),
-        ...defaultAnswerDirectives,
-      ].filter((directive) =>
-        effectiveSurfaces(candidateDirective.surfaces).some((surface) =>
-          addressesSurface(directive.surfaces, surface),
+    return this.options.coherenceChecker.check(
+      buildCoherenceCheckInput(workspaceId, agent, authoredDirectiveToDirective(candidate), comparisonPool(existingDirectives)),
+    );
+  }
+
+  /**
+   * The coherence inputs for a batch of candidates that will be created in order: each one is
+   * compared with the agent's enabled directives, the built-in defaults, and the enabled
+   * candidates before it, which is the set it would see if created after them. An earlier
+   * candidate is referenced by `pendingDirectiveId(ref)` until it has a real id.
+   */
+  private async buildSequentialCoherenceInputs(
+    workspaceId: string,
+    agentId: string,
+    candidates: ReadonlyArray<DirectiveCoherenceCandidate>,
+  ): Promise<Array<{ candidate: NormalizedAuthoredDirectiveInput; input: DirectiveCoherenceCheckInput }>> {
+    const agent = await this.requireAgent(workspaceId, agentId);
+    const normalized = candidates.map((candidate) => ({ ref: candidate.ref, directive: this.validateInput(candidate.input) }));
+    const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
+    return normalized.map((candidate, index) => {
+      const earlierCandidates = normalized
+        .slice(0, index)
+        .filter((earlier) => earlier.directive.enabled)
+        .map((earlier) => ({ ...authoredDirectiveToDirective(earlier.directive), id: pendingDirectiveId(earlier.ref) }));
+      return {
+        candidate: candidate.directive,
+        input: buildCoherenceCheckInput(
+          workspaceId,
+          agent,
+          authoredDirectiveToDirective(candidate.directive),
+          comparisonPool(existingDirectives, earlierCandidates),
         ),
-      );
-      return this.options.coherenceChecker.check({
-        invocationContext: { workspaceId, agentId: agent.id },
-        agent: {
-          id: agent.id,
-          name: agent.name,
-          instructions: [agent.customInstruction, agent.greetingInstruction].filter((instruction) => instruction.trim().length > 0),
-          defaultLocale: agent.assistantDefaultLocale,
-          model: agent.chatModelOverride,
-        },
-        candidate: candidateDirective,
-        existingDirectives: comparisonDirectives,
-      });
+      };
+    });
+  }
+
+  /**
+   * Checks candidates that will be created in order, without saving them, and returns their
+   * verdicts with a token over every input the checker read. A caller that saves them later,
+   * after re-reading the agent, compares `coherenceContextToken` with this token before passing
+   * the verdicts to `create`. Each candidate's binding is validated as `create` would.
+   */
+  async assessCoherence(
+    workspaceId: string,
+    agentId: string,
+    candidates: ReadonlyArray<DirectiveCoherenceCandidate>,
+  ): Promise<DirectiveCoherenceAssessment> {
+    const inputs = await this.buildSequentialCoherenceInputs(workspaceId, agentId, candidates);
+    for (const { candidate } of inputs) {
+      await this.validateBinding(workspaceId, agentId, candidate);
+    }
+    // Each input is complete before any check runs and none depends on another's verdict, so the
+    // checks run concurrently; Promise.all keeps the verdicts in candidate order.
+    const verdicts = await Promise.all(inputs.map(async ({ candidate, input }, index) => ({
+      ref: candidates[index]?.ref ?? "",
+      verdict: await this.runCoherenceCheck(candidate, input),
+    })));
+    return { verdicts, contextToken: coherenceContextTokenOf(inputs) };
+  }
+
+  /** The token `assessCoherence` would return for these candidates now, without calling the model. */
+  async coherenceContextToken(
+    workspaceId: string,
+    agentId: string,
+    candidates: ReadonlyArray<DirectiveCoherenceCandidate>,
+  ): Promise<string> {
+    return coherenceContextTokenOf(await this.buildSequentialCoherenceInputs(workspaceId, agentId, candidates));
   }
 
   private async requireAgent(workspaceId: string, agentId: string): Promise<AuthoredDirectiveAgentContext> {

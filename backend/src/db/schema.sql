@@ -891,6 +891,22 @@ CREATE TABLE public.agent_skills (
 
 
 --
+-- Name: agent_starter_pack_applies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_starter_pack_applies (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    idempotency_key text NOT NULL,
+    request_fingerprint text NOT NULL,
+    result jsonb NOT NULL,
+    actor_account_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: agent_test_execution_attempts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5294,6 +5310,14 @@ ALTER TABLE ONLY public.agent_skills
 
 
 --
+-- Name: agent_starter_pack_applies agent_starter_pack_applies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_starter_pack_applies
+    ADD CONSTRAINT agent_starter_pack_applies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_test_execution_attempts agent_test_execution_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7299,6 +7323,13 @@ CREATE UNIQUE INDEX agent_revisions_agent_published_version_key ON public.agent_
 --
 
 CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING btree (agent_id) WHERE (invocation_mode = 'default_answer'::text);
+
+
+--
+-- Name: agent_starter_pack_applies_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_starter_pack_applies_idempotency_key_key ON public.agent_starter_pack_applies USING btree (workspace_id, agent_id, idempotency_key);
 
 
 --
@@ -11534,6 +11565,30 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agent_skills
     ADD CONSTRAINT agent_skills_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_starter_pack_applies agent_starter_pack_applies_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_starter_pack_applies
+    ADD CONSTRAINT agent_starter_pack_applies_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_starter_pack_applies agent_starter_pack_applies_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_starter_pack_applies
+    ADD CONSTRAINT agent_starter_pack_applies_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_starter_pack_applies agent_starter_pack_applies_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_starter_pack_applies
+    ADD CONSTRAINT agent_starter_pack_applies_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

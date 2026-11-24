@@ -983,7 +983,7 @@ export class AgentRepository implements AgentRepositoryPort {
             lifecycle,
             enabled,
             coverage_criteria,
-            metadata
+            metadata, created_at
           )
           SELECT
             matched_agent.id,
@@ -1003,7 +1003,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${toJsonb(directive.lifecycle)},
             ${directive.enabled},
             ${directive.coverageCriteria ? toJsonb(directive.coverageCriteria) : null},
-            ${toJsonb(directive.metadata)}
+            ${toJsonb(directive.metadata)}, clock_timestamp() -- not now(): directives created in one transaction list in creation order
           FROM matched_agent
           RETURNING *
         `.execute(trx);

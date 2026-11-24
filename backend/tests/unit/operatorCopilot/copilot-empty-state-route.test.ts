@@ -9,7 +9,7 @@ const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
 const USER_ID = "33333333-3333-3333-8333-333333333333";
 const WORKSPACE_ID = "11111111-1111-1111-8111-111111111111";
 
-const mount = (overrides: { get?: ReturnType<typeof vi.fn>; permissions?: (permission: string) => boolean; llm?: () => Promise<unknown>; enforce?: ReturnType<typeof vi.fn> } = {}) => {
+const mount = (overrides: { get?: ReturnType<typeof vi.fn>; permissions?: (permission: string) => boolean; llmConfigured?: () => Promise<boolean>; enforce?: ReturnType<typeof vi.fn> } = {}) => {
   const get = overrides.get ?? vi.fn(async () => ({ phase: "setup", firstConversationHappened: false, greeting: "Hi", suggestions: [] }));
   const enforce = overrides.enforce ?? vi.fn(async () => admittedAbuseControlDecision());
   const app = express();
@@ -29,7 +29,7 @@ const mount = (overrides: { get?: ReturnType<typeof vi.fn>; permissions?: (permi
       async requirePermission() {},
       hasPermission: vi.fn(async ({ permission }: { permission: string }) => overrides.permissions ? overrides.permissions(permission) : true),
     },
-    llmCapabilityResolver: { resolve: overrides.llm ?? (async () => ({})) },
+    chatReadiness: { isChatConfigured: overrides.llmConfigured ?? (async () => true) },
     operatorCopilotService: {},
     copilotEmptyStateService: { get },
     copilotToolCatalog: [],
@@ -76,7 +76,7 @@ describe("GET /api/v1/copilot/empty-state", () => {
   });
 
   it("keeps the no-LLM answer Ray's turns give, so the dashboard shows Connect an LLM", async () => {
-    const { app, get } = mount({ llm: async () => { throw new Error("no chat model"); } });
+    const { app, get } = mount({ llmConfigured: async () => false });
     const response = await request(app).get("/api/v1/copilot/empty-state").set("Cookie", "radioso_session=valid-session");
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ reason: "no_llm_capability" });

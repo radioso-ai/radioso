@@ -7,7 +7,7 @@ name: Publish n8n community node
 #
 # Publishing relies on npm Trusted Publishing (OIDC) alone. No npm token is read here, so a leaked
 # token cannot publish this package. One-time owner setup:
-#   - create the `npm-publish` GitHub environment with a required reviewer;
+#   - create the `npm-publish` GitHub environment, limited to `n8n-nodes-radioso-v*` tags;
 #   - on npmjs.com bind the package's Trusted Publisher to owner radioso-ai, repository radioso,
 #     workflow publish-n8n-node.yml and environment npm-publish, and turn on "disallow tokens";
 #   - add tag rulesets for `n8n-nodes-radioso-v*` so only maintainers can create them.
@@ -69,8 +69,24 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Build
+        run: npm run build
+
       - name: Pack
-        run: npm pack --pack-destination "$RUNNER_TEMP/package"
+        run: |
+          mkdir -p "$RUNNER_TEMP/package"
+          npm pack --pack-destination "$RUNNER_TEMP/package"
+
+      - name: Check the tarball carries every declared node and credential
+        run: |
+          contents="$(tar -tzf "$RUNNER_TEMP"/package/*.tgz)"
+          node -p "const n = require('./package.json').n8n; [...n.credentials, ...n.nodes].join('\n')" |
+            while read -r path; do
+              if ! grep -qxF "package/${path}" <<<"$contents"; then
+                echo "The tarball is missing ${path}." >&2
+                exit 1
+              fi
+            done
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
@@ -108,5 +124,6 @@ jobs:
           name: n8n-node-package
           path: package
 
+      # The ./ prefix keeps npm from reading package/<file> as a GitHub owner/repo spec.
       - name: Publish with provenance
-        run: npm publish package/*.tgz --provenance --access public
+        run: npm publish ./package/*.tgz --provenance --access public

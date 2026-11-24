@@ -408,6 +408,9 @@ components:
           type: boolean
         setup:
           $ref: "#/components/schemas/WorkspaceSetupState"
+        llmConfigured:
+          type: boolean
+          description: "Whether the platform's chat model can run for this workspace: the chat provider and model this deployment runs Ray and starter pack drafting on, with a readable API key for that provider (the workspace's own or the deployment's) and any base URL it needs. The provider the workspace chose for its own agents does not change it. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured naming the provider whose key is missing."
       required:
         - documentCount
         - readyDocumentCount
@@ -422,6 +425,7 @@ components:
         - sampleDocumentsImported
         - websiteCrawlerEnabled
         - setup
+        - llmConfigured
     RegisterRequest:
       type: object
       properties:
@@ -16462,6 +16466,233 @@ components:
 
         event: complete
         data: {"suggestedName":"Acme Support","sourceUrl":"https://acme.example.com","pagesAnalyzed":[]}
+    StarterPackDraftRequest:
+      type: object
+      properties:
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+        - purpose
+      additionalProperties: false
+      description: The agent's purpose in plain language, in any language. The suggestions are written in the language it is detected to be in.
+    StarterPackDraftResponse:
+      type: object
+      properties:
+        outputLanguage:
+          type:
+            - string
+            - "null"
+          description: The detected language label, such as German, or null when it could not be detected and the suggestions mirror the purpose's language.
+        items:
+          type: array
+          items:
+            anyOf:
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                    description: Identifies the suggestion within one draft; send it back unchanged when applying.
+                  kind:
+                    type: string
+                    enum:
+                      - directive
+                  directive:
+                    $ref: "#/components/schemas/AuthoredDirectiveCreateRequest"
+                  conflict:
+                    type:
+                      - string
+                      - "null"
+                    enum:
+                      - name_exists
+                      - null
+                    description: name_exists when the agent already has a directive or routine with this name. Applying a pack that includes it is refused with 409 starter_pack_name_conflict; nothing existing is ever overwritten.
+                required:
+                  - itemKey
+                  - kind
+                  - directive
+                  - conflict
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                    description: Identifies the suggestion within one draft; send it back unchanged when applying.
+                  kind:
+                    type: string
+                    enum:
+                      - routine
+                  routine:
+                    $ref: "#/components/schemas/RoutineDefinitionCreateRequest"
+                  procedure:
+                    type: string
+                    description: The plain-language procedure the routine definition was drafted from.
+                  validation:
+                    $ref: "#/components/schemas/RoutineValidationResult"
+                  conflict:
+                    type:
+                      - string
+                      - "null"
+                    enum:
+                      - name_exists
+                      - null
+                    description: name_exists when the agent already has a directive or routine with this name. Applying a pack that includes it is refused with 409 starter_pack_name_conflict; nothing existing is ever overwritten.
+                required:
+                  - itemKey
+                  - kind
+                  - routine
+                  - procedure
+                  - validation
+                  - conflict
+          description: One to 6 directives and exactly one routine. Nothing is saved.
+      required:
+        - outputLanguage
+        - items
+    StarterPackApplyRequest:
+      type: object
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]+$
+          description: Client-chosen key for this apply. Sending the same key with the same items returns the first result instead of creating anything again; the same key with different items is refused.
+        items:
+          type: array
+          items:
+            anyOf:
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                    description: Identifies the suggestion within one draft; send it back unchanged when applying.
+                  kind:
+                    type: string
+                    enum:
+                      - directive
+                  directive:
+                    $ref: "#/components/schemas/AuthoredDirectiveCreateRequest"
+                required:
+                  - itemKey
+                  - kind
+                  - directive
+                additionalProperties: false
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                    description: Identifies the suggestion within one draft; send it back unchanged when applying.
+                  kind:
+                    type: string
+                    enum:
+                      - routine
+                  routine:
+                    $ref: "#/components/schemas/RoutineDefinitionCreateRequest"
+                required:
+                  - itemKey
+                  - kind
+                  - routine
+                additionalProperties: false
+          minItems: 1
+          maxItems: 7
+          description: "Only the items the user selected, possibly edited: at most 6 directives and one routine, with unique item keys and directive names. A draft's directive item sends its itemKey, kind, and directive; a draft's routine item sends its itemKey, kind, and routine, without procedure, validation, or conflict."
+      required:
+        - idempotencyKey
+        - items
+      additionalProperties: false
+    StarterPackApplyResponse:
+      type: object
+      properties:
+        applyId:
+          type: string
+        items:
+          type: array
+          items:
+            anyOf:
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                      - directive
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  coherence:
+                    type: object
+                    properties:
+                      coherent:
+                        type: boolean
+                      conflicts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            directiveId:
+                              type: string
+                            directiveName:
+                              type: string
+                            reason:
+                              type: string
+                          required:
+                            - directiveName
+                            - reason
+                          additionalProperties: false
+                      rationale:
+                        type: string
+                    required:
+                      - coherent
+                      - conflicts
+                      - rationale
+                    additionalProperties: false
+                required:
+                  - itemKey
+                  - kind
+                  - id
+                  - name
+                  - coherence
+                additionalProperties: false
+              - type: object
+                properties:
+                  itemKey:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                      - routine
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  validation:
+                    $ref: "#/components/schemas/RoutineValidationResult"
+                required:
+                  - itemKey
+                  - kind
+                  - id
+                  - name
+                  - validation
+                additionalProperties: false
+        replayed:
+          type: boolean
+          description: True when this request repeated an earlier one with the same key; nothing new was created.
+      required:
+        - applyId
+        - items
+        - replayed
+      additionalProperties: false
+      description: "Created items with their ids. Each directive item includes its advisory coherence verdict; a conflict's directiveId names the directive it conflicts with, including one created by the same apply. The routine item includes its validation, as the routine create endpoint returns it: a routine that is not ok is saved, and publishing the agent's draft is refused until it is fixed or disabled."
     AudiencePulseGrounding:
       type: object
       properties:
@@ -29877,6 +30108,148 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Routine draft could not be generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/starter-pack/draft:
+    post:
+      tags:
+        - Agents
+      summary: Draft a starter pack of directives and one routine from the agent's purpose
+      description: Suggests one to six directives and exactly one routine from a plain-language purpose, written in the language the purpose is detected to be in. Nothing is saved; send the items you keep to the apply operation.
+      operationId: draftAgentStarterPack
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StarterPackDraftRequest"
+      responses:
+        "200":
+          description: Suggestions returned; nothing saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarterPackDraftResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The caller cannot manage agents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: invalid_starter_pack_draft when the model did not return a valid pack or routine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Starter pack drafting rate limit reached. Only a request that reaches its model calls counts against it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: provider_misconfigured when the platform's chat model has no usable API key for this workspace (details.provider names the provider to add a key for), or llm_unavailable when the model call failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/starter-pack/apply:
+    post:
+      tags:
+        - Agents
+      summary: Create the selected starter pack items
+      description: Creates exactly the selected directives and routine in the agent's draft, all or nothing, in request order. Existing directives and routines are never overwritten. Names and excludes are checked before any model call. Each directive carries an advisory coherence verdict and the routine its validation result. Repeating a request with the same idempotency key returns the first result. Items are not published; publish the agent's draft as usual.
+      operationId: applyAgentStarterPack
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StarterPackApplyRequest"
+      responses:
+        "200":
+          description: This idempotency key was already applied; the stored result is returned and nothing new is created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarterPackApplyResponse"
+        "201":
+          description: Every selected item was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarterPackApplyResponse"
+        "400":
+          description: Request validation failed, or a directive's excludes names a directive that is neither on the agent nor listed before it in the pack (details list the items). Nothing was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The caller cannot manage agents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: starter_pack_name_conflict when a selected name is already used on the agent (details list the items), or idempotency_key_reused when the key was used for different items. Nothing was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Starter pack apply rate limit reached. A replay, or an apply refused for its names or excludes, does not count against it.
           content:
             application/json:
               schema:

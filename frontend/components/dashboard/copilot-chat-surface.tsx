@@ -52,6 +52,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import { workspaceDashboardHref } from '@/lib/copilot-dashboard-path'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildProviderSettingsHref, isLlmMissing } from '@/lib/llm-readiness'
 import {
   resolveCopilotEntityLabel,
   useCopilotContext,
@@ -551,14 +552,14 @@ export function CopilotChatSurface({
 
   if (session.permissionDenied) return null
 
-  if (session.availability?.reason === 'no_llm_capability') {
+  if (isLlmMissing(session.availability)) {
     return (
       <Card className="m-4 max-w-xl sm:m-6">
         <CardContent className="space-y-3 p-6">
           <h2 className="text-base font-medium">Connect an LLM to use Ray</h2>
-          <p className="text-sm text-muted-foreground">Choose a workspace provider or configure the default provider before starting a conversation.</p>
+          <p className="text-sm text-muted-foreground">Ray runs on this deployment&apos;s chat model. Add an API key for its provider in provider settings.</p>
           <Button asChild variant="outline">
-            <a href={buildDashboardHref(accountId, { section: 'settings', settingsTab: 'providers', ...workspaceParts })}>
+            <a href={buildProviderSettingsHref(accountId, workspaceParts)}>
               Open provider settings for Ray <ExternalLink className="ml-2 h-4 w-4" aria-hidden />
             </a>
           </Button>

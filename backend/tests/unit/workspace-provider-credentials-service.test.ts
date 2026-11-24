@@ -395,6 +395,21 @@ describe("WorkspaceProviderCredentialsService", () => {
       });
       expect(onErrorSpy).toHaveBeenCalledOnce();
     });
+
+    it("still throws but does not notify the decrypt-error listener when the read is a quiet probe", async () => {
+      const repo = createRepository();
+      const audit = createAudit();
+      const wrongKey = Buffer.from("ffffffffffffffffffffffffffffffff").toString("base64");
+      const writerService = new WorkspaceProviderCredentialsService(repo, audit, configWithKey);
+      await writerService.setApiKey({ workspaceId: WORKSPACE_ID, provider: "openai", apiKey: "key", actor: { accountId: "acc-1" } });
+
+      const reader = new WorkspaceProviderCredentialsService(repo, audit, { key: { current: wrongKey, previous: [] } });
+      const onErrorSpy = vi.fn();
+      reader.onDecryptError(onErrorSpy);
+
+      await expect(reader.getApiKey(WORKSPACE_ID, "openai", { quiet: true })).rejects.toMatchObject({ code: "provider_misconfigured" });
+      expect(onErrorSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe("guard rails", () => {

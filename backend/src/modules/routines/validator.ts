@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { RoutineDefinition } from "./domain.js";
 import { collectContextVariableRefs, presentBindingOf, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
@@ -139,6 +141,16 @@ export interface RoutineValidationResult {
   ok: boolean;
   diagnostics: RoutineValidationDiagnostic[];
 }
+
+/** A `RoutineValidationResult` as the authoring endpoints return it, for a caller that stores or replays one. */
+export const routineValidationResultSchema = z.object({
+  ok: z.boolean(),
+  diagnostics: z.array(z.object({
+    code: z.enum(routineValidationCodes),
+    location: z.string(),
+    message: z.string(),
+  })),
+}) satisfies z.ZodType<RoutineValidationResult>;
 
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;

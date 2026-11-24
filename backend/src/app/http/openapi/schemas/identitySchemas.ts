@@ -173,6 +173,9 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       sampleDocumentsImported: z.boolean(),
       websiteCrawlerEnabled: z.boolean(),
       setup: WorkspaceSetupStateSchema,
+      llmConfigured: z.boolean().openapi({
+        description: "Whether the platform's chat model can run for this workspace: the chat provider and model this deployment runs Ray and starter pack drafting on, with a readable API key for that provider (the workspace's own or the deployment's) and any base URL it needs. The provider the workspace chose for its own agents does not change it. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured naming the provider whose key is missing.",
+      }),
     }),
   );
 

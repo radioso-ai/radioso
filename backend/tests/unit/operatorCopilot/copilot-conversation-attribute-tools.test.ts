@@ -4,7 +4,7 @@ import type { ConversationAttribute } from "../../../src/modules/context-variabl
 import { createConversationAttributeCopilotTools } from "../../../src/modules/operatorCopilot/tools/conversationAttributes.js";
 import type { ConversationAttributeCopilotToolDependencies } from "../../../src/modules/operatorCopilot/tools/conversationAttributes.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/contracts.js";
-import { notFound } from "../../../src/shared/domain/errors.js";
+import { AppError, notFound } from "../../../src/shared/domain/errors.js";
 
 const CONVERSATION_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -114,6 +114,19 @@ describe("set_conversation_attribute and reset_conversation_attribute (#1884)", 
       .createTool(contextOn("mcp"))
       .invoke({ conversationId: CONVERSATION_ID, name: "urgency", value: "high" }, {} as never))
       .rejects.toMatchObject({ statusCode: 404, message: "No attribute is named urgency" });
+  });
+
+  it("takes a number or a yes/no as the value, so a set of a typed attribute reaches the edit's own refusal rather than a bare schema error (D2)", async () => {
+    const deps = dependencies();
+    deps.conversationAttributeEdits.set.mockRejectedValueOnce(new AppError(400, "attribute_not_editable",
+      "party_size is not a Choice: a teammate picks only a Choice's option here, and clears a value of any other type; the host sets one through the values API",
+      { reason: "not_choice" }));
+    const tool = toolNamed(deps, "set_conversation_attribute");
+
+    expect(tool.inputSchema.safeParse({ conversationId: CONVERSATION_ID, name: "wants_newsletter", value: true }).success).toBe(true);
+    await expect(tool.createTool(contextOn("mcp")).invoke({ conversationId: CONVERSATION_ID, name: "party_size", value: 5 }, {} as never))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining("party_size is not a Choice") });
+    expect(deps.conversationAttributeEdits.set).toHaveBeenCalledWith(expect.objectContaining({ name: "party_size", value: "5" }));
   });
 
   it("requires an explicit conversation id, since an MCP client has no page", () => {

@@ -14,7 +14,10 @@ const targetFields = {
   conversationId: z.string().uuid(),
   name: z.string().min(1).max(120),
 };
-const setInputSchema = z.object({ ...targetFields, value: z.string().min(1).max(120) }).strict();
+// A number or a yes/no is taken as its text, so a set of a typed attribute meets the edit's own
+// refusal, which says setting picks a Choice's option and any other type is only cleared, rather
+// than a bare schema error that names no reason.
+const setInputSchema = z.object({ ...targetFields, value: z.union([z.string().min(1).max(120), z.number(), z.boolean()]) }).strict();
 const resetInputSchema = z.object(targetFields).strict();
 
 const outputSchema = z.object({
@@ -27,7 +30,7 @@ type SetInput = z.infer<typeof setInputSchema>;
 type ResetInput = z.infer<typeof resetInputSchema>;
 type Output = z.infer<typeof outputSchema>;
 
-const setDescription = "Set a Choice attribute on one conversation, as the operator: value is the option key, as context_variables lists it, not its label. The value is the conversation's own, overrides one set for the visitor's session or customer, and the AI never replaces it. Setting the option the AI chose keeps it so; setting the one already set by a teammate changes nothing. A Private attribute, or one that is not a Choice, is refused. conversation_transcript reads the result.";
+const setDescription = "Set a Choice attribute on one conversation, as the operator: value is the option key, as context_variables lists it, not its label. The value is the conversation's own, overrides one set for the visitor's session or customer, and the AI never replaces it. Setting the option the AI chose keeps it so; setting the one already set by a teammate changes nothing. A Private attribute, or one that is not a Choice, is refused: clear a Number, Date or Yes/no value with reset_conversation_attribute. conversation_transcript reads the result.";
 const resetDescription = "Reset a conversation's own value of an attribute of any type, such as a wrong value a routine saved. When the conversation's agent fills the attribute with the AI, the AI is asked to fill it again now and classificationQueued is true; otherwise the value is cleared, and a value set for the visitor's session or customer shows through. A conversation with no value of its own is left as it is. A Private attribute is refused.";
 
 const ACT_PERMISSIONS = ["workspace.history.read", "workspace.conversation.takeover"] as const;
@@ -63,7 +66,7 @@ const setTool = (deps: ConversationAttributeCopilotToolDependencies): CopilotToo
       workspaceId: context.workspaceId,
       conversationId,
       name,
-      value,
+      value: String(value),
       actor: actorOf(context),
     })),
   }),

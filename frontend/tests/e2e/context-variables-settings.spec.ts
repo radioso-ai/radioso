@@ -69,6 +69,8 @@ test("an operator creates Yes/no, Number and Date attributes, each stored as its
     await page.getByRole("option", { name: typeLabel, exact: true }).click();
     await dialog.getByRole("button", { name: "Add attribute" }).click();
 
+    // The next round opens a new dialog; wait for this one to close so its locators can't match it.
+    await expect(dialog).toBeHidden();
     await expect(page.getByText(`@${name}`, { exact: true })).toBeVisible();
     await expect.poll(() =>
       contextVariableRequests.some((request) =>

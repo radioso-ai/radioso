@@ -1,5 +1,6 @@
+import { isIsoCalendarDate } from "@radioso/conversation-contract";
+
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
-import { isIsoCalendarDate } from "../../shared/domain/calendarDate.js";
 import type { ContextVariable, ContextVariableOption, ContextVariableValueType } from "./domain.js";
 import { contextVariableOptionSchema } from "./optionSchema.js";
 

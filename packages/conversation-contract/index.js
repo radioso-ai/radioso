@@ -1,4 +1,4 @@
-// Runtime values of the `declare`d consts and functions in index.d.ts; everything else in the contract is types only.
+// Runtime values of the `declare`d consts and functions index.d.ts exports; everything else in the contract is types only.
 
 export const REPLY_OUTCOMES = Object.freeze(["answered", "no_context", "out_of_scope", "unavailable"]);
 
@@ -13,6 +13,19 @@ export const redactSensitiveValues = (values, sensitiveKeys) => {
   return Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key, sensitive.has(key) ? REDACTED_VALUE : value]),
   );
+};
+
+// ISO calendar date (YYYY-MM-DD). Protocol syntax, not a keyword list.
+const ISO_CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
+
+// `Date.UTC` reads a year from 0 to 99 as 1900 to 1999, so such a date never round-trips and is
+// refused; no date a visitor or a host gives falls there.
+export const isIsoCalendarDate = (value) => {
+  const match = ISO_CALENDAR_DATE_PATTERN.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 };
 
 export const ROUTINE_ITEM_VALUE_LIMITS = Object.freeze({ key: 128, title: 160, link: 2048, fields: 12, fieldKey: 64, fieldValue: 200 });

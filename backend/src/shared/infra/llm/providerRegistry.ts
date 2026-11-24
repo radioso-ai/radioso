@@ -240,7 +240,7 @@ export class LlmProviderRegistry {
   /**
    * Whether the chat inference pipeline (`createChatInferencePipeline`, and the tool-calling
    * gateway Ray runs on) could resolve a credentialed config for this workspace: the same
-   * resolution a call makes, checked without a model call and without decrypting a key. Throws
+   * resolution a call makes, key read included, checked without a model call. Throws
    * the `ProviderConfigurationError` such a call would fail with.
    */
   async assertChatPipelineResolvable(workspaceId: string): Promise<void> {

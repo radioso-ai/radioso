@@ -49,7 +49,11 @@ const createDependencies = (overrides: Record<string, unknown> = {}) => {
     accountAccessService: { requirePermission: vi.fn().mockResolvedValue(undefined) },
     workspaceSessionService: {},
     abuseControlService: { enforce: vi.fn().mockResolvedValue(undefined) },
-    starterPackApplyService: { apply: vi.fn().mockResolvedValue({ ...appliedResult, replayed: false }) },
+    // The service runs `beforeModelCalls` unless it replays a completed apply or refuses the pack.
+    starterPackApplyService: { apply: vi.fn(async (_workspaceId: string, _agentId: string, _actor: unknown, _request: unknown, options: { beforeModelCalls?: () => Promise<void> }) => {
+      await options.beforeModelCalls?.();
+      return { ...appliedResult, replayed: false };
+    }) },
     ...overrides,
   };
   return dependencies as typeof dependencies & AppDependencies;
@@ -78,6 +82,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/apply", () => {
       agentId,
       { accountId: "account-1" },
       expect.objectContaining({ idempotencyKey: "apply-key-0001", items: expect.any(Array) }),
+      { beforeModelCalls: expect.any(Function) },
     );
   });
 
@@ -89,6 +94,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/apply", () => {
     const response = await post(dependencies, validBody).expect(200);
 
     expect(response.body.replayed).toBe(true);
+    expect(dependencies.abuseControlService.enforce).not.toHaveBeenCalled();
   });
 
   it("accepts a pack without a routine", async () => {
@@ -97,7 +103,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/apply", () => {
     await post(dependencies, { idempotencyKey: "apply-key-0002", items: [directiveItem("directive-1", "confirm-details")] }).expect(201);
   });
 
-  it("applies the wizard-style rate limit", async () => {
+  it("spends the apply rate limit just before the model calls", async () => {
     const dependencies = createDependencies();
 
     await post(dependencies, validBody).expect(201);
@@ -111,14 +117,12 @@ describe("POST /api/v1/agents/:agentId/starter-pack/apply", () => {
     });
   });
 
-  it("returns 429 without applying when the rate limit is exhausted", async () => {
+  it("returns 429 when the rate limit is exhausted", async () => {
     const dependencies = createDependencies({
       abuseControlService: { enforce: vi.fn().mockRejectedValue(tooManyRequests("Too many requests")) },
     });
 
     await post(dependencies, validBody).expect(429);
-
-    expect(dependencies.starterPackApplyService.apply).not.toHaveBeenCalled();
   });
 
   it.each([

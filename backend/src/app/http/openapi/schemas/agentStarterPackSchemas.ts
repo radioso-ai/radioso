@@ -2,19 +2,25 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import {
+  STARTER_PACK_MAX_APPLY_ITEMS,
+  STARTER_PACK_MAX_DIRECTIVES,
   starterPackAppliedDirectiveSchema,
   starterPackAppliedRoutineSchema,
+  starterPackApplyRequestSchema,
   starterPackDraftRequestSchema,
+  starterPackIdempotencyKeySchema,
+  starterPackItemKeySchema,
 } from "../../../../modules/agentStarterPack/public.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 /**
  * The starter pack items reuse the directive and routine authoring schemas, so a suggestion is
  * documented as exactly what the directive and routine create endpoints accept. Must run after
- * `registerAgentSchemas`, which registers those.
+ * `registerAgentSchemas`, which registers those. The apply request's own fields and limits come
+ * from the runtime schema; only its items are swapped for the registered authoring components.
  */
 export const registerAgentStarterPackSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
-  const itemKey = z.string().min(1).max(64).openapi({ description: "Identifies the suggestion within one draft; send it back unchanged when applying." });
+  const itemKey = starterPackItemKeySchema.openapi({ description: "Identifies the suggestion within one draft; send it back unchanged when applying." });
   const conflict = z.enum(["name_exists"]).nullable().openapi({
     description: "name_exists when the agent already has a directive or routine with this name. Applying a pack that includes it is refused with 409 starter_pack_name_conflict; nothing existing is ever overwritten.",
   });
@@ -40,18 +46,19 @@ export const registerAgentStarterPackSchemas = (registry: OpenAPIRegistry, schem
         validation: schemas.RoutineValidationResultSchema,
         conflict,
       }),
-    ])).openapi({ description: "One to six directives and exactly one routine. Nothing is saved." }),
+    ])).openapi({ description: `One to ${STARTER_PACK_MAX_DIRECTIVES} directives and exactly one routine. Nothing is saved.` }),
   }));
 
   schemas.StarterPackApplyRequestSchema = registry.register("StarterPackApplyRequest", z.object({
-    idempotencyKey: z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/u).openapi({
+    ...starterPackApplyRequestSchema.shape,
+    idempotencyKey: starterPackIdempotencyKeySchema.openapi({
       description: "Client-chosen key for this apply. Sending the same key with the same items returns the first result instead of creating anything again; the same key with different items is refused.",
     }),
     items: z.array(z.union([
       z.object({ itemKey, kind: z.literal("directive"), directive: schemas.AuthoredDirectiveCreateRequestSchema }).strict(),
       z.object({ itemKey, kind: z.literal("routine"), routine: schemas.RoutineDefinitionCreateRequestSchema }).strict(),
-    ])).min(1).max(7).openapi({
-      description: "Only the items the user selected, possibly edited: at most six directives and one routine, with unique item keys and directive names.",
+    ])).min(1).max(STARTER_PACK_MAX_APPLY_ITEMS).openapi({
+      description: `Only the items the user selected, possibly edited: at most ${STARTER_PACK_MAX_DIRECTIVES} directives and one routine, with unique item keys and directive names. A draft's directive item sends its itemKey, kind, and directive; a draft's routine item sends its itemKey, kind, and routine, without procedure, validation, or conflict.`,
     }),
   }).strict());
 

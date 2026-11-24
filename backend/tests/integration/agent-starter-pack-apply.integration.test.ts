@@ -129,7 +129,8 @@ describeIntegration("starter pack apply against Postgres", () => {
 
   const stateOf = async (workspaceId: string, agentId: string) => {
     const [directives, routines, applies, draft] = await Promise.all([
-      database.kysely.selectFrom("agent_directives").select(["id", "name", "action"]).where("agent_id", "=", agentId).orderBy("name").execute(),
+      // The order the agent's directives are listed and run in (`listDirectives`), not by name.
+      database.kysely.selectFrom("agent_directives").select(["id", "name", "action"]).where("agent_id", "=", agentId).orderBy("created_at").orderBy("id").execute(),
       database.kysely.selectFrom("routine_definition").select(["id", "name"]).where("agent_id", "=", agentId).orderBy("name").execute(),
       database.kysely.selectFrom("agent_starter_pack_applies").select(["idempotency_key"]).where("agent_id", "=", agentId).execute(),
       database.kysely.selectFrom("agent_drafts").select(["generation"]).where("workspace_id", "=", workspaceId).where("agent_id", "=", agentId).executeTakeFirstOrThrow(),
@@ -161,6 +162,16 @@ describeIntegration("starter pack apply against Postgres", () => {
   afterAll(async () => {
     await database.close();
     await probe.close();
+  });
+
+  it("lists the pack's directives in the order they were sent, though one transaction creates them all", async () => {
+    const { accountId, workspaceId, agentId } = await createAgent();
+    const { service } = buildService();
+    const names = ["zeta-rule", "alpha-rule", "mu-rule", "beta-rule", "omega-rule", "gamma-rule"];
+
+    await service.apply(workspaceId, agentId, { accountId }, pack(names.map((name, index) => directiveItem(`directive-${index + 1}`, name))));
+
+    expect((await agents.listDirectives(agentId, workspaceId)).map((directive) => directive.name)).toEqual(names);
   });
 
   it("applies all selected directives and the routine in one commit", async () => {
@@ -536,6 +547,7 @@ describeIntegration("starter pack apply against Postgres", () => {
     // The apply that took the lock second was assessed without the other's directive, so its verdict is stale.
     const rationales = results.map((result) => result.items[0]?.kind === "directive" ? result.items[0].coherence.rationale : null);
     expect(rationales.sort()).toEqual(["Coherence check unavailable.", "Verdict."]);
-    expect((await stateOf(workspaceId, agentId)).directives.map((row) => row.name)).toEqual(["confirm-details", "no-diagnosis"]);
+    // Which apply takes the lock first is a race, so only the set of names is fixed.
+    expect((await stateOf(workspaceId, agentId)).directives.map((row) => row.name).sort()).toEqual(["confirm-details", "no-diagnosis"]);
   });
 });

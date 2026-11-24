@@ -61,9 +61,10 @@ const reservedDirectiveNames = (): string[] => defaultAnswerDirectives.map((dire
 
 // Untrusted text is placed inside these tag-delimited blocks in the template. Removing the tags
 // themselves from that text keeps it from closing its block early and posing as instructions.
-// Removal repeats until nothing changes, so a tag split around another (`<</purpose>/purpose>`)
-// cannot reassemble once the inner one is gone.
-const PROMPT_BLOCK_TAG = /<\/?\s*(?:purpose|agent_context|names_in_use)\s*>/giu;
+// A tag counts however it is spaced, cased, or attributed (`< /purpose>`, `</PURPOSE x="1">`,
+// newlines inside it). Removal repeats until nothing changes, so a tag split around another
+// (`<</purpose>/purpose>`) cannot reassemble once the inner one is gone.
+const PROMPT_BLOCK_TAG = /<\s*\/?\s*(?:purpose|agent_context|names_in_use)\b[^>]*>/giu;
 
 const stripPromptBlockTags = (value: string): string => {
   let previous: string;
@@ -114,7 +115,7 @@ export const buildStarterPackDraftPrompt = (input: {
     purpose: stripPromptBlockTags(input.purpose),
   });
 
-const invalidDraftError = (): AppError =>
+export const invalidStarterPackDraftError = (): AppError =>
   new AppError(
     422,
     "invalid_starter_pack_draft",
@@ -132,7 +133,7 @@ export class StarterPackDraftGenerator {
     const purpose = this.parsePurpose(input.purpose);
     const requestId = randomUUID();
 
-    const detection = await this.detectOutputLanguage(input.workspaceId, input.agent.id, requestId, purpose);
+    const detection = await this.detectOutputLanguage(input.workspaceId, input.agent.id, requestId, purpose, input.signal);
     const outputLanguage = detection.responseLanguage ?? null;
 
     const prompt = buildStarterPackDraftPrompt({
@@ -168,23 +169,26 @@ export class StarterPackDraftGenerator {
         failureMode: "schema_mismatch",
       }, "starter_pack_draft_schema_mismatch");
     }
-    throw invalidDraftError();
+    throw invalidStarterPackDraftError();
   }
 
   /**
    * Detection only picks the output language. If its model call fails, the draft goes ahead with
-   * the "same language as the purpose" instruction instead of failing the whole request.
+   * the "same language as the purpose" instruction instead of failing the whole request. An
+   * aborted request stops here instead: nobody is waiting for the draft.
    */
   private async detectOutputLanguage(
     workspaceId: string,
     agentId: string,
     requestId: string,
     purpose: string,
+    signal: AbortSignal | undefined,
   ): Promise<ResponseLanguageDetection> {
     try {
       return await this.options.languageDetector.detect({
         query: purpose,
         history: [],
+        signal,
         workspaceContext: { workspaceId },
         usageContext: {
           workspaceId,
@@ -196,6 +200,9 @@ export class StarterPackDraftGenerator {
         },
       });
     } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
       this.options.logger.warn(
         { workspaceId, agentId, requestId, ...describeProviderFailure(error) },
         "starter_pack_language_detection_failed",
@@ -282,6 +289,12 @@ export class StarterPackDraftGenerator {
       return parsed;
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      if (input.signal?.aborted) {
+        // The caller went away; the provider did not fail.
+        await this.emitTelemetry({ ...baseFields, durationMs, status: "aborted", parsed: false, droppedDirectiveCount: 0 });
+        this.options.logger.info({ ...baseFields, durationMs, status: "aborted" }, "starter_pack_draft_llm_call_aborted");
+        throw error;
+      }
       await this.emitTelemetry({ ...baseFields, durationMs, status: "failure", parsed: false, droppedDirectiveCount: 0 });
       this.options.logger.warn({
         ...baseFields,
@@ -300,13 +313,13 @@ export class StarterPackDraftGenerator {
     attemptKey: string;
     promptLength: number;
     durationMs: number;
-    status: "success" | "failure";
+    status: "success" | "failure" | "aborted";
     parsed: boolean;
     droppedDirectiveCount: number;
   }): Promise<void> {
     await this.options.telemetryService?.emit({
       eventType: "agent_starter_pack.draft.llm_call",
-      severity: input.status === "success" ? "info" : "warn",
+      severity: input.status === "failure" ? "warn" : "info",
       correlation: { workspaceId: input.workspaceId },
       metrics: { durationMs: input.durationMs, promptLength: input.promptLength, droppedDirectiveCount: input.droppedDirectiveCount },
       tags: {

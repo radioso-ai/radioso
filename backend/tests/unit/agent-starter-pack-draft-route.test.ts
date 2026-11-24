@@ -45,7 +45,11 @@ const createDependencies = (overrides: Record<string, unknown> = {}) => {
     accountAccessService: { requirePermission: vi.fn().mockResolvedValue(undefined) },
     workspaceSessionService: {},
     abuseControlService: { enforce: vi.fn().mockResolvedValue(undefined) },
-    starterPackDraftService: { draft: vi.fn().mockResolvedValue(draftResult) },
+    // The service runs `beforeModelCalls` once the agent exists and a chat model is configured.
+    starterPackDraftService: { draft: vi.fn(async (_workspaceId: string, _agentId: string, _purpose: string, options: { beforeModelCalls?: () => Promise<void> }) => {
+      await options.beforeModelCalls?.();
+      return draftResult;
+    }) },
     authoredDirectiveService: { create: vi.fn(), update: vi.fn() },
     routineDefinitionService: { createDraft: vi.fn(), updateDraft: vi.fn() },
     agentRevisionService: { publish: vi.fn() },
@@ -78,11 +82,11 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
       "workspace-1",
       agentId,
       "Hilf Besuchern, Termine zu buchen.",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal), beforeModelCalls: expect.any(Function) }),
     );
   });
 
-  it("applies the wizard-style rate limit per workspace user or API caller", async () => {
+  it("spends the draft rate limit per workspace user or API caller, just before the model calls", async () => {
     const dependencies = createDependencies();
 
     await post(dependencies, { purpose: "Help visitors book appointments." }).expect(200);
@@ -96,7 +100,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
     });
   });
 
-  it("returns 429 without drafting when the rate limit is exhausted", async () => {
+  it("returns 429 when the rate limit is exhausted", async () => {
     const dependencies = createDependencies({
       abuseControlService: { enforce: vi.fn().mockRejectedValue(tooManyRequests("Too many requests", { retryAfterSeconds: 60 })) },
     });
@@ -104,7 +108,6 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
     const response = await post(dependencies, { purpose: "Help visitors book appointments." }).expect(429);
 
     expect(response.body.error.code).toBe("rate_limit_exceeded");
-    expect(dependencies.starterPackDraftService.draft).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -165,6 +168,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
     const response = await post(dependencies, { purpose: "Help visitors." }).expect(404);
 
     expect(response.body.error).toMatchObject({ code: "not_found", message: "Agent not found" });
+    expect(dependencies.abuseControlService.enforce).not.toHaveBeenCalled();
   });
 
   it("returns 503 provider_misconfigured when no LLM is configured", async () => {
@@ -183,6 +187,7 @@ describe("POST /api/v1/agents/:agentId/starter-pack/draft", () => {
       code: "provider_misconfigured",
       details: { kind: "missing_api_key", capability: "chat" },
     });
+    expect(dependencies.abuseControlService.enforce).not.toHaveBeenCalled();
   });
 
   it("returns 503 llm_unavailable when the model call fails", async () => {

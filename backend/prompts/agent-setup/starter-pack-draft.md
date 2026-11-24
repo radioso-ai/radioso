@@ -68,6 +68,6 @@ surfaces:
 routine:
 - Exactly one routine: the single most valuable multi-turn task the purpose implies, such as booking, qualifying, or collecting a request.
 - name: short kebab-case slug, not one of the names listed in names_in_use.
-- procedure: plain prose, step by step, describing what the assistant asks for and does, in order. Mention each piece of information it must collect. Do not write code, JSON, or template syntax.
+- procedure: plain prose, step by step, describing what the assistant asks for and does, in order. Mention each piece of information it must collect, and mark it where the procedure asks for it with @ followed by a short snake_case key made of ASCII letters, digits, and underscores, for example "Ask for the preferred date @preferred_date." Use the same marker wherever a later step uses that value again, such as a summary. These markers become the routine's variables. Do not write code, JSON, or any other markup.
 
 Return ONLY valid JSON. No markdown fences, no commentary, no extra keys.

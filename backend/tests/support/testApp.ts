@@ -21,6 +21,7 @@ import { StarterPackApplyService } from "../../src/modules/agentStarterPack/publ
 import { createInMemoryStarterPackApply } from "./inMemoryStarterPackApplyUnitOfWork.js";
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
 import { createChatReadiness, type ChatPipelineProbe } from "../../src/shared/infra/llm/chatReadiness.js";
+import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -1763,7 +1764,7 @@ export const createTestDependencies = (overrides: {
   };
   const chatReadiness = createChatReadiness(overrides.chatPipelineProbe ?? {
     async assertChatPipelineResolvable() {
-      throw new Error("No chat model is configured in the in-memory test app");
+      throw new ProviderConfigurationError("No chat model is configured in the in-memory test app", { kind: "missing_api_key", capability: "chat" });
     },
   });
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, new InMemoryWorkspaceSetupStateRepository(), {

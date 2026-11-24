@@ -203,8 +203,7 @@ export const buildRoutineAuthoringServices = (input: {
   const routineDraftAssistService = new RoutineDraftAssistService({
     repository: input.repositories.agentRepository,
     textGenerationClient: {
-      complete: async ({ signal: _signal, ...request }) =>
-        (await input.chatInferencePipeline.complete(request)).text,
+      complete: async (request) => (await input.chatInferencePipeline.complete(request)).text,
     },
     actionCatalog: [
       ...routineAuthoringBuiltInSkills.map((skill) => ({
@@ -226,8 +225,7 @@ export const buildRoutineAuthoringServices = (input: {
   const directiveAuthorService = new DirectiveAuthorService({
     repository: input.repositories.agentRepository,
     textGenerationClient: {
-      complete: async ({ signal: _signal, ...request }) =>
-        (await input.chatInferencePipeline.complete(request)).text,
+      complete: async (request) => (await input.chatInferencePipeline.complete(request)).text,
     },
     logger: input.logger,
     telemetryService: input.infrastructure.telemetryService,

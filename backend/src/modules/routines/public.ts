@@ -85,6 +85,7 @@ export {
 export { projectRoutineToPortableDocument } from "./portableDocument.js";
 export { applyOperatorMcpRoutineTransform, RoutineTransformError, type OperatorMcpRoutineTransformReferenceGuard } from "./operatorMcpRoutineTransform.js";
 export {
+  INVALID_ROUTINE_DRAFT_CODE,
   RoutineDraftAssistService,
   routineDraftAssistRequestSchema,
   type RoutineDraftAssistActionCatalogEntry,

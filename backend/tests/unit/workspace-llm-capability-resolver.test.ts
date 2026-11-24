@@ -982,7 +982,7 @@ describe("WorkspaceLlmCapabilityResolver.assertResolvable", () => {
     return { ...credentials, getApiKey: vi.fn(credentials.getApiKey), hasCredentials: vi.fn(credentials.hasCredentials) };
   };
 
-  it("passes when the workspace holds a key for the selected provider, without reading the key itself", async () => {
+  it("passes when the workspace holds a readable key for the selected provider", async () => {
     const credentials = spiedCredentials({ "ws-1:openai": "ws-openai" });
     const resolver = new WorkspaceLlmCapabilityResolver({
       defaults: envConfig,
@@ -992,8 +992,24 @@ describe("WorkspaceLlmCapabilityResolver.assertResolvable", () => {
     });
 
     await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).resolves.toBeUndefined();
-    expect(credentials.hasCredentials).toHaveBeenCalledWith("ws-1", "openai");
-    expect(credentials.getApiKey).not.toHaveBeenCalled();
+    expect(credentials.getApiKey).toHaveBeenCalledWith("ws-1", "openai");
+  });
+
+  it("fails as resolve does when the stored workspace key cannot be read, without falling back to the deployment key", async () => {
+    const unreadable = new ProviderConfigurationError("Workspace credential cannot be read", {
+      kind: "credential_unreadable",
+      provider: "openai",
+    });
+    const credentials = { ...buildCredentials({}), getApiKey: vi.fn(async () => { throw unreadable; }), hasCredentials: vi.fn(async () => true) };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials,
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    await expect(resolver.resolve("chat", { workspaceId: "ws-1" })).rejects.toBe(unreadable);
+    await expect(resolver.assertResolvable("chat", { workspaceId: "ws-1" })).rejects.toBe(unreadable);
   });
 
   it("passes on the deployment's key when the workspace has none", async () => {

@@ -113,9 +113,9 @@ export const buildStarterPackDraftService = (input: {
         input.routineDraftAssistService.draft(workspaceId, agentId, request, options),
     },
     chatReadiness: input.chatReadiness,
+    logger: input.logger,
     generator: new StarterPackDraftGenerator({
-      // Unlike the older authoring adapters, this one forwards the abort signal, so a client that
-      // disconnects stops the model call.
+      // Forwards the abort signal, so a client that disconnects stops the model call.
       textGenerationClient: {
         complete: async (request) => (await input.chatInferencePipeline.complete(request)).text,
       },

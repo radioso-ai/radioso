@@ -61,6 +61,7 @@ const runCase = async (evalCase: StarterPackDraftQualityCase) => {
       logger,
     }),
     chatReadiness: { assertChatConfigured: async () => undefined },
+    logger,
     generator: new StarterPackDraftGenerator({
       textGenerationClient: packClient,
       languageDetector: new LlmResponseLanguageDetector({

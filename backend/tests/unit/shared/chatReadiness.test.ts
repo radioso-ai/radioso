@@ -22,10 +22,11 @@ describe("createChatReadiness", () => {
       await expect(readiness.isChatConfigured("workspace-1")).resolves.toBe(false);
     });
 
-    it("is false for any other failure", async () => {
-      const readiness = createChatReadiness(probeThat(async () => { throw new Error("credential store down"); }));
+    it("propagates any other failure instead of reporting a missing configuration", async () => {
+      const failure = new Error("credential store down");
+      const readiness = createChatReadiness(probeThat(async () => { throw failure; }));
 
-      await expect(readiness.isChatConfigured("workspace-1")).resolves.toBe(false);
+      await expect(readiness.isChatConfigured("workspace-1")).rejects.toBe(failure);
     });
   });
 
@@ -37,18 +38,37 @@ describe("createChatReadiness", () => {
       expect(probe.assertChatPipelineResolvable).toHaveBeenCalledWith("workspace-1");
     });
 
-    it("rethrows the pipeline's own provider configuration error unchanged", async () => {
-      const error = new ProviderConfigurationError("Missing key", { kind: "missing_api_key", capability: "chat" });
+    it("names the deployment chat provider whose key is missing, not a workspace provider choice", async () => {
+      const readiness = createChatReadiness(probeThat(async () => {
+        throw new ProviderConfigurationError("Missing key", { kind: "missing_api_key", provider: "claude", capability: "chat" });
+      }));
+
+      const error = await readiness.assertChatConfigured("workspace-1").catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ProviderConfigurationError);
+      expect(error).toMatchObject({
+        statusCode: 503,
+        code: "provider_misconfigured",
+        details: expect.objectContaining({ kind: "missing_api_key", provider: "claude", capability: "chat" }),
+      });
+      const { message, details } = error as ProviderConfigurationError & { details: { remediation: string } };
+      expect(message).toContain("\"claude\"");
+      expect(message).toContain("deployment's chat model");
+      expect(details.remediation).toContain("\"claude\"");
+    });
+
+    it("rethrows any other provider configuration error unchanged", async () => {
+      const error = new ProviderConfigurationError("Unreadable key", { kind: "credential_unreadable", provider: "openai" });
       const readiness = createChatReadiness(probeThat(async () => { throw error; }));
 
       await expect(readiness.assertChatConfigured("workspace-1")).rejects.toBe(error);
     });
 
-    it("treats any other failure as an unconfigured provider", async () => {
-      const readiness = createChatReadiness(probeThat(async () => { throw new Error("credential store down"); }));
+    it("propagates any other failure instead of reporting a missing configuration", async () => {
+      const failure = new Error("credential store down");
+      const readiness = createChatReadiness(probeThat(async () => { throw failure; }));
 
-      await expect(readiness.assertChatConfigured("workspace-1"))
-        .rejects.toMatchObject({ statusCode: 503, code: "provider_misconfigured" });
+      await expect(readiness.assertChatConfigured("workspace-1")).rejects.toBe(failure);
     });
   });
 });

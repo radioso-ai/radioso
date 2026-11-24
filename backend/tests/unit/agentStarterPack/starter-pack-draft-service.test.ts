@@ -84,12 +84,14 @@ const setup = (input: {
     updateRoutine: vi.fn(),
     publish: vi.fn(),
   };
+  // Like the real drafter, it validates under the name the caller gives, else its own suggestion.
   const routineDrafter = {
-    draft: vi.fn(input.routineDraft ?? (async (_ws: string, _agent: string, request: { prose: string }) => ({
-      draft: routineDefinition(request.prose.startsWith("Frage") ? "termin-buchen-entwurf" : "assist-chosen-name"),
+    draft: vi.fn(input.routineDraft ?? (async (_ws: string, _agent: string, request: { prose: string }, options: { name?: string }) => ({
+      draft: routineDefinition(options.name ?? (request.prose.startsWith("Frage") ? "termin-buchen-entwurf" : "assist-chosen-name")),
       validation: { diagnostics: [] },
     }))),
   };
+  const logger = { warn: vi.fn() };
   const options: StarterPackDraftServiceOptions = {
     agents: {
       findByIdAndWorkspaceId: vi.fn(async () => input.agentExists === false
@@ -112,6 +114,7 @@ const setup = (input: {
     } as unknown as StarterPackDraftServiceOptions["routines"],
     routineDrafter: routineDrafter as unknown as StarterPackDraftServiceOptions["routineDrafter"],
     chatReadiness: { assertChatConfigured: vi.fn(input.readiness ?? (async () => undefined)) },
+    logger,
     generator: new StarterPackDraftGenerator({
       textGenerationClient,
       languageDetector: new LlmResponseLanguageDetector({
@@ -128,6 +131,7 @@ const setup = (input: {
     routineDrafter,
     textGenerationClient,
     detectorComplete,
+    logger,
   };
 };
 
@@ -153,11 +157,12 @@ describe("StarterPackDraftService", () => {
       conflict: null,
     });
     expect(new Set(result.items.map((item) => item.itemKey)).size).toBe(result.items.length);
+    // The drafter validates under the pack's name, so its diagnostics describe the routine returned.
     expect(routineDrafter.draft).toHaveBeenCalledWith(
       workspaceId,
       agentId,
       { prose: englishPack.routine.procedure },
-      { outputLanguage: "English" },
+      { outputLanguage: "English", name: "book-appointment" },
     );
     expect(result.outputLanguage).toBe("English");
   });
@@ -178,7 +183,7 @@ describe("StarterPackDraftService", () => {
       workspaceId,
       agentId,
       { prose: germanPack.routine.procedure },
-      { outputLanguage: "German" },
+      { outputLanguage: "German", name: "termin-buchen" },
     );
     const routines = result.items.filter((item) => item.kind === "routine");
     expect(routines).toHaveLength(1);
@@ -194,7 +199,7 @@ describe("StarterPackDraftService", () => {
     const result = await service.draft(workspaceId, agentId, "Hilf Besuchern, Zahnarzttermine zu buchen.");
 
     expect(result.outputLanguage).toBeNull();
-    expect(routineDrafter.draft).toHaveBeenCalledWith(workspaceId, agentId, { prose: germanPack.routine.procedure }, {});
+    expect(routineDrafter.draft).toHaveBeenCalledWith(workspaceId, agentId, { prose: germanPack.routine.procedure }, { name: "termin-buchen" });
     expect(result.items.filter((item) => item.kind === "routine")).toHaveLength(1);
   });
 
@@ -283,13 +288,86 @@ describe("StarterPackDraftService", () => {
       .rejects.toMatchObject({ statusCode: 422, code: "invalid_starter_pack_draft" });
   });
 
-  it("keeps an AppError from the routine drafter as is", async () => {
+  it("answers the routine drafter's invalid draft with the endpoint's own 422", async () => {
     const { service } = setup({
-      routineDraft: async () => { throw new AppError(422, "invalid_routine_draft_assist", "bad routine"); },
+      routineDraft: async () => {
+        throw new AppError(422, "invalid_routine_draft_assist", "Try again or revise the procedure text.");
+      },
     });
 
     await expect(service.draft(workspaceId, agentId, "Help visitors book appointments."))
-      .rejects.toMatchObject({ statusCode: 422, code: "invalid_routine_draft_assist" });
+      .rejects.toMatchObject({ statusCode: 422, code: "invalid_starter_pack_draft" });
+  });
+
+  it("keeps any other AppError from the routine drafter as is", async () => {
+    const { service } = setup({ routineDraft: async () => { throw notFound("Agent not found"); } });
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments."))
+      .rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+  });
+
+  it("logs the failure's class, and nothing it says, before answering 503", async () => {
+    const { service, logger } = setup({ routineDraft: async () => { throw new TypeError("secret procedure text"); } });
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments."))
+      .rejects.toMatchObject({ statusCode: 503, code: "llm_unavailable" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId, agentId, err: "TypeError" }),
+      "starter_pack_draft_failed",
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("secret procedure text");
+  });
+
+  it("passes the request's abort signal to the routine drafter, and leaves an abort as an abort", async () => {
+    const controller = new AbortController();
+    const aborted = new DOMException("This operation was aborted", "AbortError");
+    const { service, routineDrafter, logger } = setup({
+      routineDraft: async () => {
+        controller.abort();
+        throw aborted;
+      },
+    });
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments.", { signal: controller.signal }))
+      .rejects.toBe(aborted);
+    expect(routineDrafter.draft).toHaveBeenCalledWith(
+      workspaceId,
+      agentId,
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("runs beforeModelCalls once the agent exists and a chat model is configured, before any model call", async () => {
+    const { service, detectorComplete } = setup();
+    const beforeModelCalls = vi.fn(async () => undefined);
+
+    await service.draft(workspaceId, agentId, "Help visitors book appointments.", { beforeModelCalls });
+
+    expect(beforeModelCalls).toHaveBeenCalledTimes(1);
+    expect(beforeModelCalls.mock.invocationCallOrder[0]).toBeLessThan(detectorComplete.mock.invocationCallOrder[0]);
+  });
+
+  it("stops before any model call when beforeModelCalls refuses", async () => {
+    const { service, detectorComplete, textGenerationClient } = setup();
+    const refusal = new AppError(429, "rate_limit_exceeded", "Too many requests");
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments.", { beforeModelCalls: async () => { throw refusal; } }))
+      .rejects.toBe(refusal);
+    expect(detectorComplete).not.toHaveBeenCalled();
+    expect(textGenerationClient.complete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an unknown agent", { agentExists: false }],
+    ["an unconfigured chat model", { readiness: async () => { throw new ProviderConfigurationError("No key", { kind: "missing_api_key" }); } }],
+  ])("does not run beforeModelCalls for %s", async (_label, input) => {
+    const { service } = setup(input);
+    const beforeModelCalls = vi.fn(async () => undefined);
+
+    await expect(service.draft(workspaceId, agentId, "Help visitors book appointments.", { beforeModelCalls })).rejects.toBeInstanceOf(AppError);
+    expect(beforeModelCalls).not.toHaveBeenCalled();
   });
 
   it("does not swallow a not-found raised while reading names", async () => {

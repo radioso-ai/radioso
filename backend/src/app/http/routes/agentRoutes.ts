@@ -488,20 +488,34 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         if (!params.success) {
           throw badRequest("Invalid agent id", params.error.flatten());
         }
-        await dependencies.abuseControlService.enforce({
-          ...STARTER_PACK_DRAFT_RATE_LIMIT,
-          subjectKey: starterPackRateLimitSubjectKey(res.locals),
-        });
         const body = req.body as { purpose: string };
+        // The budget is spent only once the agent exists and a chat model is configured.
         const result = await dependencies.starterPackDraftService.draft(
           workspaceId,
           params.data.agentId,
           body.purpose,
-          { signal: controller.signal },
+          {
+            signal: controller.signal,
+            beforeModelCalls: async () => {
+              await dependencies.abuseControlService.enforce({
+                ...STARTER_PACK_DRAFT_RATE_LIMIT,
+                subjectKey: starterPackRateLimitSubjectKey(res.locals),
+              });
+            },
+          },
         );
+        if (res.writableEnded || controller.signal.aborted) {
+          return;
+        }
         res.status(200).json(result);
       } catch (error) {
+        // The client went away: nobody reads an answer, and an abort is not a failure to report.
+        if (res.writableEnded || controller.signal.aborted) {
+          return;
+        }
         next(error);
+      } finally {
+        req.off("aborted", abort);
       }
     },
   );
@@ -520,15 +534,20 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         if (!params.success) {
           throw badRequest("Invalid agent id", params.error.flatten());
         }
-        await dependencies.abuseControlService.enforce({
-          ...STARTER_PACK_APPLY_RATE_LIMIT,
-          subjectKey: starterPackRateLimitSubjectKey(res.locals),
-        });
+        // A replay of a completed apply, or a pack refused for its names, spends no budget.
         const result = await dependencies.starterPackApplyService.apply(
           workspaceId,
           params.data.agentId,
           { accountId: accountId ?? null },
           req.body as StarterPackApplyRequest,
+          {
+            beforeModelCalls: async () => {
+              await dependencies.abuseControlService.enforce({
+                ...STARTER_PACK_APPLY_RATE_LIMIT,
+                subjectKey: starterPackRateLimitSubjectKey(res.locals),
+              });
+            },
+          },
         );
         res.status(result.replayed ? 200 : 201).json(result);
       } catch (error) {

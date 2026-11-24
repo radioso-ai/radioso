@@ -83,6 +83,14 @@ interface StarterPackApplyActor {
   accountId: string | null;
 }
 
+interface StarterPackApplyRequestOptions {
+  /**
+   * Runs before the first model call, once the request is neither a replay nor refused for its
+   * names or excludes. A caller spends its rate-limit budget here.
+   */
+  beforeModelCalls?: () => Promise<void>;
+}
+
 export const starterPackRequestFingerprint = (items: readonly StarterPackApplyItem[]): string =>
   createHash("sha256").update(canonicalJson(JSON.parse(JSON.stringify(items)) as unknown)).digest("hex");
 
@@ -139,6 +147,7 @@ export class StarterPackApplyService {
     agentId: string,
     actor: StarterPackApplyActor,
     request: StarterPackApplyRequest,
+    requestOptions: StarterPackApplyRequestOptions = {},
   ): Promise<StarterPackApplyResponse> {
     const requestFingerprint = starterPackRequestFingerprint(request.items);
 
@@ -154,6 +163,7 @@ export class StarterPackApplyService {
     if (refusal) {
       throw refusal;
     }
+    await requestOptions.beforeModelCalls?.();
 
     const candidates: DirectiveCoherenceCandidate[] = request.items.flatMap((item) =>
       item.kind === "directive" ? [{ ref: item.itemKey, input: item.directive }] : []);

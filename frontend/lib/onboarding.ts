@@ -102,8 +102,6 @@ export interface WorkspaceOnboardingState {
   hasCompletedChat: boolean
   sampleDocumentsImported: boolean
   websiteCrawlerEnabled: boolean
-  /** Whether the workspace can make chat model calls; null until the summary loads. Read it with `isLlmMissing`. */
-  llmConfigured: boolean | null
   isOnboardingActive: boolean
   isOnboardingCompleted: boolean
   shouldShowFirstRun: boolean
@@ -130,7 +128,6 @@ export const useWorkspaceOnboarding = (
   const [sampleDocumentsImported, setSampleDocumentsImported] = useState(false)
   const [hasCompletedChat, setHasCompletedChat] = useState(false)
   const [websiteCrawlerEnabled, setWebsiteCrawlerEnabled] = useState(true)
-  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null)
   const [isOnboardingActive, setIsOnboardingActive] = useState(false)
   const [isOnboardingCompleted, setIsOnboardingCompleted] = useState(false)
   const [isImportingSampleDocs, setIsImportingSampleDocs] = useState(false)
@@ -150,7 +147,6 @@ export const useWorkspaceOnboarding = (
       setHasReadyDocuments(false)
       setSampleDocumentsImported(false)
       setHasCompletedChat(false)
-      setLlmConfigured(null)
       setIsOnboardingActive(false)
       setIsOnboardingCompleted(false)
       onboardingSummaryRef.current = null
@@ -206,7 +202,6 @@ export const useWorkspaceOnboarding = (
       setSampleDocumentsImported(summary.sampleDocumentsImported)
       setHasCompletedChat(summary.hasCompletedChat)
       setWebsiteCrawlerEnabled(summary.websiteCrawlerEnabled)
-      setLlmConfigured(summary.llmConfigured)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
     } catch {
@@ -321,7 +316,6 @@ export const useWorkspaceOnboarding = (
       hasCompletedChat,
       sampleDocumentsImported,
       websiteCrawlerEnabled,
-      llmConfigured,
       isOnboardingActive,
       isOnboardingCompleted,
       shouldShowFirstRun: isOnboardingActive && !isOnboardingCompleted && !hasCompletedChat,
@@ -340,7 +334,6 @@ export const useWorkspaceOnboarding = (
     isLoading,
     isOnboardingActive,
     isOnboardingCompleted,
-    llmConfigured,
     markActive,
     markCompleted,
     refresh,

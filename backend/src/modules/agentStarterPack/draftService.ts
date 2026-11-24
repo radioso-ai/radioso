@@ -1,11 +1,12 @@
 import { AppError, notFound } from "../../shared/domain/errors.js";
-import type { RoutineDefinitionDraftInput, RoutineValidationResult } from "../routines/public.js";
+import { describeProviderFailure } from "../../shared/infra/llm/providerErrors.js";
+import { INVALID_ROUTINE_DRAFT_CODE, type RoutineDefinitionDraftInput, type RoutineValidationResult } from "../routines/public.js";
 import type {
   StarterPackDraftItem,
   StarterPackDraftResponse,
   StarterPackItemConflict,
 } from "./contracts.js";
-import type { StarterPackAgentContext, StarterPackDraftGenerator } from "./draftGenerator.js";
+import { invalidStarterPackDraftError, type StarterPackAgentContext, type StarterPackDraftGenerator } from "./draftGenerator.js";
 
 /**
  * Read-only ports. The draft path is given no way to write: suggestions are only persisted later,
@@ -24,17 +25,30 @@ export interface StarterPackDraftServiceOptions {
      */
     findCreateConflict(workspaceId: string, agentId: string, name: string): Promise<unknown>;
   };
-  /** Turns plain-language procedure text into a routine definition draft; saves nothing. */
+  /**
+   * Turns plain-language procedure text into a routine definition draft under the given name, and
+   * validates it under that name; saves nothing.
+   */
   routineDrafter: {
     draft(
       workspaceId: string,
       agentId: string,
       input: { prose: string },
-      options: { outputLanguage?: string },
+      options: { outputLanguage?: string; name: string; signal?: AbortSignal },
     ): Promise<{ draft: RoutineDefinitionDraftInput; validation: RoutineValidationResult }>;
   };
   chatReadiness: { assertChatConfigured(workspaceId: string): Promise<void> };
   generator: Pick<StarterPackDraftGenerator, "generate">;
+  logger: { warn(bindings: Record<string, unknown>, message: string): void };
+}
+
+interface StarterPackDraftRequestOptions {
+  signal?: AbortSignal;
+  /**
+   * Runs once the agent exists and a chat model is configured, before the first model call. A
+   * caller spends its rate-limit budget here, so a request refused for those reasons spends none.
+   */
+  beforeModelCalls?: () => Promise<void>;
 }
 
 const llmUnavailable = (): AppError =>
@@ -43,12 +57,6 @@ const llmUnavailable = (): AppError =>
     "llm_unavailable",
     "The language model could not draft the starter pack right now. Try again shortly.",
   );
-
-/**
- * Model and network failures are not the caller's fault and carry no safe message of their own,
- * so they become one stable 503. Errors that already carry an HTTP meaning pass through.
- */
-const asModelFailure = (error: unknown): unknown => (error instanceof AppError ? error : llmUnavailable());
 
 const conflictFor = (name: string, takenNames: ReadonlySet<string>): StarterPackItemConflict =>
   takenNames.has(name) ? "name_exists" : null;
@@ -60,13 +68,16 @@ export class StarterPackDraftService {
     workspaceId: string,
     agentId: string,
     purpose: string,
-    requestOptions: { signal?: AbortSignal } = {},
+    requestOptions: StarterPackDraftRequestOptions = {},
   ): Promise<StarterPackDraftResponse> {
     const agent = await this.options.agents.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) {
       throw notFound("Agent not found");
     }
     await this.options.chatReadiness.assertChatConfigured(workspaceId);
+    await requestOptions.beforeModelCalls?.();
+    const { signal } = requestOptions;
+    const asModelFailure = (error: unknown): unknown => this.asModelFailure(error, { workspaceId, agentId, signal });
 
     const [directives, routines] = await Promise.all([
       this.options.directives.list(workspaceId, agentId),
@@ -81,22 +92,26 @@ export class StarterPackDraftService {
       purpose,
       existingDirectiveNames: [...directiveNames],
       existingRoutineNames: [...routineNames],
-      signal: requestOptions.signal,
+      signal,
     }).catch((error: unknown) => { throw asModelFailure(error); });
 
     // The pack's one routine is drafted in a second model call; the language detected for the
-    // pack goes with it, so the routine's user-facing text matches the directives'.
+    // pack goes with it, so the routine's user-facing text matches the directives'. The pack's
+    // routine name was chosen with the agent's taken names in view, so the drafter uses it, and
+    // validates under it, instead of suggesting its own.
     const routineDraft = await this.options.routineDrafter
       .draft(
         workspaceId,
         agentId,
         { prose: pack.routine.procedure },
-        pack.outputLanguage ? { outputLanguage: pack.outputLanguage } : {},
+        {
+          ...(pack.outputLanguage ? { outputLanguage: pack.outputLanguage } : {}),
+          name: pack.routine.name,
+          ...(signal ? { signal } : {}),
+        },
       )
       .catch((error: unknown) => { throw asModelFailure(error); });
-    // The pack's routine name was chosen with the agent's taken names in view; the routine
-    // drafter never saw them, so its own suggestion could collide.
-    const routine: RoutineDefinitionDraftInput = { ...routineDraft.draft, name: pack.routine.name };
+    const routine = routineDraft.draft;
     const routineNameTaken = await this.options.routines.findCreateConflict(workspaceId, agentId, routine.name) !== null;
 
     const items: StarterPackDraftItem[] = [
@@ -116,5 +131,28 @@ export class StarterPackDraftService {
       },
     ];
     return { outputLanguage: pack.outputLanguage, items };
+  }
+
+  /**
+   * An abort stays an abort: the caller went away. The routine drafter's invalid draft is this
+   * endpoint's own 422. Any other error with an HTTP meaning passes through. Model and network
+   * failures are not the caller's fault and carry no safe message of their own, so they are
+   * logged by class and become one stable 503.
+   */
+  private asModelFailure(
+    error: unknown,
+    context: { workspaceId: string; agentId: string; signal: AbortSignal | undefined },
+  ): unknown {
+    if (context.signal?.aborted) {
+      return error;
+    }
+    if (error instanceof AppError) {
+      return error.code === INVALID_ROUTINE_DRAFT_CODE ? invalidStarterPackDraftError() : error;
+    }
+    this.options.logger.warn(
+      { workspaceId: context.workspaceId, agentId: context.agentId, ...describeProviderFailure(error) },
+      "starter_pack_draft_failed",
+    );
+    return llmUnavailable();
   }
 }

@@ -1,7 +1,9 @@
 /**
  * Durable abuse-control policies for the starter pack endpoints, in the same shape and with the
- * same subject keys as the agent wizard's (`modules/agentWizard/routes.ts`). Drafting makes
- * several model calls, so it shares the wizard analysis budget of five per hour.
+ * same subject keys as the agent wizard's (`modules/agentWizard/routes.ts`), each in its own
+ * scope. Drafting makes several model calls, so it gets five per hour, the same size as the
+ * wizard's analysis budget but counted separately. A request spends it only when it gets as far
+ * as its model calls.
  */
 export const STARTER_PACK_DRAFT_RATE_LIMIT = {
   scope: "agent_starter_pack.draft",
@@ -10,7 +12,7 @@ export const STARTER_PACK_DRAFT_RATE_LIMIT = {
   blockMs: 60_000,
 } as const;
 
-/** Same budget as the wizard's create step: applying is cheap, but each apply writes several rows. */
+/** The same size as the wizard's create budget, counted separately: each apply writes several rows. */
 export const STARTER_PACK_APPLY_RATE_LIMIT = {
   scope: "agent_starter_pack.apply",
   limit: 10,

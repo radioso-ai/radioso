@@ -502,9 +502,9 @@ export const registerAgentsPaths = (
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       403: { description: "The caller cannot manage agents", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      422: { description: "invalid_starter_pack_draft when the model did not return a valid pack", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      429: { description: "Starter pack drafting rate limit reached", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      503: { description: "provider_misconfigured when the workspace has no chat model, or llm_unavailable when the model call failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "invalid_starter_pack_draft when the model did not return a valid pack or routine", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Starter pack drafting rate limit reached. Only a request that reaches its model calls counts against it.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      503: { description: "provider_misconfigured when the platform's chat model has no usable API key for this workspace (details.provider names the provider to add a key for), or llm_unavailable when the model call failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 
@@ -528,7 +528,7 @@ export const registerAgentsPaths = (
       403: { description: "The caller cannot manage agents", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       409: { description: "starter_pack_name_conflict when a selected name is already used on the agent (details list the items), or idempotency_key_reused when the key was used for different items. Nothing was created.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      429: { description: "Starter pack apply rate limit reached", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Starter pack apply rate limit reached. A replay, or an apply refused for its names or excludes, does not count against it.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

@@ -127,8 +127,6 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilityConfig> {
-    const envDefault = this.deps.defaults[capability];
-
     const { selection, replaced } = await this.decide(capability, input);
     if (replaced) {
       // Logged here, where a call runs, and not on a settings read asking what would run.
@@ -142,13 +140,37 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Platform key cannot serve the requested LLM model; running the environment default",
       );
     }
-    const { provider, model, resolvedBy } = selection;
+    return this.credentialedConfig(capability, input, selection);
+  }
 
+  async resolveSelection(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<LlmCapabilitySelection> {
+    return (await this.decide(capability, input)).selection;
+  }
+
+  async assertResolvable(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<void> {
+    // The same steps resolve runs, key read included: a stored key that cannot be decrypted fails a
+    // call without falling back to the deployment key, so it must fail this check too.
+    const { selection } = await this.decide(capability, input, { logManagedReplacement: false });
+    await this.credentialedConfig(capability, input, selection);
+  }
+
+  private async credentialedConfig(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+    selection: LlmCapabilitySelection,
+  ): Promise<LlmCapabilityConfig> {
+    const { provider, model, resolvedBy } = selection;
     const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
     const { baseUrl, openAIDataResidency, openAIAzureBaseUrl } = await this.resolveProviderEndpoint(
       provider,
       capability,
-      envDefault,
+      this.deps.defaults[capability],
       input.capabilityOverride?.baseUrl,
       source,
       input.workspaceId,
@@ -164,28 +186,6 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
       ...(openAIDataResidency ? { openAIDataResidency } : {}),
       ...(openAIAzureBaseUrl ? { openAIAzureBaseUrl } : {}),
     };
-  }
-
-  async resolveSelection(
-    capability: LlmCapabilityName,
-    input: LlmCapabilityResolveInput,
-  ): Promise<LlmCapabilitySelection> {
-    return (await this.decide(capability, input)).selection;
-  }
-
-  async assertResolvable(
-    capability: LlmCapabilityName,
-    input: LlmCapabilityResolveInput,
-  ): Promise<void> {
-    const { provider } = (await this.decide(capability, input, { logManagedReplacement: false })).selection;
-    const hasKey = await this.deps.credentials.hasCredentials(input.workspaceId, provider)
-      || Boolean(this.deps.envKeys.resolveEnvApiKey(provider));
-    if (!hasKey) {
-      throw missingApiKeyError(provider, capability);
-    }
-    if (provider === "openai-compatible") {
-      this.openAICompatibleBaseUrl(capability, this.deps.defaults[capability], input.capabilityOverride?.baseUrl);
-    }
   }
 
   private async decide(

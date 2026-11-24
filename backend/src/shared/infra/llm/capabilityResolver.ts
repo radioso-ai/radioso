@@ -34,9 +34,9 @@ export interface LlmCapabilityResolver {
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilitySelection>;
   /**
-   * Fails with the error `resolve` would give for a missing API key or base URL, but checks that a
-   * key exists instead of decrypting it, and logs nothing above debug. For a readiness check that
-   * asks whether a call could run, often enough that `resolve` would be wasteful and noisy.
+   * Fails with the error `resolve` would give (a missing or unreadable API key, a missing base URL)
+   * but returns no config and logs nothing above debug. For a readiness check that asks whether a
+   * call could run, often enough that `resolve`'s logging would be noisy.
    */
   assertResolvable(
     capability: LlmCapabilityName,

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { authoredDirectiveInputSchema, authoredDirectiveSurfaceValues } from "../agents/public.js";
-import { defaultAnswerDirectives } from "../directives/public.js";
 import {
   routineDefinitionDraftInputSchema,
   routineValidationResultSchema,
@@ -9,54 +8,51 @@ import {
   type RoutineValidationResult,
 } from "../routines/public.js";
 
+/** A pack's own limits. Every directive and routine field limit is the owning contract's. */
+export const STARTER_PACK_MAX_DIRECTIVES = 6;
 const STARTER_PACK_LIMITS = {
   purpose: 4_000,
-  minDirectives: 1,
-  maxDirectives: 6,
-  name: 200,
-  conditionDescription: 2_000,
-  action: 4_000,
   // Kept within the routine draft-assist service's own prose limit, so the procedure can be
   // handed to it unchanged when the pack is turned into a routine definition.
   procedure: 20_000,
 } as const;
 
-const reservedDirectiveNames = new Set(defaultAnswerDirectives.map((directive) => directive.name));
-
-const trimmed = (max: number) => z.string().trim().min(1).max(max);
+const nonEmpty = () => z.string().trim().min(1);
 
 /** The operator's free-text description of what the agent is for, in any language. */
-export const starterPackPurposeSchema = trimmed(STARTER_PACK_LIMITS.purpose);
+export const starterPackPurposeSchema = nonEmpty().max(STARTER_PACK_LIMITS.purpose);
 
 /**
- * One drafted directive: a subset of the authored-directive input contract
- * (`authoredDirectiveInputSchema`), so an accepted draft can be created unchanged by
- * `AuthoredDirectiveService.create`. Model output, not a request: keys outside the subset are
- * dropped rather than refused, at every level.
+ * A directive as apply accepts it: the authored-directive contract the directive create endpoint
+ * uses, without the internal `routes`, which the public directive endpoints omit the same way.
+ */
+const starterPackDirectiveInputSchema = authoredDirectiveInputSchema.omit({ routes: true });
+
+/**
+ * The fields a drafted directive may carry: a subset of the authored-directive contract. Model
+ * output, not a request: keys outside the subset are dropped rather than refused, at every level.
+ * Limits and the built-in-name rule are not repeated here; every kept directive must also pass
+ * `starterPackDirectiveInputSchema`, so a draft never suggests a directive apply would refuse.
  */
 const starterPackDirectiveDraftSchema = z.object({
-  name: trimmed(STARTER_PACK_LIMITS.name).refine((name) => !reservedDirectiveNames.has(name), {
-    message: "Directive name is reserved by a built-in directive",
-  }),
+  name: nonEmpty(),
   condition: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("always") }),
-    z.object({
-      kind: z.literal("contextual"),
-      description: trimmed(STARTER_PACK_LIMITS.conditionDescription),
-    }),
+    z.object({ kind: z.literal("contextual"), description: nonEmpty() }),
   ]),
-  action: trimmed(STARTER_PACK_LIMITS.action),
-  tags: z.array(trimmed(STARTER_PACK_LIMITS.name)).optional(),
+  action: nonEmpty(),
+  tags: z.array(nonEmpty()).optional(),
   surfaces: z.array(z.enum(authoredDirectiveSurfaceValues)).optional(),
 });
 
 /**
  * The single routine a pack proposes. `procedure` is prose, the input the existing routine
- * draft-assist service turns into a validated routine definition.
+ * draft-assist service turns into a validated routine definition. The name is checked as the
+ * routine create contract checks it.
  */
 const starterPackRoutineDraftSchema = z.object({
-  name: trimmed(STARTER_PACK_LIMITS.name),
-  procedure: trimmed(STARTER_PACK_LIMITS.procedure),
+  name: routineDefinitionDraftInputSchema.shape.name,
+  procedure: nonEmpty().max(STARTER_PACK_LIMITS.procedure),
 });
 
 /** The model's answer before its directives are read one by one. */
@@ -90,13 +86,14 @@ export const parseStarterPackDraftModelOutput = (
     const directive = starterPackDirectiveDraftSchema.safeParse(candidate);
     if (
       directive.success
-      && directives.length < STARTER_PACK_LIMITS.maxDirectives
+      && starterPackDirectiveInputSchema.safeParse(directive.data).success
+      && directives.length < STARTER_PACK_MAX_DIRECTIVES
       && !directives.some((kept) => kept.name === directive.data.name)
     ) {
       directives.push(directive.data);
     }
   }
-  if (directives.length < STARTER_PACK_LIMITS.minDirectives) {
+  if (directives.length === 0) {
     return null;
   }
   return {
@@ -148,7 +145,15 @@ export interface StarterPackDraftResponse {
   items: StarterPackDraftItem[];
 }
 
-const itemKeySchema = z.string().trim().min(1).max(64);
+export const starterPackItemKeySchema = z.string().trim().min(1).max(64);
+
+/** Client-chosen key for an apply. Retrying with the same key returns the first result. */
+export const starterPackIdempotencyKeySchema = z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/u, {
+  message: "Use letters, digits, '.', '_', ':' or '-'",
+});
+
+/** At most the maximum number of directives plus the one routine. */
+export const STARTER_PACK_MAX_APPLY_ITEMS = STARTER_PACK_MAX_DIRECTIVES + 1;
 
 /**
  * One item the user selected from a draft, possibly edited. Validated against the same contracts
@@ -156,13 +161,12 @@ const itemKeySchema = z.string().trim().min(1).max(64);
  */
 const starterPackApplyItemSchema = z.discriminatedUnion("kind", [
   z.object({
-    itemKey: itemKeySchema,
+    itemKey: starterPackItemKeySchema,
     kind: z.literal("directive"),
-    // `routes` is internal; the public directive endpoints omit it the same way.
-    directive: authoredDirectiveInputSchema.omit({ routes: true }),
+    directive: starterPackDirectiveInputSchema,
   }).strict(),
   z.object({
-    itemKey: itemKeySchema,
+    itemKey: starterPackItemKeySchema,
     kind: z.literal("routine"),
     routine: routineDefinitionDraftInputSchema,
   }).strict(),
@@ -170,22 +174,19 @@ const starterPackApplyItemSchema = z.discriminatedUnion("kind", [
 
 /** Body of `POST /api/v1/agents/:agentId/starter-pack/apply`: only the items the user selected. */
 export const starterPackApplyRequestSchema = z.object({
-  /** Client-chosen key for this apply. Retrying with the same key returns the first result. */
-  idempotencyKey: z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/u, {
-    message: "Use letters, digits, '.', '_', ':' or '-'",
-  }),
-  items: z.array(starterPackApplyItemSchema).min(1).max(STARTER_PACK_LIMITS.maxDirectives + 1),
+  idempotencyKey: starterPackIdempotencyKeySchema,
+  items: z.array(starterPackApplyItemSchema).min(1).max(STARTER_PACK_MAX_APPLY_ITEMS),
 }).strict().superRefine((request, context) => {
   const directives = request.items.filter((item) => item.kind === "directive");
   const routines = request.items.filter((item) => item.kind === "routine");
   if (routines.length > 1) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "A starter pack has at most one routine" });
   }
-  if (directives.length > STARTER_PACK_LIMITS.maxDirectives) {
+  if (directives.length > STARTER_PACK_MAX_DIRECTIVES) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["items"],
-      message: `A starter pack has at most ${STARTER_PACK_LIMITS.maxDirectives} directives`,
+      message: `A starter pack has at most ${STARTER_PACK_MAX_DIRECTIVES} directives`,
     });
   }
   const itemKeys = request.items.map((item) => item.itemKey);

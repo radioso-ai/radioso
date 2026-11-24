@@ -17,8 +17,10 @@ Drafting and applying are separate operations with separate ports.
 - **Draft** (`draftService.ts`) reads only. It detects the purpose's language,
   renders `backend/prompts/agent-setup/starter-pack-draft.md` with that language
   in `{{output_language_instruction}}`, and hands the routine's procedure to
-  `RoutineDraftAssistService` with the same language. Its ports can list names
-  and draft; none can write.
+  `RoutineDraftAssistService` with the same language and the pack's routine
+  name, which the drafter validates under. The procedure marks each value the
+  routine collects with an `@key`, the drafter's variable hint, so each becomes
+  a slot its steps reference. Its ports can list names and draft; none can write.
 - **Apply** (`applyService.ts`) writes exactly the selected items through the
   owning services, `AuthoredDirectiveService.create` and
   `RoutineDefinitionService.createDraft`. It never touches their tables
@@ -54,12 +56,21 @@ Whether the workspace can call a chat model comes from
 `shared/infra/llm/chatReadiness.ts`, the same check Ray's availability and the
 workspace summary's `llmConfigured` use. It asks `LlmProviderRegistry` whether
 the chat inference pipeline, which drafting and Ray run on, resolves for the
-workspace, checking that a key exists without decrypting it.
+workspace: the deployment's chat provider and model with a readable key for
+that provider, exactly as a call resolves it. Only a provider configuration
+error means "not configured"; a missing key's 503 names the provider.
+
+Both endpoints spend their rate limit through a `beforeModelCalls` hook the
+services run just before their first model call, so a 404, a missing chat
+model, a replayed apply, or a refused pack spends nothing. A request aborted by
+its client stops its model calls and is logged as aborted.
 
 The draft parses the model's answer one directive at a time: unknown keys are
-ignored, and an invalid, reserved, or repeated directive is dropped (counted in
-the `starter_pack_draft_llm_call_completed` log and telemetry). The draft fails
-with `422` only when the routine is invalid or no directive is left.
+ignored, and a directive the authored-directive contract would refuse, or a
+repeated one, is dropped (counted in the `starter_pack_draft_llm_call_completed`
+log and telemetry). The draft fails with `422 invalid_starter_pack_draft` when
+the routine is invalid, no directive is left, or the routine drafter could not
+produce a routine.
 
 ## Public Surfaces
 

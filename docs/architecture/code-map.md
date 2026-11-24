@@ -2570,7 +2570,7 @@ Public surfaces and contracts:
 - `backend/src/app/http/routes/agentRoutes.ts` (`POST /api/v1/agents/:agentId/starter-pack/draft` and `/apply`)
 - `backend/src/app/http/openapi/schemas/agentStarterPackSchemas.ts` (`draftAgentStarterPack`, `applyAgentStarterPack`)
 - `backend/prompts/agent-setup/starter-pack-draft.md` (pack prompt, with `{{output_language_instruction}}`)
-- `GET /api/v1/workspace/summary` `llmConfigured`, from `backend/src/shared/infra/llm/chatReadiness.ts` over `LlmProviderRegistry.assertChatPipelineResolvable` (also used by Ray's availability and turns); `frontend/lib/llm-readiness.ts` reads either signal
+- `GET /api/v1/workspace/summary` `llmConfigured`, from `backend/src/shared/infra/llm/chatReadiness.ts` over `LlmProviderRegistry.assertChatPipelineResolvable` (also used by Ray's availability and turns); `frontend/lib/llm-readiness.ts` reads Ray's availability
 
 Primary internals:
 

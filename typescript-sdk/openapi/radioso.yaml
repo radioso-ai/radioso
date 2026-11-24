@@ -410,7 +410,7 @@ components:
           $ref: "#/components/schemas/WorkspaceSetupState"
         llmConfigured:
           type: boolean
-          description: "Whether a chat model call can run for this workspace: the chat model the deployment runs Ray and starter pack drafting on has an API key, the workspace's own or the deployment's, and any base URL it needs. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured."
+          description: "Whether the platform's chat model can run for this workspace: the chat provider and model this deployment runs Ray and starter pack drafting on, with a readable API key for that provider (the workspace's own or the deployment's) and any base URL it needs. The provider the workspace chose for its own agents does not change it. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured naming the provider whose key is missing."
       required:
         - documentCount
         - readyDocumentCount
@@ -16414,7 +16414,7 @@ components:
                   - procedure
                   - validation
                   - conflict
-          description: One to six directives and exactly one routine. Nothing is saved.
+          description: One to 6 directives and exactly one routine. Nothing is saved.
       required:
         - outputLanguage
         - items
@@ -16469,7 +16469,7 @@ components:
                 additionalProperties: false
           minItems: 1
           maxItems: 7
-          description: "Only the items the user selected, possibly edited: at most six directives and one routine, with unique item keys and directive names."
+          description: "Only the items the user selected, possibly edited: at most 6 directives and one routine, with unique item keys and directive names. A draft's directive item sends its itemKey, kind, and directive; a draft's routine item sends its itemKey, kind, and routine, without procedure, validation, or conflict."
       required:
         - idempotencyKey
         - items
@@ -29915,19 +29915,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: invalid_starter_pack_draft when the model did not return a valid pack
+          description: invalid_starter_pack_draft when the model did not return a valid pack or routine
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Starter pack drafting rate limit reached
+          description: Starter pack drafting rate limit reached. Only a request that reaches its model calls counts against it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: provider_misconfigured when the workspace has no chat model, or llm_unavailable when the model call failed
+          description: provider_misconfigured when the platform's chat model has no usable API key for this workspace (details.provider names the provider to add a key for), or llm_unavailable when the model call failed
           content:
             application/json:
               schema:
@@ -29998,7 +29998,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Starter pack apply rate limit reached
+          description: Starter pack apply rate limit reached. A replay, or an apply refused for its names or excludes, does not count against it.
           content:
             application/json:
               schema:

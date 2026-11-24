@@ -5771,7 +5771,7 @@ export interface components {
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
             setup: components["schemas"]["WorkspaceSetupState"];
-            /** @description Whether a chat model call can run for this workspace: the chat model the deployment runs Ray and starter pack drafting on has an API key, the workspace's own or the deployment's, and any base URL it needs. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured. */
+            /** @description Whether the platform's chat model can run for this workspace: the chat provider and model this deployment runs Ray and starter pack drafting on, with a readable API key for that provider (the workspace's own or the deployment's) and any base URL it needs. The provider the workspace chose for its own agents does not change it. Checked without calling the model, so a key the provider would reject still counts. When false, Ray reports itself unavailable with reason no_llm_capability, and starter pack drafting returns 503 provider_misconfigured naming the provider whose key is missing. */
             llmConfigured: boolean;
         };
         RegisterRequest: {
@@ -11277,7 +11277,7 @@ export interface components {
         StarterPackDraftResponse: {
             /** @description The detected language label, such as German, or null when it could not be detected and the suggestions mirror the purpose's language. */
             outputLanguage: string | null;
-            /** @description One to six directives and exactly one routine. Nothing is saved. */
+            /** @description One to 6 directives and exactly one routine. Nothing is saved. */
             items: ({
                 /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
                 itemKey: string;
@@ -11308,7 +11308,7 @@ export interface components {
         StarterPackApplyRequest: {
             /** @description Client-chosen key for this apply. Sending the same key with the same items returns the first result instead of creating anything again; the same key with different items is refused. */
             idempotencyKey: string;
-            /** @description Only the items the user selected, possibly edited: at most six directives and one routine, with unique item keys and directive names. */
+            /** @description Only the items the user selected, possibly edited: at most 6 directives and one routine, with unique item keys and directive names. A draft's directive item sends its itemKey, kind, and directive; a draft's routine item sends its itemKey, kind, and routine, without procedure, validation, or conflict. */
             items: ({
                 /** @description Identifies the suggestion within one draft; send it back unchanged when applying. */
                 itemKey: string;
@@ -20794,7 +20794,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description invalid_starter_pack_draft when the model did not return a valid pack */
+            /** @description invalid_starter_pack_draft when the model did not return a valid pack or routine */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20803,7 +20803,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Starter pack drafting rate limit reached */
+            /** @description Starter pack drafting rate limit reached. Only a request that reaches its model calls counts against it. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -20812,7 +20812,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description provider_misconfigured when the workspace has no chat model, or llm_unavailable when the model call failed */
+            /** @description provider_misconfigured when the platform's chat model has no usable API key for this workspace (details.provider names the provider to add a key for), or llm_unavailable when the model call failed */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -20901,7 +20901,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Starter pack apply rate limit reached */
+            /** @description Starter pack apply rate limit reached. A replay, or an apply refused for its names or excludes, does not count against it. */
             429: {
                 headers: {
                     [name: string]: unknown;

@@ -12,7 +12,7 @@ import {
 import { pendingDirectiveId, type DirectiveCoherenceCandidate } from "../../../src/modules/agents/public.js";
 import type { RoutineDefinition, RoutineValidationResult } from "../../../src/modules/routines/public.js";
 import { defaultAnswerDirectives } from "../../../src/modules/directives/public.js";
-import { notFound } from "../../../src/shared/domain/errors.js";
+import { AppError, notFound } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = "workspace-1";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -341,6 +341,33 @@ describe("StarterPackApplyService coherence outside the transaction", () => {
     expect(store.assessCoherence).toHaveBeenCalledTimes(1);
     expect(store.state.transactions).toBe(1);
     expect(audit.record).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs beforeModelCalls just before assessing coherence, and not for a replay or a refused pack", async () => {
+    const store = createStore({ directives: ["taken-name"] });
+    const { service } = createService(store);
+    const beforeModelCalls = vi.fn(async () => undefined);
+    const body = request([directiveItem("directive-1", "confirm-details")]);
+
+    await service.apply(workspaceId, agentId, { accountId: null }, body, { beforeModelCalls });
+    expect(beforeModelCalls).toHaveBeenCalledTimes(1);
+    expect(beforeModelCalls.mock.invocationCallOrder[0]).toBeLessThan(store.assessCoherence.mock.invocationCallOrder[0]);
+
+    await service.apply(workspaceId, agentId, { accountId: null }, body, { beforeModelCalls });
+    await expect(service.apply(workspaceId, agentId, { accountId: null }, { ...request([directiveItem("directive-1", "taken-name")]), idempotencyKey: "other-key-0001" }, { beforeModelCalls }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(beforeModelCalls).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops before any model call or write when beforeModelCalls refuses", async () => {
+    const store = createStore();
+    const { service } = createService(store);
+    const refusal = new AppError(429, "rate_limit_exceeded", "Too many requests");
+
+    await expect(service.apply(workspaceId, agentId, { accountId: null }, request([directiveItem("directive-1", "confirm-details")]), { beforeModelCalls: async () => { throw refusal; } }))
+      .rejects.toBe(refusal);
+    expect(store.assessCoherence).not.toHaveBeenCalled();
+    expect(store.state.transactions).toBe(0);
   });
 
   it("refuses a reused key before any model call", async () => {

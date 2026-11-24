@@ -376,7 +376,7 @@ when it could not be told, in which case the suggestions mirror the purpose):
       "itemKey": "routine-1",
       "kind": "routine",
       "routine": { "name": "termin-buchen", "activation": { "triggerDescription": "Der Besucher möchte einen Termin buchen." }, "slots": [], "steps": [], "transitions": [], "terminals": [] },
-      "procedure": "Frage nach dem Wunschtermin und bestätige die Buchung.",
+      "procedure": "Frage nach dem Wunschtermin @wunschtermin und bestätige die Buchung für @wunschtermin.",
       "validation": { "ok": true, "diagnostics": [] },
       "conflict": null
     }
@@ -384,17 +384,23 @@ when it could not be told, in which case the suggestions mirror the purpose):
 }
 ```
 
-The routine is abbreviated above; a real response carries its full steps,
-transitions, and terminals. A directive is in the same shape
+The routine is abbreviated above; a real response carries its full slots,
+steps, transitions, and terminals. A directive is in the same shape
 `POST /api/v1/agents/{agentId}/directives` accepts, and a routine in the shape
 `POST /api/v1/agents/{agentId}/routines` accepts, so you can edit either before
-applying. `validation` is the routine validator's result, and `conflict` is
-`name_exists` when the agent already has an item with that name; applying a pack
-that includes it is refused.
+applying. `procedure` is the plain-language text the routine was drafted from;
+each value the routine collects is marked in it with an `@key`, which becomes
+one of the routine's slots. `validation` is the routine validator's result, and
+`conflict` is `name_exists` when the agent already has an item with that name;
+applying a pack that includes it is refused.
 
 Apply the items you keep with `POST /api/v1/agents/{agentId}/starter-pack/apply`.
 Send only the selected items, and an `idempotencyKey` you choose: 8 to 128
-characters of letters, digits, `.`, `_`, `:`, or `-`.
+characters of letters, digits, `.`, `_`, `:`, or `-`. Each item carries three
+fields from its draft item: `itemKey`, `kind`, and `directive` for a directive,
+or `itemKey`, `kind`, and `routine` for the routine. Leave out `conflict`, and
+for the routine `procedure` and `validation`; an item with any other field is
+refused with `400`.
 
 ```json
 {
@@ -408,6 +414,11 @@ characters of letters, digits, `.`, `_`, `:`, or `-`.
         "condition": { "kind": "always" },
         "action": "Wiederhole Datum und Uhrzeit und bitte um Bestätigung."
       }
+    },
+    {
+      "itemKey": "routine-1",
+      "kind": "routine",
+      "routine": { "name": "termin-buchen", "activation": { "triggerDescription": "Der Besucher möchte einen Termin buchen." }, "slots": [], "steps": [], "transitions": [], "terminals": [] }
     }
   ]
 }
@@ -416,8 +427,9 @@ characters of letters, digits, `.`, `_`, `:`, or `-`.
 Apply is all or nothing: either every selected item is created, or none is.
 It never overwrites a directive or routine the agent already has; if a selected
 name is taken, the whole apply is refused and the response lists the clashing
-items. Items are created in the order you send them, so a directive whose
-`excludes` names another directive from the same pack must come after it. An
+items. Items are created, and the agent lists its directives, in the order you send
+them, so a directive whose `excludes` names another directive from the same
+pack must come after it. An
 excluded name can also be a directive already on the agent or a built-in one;
 anything else is refused with `400`, and `details.items` lists each directive
 with the names it could not find. Names and `excludes` are checked before any
@@ -475,12 +487,20 @@ the agent as it was before that change.
 Applied items land in the agent's draft. Publish them the same way as any other
 draft change; see [Draft revisions and private tests](#draft-revisions-and-private-tests).
 
-Drafting needs a chat model. Before offering the starter pack, read
-`llmConfigured` from `GET /api/v1/workspace/summary`; when it is `false`, the
-draft call returns `503` with `provider_misconfigured` until a provider is set up
-in the workspace's provider settings. Drafting is limited to 5 requests an hour,
-and applying to 10 an hour, per signed-in user (per workspace for API
-credentials).
+Drafting runs on the platform's chat model: the chat provider and model this
+deployment runs Ray on, with the workspace's own API key for that provider or
+the deployment's. The provider a workspace picks for its agents does not change
+it. Before offering the starter pack, read `llmConfigured` from
+`GET /api/v1/workspace/summary`; when it is `false`, the draft call returns
+`503` with `provider_misconfigured`, and `details.provider` names the provider
+whose key is missing. Add a workspace credential for that provider in the
+provider settings, or set the deployment's key for it.
+
+Drafting is limited to 5 requests an hour, and applying to 10 an hour, per
+signed-in user (per workspace for API credentials). A request counts only once
+it reaches its model calls: a draft for an unknown agent or without a chat
+model, a replayed apply, and an apply refused for its names or `excludes` do not
+use any of the limit.
 
 ## Agent skills
 
@@ -1002,8 +1022,9 @@ GET    /api/v1/skills/{skillName}
 - A skill can be listed even when the work is executed through another route. Use `contractReferences` to find the stable execution path.
 - `400` on a bundle import usually means an unsupported `bundleVersion` or `agent.schemaVersion` — re-export the agent from a deployment this one reads.
 - `409` with `agent_bundle_import_in_progress` means another request with the same idempotency key is still applying. Query its `importId` or retry after it reaches a terminal state.
-- `503` with `provider_misconfigured` on a starter pack draft means the workspace has no chat model. `llm_unavailable` means the model call failed; retry shortly.
-- `422` with `invalid_starter_pack_draft` means the model did not return a usable pack after a retry. Draft again, or reword the purpose.
+- `503` with `provider_misconfigured` on a starter pack draft means the platform's chat model has no usable API key for this workspace; `details.provider` names the provider to add a key for. `llm_unavailable` means the model call failed; retry shortly.
+- `400` on a starter pack apply that names `procedure`, `validation`, or `conflict` means an item was sent as the draft returned it. Send only `itemKey`, `kind`, and `directive` or `routine`.
+- `422` with `invalid_starter_pack_draft` means the model did not return a usable pack or routine after a retry. Draft again, or reword the purpose.
 - `409` with `starter_pack_name_conflict` on apply means a selected directive or routine name is already on the agent; `details.items` lists them. Rename or deselect them and apply again with a new key.
 - `409` with `idempotency_key_reused` means the key was already used to apply different items. Use a new key for a different selection.
 - `400` on a starter pack apply whose `details.items` lists `unknownExcludes` means a directive excludes one that is neither on the agent nor listed before it in the pack. List the excluded directive first, or drop it from `excludes`.

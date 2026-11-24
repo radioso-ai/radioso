@@ -9,15 +9,9 @@ describe('isLlmMissing', () => {
     expect(isLlmMissing({ reason: 'ok' })).toBe(false)
   })
 
-  it('reads the workspace summary: missing only when llmConfigured is false', () => {
-    expect(isLlmMissing({ llmConfigured: false })).toBe(true)
-    expect(isLlmMissing({ llmConfigured: true })).toBe(false)
-  })
-
   it('treats a status that has not loaded yet as not missing, so the setup prompt never flashes', () => {
     expect(isLlmMissing(null)).toBe(false)
     expect(isLlmMissing(undefined)).toBe(false)
-    expect(isLlmMissing({ llmConfigured: null })).toBe(false)
   })
 })
 

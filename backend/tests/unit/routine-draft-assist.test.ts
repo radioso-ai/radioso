@@ -762,3 +762,52 @@ describe("RoutineDraftAssistService", () => {
     expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 });
+
+describe("RoutineDraftAssistService caller options", () => {
+  const prose = "Ask for the visitor's email, send the support request, then confirm.";
+
+  it("validates every attempt under a name the caller already chose", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({ name: "model-name", transitions: [validDraft().transitions[0]] })),
+      completion(validDraft({ name: "model-name-retry" })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, { prose }, { name: "caller-name" });
+
+    expect(textGenerationClient.calls).toHaveLength(2);
+    expect(result.draft.name).toBe("caller-name");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("passes the caller's abort signal to every model call", async () => {
+    const textGenerationClient = new FakeTextClient([completion(validDraft({ transitions: [validDraft().transitions[0]] })), completion(validDraft())]);
+    const { service } = createService(textGenerationClient);
+    const controller = new AbortController();
+
+    await service.draft(workspaceId, agentId, { prose }, { signal: controller.signal });
+
+    expect(textGenerationClient.calls.map((call) => call.signal)).toEqual([controller.signal, controller.signal]);
+  });
+
+  it("records an aborted model call as aborted, not as a provider failure", async () => {
+    const controller = new AbortController();
+    const aborted = new DOMException("This operation was aborted", "AbortError");
+    const textGenerationClient = {
+      calls: [],
+      complete: vi.fn(async () => {
+        controller.abort();
+        throw aborted;
+      }),
+    } as unknown as FakeTextClient;
+    const { service, logger, telemetryService } = createService(textGenerationClient);
+
+    await expect(service.draft(workspaceId, agentId, { prose }, { signal: controller.signal })).rejects.toBe(aborted);
+
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ status: "aborted" }), "routine_draft_assist_llm_call_aborted");
+    expect(telemetryService.emit).toHaveBeenCalledWith(expect.objectContaining({
+      tags: expect.objectContaining({ status: "aborted", failure_mode: "aborted" }),
+    }));
+  });
+});

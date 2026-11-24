@@ -110,7 +110,7 @@ import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import { IngestionSettingsService } from "../../../modules/settings/composition.js";
 import { retrievalAnswerSkillDefinition } from "../../../modules/skills/public.js";
-import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../../modules/retrieval/public.js";
+import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor, type AgentRetrievalScopePort, type RetrievalDefaultsProvider, type SkillSettingsResolver, type WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import {
   EXTERNAL_SKILLS_ADAPTER,
   McpSkillExecutor,
@@ -133,7 +133,6 @@ import {
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import { createRoutineConsentTelemetry, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
-import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver, WorkspaceTimeZoneReader } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";

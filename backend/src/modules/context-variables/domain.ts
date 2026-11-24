@@ -231,8 +231,7 @@ void conversationScopeTypesListed;
  * The scopes a save for one conversation names, as a routine slot's save target does: the
  * conversation itself, or the person the conversation is with.
  */
-export const CONVERSATION_SAVE_SCOPES = ["conversation", "person"] as const;
-export type ConversationSaveScope = typeof CONVERSATION_SAVE_SCOPES[number];
+export type ConversationSaveScope = "conversation" | "person";
 
 /**
  * Where a save for one conversation is kept: the conversation's own scope, or the conversation's

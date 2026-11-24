@@ -35,7 +35,6 @@ export {
   CONTEXT_VARIABLE_VALUE_TYPES,
   classificationRefusal,
   contextScopeLadder,
-  CONVERSATION_SAVE_SCOPES,
   CONVERSATION_SCOPE_TYPES,
   frozenTestValueInput,
   isClassifiedEnablement,
@@ -65,9 +64,7 @@ export type {
 } from "./conversationValueWriter.js";
 export { ContextValueSaves } from "./contextValueSaves.js";
 export type {
-  ContextValueSaveOutcome,
   ContextValueSaver,
-  ContextValueSaveRequest,
   ContextValueSaveStore,
   SaveTargetDefinition,
 } from "./contextValueSaves.js";

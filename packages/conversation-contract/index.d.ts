@@ -1189,7 +1189,6 @@ export type {
   RoutineRunTrace,
   RoutineSelectionTrace,
   RoutineTraceRejectedSlot,
-  RoutineTraceSave,
   RoutineTraceSlotValue,
   RoutineTraceStepEntry,
   RoutineUnreadableReason,

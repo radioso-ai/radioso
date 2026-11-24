@@ -1,6 +1,9 @@
-import type { RoutineTraceSave } from "@radioso/conversation-contract";
+import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AuditEventInput } from "../../../audit/contracts/index.js";
+
+/** One save a routine's run trace records: keys, names, scope and outcome, never a value. */
+type RoutineTraceSave = NonNullable<RoutineRunTrace["saves"]>[number];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);

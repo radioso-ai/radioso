@@ -1140,13 +1140,22 @@ fills only an empty or classifier-written value. `contextScopeLadder` is the
 resolution order, `conversation → session → person → agent → workspace`, where
 the person is the verified customer, else a channel's person key
 (`shared/domain/channelPersonKey.ts`: `whatsapp_contact`, the WhatsApp sender's
-number as `wa_id` digits); chat builds each turn's scopes with it. A turn carries
-the key its connector attested (`ConnectorChatPort.answer({ personKey })` →
-`AssistantChatRequest.channelPersonKey` → `PreparedSession.channelPersonKey`);
-readers outside a turn (Inbox, classifier, decision resume) ask the
-`ConversationChannelPersonKeys` port, bound in
-`app/composition/conversationReadSources.ts` to the WhatsApp plugin's
-`connector_whatsapp_conversations` lookup (migration 282). The resolver service
+number as `wa_id` digits; `readWhatsAppNumber` there is the one reading of a typed
+number, and `contextScopeLadder`'s person rung the one precedence beside a verified
+customer); chat builds each turn's scopes with it. A turn carries the key its
+connector attested: `ConnectorChatPort.answer({ personKey: { id } })`, read as the
+kind `app/composition/connectorChat.ts` binds to that connector id (only `whatsapp`
+has one; a key from another connector, or one that can't be read, is counted in
+`radioso_connector_person_keys_unused_total{connector, reason}` and the turn runs
+without it) → `AssistantChatRequest.channelPersonKey` →
+`PreparedSession.channelPersonKey`. A turn that carries none (a review, an approval
+resume: `modules/chat/services/turnChannelPersonKey.ts`) and readers outside a turn
+(Inbox, classifier, consent withholder) ask the `ConversationChannelPersonKeys`
+port, bound in `app/composition/conversationReadSources.ts` to the WhatsApp
+plugin's `connector_whatsapp_conversations` lookup (migration 282), which answers
+only for a conversation whose source channel is WhatsApp. The plugin writes the row
+through `answer({ onMessageStored })`, as soon as the conversation's first message
+is stored and before any model call. The resolver service
 owns turn-time reads, caching, timeouts, and compatibility checks. It caches
 under the chat session, verified customer or channel person key, or under the
 conversation when the turn has none, never under the agent or workspace, and
@@ -1411,7 +1420,7 @@ customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`
 context-variable conversation, session and customer values (an eraser reads the session ids
 it keys by from the conversations before they go), a WhatsApp number's values (the WhatsApp eraser
 hands the numbers whose latest conversation goes to `ChannelPersonDataEraser` in the same
-transaction), `chat.answer` /
+transaction; `WhatsAppNumberChanges` hands it a number Meta reports its sender left), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the
 WhatsApp message log of a number whose latest conversation goes, an Audience
@@ -1669,8 +1678,12 @@ verified customer id in `db/repositories/visitorRepository.ts`, email senders in
 `modules/emailChannel/persistence/emailDataSubjectAccess.ts`, Slack thread
 starters in `modules/connectors/plugins/slack/slackPersistence.ts`, WhatsApp
 numbers in `modules/connectors/plugins/whatsapp/whatsappNumbers.ts`, which also
-exports `whatsapp_contacts` and `whatsapp_messages`; a reach carries the
-`channelPersonKeys` the context-value exporter and eraser key by); each module
+exports `whatsapp_contacts` and, through `whatsappMessageExport.ts`'s projection of
+the subject's own message, `whatsapp_messages`; a reach carries the
+`channelPersonKeys` the context-value and WhatsApp exporters and
+`ConversationErasure.eraseChannelPersons` key by, on one page of a paged request); a
+finder may refuse a query or a key written as its kind but impossible
+(`misreadQuery`, `400`); each module
 that keeps data about the subject implements `DataSubjectDataExporter` for its
 export section. Composition binds both to one read-only, repeatable-read
 transaction. A table that names a conversation, session, visitor or message
@@ -1688,6 +1701,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/data-subject-access-service.test.ts tests/contract/privacy-data-subjects.contract.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/data-subject-access.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts tests/integration/whatsapp-person-values.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/whatsapp-turn.integration.test.ts` (real turns from Meta's webhook: the number is recorded before the first model call, and its digits are in no log line, metric, span, event, job or audit record)
 
 Related docs:
 

@@ -557,8 +557,13 @@ number in international form, country code first; Radioso keeps its digits:
 
 A number's values are read on that number's WhatsApp conversations only, every
 one of them, and on no other channel: a customer id never names them, and a
-number never reaches a resolver skill. An id that is not a number returns
-`400`.
+number never reaches a resolver skill. An id that is not a number, or one that
+starts with `0` or `00` instead of its country code, returns `400`.
+
+The id is the number as WhatsApp reports it, its `wa_id`. In some countries,
+Brazil and Mexico among them, that can differ by a digit or two from the number
+people dial, and a value set under the dialled number is never read. Take the
+id from WhatsApp's own webhook when you have it.
 
 ### Who set a value
 
@@ -585,8 +590,10 @@ conversation it ran in; see
 Conversation-scope values are deleted with their conversation, and a data
 subject export lists them with the kind of writer that set each one. A
 WhatsApp number's values go with its latest conversation, whether a teammate
-deletes it, retention ages it out, or a
-[data subject request](/operators/data-subject-requests) erases the number.
+deletes it or retention ages it out, when a
+[data subject request](/operators/data-subject-requests) erases the number, and
+when WhatsApp reports that its owner moved to another number. Values for a
+number that has no conversation stay until you delete them or erase the number.
 
 ## Inbox
 

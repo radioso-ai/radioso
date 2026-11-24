@@ -36,6 +36,10 @@ const observedArguments = (source: string): string[] => [...source.matchAll(OBSE
 /** What names a number: the sender's `wa_id` however it is held, or a person key or its id. */
 const NAMES_A_NUMBER = /\bwaId\b|\bwa_id\b|personKey|channelPersonKey|scope\.id|scopeId/u;
 
+/**
+ * A tripwire over the source, for the branches the runtime guard (`whatsapp-turn.integration.test.ts`,
+ * which reads what real turns let an observer see) does not drive: photos, taps and card fallbacks.
+ */
 describe("a WhatsApp number is never observed", () => {
   it("names no number in a log line, a metric label or a span attribute", async () => {
     const leaks: string[] = [];

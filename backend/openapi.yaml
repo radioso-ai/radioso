@@ -13387,6 +13387,9 @@ components:
             - string
             - json
             - enum
+            - boolean
+            - number
+            - date
         value:
           description: "The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`."
         option:
@@ -15782,6 +15785,9 @@ components:
             - string
             - json
             - enum
+            - boolean
+            - number
+            - date
         options:
           type:
             - array
@@ -15841,7 +15847,10 @@ components:
             - string
             - json
             - enum
-          description: The type of every value. It cannot change while the variable has values.
+            - boolean
+            - number
+            - date
+          description: "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values."
         options:
           type:
             - array
@@ -15890,7 +15899,10 @@ components:
             - string
             - json
             - enum
-          description: The type of every value. It cannot change while the variable has values.
+            - boolean
+            - number
+            - date
+          description: "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values."
         options:
           type:
             - array
@@ -16077,7 +16089,7 @@ components:
         scope:
           $ref: "#/components/schemas/ContextVariableScope"
         data:
-          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
+          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit."
         lastModified:
           type: string
           format: date-time
@@ -16113,7 +16125,7 @@ components:
         scope:
           $ref: "#/components/schemas/ContextVariableScope"
         data:
-          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
+          description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit."
       required:
         - scope
     ContextVariableValueDeleteRequest:
@@ -18812,6 +18824,9 @@ components:
                 - string
                 - json
                 - enum
+                - boolean
+                - number
+                - date
               description: The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
             scope:
               type: string
@@ -18819,7 +18834,7 @@ components:
                 - conversation
               description: Where the value is kept. Version 1 records the values kept for the conversation.
             value:
-              description: "The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."
+              description: "The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute."
             redacted:
               type: boolean
               description: True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded.

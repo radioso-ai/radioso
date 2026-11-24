@@ -2273,7 +2273,7 @@ CREATE TABLE public.context_variables (
     CONSTRAINT context_variables_options_check CHECK (((value_type = 'enum'::text) = ((options IS NOT NULL) AND (jsonb_typeof(options) = 'array'::text)))),
     CONSTRAINT context_variables_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT context_variables_trust_tier_check CHECK ((trust_tier = ANY (ARRAY['unverified'::text, 'signed'::text]))),
-    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text, 'enum'::text])))
+    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text, 'enum'::text, 'boolean'::text, 'number'::text, 'date'::text])))
 );
 
 
@@ -3999,8 +3999,11 @@ CREATE TABLE public.routine_slot (
     ordinal integer NOT NULL,
     mutable boolean DEFAULT false NOT NULL,
     sensitivity text DEFAULT 'normal'::text NOT NULL,
+    save_to_context_variable text,
+    save_to_scope text,
     CONSTRAINT routine_slot_key_check CHECK ((NULLIF(btrim(key), ''::text) IS NOT NULL)),
     CONSTRAINT routine_slot_ordinal_check CHECK ((ordinal >= 0)),
+    CONSTRAINT routine_slot_save_to_check CHECK ((((save_to_context_variable IS NULL) = (save_to_scope IS NULL)) AND ((save_to_scope IS NULL) OR (save_to_scope = ANY (ARRAY['conversation'::text, 'person'::text]))))),
     CONSTRAINT routine_slot_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT routine_slot_stable_slot_id_check CHECK ((NULLIF(btrim(stable_slot_id), ''::text) IS NOT NULL)),
     CONSTRAINT routine_slot_type_check CHECK ((type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'email'::text, 'date'::text, 'item'::text])))

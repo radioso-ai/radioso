@@ -56,7 +56,8 @@ const optionInputSchema = contextVariableOptionInputSchema.extend({
 export const contextVariableDefinitionInputShape = {
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(2_000).nullable().optional(),
-  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional(),
+  valueType: z.enum(CONTEXT_VARIABLE_VALUE_TYPES).optional()
+    .describe("string (Text), enum (Choice: one of its options), json, boolean (Yes/no), number, or date (an ISO calendar date, no time). Only enum takes options, and only enum can be classified."),
   options: z.array(optionInputSchema).nullable().optional()
     .describe("Enum only: the full option list, every existing key included. Omit to keep the stored list."),
   trustTier: z.enum(contextVariableTrustTiers).optional(),

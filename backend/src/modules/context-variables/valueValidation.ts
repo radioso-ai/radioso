@@ -1,4 +1,5 @@
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
+import { isIsoCalendarDate } from "../../shared/domain/calendarDate.js";
 import type { ContextVariable, ContextVariableOption, ContextVariableValueType } from "./domain.js";
 import { contextVariableOptionSchema } from "./optionSchema.js";
 
@@ -6,24 +7,53 @@ type Verdict<Code extends string> = { ok: true } | { ok: false; code: Code };
 
 export type ValueValidationCode = "type_mismatch" | "unknown_option" | "archived_option";
 
+/** What a value of each type is, as a refusal tells a caller who sent something else. */
+export const VALUE_TYPE_EXPECTATIONS: Readonly<Record<ContextVariableValueType, string>> = {
+  string: "a string",
+  json: "any JSON value",
+  enum: "the key of an active option",
+  boolean: "true or false, as a JSON boolean",
+  number: "a finite JSON number",
+  date: "an ISO calendar date such as 2026-11-24",
+};
+
 const accepted = { ok: true } as const;
 const refused = <Code extends string>(code: Code): Verdict<Code> => ({ ok: false, code });
+
+const fits = (fit: boolean): Verdict<ValueValidationCode> => (fit ? accepted : refused("type_mismatch"));
+
+const validateOption = (options: readonly ContextVariableOption[] | null, data: unknown): Verdict<ValueValidationCode> => {
+  if (typeof data !== "string") return refused("type_mismatch");
+  const option = options?.find((candidate) => candidate.key === data);
+  if (!option) return refused("unknown_option");
+  return option.archived ? refused("archived_option") : accepted;
+};
 
 /**
  * Whether `data` may be written as the value of a variable. Every writer goes through it. An enum
  * value is the key of an active option; an archived key stays valid where it is already stored, so a
- * reader of stored values treats `archived_option` as readable.
+ * reader of stored values treats `archived_option` as readable. A boolean, number or date is the JSON
+ * value itself, never text that reads like one: `"true"` is not a boolean, and a date is a calendar
+ * day with no time.
  */
 export const validateValue = (
   definition: Pick<ContextVariable, "valueType" | "options">,
   data: unknown,
 ): Verdict<ValueValidationCode> => {
-  if (definition.valueType === "json") return accepted;
-  if (typeof data !== "string") return refused("type_mismatch");
-  if (definition.valueType === "string") return accepted;
-  const option = definition.options?.find((candidate) => candidate.key === data);
-  if (!option) return refused("unknown_option");
-  return option.archived ? refused("archived_option") : accepted;
+  switch (definition.valueType) {
+    case "json":
+      return accepted;
+    case "string":
+      return fits(typeof data === "string");
+    case "boolean":
+      return fits(typeof data === "boolean");
+    case "number":
+      return fits(typeof data === "number" && Number.isFinite(data));
+    case "date":
+      return fits(typeof data === "string" && isIsoCalendarDate(data));
+    case "enum":
+      return validateOption(definition.options, data);
+  }
 };
 
 export type OptionsValidationCode =

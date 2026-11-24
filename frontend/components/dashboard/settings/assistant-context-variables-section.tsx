@@ -11,6 +11,7 @@ import {
   sourceLabels,
   surfacingLabels,
   valueTypeLabels,
+  valueTypeOrder,
   type SourceOption,
   type SurfacingOption,
   type ValueTypeOption,
@@ -540,9 +541,9 @@ export function AssistantContextVariablesSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="string">{valueTypeLabels.string}</SelectItem>
-                  <SelectItem value="enum">{valueTypeLabels.enum}</SelectItem>
-                  <SelectItem value="json">{valueTypeLabels.json}</SelectItem>
+                  {valueTypeOrder.map((valueType) => (
+                    <SelectItem key={valueType} value={valueType}>{valueTypeLabels[valueType]}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -20,6 +20,7 @@ import {
 } from "../domain.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
+  VALUE_TYPE_EXPECTATIONS,
   validateOptions,
   validateValue,
   type OptionsValidationCode,
@@ -354,7 +355,7 @@ export class ContextVariableService {
 type ClassifiableDefinition = Pick<ContextVariable, "valueType" | "sensitivity" | "trustTier">;
 
 const classificationRefusalMessages: Record<ClassificationRefusal, string> = {
-  not_choice: 'Only a Choice (enum) attribute can use source "classified"',
+  not_choice: 'Only a Choice (enum) attribute can use source "classified": the AI picks one of its options. A routine, a teammate or the API sets any other type',
   private: 'A Private (sensitive) attribute cannot use source "classified"',
   proof: 'An attribute treated as proof (signed) cannot use source "classified": the AI reads it from what the visitor typed',
 };
@@ -364,7 +365,7 @@ const draftedAgainst = (current: ContextVariable, expectedUpdatedAt: Date | null
   expectedUpdatedAt === null || current.updatedAt.getTime() === expectedUpdatedAt.getTime();
 
 const valueFaultMessages: Record<ValueValidationCode, (variable: ContextVariable) => string> = {
-  type_mismatch: (variable) => `Context variable value must match declared valueType '${variable.valueType}'`,
+  type_mismatch: (variable) => `Context variable value must match declared valueType '${variable.valueType}': ${VALUE_TYPE_EXPECTATIONS[variable.valueType]}`,
   unknown_option: () => "Context variable value must be the key of one of its options",
   archived_option: () => "Context variable value names an archived option",
 };

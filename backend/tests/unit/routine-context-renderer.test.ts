@@ -103,6 +103,14 @@ describe("routineContextRenderer", () => {
     })).toBe('<context_variable name="cart">{"items":2,"total":59.9}</context_variable>');
   });
 
+  it("renders a Yes/no, number or date value plainly, as its JSON text", () => {
+    const rendered = (name: string, value: unknown) => routineContextRenderer.render({ name, stagedContext: [variable(name, value)] });
+
+    expect(rendered("member", false)).toBe('<context_variable name="member">false</context_variable>');
+    expect(rendered("party_size", 4)).toBe('<context_variable name="party_size">4</context_variable>');
+    expect(rendered("arrival", "2026-11-24")).toBe('<context_variable name="arrival">2026-11-24</context_variable>');
+  });
+
   it("renders an enum value by its option's label, and a sensitive one as the redaction marker", () => {
     const staged = (sensitive: boolean): StagedContext => ({
       ...variable("topic", "billing", { sensitive }),

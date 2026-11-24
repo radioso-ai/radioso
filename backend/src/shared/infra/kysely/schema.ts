@@ -1850,6 +1850,8 @@ export interface RoutineSlot {
   mutable: Generated<boolean>;
   ordinal: number;
   required: Generated<boolean>;
+  save_to_context_variable: string | null;
+  save_to_scope: string | null;
   sensitivity: Generated<string>;
   stable_slot_id: string;
   type: string;

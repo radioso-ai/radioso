@@ -10216,7 +10216,7 @@ export interface components {
             /** @description The attribute's name, as in `{{context.<name>}}`. */
             name: string;
             /** @enum {string} */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description The value, as `GET /api/v1/context-variables/{id}/values` returns it: an `enum` value is its option's key. Null when `redacted`. */
             value?: unknown;
             /** @description The option an `enum` value names, archived or not. Absent for other types, for a redacted value, and for a key no option has. */
@@ -11045,7 +11045,7 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description The options of an `enum` variable; null for every other type. */
             options: components["schemas"]["ContextVariableOption"][] | null;
             /** @enum {string} */
@@ -11063,10 +11063,10 @@ export interface components {
             name: string;
             description?: string | null;
             /**
-             * @description The type of every value. It cannot change while the variable has values.
+             * @description The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.
              * @enum {string}
              */
-            valueType: "string" | "json" | "enum";
+            valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
             options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
@@ -11080,10 +11080,10 @@ export interface components {
             name?: string;
             description?: string | null;
             /**
-             * @description The type of every value. It cannot change while the variable has values.
+             * @description The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.
              * @enum {string}
              */
-            valueType?: "string" | "json" | "enum";
+            valueType?: "string" | "json" | "enum" | "boolean" | "number" | "date";
             /** @description Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it. */
             options?: components["schemas"]["ContextVariableOptionInput"][] | null;
             /** @enum {string} */
@@ -11157,7 +11157,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
             /** Format: date-time */
             lastModified: string;
@@ -11171,7 +11171,7 @@ export interface components {
         };
         ContextVariableValueUpsertRequest: {
             scope: components["schemas"]["ContextVariableScope"];
-            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit. */
+            /** @description A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit. */
             data?: unknown;
         };
         ContextVariableValueDeleteRequest: {
@@ -12313,13 +12313,13 @@ export interface components {
                  * @description The attribute's type. A Choice attribute is `enum`, and its value is an option's key.
                  * @enum {string}
                  */
-                valueType: "string" | "json" | "enum";
+                valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
                 /**
                  * @description Where the value is kept. Version 1 records the values kept for the conversation.
                  * @enum {string}
                  */
                 scope: "conversation";
-                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute. */
+                /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute. */
                 value: unknown;
                 /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded. */
                 redacted: boolean;

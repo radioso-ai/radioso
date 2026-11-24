@@ -101,6 +101,12 @@ describe('attributeValueText', () => {
     expect(attributeValueText(attribute({ valueType: 'string', value: 'Pro', option: undefined }))).toBe('Pro')
     expect(attributeValueText(attribute({ valueType: 'json', value: { items: 2 }, option: undefined }))).toBe('{"items":2}')
   })
+  it('shows a Yes/no value as Yes or No, a number as written and a date as its calendar day', () => {
+    expect(attributeValueText(attribute({ valueType: 'boolean', value: true, option: undefined }))).toBe('Yes')
+    expect(attributeValueText(attribute({ valueType: 'boolean', value: false, option: undefined }))).toBe('No')
+    expect(attributeValueText(attribute({ valueType: 'number', value: 4.5, option: undefined }))).toBe('4.5')
+    expect(attributeValueText(attribute({ valueType: 'date', value: '2026-11-24', option: undefined }))).toBe('2026-11-24')
+  })
 })
 
 describe('previewAttributeValue', () => {

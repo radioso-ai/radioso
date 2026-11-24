@@ -47,6 +47,7 @@ const writerLabels: Record<ConversationAttribute['writtenBy']['kind'], string> =
 export const attributeValueText = (attribute: ConversationAttribute): string => {
   if (attribute.redacted) return 'Private data'
   if (attribute.option) return attribute.option.label
+  if (typeof attribute.value === 'boolean') return attribute.value ? 'Yes' : 'No'
   return typeof attribute.value === 'string' ? attribute.value : JSON.stringify(attribute.value)
 }
 
@@ -74,9 +75,15 @@ export const surfacingLabels: Record<SurfacingOption, string> = {
 
 export const valueTypeLabels: Record<ValueTypeOption, string> = {
   string: 'Text',
-  json: 'JSON',
   enum: 'Choice',
+  boolean: 'Yes/no',
+  number: 'Number',
+  date: 'Date',
+  json: 'JSON',
 }
+
+/** The type picker's order: the order of `valueTypeLabels`. */
+export const valueTypeOrder = Object.keys(valueTypeLabels) as ValueTypeOption[]
 
 export const attributeHelp = {
   name: {
@@ -90,9 +97,9 @@ export const attributeHelp = {
       'A short description that helps your team and the agent recognise the value. It does not change behaviour.',
   },
   valueType: {
-    description: 'Text, one of your options, or structured data.',
+    description: 'Text, one of your options, yes or no, a number, a date, or structured data.',
     tooltip:
-      '**Text** is a single value, such as a plan name.\n\n**Choice** is one option from a list you write, such as a topic. A value stores the option key.\n\n**JSON** is structured data your site sends, such as a cart with line items.\n\nThe type cannot change once the attribute has values.',
+      '**Text** is a single value, such as a plan name.\n\n**Choice** is one option from a list you write, such as a topic. A value stores the option key. Only a Choice can be set by the AI.\n\n**Yes/no**, **Number** and **Date** hold one of those, such as whether a visitor is a member, a party size or an arrival date. A date is a calendar day with no time.\n\n**JSON** is structured data your site sends, such as a cart with line items.\n\nThe type cannot change once the attribute has values.',
   },
   signed: {
     description: 'Skills that need a verified identity accept this value. Tick it only if your server alone sets the value.',

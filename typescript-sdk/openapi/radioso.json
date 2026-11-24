@@ -18797,7 +18797,10 @@
             "enum": [
               "string",
               "json",
-              "enum"
+              "enum",
+              "boolean",
+              "number",
+              "date"
             ]
           },
           "value": {
@@ -22245,7 +22248,10 @@
             "enum": [
               "string",
               "json",
-              "enum"
+              "enum",
+              "boolean",
+              "number",
+              "date"
             ]
           },
           "options": {
@@ -22323,9 +22329,12 @@
             "enum": [
               "string",
               "json",
-              "enum"
+              "enum",
+              "boolean",
+              "number",
+              "date"
             ],
-            "description": "The type of every value. It cannot change while the variable has values."
+            "description": "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values."
           },
           "options": {
             "type": [
@@ -22389,9 +22398,12 @@
             "enum": [
               "string",
               "json",
-              "enum"
+              "enum",
+              "boolean",
+              "number",
+              "date"
             ],
-            "description": "The type of every value. It cannot change while the variable has values."
+            "description": "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values."
           },
           "options": {
             "type": [
@@ -22652,7 +22664,7 @@
             "$ref": "#/components/schemas/ContextVariableScope"
           },
           "data": {
-            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
+            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit."
           },
           "lastModified": {
             "type": "string",
@@ -22701,7 +22713,7 @@
             "$ref": "#/components/schemas/ContextVariableScope"
           },
           "data": {
-            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit."
+            "description": "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit."
           }
         },
         "required": [
@@ -26422,7 +26434,10 @@
                 "enum": [
                   "string",
                   "json",
-                  "enum"
+                  "enum",
+                  "boolean",
+                  "number",
+                  "date"
                 ],
                 "description": "The attribute's type. A Choice attribute is `enum`, and its value is an option's key."
               },
@@ -26434,7 +26449,7 @@
                 "description": "Where the value is kept. Version 1 records the values kept for the conversation."
               },
               "value": {
-                "description": "The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`. Null when the value was cleared, and always null for a Private attribute."
+                "description": "The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute."
               },
               "redacted": {
                 "type": "boolean",

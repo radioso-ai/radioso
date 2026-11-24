@@ -31,7 +31,7 @@ const ContextValueWriterKindSchema = z.enum(CONTEXT_VALUE_WRITER_KINDS);
 
 export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const JsonValueSchema = z.unknown().openapi({
-    description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`. The HTTP API rejects values above the serialized size limit.",
+    description: "A value of the variable's type: a string for `string`, the key of an active option for `enum`, any JSON for `json`, `true` or `false` for `boolean`, a finite number for `number`, and an ISO calendar date such as `2026-11-24` for `date`. The HTTP API rejects values above the serialized size limit.",
   });
 
   const optionKeyDescription = { description: "What a value stores. It never changes." };
@@ -77,7 +77,7 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
       name: z.string().min(1).max(120),
       description: z.string().max(2000).nullable().optional(),
       valueType: ContextVariableValueTypeSchema.openapi({
-        description: "The type of every value. It cannot change while the variable has values.",
+        description: "The type of every value: `string` (text), `enum` (one of `options`), `json` (any JSON), `boolean`, `number` or `date` (an ISO calendar date, no time). It cannot change while the variable has values.",
       }),
       options: z.array(ContextVariableOptionInputSchema).max(optionLimits.maxOptions).nullable().optional().openapi({
         description: "Required for `enum`, refused for other types. An update lists every existing key: archive an option instead of removing it.",

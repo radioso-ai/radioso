@@ -213,14 +213,21 @@ const isContextVariableTypeCompatibleWithInput = (
   valueType: ContextVariableValueType,
   inputType: SkillAuthoringInput["type"],
 ): boolean => {
-  if (valueType === "json") {
-    return true;
+  switch (valueType) {
+    case "json":
+      return true;
+    // An enum value is an option key: text, or a choice from an enum input.
+    case "enum":
+      return inputType === "text" || inputType === "enum";
+    case "boolean":
+    case "number":
+      return inputType === valueType;
+    // An ISO calendar date is also text.
+    case "date":
+      return inputType === "date" || inputType === "text";
+    case "string":
+      return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
   }
-  // An enum value is an option key: text, or a choice from an enum input.
-  if (valueType === "enum") {
-    return inputType === "text" || inputType === "enum";
-  }
-  return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
 };
 
 /**

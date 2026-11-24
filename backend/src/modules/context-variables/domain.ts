@@ -6,8 +6,12 @@ import type { SameType } from "../../shared/types/sameType.js";
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "./contextResolutionService.js";
 import type { FrozenTestValue } from "./testValues.js";
 
-/** Every type a variable's value can have. Each surface that names a type takes it from here. */
-export const CONTEXT_VARIABLE_VALUE_TYPES = ["string", "json", "enum"] as const;
+/**
+ * Every type a variable's value can have. Each surface that names a type takes it from here. A value
+ * is stored as JSON: a string, any JSON, an option key, a boolean, a finite number, or an ISO calendar
+ * date (`YYYY-MM-DD`).
+ */
+export const CONTEXT_VARIABLE_VALUE_TYPES = ["string", "json", "enum", "boolean", "number", "date"] as const;
 export type ContextVariableValueType = typeof CONTEXT_VARIABLE_VALUE_TYPES[number];
 export type ContextVariableTrustTier = "unverified" | "signed";
 /** The same authored sensitivity a routine slot carries, with the same masking rule. */

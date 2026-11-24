@@ -1,6 +1,6 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import type { ContextVariable } from "./domain.js";
-import { validateValue } from "./valueValidation.js";
+import { VALUE_TYPE_EXPECTATIONS, validateValue } from "./valueValidation.js";
 
 /** A caller-provided private value; it never invokes a live resolver. */
 export interface TestValue {
@@ -61,9 +61,7 @@ const freezeJsonValue = (value: unknown): unknown => deepFreeze(JSON.parse(JSON.
 const acceptTestValue = (definition: ContextVariable, value: unknown): unknown => {
   if (definition.valueType !== "json") {
     if (!validateValue(definition, value).ok) {
-      throw badRequest(definition.valueType === "enum"
-        ? `Test value for ${definition.name} must be the key of an active option.`
-        : `Test value for ${definition.name} must be a string.`);
+      throw badRequest(`Test value for ${definition.name} must be ${VALUE_TYPE_EXPECTATIONS[definition.valueType]}.`);
     }
     return value;
   }

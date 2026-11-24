@@ -26,6 +26,7 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { ConversationChannelPersonKeys } from "../../../shared/domain/channelPersonKey.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -202,6 +203,8 @@ export interface ChatServiceOptions {
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
   /** The zone a turn reads today in when its visitor reports none; UTC when absent. */
   workspaceTimeZones?: WorkspaceTimeZoneReader;
+  /** The person key a conversation's channel keeps, for a turn that carries none (#1884). */
+  channelPersonKeys?: ConversationChannelPersonKeys;
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
@@ -428,6 +431,7 @@ export class ChatService {
       productAnalyticsService = new NoopProductAnalyticsService(),
       workspaceRepository,
       workspaceTimeZones,
+      channelPersonKeys,
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
@@ -537,6 +541,7 @@ export class ChatService {
       turnRuntime.metrics,
       routineStore,
       workspaceTimeZones,
+      channelPersonKeys,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,
@@ -614,9 +619,7 @@ export class ChatService {
    * it. Turns in the other modes keep a reply once it started, so they have none.
    */
   private latestInputCommitFence(coordination: TurnCoordinationState): (() => void) | undefined {
-    if (!coordination.leaseOptions?.supersedeAfterEmission) {
-      return undefined;
-    }
+    if (!coordination.leaseOptions?.supersedeAfterEmission) return undefined;
     coordination.lease?.throwIfCancelled();
     return () => coordination.lease?.beginCommit();
   }
@@ -662,9 +665,7 @@ export class ChatService {
       stream: boolean;
     },
   ): Promise<void> {
-    if (!reservation) {
-      return;
-    }
+    if (!reservation) return;
     try {
       await reservation.release();
     } catch (error) {
@@ -748,9 +749,7 @@ export class ChatService {
   }
 
   private async loadActiveRoutine(session: PreparedSession): Promise<RoutineState | null> {
-    if (!this.routineStore) {
-      return null;
-    }
+    if (!this.routineStore) return null;
     return this.routineStore.loadActive({ sessionId: session.conversation.id });
   }
 

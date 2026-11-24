@@ -35,20 +35,22 @@ const readConversationRelease = async (
 ) => {
   const conversation = await db
     .selectFrom("conversations")
-    .select(["id", "agent_id", "agent_revision_id", "anonymous_session_id", "verified_customer_id"])
+    .select(["id", "agent_id", "agent_revision_id", "anonymous_session_id", "verified_customer_id", "source_channel"])
     .where("workspace_id", "=", input.workspaceId)
     .where("id", "=", input.conversationId)
     .executeTakeFirst();
   if (!conversation) return null;
-  const enablements = conversation.agent_id && conversation.agent_revision_id
-    ? await revisions.findRevisionEnablements({
-      workspaceId: input.workspaceId,
-      agentId: conversation.agent_id,
-      revisionId: conversation.agent_revision_id,
-    }) ?? []
-    : [];
-  // A conversation has one person key: a verified customer's needs no channel's.
-  const channelPersonKey = conversation.verified_customer_id ? null : await personKeys.personKeyOf(input);
+  // The person key is read beside the release, and only on a channel that keeps one.
+  const [enablements, channelPersonKey] = await Promise.all([
+    conversation.agent_id && conversation.agent_revision_id
+      ? revisions.findRevisionEnablements({
+        workspaceId: input.workspaceId,
+        agentId: conversation.agent_id,
+        revisionId: conversation.agent_revision_id,
+      }).then((found) => found ?? [])
+      : Promise.resolve([]),
+    personKeys.personKeyOf({ ...input, sourceChannel: conversation.source_channel }),
+  ]);
   return { conversation, enablements, channelPersonKey };
 };
 

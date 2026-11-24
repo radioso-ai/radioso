@@ -42,7 +42,7 @@ import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/po
 import { ContactRequestRecordingOutbox } from "../../../modules/chat/infra/contactRequestRecordingOutbox.js";
 import { workspaceEventRecorder } from "../../composition/workspaceEventLog.js";
 import { createRoutineValueSaves } from "../../composition/routineValueSaves.js";
-import { conversationAttributeService } from "../../composition/conversationReadSources.js";
+import { conversationAttributeService, conversationReadSources } from "../../composition/conversationReadSources.js";
 import { AccountAccessService } from "../../../modules/account/public.js";
 import { AgentRevisionRuntimeResolver, AgentService } from "../../../modules/agents/public.js";
 import { VisitorRepository, VisitorResolver } from "../../../modules/visitors/composition.js";
@@ -264,9 +264,7 @@ export const buildChatServices = (input: {
         input.metricsRegistry,
       ),
     ),
-    input.logger,
-    input.metricsRegistry,
-    { quickReplyLaneEnabled },
+    input.logger, input.metricsRegistry, { quickReplyLaneEnabled },
   );
   const answerPresentationService = new AnswerPresentationService(input.metricsRegistry);
   const answerPresentation = {
@@ -778,6 +776,7 @@ export const buildChatServices = (input: {
     productAnalyticsService: input.productAnalyticsService,
     workspaceRepository: input.workspaceRepository,
     workspaceTimeZones: input.workspaceTimeZones,
+    channelPersonKeys: conversationReadSources(input.database.kysely).personKeys,
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,

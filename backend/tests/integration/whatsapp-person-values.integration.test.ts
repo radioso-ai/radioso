@@ -14,6 +14,7 @@ import { AuditEventRepository } from "../../src/db/repositories/auditEventReposi
 import { ContextValueConsentWithholder } from "../../src/db/repositories/contextValueConsentWithholder.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationAttributeReads } from "../../src/db/repositories/conversationAttributeReads.js";
+import { readConversationClassification } from "../../src/db/repositories/conversationClassifiedVariables.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
@@ -131,8 +132,8 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
   const keepForNumber = (tenant: Tenant, number: string, data: string, writtenBy: { kind: "api" | "routine"; ref: string } = api) =>
     values.upsertValue(tenant.variableId, { type: "whatsapp_contact", id: number }, data, writtenBy);
 
-  const attributeOn = async (tenant: Tenant, conversationId: string) =>
-    (await attributes.read(tenant.workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null }))
+  const attributeOn = async (tenant: Tenant, conversationId: string, sourceChannel: string | null = "whatsapp") =>
+    (await attributes.read(tenant.workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null, sourceChannel }))
       .map(({ name, value, scope }) => ({ name, value, scope }));
 
   const personValues = async (tenant: Tenant) => (await database.query<{ scope_id: string; data: unknown }>(
@@ -255,6 +256,43 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
       );
       expect(audits.length).toBeGreaterThan(0);
       expect(JSON.stringify(audits)).not.toContain(NUMBER_A.slice(-7));
+    });
+  });
+
+  describe("a conversation's number, recorded as soon as its first message is stored", () => {
+    /** A WhatsApp conversation whose first turn stored the message and then failed: no contact row points at it. */
+    const firstTurnFailed = async (tenant: Tenant, sourceChannel = "whatsapp"): Promise<string> => {
+      const conversationId = randomUUID();
+      await database.query(
+        "INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, $4)",
+        [conversationId, tenant.workspaceId, tenant.agentId, sourceChannel],
+      );
+      await whatsapp.recordConversation({ workspaceId: tenant.workspaceId, waId: NUMBER_A, conversationId });
+      return conversationId;
+    };
+
+    it("puts the number before the classifier and the Inbox from the first turn, and keeps a failed first turn reachable by number", async () => {
+      const tenant = await seedTenant();
+      await keepForNumber(tenant, NUMBER_A, "gold");
+      const conversationId = await firstTurnFailed(tenant);
+
+      const classified = await readConversationClassification(database.kysely, conversationReadSources(database.kysely), {
+        workspaceId: tenant.workspaceId, conversationId,
+      });
+
+      expect(classified?.channelPersonKey).toEqual({ kind: "whatsapp_contact", id: NUMBER_A });
+      expect(await attributeOn(tenant, conversationId)).toEqual([{ name: tenant.variableName, value: "gold", scope: "whatsapp_contact" }]);
+      expect(await access.lookup({ workspaceId: tenant.workspaceId, query: NUMBER_A, actor: actor(tenant) })).toEqual([
+        expect.objectContaining({ identity: { kind: "whatsapp_number", key: NUMBER_A }, conversationCount: 1 }),
+      ]);
+    });
+
+    it("is read only for a conversation on WhatsApp", async () => {
+      const tenant = await seedTenant();
+      await keepForNumber(tenant, NUMBER_A, "gold");
+      const conversationId = await firstTurnFailed(tenant, "website_embed");
+
+      expect(await attributeOn(tenant, conversationId, "website_embed")).toEqual([]);
     });
   });
 

@@ -85,7 +85,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     await variables.upsertValue(region.id, { type: "workspace", id: workspaceId }, "eu", api);
     await variables.upsertValue(region.id, { type: "agent", id: agentId }, "us", api);
 
-    const read = await attributes.read(workspaceId, { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId });
+    const read = await attributes.read(workspaceId, { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, sourceChannel: null });
 
     expect(read.map(({ name, value, scope, writtenBy }) => ({ name, value, scope, writtenBy }))).toEqual(
       [
@@ -94,7 +94,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
       ].sort((left, right) => left.name.localeCompare(right.name)),
     );
     expect(read.find((attribute) => attribute.name === topic.name)?.option).toEqual({ label: "Billing", archived: false });
-    await expect(attributes.read(randomUUID(), { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId })).resolves.toEqual([]);
+    await expect(attributes.read(randomUUID(), { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, sourceChannel: null })).resolves.toEqual([]);
   });
 
   it("redacts a Private value read from Postgres, and keeps who set it", async () => {
@@ -105,7 +105,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     const conversationId = await createConversation();
     await variables.upsertValue(careNeed.id, { type: "conversation", id: conversationId }, "dental", api);
 
-    const [attribute] = await attributes.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null });
+    const [attribute] = await attributes.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null, sourceChannel: null });
 
     expect(attribute).toEqual({
       name: careNeed.name, valueType: "enum", value: null, redacted: true, scope: "conversation", writtenBy: api, updatedAt: expect.any(Date), classified: false,

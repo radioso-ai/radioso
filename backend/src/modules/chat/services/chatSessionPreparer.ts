@@ -21,7 +21,8 @@ import { toConversationTrace, toPreparedStagedContext } from "./conversationCont
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { UserMessageInputMetadata } from "../../../shared/domain/chatInputMetadata.js";
-import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
+import type { ChannelPersonKey, ConversationChannelPersonKeys } from "../../../shared/domain/channelPersonKey.js";
+import { turnChannelPersonKey } from "./turnChannelPersonKey.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { ChatRoutineInvocationReport } from "../contracts/routineTurnState.js";
 import { repliesAreSpoken } from "../contracts/operatorReplySpeech.js";
@@ -105,7 +106,7 @@ export interface PreparedSession {
   preparationTimings?: SessionPreparationTimings;
   agent: AgentRecord;
   conversation: ConversationRecord;
-  /** The person key the turn's channel attested, kept for the turn's person-level saves; null when none. */
+  /** The person key the turn runs as (`turnChannelPersonKey`), kept for its person-level saves; null when none. */
   channelPersonKey?: ChannelPersonKey | null;
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
@@ -390,6 +391,7 @@ export class ChatSessionPreparer {
     private readonly routineStates?: { loadActive(input: { sessionId: string }): Promise<RoutineState | null> },
     /** Optional: when wired, a turn whose visitor reports no zone reads today in the workspace's; else UTC. */
     private readonly workspaceTimeZones?: WorkspaceTimeZoneReader,
+    private readonly channelPersonKeys?: ConversationChannelPersonKeys,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -453,8 +455,7 @@ export class ChatSessionPreparer {
       }));
     const agent = revisionResolved.agent;
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
-    const channelPersonKey = input.channelPersonKey ?? null;
-    const [rewriteContinuityState, conversationSummary, referenceTimeZone] = await Promise.all([
+    const [rewriteContinuityState, conversationSummary, referenceTimeZone, channelPersonKey] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
         : Promise.resolve(undefined),
@@ -464,6 +465,7 @@ export class ChatSessionPreparer {
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
       timed("referenceTimeZone", () => resolveTurnReferenceTimeZone(this.workspaceTimeZones, input)),
+      turnChannelPersonKey(this.channelPersonKeys, input, conversation),
     ]);
     const newConversationVisitorId = conversation
       ? null
@@ -508,9 +510,7 @@ export class ChatSessionPreparer {
         agentRevisionId: revisionResolved.revisionId,
       }) ?? conversation;
     }
-    if (!conversation) {
-      this.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.created"]);
-    }
+    if (!conversation) this.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.created"]);
     if (conversation && input.verifiedCustomerId && !conversation.verifiedCustomerId) {
       await this.conversationRepository.setVerifiedCustomerId(
         conversation.id,

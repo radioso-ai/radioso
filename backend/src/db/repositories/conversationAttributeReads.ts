@@ -42,8 +42,8 @@ export class ConversationAttributeReads implements ConversationAttributeReadPort
       : null;
   }
 
-  readChannelPersonKey(workspaceId: string, conversationId: string): Promise<ChannelPersonKey | null> {
-    return this.sources.personKeys.personKeyOf({ workspaceId, conversationId });
+  readChannelPersonKey(workspaceId: string, conversationId: string, sourceChannel: string | null): Promise<ChannelPersonKey | null> {
+    return this.sources.personKeys.personKeyOf({ workspaceId, conversationId, sourceChannel });
   }
 
   async readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>> {

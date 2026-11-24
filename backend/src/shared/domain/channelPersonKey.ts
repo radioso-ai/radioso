@@ -82,9 +82,11 @@ export const requireChannelPersonKeyId = (kind: ChannelPersonKeyKind, raw: strin
 
 /**
  * Which channel person a stored conversation is with, as the channel that keeps the key knows it;
- * null for a conversation of another channel or one it has no key for. A reader outside a turn (the
- * Inbox, the classifier, a decision's resume) asks this; a turn carries the key its channel attested.
+ * null for a conversation of another channel, which the channel answers without a read, or one it has
+ * no readable key for. A reader outside a turn (the Inbox, the classifier, a review or a resumed turn)
+ * asks this; a turn carries the key its channel attested. Whether the key names the conversation's
+ * person beside a verified customer is the ladder's to say (`conversationScopeLadder`), never a reader's.
  */
 export interface ConversationChannelPersonKeys {
-  personKeyOf(input: { workspaceId: string; conversationId: string }): Promise<ChannelPersonKey | null>;
+  personKeyOf(input: { workspaceId: string; conversationId: string; sourceChannel: string | null }): Promise<ChannelPersonKey | null>;
 }

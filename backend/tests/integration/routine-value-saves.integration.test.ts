@@ -126,7 +126,7 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
   };
 
   /** A conversation with the agent, pinned to its release, as a turn's preparation pins a new one. */
-  const startConversation = (seeded: Seeded, keys: { verifiedCustomerId?: string; visitorId?: string; agentRevisionId?: string } = {}) =>
+  const startConversation = (seeded: Seeded, keys: { verifiedCustomerId?: string; visitorId?: string; agentRevisionId?: string; sourceChannel?: string } = {}) =>
     conversations.create({ workspaceId: seeded.workspaceId, agentId: seeded.agentId, agentRevisionId: seeded.revisionId, sourceChannel: "website_embed", ...keys });
 
   const ended = (conversationId: string, terminalKind: string, variables: Record<string, unknown> = { guests: 4, email: "ada@guests.example", note: "window seat" }): RoutineState => ({
@@ -278,8 +278,9 @@ describeIntegration("a routine's slot values saved to attributes at its ending (
   it("saves a person value on WhatsApp for the number the turn carries, and for the number the conversation is recorded with when a turn carries none", async () => {
     const seeded = await seedWorkspace();
     // Obviously fake numbers in the reserved 555-01xx range.
-    const first = await startConversation(seeded);
-    const resumed = await startConversation(seeded);
+    const first = await startConversation(seeded, { sourceChannel: "whatsapp" });
+    // A resumed or reviewed turn carries no key: the save reads the number its WhatsApp conversation is recorded with.
+    const resumed = await startConversation(seeded, { sourceChannel: "whatsapp" });
     await database.query(
       "INSERT INTO connector_whatsapp_conversations (conversation_id, workspace_id, wa_id) VALUES ($1, $2, '15550100102')",
       [resumed.id, seeded.workspaceId],

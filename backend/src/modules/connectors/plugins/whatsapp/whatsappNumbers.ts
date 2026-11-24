@@ -14,6 +14,7 @@ import {
   type DataSubjectIdentityMatch,
   type DataSubjectIdentityReach,
 } from "../../../../shared/domain/dataSubjectAccess.js";
+import { WHATSAPP_SOURCE_CHANNEL } from "../../../../shared/domain/conversationSource.js";
 import { anyOf } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 import { exportedWhatsAppMessage } from "./whatsappMessageExport.js";
@@ -27,18 +28,30 @@ import { exportedWhatsAppMessage } from "./whatsappMessageExport.js";
 
 const whatsAppPersonKey = (number: string): ChannelPersonKey => ({ kind: "whatsapp_contact", id: number });
 
-/** The WhatsApp number each conversation is with, recorded when the channel answers on it. */
+/**
+ * The WhatsApp number each conversation is with: recorded when the host stores its first message, or
+ * read from the contact row a release that recorded none left pointing at it. A conversation of
+ * another channel is answered without a read.
+ */
 export class WhatsAppConversationPersonKeys implements ConversationChannelPersonKeys {
   constructor(private readonly db: Db) {}
 
-  async personKeyOf(input: { workspaceId: string; conversationId: string }): Promise<ChannelPersonKey | null> {
-    const row = await this.db
+  async personKeyOf(input: { workspaceId: string; conversationId: string; sourceChannel: string | null }): Promise<ChannelPersonKey | null> {
+    if (input.sourceChannel !== WHATSAPP_SOURCE_CHANNEL) return null;
+    const recorded = this.db
       .selectFrom("connector_whatsapp_conversations")
       .select("wa_id")
       .where("workspace_id", "=", input.workspaceId)
-      .where("conversation_id", "=", input.conversationId)
-      .executeTakeFirst();
-    return row ? whatsAppPersonKey(row.wa_id) : null;
+      .where("conversation_id", "=", input.conversationId);
+    const latest = this.db
+      .selectFrom("connector_whatsapp_contacts")
+      .select("wa_id")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId);
+    const row = await recorded.unionAll(latest).limit(1).executeTakeFirst();
+    // A sender id that is not a number keys no person: its turns ran without one.
+    const number = row ? whatsAppNumberKey(row.wa_id) : null;
+    return number ? whatsAppPersonKey(number) : null;
   }
 }
 

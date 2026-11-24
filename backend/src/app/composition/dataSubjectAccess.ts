@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 
 import { ActionRequestExporter } from "../../db/repositories/actionRequestRepository.js";
-import { ContextVariableValueExporter } from "../../db/repositories/contextVariableRepository.js";
+import { ChannelPersonValueReads, ContextVariableValueExporter } from "../../db/repositories/contextVariableRepository.js";
 import { ConversationSummaryExporter } from "../../db/repositories/conversationSummaryRepository.js";
 import {
   AnswerFeedbackExporter,
@@ -32,7 +32,8 @@ export const defaultDataSubjectIdentityFinders: readonly DataSubjectIdentityFind
   (trx) => new WebVisitorIdentityFinder(trx),
   (trx) => new EmailSenderIdentityFinder(trx),
   (trx) => new SlackUserIdentityFinder(trx),
-  (trx) => new WhatsAppNumberIdentityFinder(trx),
+  // A number is found by its values too, which the context-variables module keeps.
+  (trx) => new WhatsAppNumberIdentityFinder(trx, new ChannelPersonValueReads(trx)),
 ];
 
 /**

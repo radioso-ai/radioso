@@ -258,6 +258,33 @@ describeIntegration("a WhatsApp number's person values (Postgres, #1884)", () =>
     });
   });
 
+  describe("a data subject by a number with no conversation", () => {
+    it("finds a number a host kept values for that never wrote, and erases them", async () => {
+      const tenant = await seedTenant();
+      await keepForNumber(tenant, NUMBER_A, "gold");
+      await keepForNumber(tenant, NUMBER_B, "silver");
+      const identities = [{ kind: "whatsapp_number" as const, key: NUMBER_A }];
+
+      expect(await access.lookup({ workspaceId: tenant.workspaceId, query: `+${NUMBER_A}`, actor: actor(tenant) })).toEqual([expect.objectContaining({
+        identity: { kind: "whatsapp_number", key: NUMBER_A }, conversationCount: 0,
+      })]);
+      const document = await access.export({ workspaceId: tenant.workspaceId, identities, actor: actor(tenant) });
+      expect(document.sections.context_values).toEqual([expect.objectContaining({ scope: "whatsapp_contact", value: "gold" })]);
+
+      await access.erase({ workspaceId: tenant.workspaceId, identities, actor: actor(tenant) });
+
+      expect(await personValues(tenant)).toEqual([{ number: NUMBER_B, data: "silver" }]);
+    });
+
+    it("says to write the country code first for a number written with a dialling prefix, instead of finding nobody", async () => {
+      const tenant = await seedTenant();
+      await startConversation(tenant, NUMBER_A);
+
+      await expect(access.lookup({ workspaceId: tenant.workspaceId, query: `00${NUMBER_A}`, actor: actor(tenant) }))
+        .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/country code/u) });
+    });
+  });
+
   describe("a withdrawn consent", () => {
     it("takes the number's values the routine's run saved in this conversation, and keeps another conversation's run", async () => {
       const tenant = await seedTenant();

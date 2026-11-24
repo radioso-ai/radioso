@@ -1,8 +1,14 @@
-import { whatsAppNumberKey, type ChannelPersonKey, type ConversationChannelPersonKeys } from "../../../../shared/domain/channelPersonKey.js";
+import {
+  readWhatsAppNumber,
+  whatsAppNumberKey,
+  type ChannelPersonKey,
+  type ConversationChannelPersonKeys,
+} from "../../../../shared/domain/channelPersonKey.js";
 import {
   exportTimestamp,
   type DataSubjectDataExporter,
   type DataSubjectExportRecord,
+  type ChannelPersonValueHolders,
   type DataSubjectExportScope,
   type DataSubjectIdentityFinder,
   type DataSubjectIdentityMatch,
@@ -44,44 +50,96 @@ interface NumberConversation {
   readonly updatedAt: Date;
 }
 
+/** When a number's messages the transport still logs came, by number. */
+interface NumberLogSpan {
+  readonly number: string;
+  readonly first: Date;
+  readonly last: Date;
+}
+
+/** What Radioso keeps for some numbers: their conversations, their logged messages, and which have person values. */
+interface NumbersHeld {
+  readonly conversations: readonly NumberConversation[];
+  readonly logged: readonly NumberLogSpan[];
+  readonly valued: ReadonlySet<string>;
+}
+
+const heldNumbers = (held: NumbersHeld): string[] => [...new Set([
+  ...held.conversations.map((conversation) => conversation.number),
+  ...held.logged.map((span) => span.number),
+  ...held.valued,
+])].sort();
+
 /**
  * A data subject by WhatsApp number: every conversation recorded against the number, and the one its
- * contact row points at, its latest. An identity's key is the number's digits; its record ids are
- * those conversations' ids, so an audit event never names the number.
+ * contact row points at, its latest; and a number with no conversation left that the transport still
+ * logs messages of or a host kept values for. An identity's key is the number's digits; its record ids
+ * are its conversations' ids, so an audit event never names the number.
  */
 export class WhatsAppNumberIdentityFinder implements DataSubjectIdentityFinder {
   readonly kind = "whatsapp_number" as const;
   readonly channel = "whatsapp";
 
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly values: ChannelPersonValueHolders,
+  ) {}
 
   async find(input: { workspaceId: string; query: string }): Promise<DataSubjectIdentityMatch[]> {
     const number = whatsAppNumberKey(input.query);
     if (!number) return [];
-    const conversations = await this.conversationsOf(input.workspaceId, [number]);
-    if (conversations.length === 0) return [];
-    const times = (pick: (conversation: NumberConversation) => Date) => conversations.map((conversation) => pick(conversation).getTime());
+    const held = await this.held(input.workspaceId, [number]);
+    if (heldNumbers(held).length === 0) return [];
+    const { conversations, logged } = held;
+    const firsts = [...conversations.map((conversation) => conversation.createdAt), ...logged.map((span) => span.first)];
+    const lasts = [...conversations.map((conversation) => conversation.updatedAt), ...logged.map((span) => span.last)];
     return [{
       key: number,
       label: `+${number}`,
       conversationCount: conversations.length,
-      firstSeenAt: new Date(Math.min(...times((conversation) => conversation.createdAt))),
-      lastSeenAt: new Date(Math.max(...times((conversation) => conversation.updatedAt))),
+      firstSeenAt: firsts.length > 0 ? new Date(Math.min(...firsts.map((time) => time.getTime()))) : null,
+      lastSeenAt: lasts.length > 0 ? new Date(Math.max(...lasts.map((time) => time.getTime()))) : null,
       recordIds: conversations.map((conversation) => conversation.conversationId),
     }];
   }
 
   async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const numbers = [...new Set(input.keys.flatMap((key) => whatsAppNumberKey(key) ?? []))];
-    const conversations = numbers.length > 0 ? await this.conversationsOf(input.workspaceId, numbers) : [];
-    const conversationIds = conversations.map((conversation) => conversation.conversationId);
+    const held = numbers.length > 0 ? await this.held(input.workspaceId, numbers) : { conversations: [], logged: [], valued: new Set<string>() };
+    const conversationIds = held.conversations.map((conversation) => conversation.conversationId);
     return {
       conversationIds,
       visitorIds: [],
       verifiedCustomerIds: [],
-      channelPersonKeys: [...new Set(conversations.map((conversation) => conversation.number))].map(whatsAppPersonKey),
+      channelPersonKeys: heldNumbers(held).map(whatsAppPersonKey),
       recordIds: conversationIds,
     };
+  }
+
+  /** A query written as a phone number that no `wa_id` can be, such as one without its country code. */
+  misreadQuery(query: string): string | null {
+    const read = readWhatsAppNumber(query);
+    return "refusal" in read && read.writtenAsNumber ? read.refusal : null;
+  }
+
+  private async held(workspaceId: string, numbers: readonly string[]): Promise<NumbersHeld> {
+    const [conversations, logged, valued] = await Promise.all([
+      this.conversationsOf(workspaceId, numbers),
+      this.loggedSpans(workspaceId, numbers),
+      this.values.keysWithValues({ workspaceId, keys: numbers.map(whatsAppPersonKey) }),
+    ]);
+    return { conversations, logged, valued: new Set(valued.map((key) => key.id)) };
+  }
+
+  private async loggedSpans(workspaceId: string, numbers: readonly string[]): Promise<NumberLogSpan[]> {
+    const rows = await this.db
+      .selectFrom("connector_whatsapp_message_log")
+      .select((eb) => ["wa_id", eb.fn.min("created_at").as("first"), eb.fn.max("created_at").as("last")])
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
+      .groupBy("wa_id")
+      .execute();
+    return rows.map((row) => ({ number: row.wa_id, first: new Date(row.first), last: new Date(row.last) }));
   }
 
   private async conversationsOf(workspaceId: string, numbers: readonly string[]): Promise<NumberConversation[]> {

@@ -139,6 +139,7 @@ const createFake = (input: {
         subjects,
         conversationErasers: [conversationEraser("context-variables"), conversationEraser("audit")],
         verifiedCustomerErasers: [customerEraser("context-variables")],
+        channelPersonErasers: [],
         visitorKeyErasers: [{
           owner: "voice-channel",
           async eraseVisitorKey(scope) {

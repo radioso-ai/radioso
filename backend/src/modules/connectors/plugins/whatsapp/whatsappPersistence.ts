@@ -4,6 +4,7 @@ import { sql } from "kysely";
 
 import type {
   ChannelPersonDataEraser,
+  ChannelPersonErasureScope,
   ConversationDataEraser,
   ConversationErasureScope,
 } from "../../../../shared/domain/conversationDataErasure.js";
@@ -473,7 +474,7 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
  * they stay until the number's latest conversation is erased. A workspace's log cascades with the
  * workspace. The count includes the values `persons` erased.
  */
-export class WhatsAppMessageLogEraser implements ConversationDataEraser {
+export class WhatsAppMessageLogEraser implements ConversationDataEraser, ChannelPersonDataEraser {
   readonly owner = "whatsapp";
 
   constructor(
@@ -492,15 +493,26 @@ export class WhatsAppMessageLogEraser implements ConversationDataEraser {
       .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
       .execute()).map((row) => row.wa_id);
     if (numbers.length === 0) return 0;
-    const log = await this.db
-      .deleteFrom("connector_whatsapp_message_log")
-      .where("workspace_id", "=", scope.workspaceId)
-      .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
-      .executeTakeFirst();
+    const log = await this.deleteLog(scope.workspaceId, numbers);
     const values = await this.persons.eraseChannelPersons({
       workspaceId: scope.workspaceId,
       keys: numbers.map((id) => ({ kind: "whatsapp_contact", id })),
     });
-    return Number(log.numDeletedRows) + values;
+    return log + values;
+  }
+
+  /** The message log of the numbers a data subject's erasure names, whether or not they have a conversation left. */
+  async eraseChannelPersons(scope: ChannelPersonErasureScope): Promise<number> {
+    const numbers = scope.keys.flatMap((key) => (key.kind === "whatsapp_contact" ? [key.id] : []));
+    return numbers.length === 0 ? 0 : this.deleteLog(scope.workspaceId, numbers);
+  }
+
+  private async deleteLog(workspaceId: string, numbers: readonly string[]): Promise<number> {
+    const log = await this.db
+      .deleteFrom("connector_whatsapp_message_log")
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
+      .executeTakeFirst();
+    return Number(log.numDeletedRows);
   }
 }

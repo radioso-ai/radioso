@@ -104,7 +104,7 @@ export interface DataSubjectReadUnitOfWork {
 
 interface DataSubjectAccessDependencies {
   reads: DataSubjectReadUnitOfWork;
-  erasure: Pick<ConversationErasure, "eraseConversation" | "eraseVisitor">;
+  erasure: Pick<ConversationErasure, "eraseConversation" | "eraseVisitor" | "eraseChannelPersons">;
   audit: { record(event: AuditEventInput): Promise<void> };
   now?: () => Date;
   /** {@link DATA_SUBJECT_MAX_CONVERSATIONS} in a deployment. */
@@ -149,6 +149,22 @@ const mergeReaches = (reaches: readonly DataSubjectReach[]): DataSubjectReach =>
 };
 
 /**
+ * Whether a page carries what the identities' channels keep by person rather than by conversation (a
+ * WhatsApp number's contact, message log and values): the page that lists the first of the reached
+ * conversations does, so the pages of a whole request carry it once.
+ */
+const listsPersonRecords = (reach: DataSubjectReach, listed: readonly string[]): boolean =>
+  reach.conversationIds.length > 0 && listed.includes(reach.conversationIds[0]);
+
+/** Refuses a query a finder reads as an identifier of its kind that can never match one, with its reason. */
+const assertQueryReadable = (finders: readonly DataSubjectIdentityFinder[], query: string): void => {
+  for (const finder of finders) {
+    const reason = finder.misreadQuery?.(query);
+    if (reason) throw badRequest(reason);
+  }
+};
+
+/**
  * Finds a data subject, reads what Radioso holds about them, and erases it: the use case behind an
  * access, portability or erasure request. A lookup returns candidate identities and merges none;
  * every later step takes the identities the operator confirmed. Lookup and export each record one
@@ -182,6 +198,7 @@ export class DataSubjectAccessService implements DataSubjectAccess {
           refs.push({ kind: finder.kind, recordIds: match.recordIds });
         }
       }
+      if (found.length === 0) assertQueryReadable(finders, query);
       return { candidates: found, references: refs };
     });
     await this.record(input, "data_subject.looked_up", "success", {
@@ -235,7 +252,9 @@ export class DataSubjectAccessService implements DataSubjectAccess {
    * event, and records one event for the whole request. One already erased meanwhile is skipped.
    * Any other failure stops the erasure, which answers with what it erased so far and is safe to
    * send again. A page erases only the conversations it lists: a visitor's erasure takes every
-   * conversation of theirs, so the visitors go with the request that lists none.
+   * conversation of theirs, so the visitors go with the request that lists none. Last, what the
+   * identities' channels keep by person, such as a WhatsApp number's values and message log, goes
+   * with its own erasure, whether or not the number has a conversation left.
    */
   async erase(input: DataSubjectSelection): Promise<DataSubjectErasureReceipt> {
     const { reach, identities } = await this.deps.reads.run(async (scope) => {
@@ -264,6 +283,9 @@ export class DataSubjectAccessService implements DataSubjectAccess {
       }
       for (const conversationId of reach.conversationIds) {
         await tally(() => this.deps.erasure.eraseConversation({ workspaceId: input.workspaceId, conversationId, actor: input.actor }));
+      }
+      if (reach.channelPersonKeys.length > 0) {
+        await this.deps.erasure.eraseChannelPersons({ workspaceId: input.workspaceId, keys: reach.channelPersonKeys, actor: input.actor });
       }
       receipt.complete = true;
     } catch (error) {
@@ -325,7 +347,8 @@ export class DataSubjectAccessService implements DataSubjectAccess {
   /**
    * What one request covers: everything the identities reach, or the page of their conversations it
    * lists. A page keeps the identities' own records, such as a visitor record, so each page of an
-   * export stands on its own. Refuses a listed conversation the identities do not reach, and a
+   * export stands on its own; what a channel keeps by person, which can run long, goes with one page
+   * (`listsPersonRecords`). Refuses a listed conversation the identities do not reach, and a
    * request too large to answer inside one request, before anything is read out or erased.
    */
   private select(reach: DataSubjectReach, conversationIds: readonly string[] | undefined): DataSubjectReach {
@@ -345,7 +368,7 @@ export class DataSubjectAccessService implements DataSubjectAccess {
       );
     }
     this.assertWithinCap(listed.length);
-    return { ...reach, conversationIds: listed };
+    return { ...reach, conversationIds: listed, channelPersonKeys: listsPersonRecords(reach, listed) ? reach.channelPersonKeys : [] };
   }
 
   private assertWithinCap(conversationCount: number): void {

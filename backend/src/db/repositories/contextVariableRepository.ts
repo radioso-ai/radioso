@@ -31,10 +31,12 @@ import type {
 import {
   exportJson,
   exportTimestamp,
+  type ChannelPersonValueHolders,
   type DataSubjectDataExporter,
   type DataSubjectExportRecord,
   type DataSubjectExportScope,
 } from "../../shared/domain/dataSubjectAccess.js";
+import { isChannelPersonKeyKind, type ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -890,6 +892,23 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
  * in the chat sessions of those conversations, under their verified customer ids and under the person
  * keys channels attest for them (a WhatsApp number), with the kind of writer that last set each value.
  */
+/** Which WhatsApp numbers and other channel person keys a workspace keeps values under (#1884). */
+export class ChannelPersonValueReads implements ChannelPersonValueHolders {
+  constructor(private readonly db: Db) {}
+
+  async keysWithValues(input: { workspaceId: string; keys: readonly ChannelPersonKey[] }): Promise<ChannelPersonKey[]> {
+    if (input.keys.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("context_variable_values")
+      .select(["scope_type", "scope_id"])
+      .distinct()
+      .where("workspace_id", "=", input.workspaceId)
+      .where((eb) => eb.or(input.keys.map((key) => eb.and([eb("scope_type", "=", key.kind), eb("scope_id", "=", key.id)]))))
+      .execute();
+    return rows.flatMap((row) => (isChannelPersonKeyKind(row.scope_type) ? [{ kind: row.scope_type, id: row.scope_id }] : []));
+  }
+}
+
 export class ContextVariableValueExporter implements DataSubjectDataExporter {
   readonly section = "context_values";
 

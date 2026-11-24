@@ -3532,6 +3532,7 @@ export const createTestDependencies = (overrides: {
       // tests/integration/conversation-erasure.integration.test.ts.
       eraseConversation: async () => { throw notFound("Conversation not found"); },
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
+      eraseChannelPersons: async () => ({ conversationCount: 0, messageCount: 0, rowsByOwner: {} }),
     },
     conversationConsents: overrides.conversationConsents ?? {
       // The Postgres withdrawal is covered by tests/integration/consent-withdrawal.integration.test.ts.

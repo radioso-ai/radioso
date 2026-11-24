@@ -65,6 +65,21 @@ export interface DataSubjectIdentityFinder {
   find(input: { workspaceId: string; query: string }): Promise<readonly DataSubjectIdentityMatch[]>;
   /** What the keys reach. A key the finder does not keep reaches nothing. */
   reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach>;
+  /**
+   * Why `query`, written as an identifier of this kind, can never match one, such as a number
+   * written without its country code, said so the operator can write it again; null otherwise. A
+   * lookup no finder matches answers with it instead of finding nobody.
+   */
+  misreadQuery?(query: string): string | null;
+}
+
+/**
+ * Which channel person keys have values kept under them: what a finder that reaches a person by a
+ * channel's key (a WhatsApp number) reads of the values another module keeps, so a number a host kept
+ * values for is found though it never wrote.
+ */
+export interface ChannelPersonValueHolders {
+  keysWithValues(input: { workspaceId: string; keys: readonly ChannelPersonKey[] }): Promise<ChannelPersonKey[]>;
 }
 
 /** A JSON value in an export. */

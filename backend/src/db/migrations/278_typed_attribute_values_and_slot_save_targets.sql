@@ -16,7 +16,7 @@
 -- Locks. The runner applies a file in one transaction, so the ACCESS EXCLUSIVE lock each ALTER
 -- takes is held until it commits. The CHECKs are added NOT VALID, which binds new rows at once
 -- without scanning the old ones, and the new columns are nullable, which rewrites nothing, so each
--- lock is held for milliseconds. 278 validates the CHECKs after this commits, under a lock no read
+-- lock is held for milliseconds. 279 validates the CHECKs after this commits, under a lock no read
 -- or write waits for. Every existing row satisfies them: the type CHECK only widens the old one,
 -- and no existing slot names a target. The wait for each lock is bounded to three seconds; a deploy
 -- that hits the bound rolls back and a retry is safe.

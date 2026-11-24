@@ -152,7 +152,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       mutable BOOLEAN NOT NULL DEFAULT FALSE,
       -- Mirrors migration 248_routine_slot_sensitivity.sql.
       sensitivity TEXT NOT NULL DEFAULT 'normal' CHECK (sensitivity IN ('normal', 'sensitive')),
-      -- Mirrors migration 277_typed_attribute_values_and_slot_save_targets.sql.
+      -- Mirrors migration 278_typed_attribute_values_and_slot_save_targets.sql.
       save_to_context_variable TEXT NULL,
       save_to_scope TEXT NULL,
       CHECK ((save_to_context_variable IS NULL) = (save_to_scope IS NULL) AND (save_to_scope IS NULL OR save_to_scope IN ('conversation', 'person'))),

@@ -22,6 +22,7 @@ import {
   replaceInstruction,
   setEndingNotice,
   removeSlot,
+  setSlotSaveTo,
   setSlotSensitivity,
   slotReferences,
   slotRemovalBlockers,
@@ -685,6 +686,29 @@ describe('slot sensitivity', () => {
     // Normal is the absence of the field, as a saved slot reads back, so setting it back leaves
     // a document equal to the one before it was marked.
     expect(setSlotSensitivity(sensitive, 'email', false)).toEqual(doc)
+  })
+})
+
+describe('slot save target (#1884)', () => {
+  it('saves a field to the attribute the operator picks, changes it, and clears it back to the absent default', () => {
+    const doc = source()
+    const saving = setSlotSaveTo(doc, 'email', { contextVariable: 'contact_email', scope: 'conversation' })
+
+    expect(draftFromBlockDoc(saving).slots[0]?.saveTo).toEqual({ contextVariable: 'contact_email', scope: 'conversation' })
+    expect(doc.information[0]).not.toHaveProperty('saveTo')
+    const person = setSlotSaveTo(saving, 'email', { contextVariable: 'contact_email', scope: 'person' })
+    expect(draftFromBlockDoc(person).slots[0]?.saveTo).toEqual({ contextVariable: 'contact_email', scope: 'person' })
+    // A rename keeps where the field saves.
+    expect(draftFromBlockDoc(renameSlot(person, 'email', 'reply_email')).slots[0]?.saveTo).toEqual({ contextVariable: 'contact_email', scope: 'person' })
+
+    expect(setSlotSaveTo(person, 'email', null)).toEqual(doc)
+  })
+
+  it('carries a saved field through the document and back', () => {
+    const saving = setSlotSaveTo(source(), 'email', { contextVariable: 'contact_email', scope: 'person' })
+    const result = routineToBlockDoc(draftFromBlockDoc(saving))
+    if (!result.ok) throw new Error('expected the document to project')
+    expect(result.doc.information[0]?.saveTo).toEqual({ contextVariable: 'contact_email', scope: 'person' })
   })
 })
 

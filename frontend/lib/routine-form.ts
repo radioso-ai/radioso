@@ -9,6 +9,7 @@ import type {
   RoutineGuardKind,
   RoutineOperatorNotice,
   RoutineReentryMode,
+  RoutineSlot,
   RoutineSlotType,
   RoutineStepKind,
   RoutineTerminalKind,
@@ -26,6 +27,9 @@ export type RoutineSlotForm = {
   mutable: boolean
   // Whether the field's value may leave the conversation (#1543); the draft carries only "sensitive".
   sensitive: boolean
+  // The attribute the value is saved to when the routine ends (#1884), kept as stored: the Document
+  // tab picks it, and a save from any editor carries it.
+  saveTo: RoutineSlot['saveTo'] | null
 }
 
 type RoutineTransitionForm = {
@@ -260,6 +264,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       description: slot.description ?? '',
       mutable: slot.mutable ?? false,
       sensitive: slot.sensitivity === 'sensitive',
+      saveTo: slot.saveTo ?? null,
     })),
     steps: [...routine.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => {
       const kind = normalizeStepKind(step.kind)
@@ -347,6 +352,7 @@ export const formToRoutineDraft = (
         ordinal: index,
         ...(slot.mutable ? { mutable: true } : {}),
         ...(slot.sensitive ? { sensitivity: 'sensitive' as const } : {}),
+        ...(slot.saveTo ? { saveTo: { ...slot.saveTo } } : {}),
       }
     }),
     steps: form.steps.map((step, index) => ({

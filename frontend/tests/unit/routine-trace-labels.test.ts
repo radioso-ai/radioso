@@ -67,3 +67,33 @@ describe('a picked card in the turn inspector', () => {
     expect(step.capturedSlotKeys).toEqual(['chosen_home'])
   })
 })
+
+describe("an ended run's saves to attributes in the turn inspector (#1884)", () => {
+  const stageWith = (payload: Record<string, unknown>): ConversationTraceStage => ({
+    id: 'routine:booking',
+    kind: 'routine_resume',
+    status: 'applied',
+    outputs: { routineId: 'booking' },
+    subTrace: { namespace: 'routine', version: 1, payload: { steps: [], ...payload } },
+  })
+
+  it('keeps each save’s field, attribute, scope and outcome, and nothing else it carries', () => {
+    const trace = buildRoutineRunTrace(stageWith({
+      terminalKind: 'complete',
+      saves: [
+        { slotKey: 'guests', contextVariable: 'party_size', scope: 'conversation', outcome: 'written', value: 4 },
+        { slotKey: 'email', contextVariable: 'contact_email', scope: 'person', outcome: 'no_person_key' },
+        { slotKey: 'broken' },
+      ],
+    }))!
+
+    expect(trace.saves).toEqual([
+      { slotKey: 'guests', contextVariable: 'party_size', scope: 'conversation', outcome: 'written' },
+      { slotKey: 'email', contextVariable: 'contact_email', scope: 'person', outcome: 'no_person_key' },
+    ])
+  })
+
+  it('has no saves on a run that saved none', () => {
+    expect(buildRoutineRunTrace(stageWith({}))).not.toHaveProperty('saves')
+  })
+})

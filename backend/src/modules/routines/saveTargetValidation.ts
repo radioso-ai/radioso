@@ -1,7 +1,7 @@
-import type { RoutineValidationCode } from "@radioso/routine-definition";
+import { routineSlotSavesToValueType, type RoutineValidationCode } from "@radioso/routine-definition";
 
-import type { AvailableContextVariable, ContextVariableValueType } from "../context-variables/public.js";
-import type { RoutineDefinition, RoutineSlotType } from "./domain.js";
+import type { AvailableContextVariable } from "../context-variables/public.js";
+import type { RoutineDefinition } from "./domain.js";
 
 interface SaveTargetDiagnostic {
   code: RoutineValidationCode;
@@ -10,20 +10,6 @@ interface SaveTargetDiagnostic {
 }
 
 type Slot = RoutineDefinition["slots"][number];
-
-/**
- * The attribute types a slot of each type may save to. A slot's value is already in its type's
- * canonical form (a trimmed string, a number, a boolean, an ISO calendar date), which is how the
- * attribute stores it. An item, a card the visitor picked, saves to none.
- */
-const SLOT_SAVE_VALUE_TYPES: Readonly<Record<RoutineSlotType, readonly ContextVariableValueType[]>> = {
-  text: ["string"],
-  email: ["string"],
-  number: ["number"],
-  boolean: ["boolean"],
-  date: ["date"],
-  item: [],
-};
 
 const SAVE_TO_LOCATION = /^slot:([A-Za-z_][A-Za-z0-9_]*)\.saveTo$/u;
 
@@ -55,7 +41,7 @@ const targetFault = (slot: Slot, variable: AvailableContextVariable | undefined)
   if (!variable.stored) {
     return diagnostic("save_to_attribute_not_stored", slot, "whose value this agent does not keep (its source must be pushed or classified).");
   }
-  if (!SLOT_SAVE_VALUE_TYPES[slot.type].includes(variable.valueType)) {
+  if (!routineSlotSavesToValueType(slot.type, variable.valueType)) {
     return diagnostic("save_to_type_mismatch", slot, `whose type ${variable.valueType} does not take a ${slot.type} value.`);
   }
   if (variable.stored.trustTier === "signed") {

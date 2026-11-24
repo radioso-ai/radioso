@@ -145,6 +145,27 @@ const slotValuesOf = (value: unknown): RoutineSlotValueView[] =>
     return [{ key, value: String(slotValue) }]
   })
 
+/**
+ * What one of the ended run's saves to an attribute did (#1884): the field, the attribute, the
+ * scope and the outcome, never the value.
+ */
+export interface RoutineTraceSaveView {
+  slotKey: string
+  contextVariable: string
+  scope: string
+  outcome: string
+}
+
+const savesOf = (value: unknown): RoutineTraceSaveView[] =>
+  asArray(value).flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const slotKey = asString(entry.slotKey)
+    const contextVariable = asString(entry.contextVariable)
+    const scope = asString(entry.scope)
+    const outcome = asString(entry.outcome)
+    return slotKey && contextVariable && scope && outcome ? [{ slotKey, contextVariable, scope, outcome }] : []
+  })
+
 export interface RoutineRunTraceView {
   startStepId?: string
   landedStepId?: string
@@ -157,6 +178,8 @@ export interface RoutineRunTraceView {
   slotValues?: RoutineSlotValueView[]
   /** Filled slots past the trace's count bound, whose values it left out. */
   omittedSlotCount?: number
+  /** What each save to an attribute did when the run ended, when it saves any. */
+  saves?: RoutineTraceSaveView[]
   steps: RoutineTraceStepView[]
 }
 
@@ -200,6 +223,7 @@ export const buildRoutineRunTrace = (
     })
   const replacedSlotKeys = asStringArray(payload.replacedSlotKeys)
   const omittedSlotCount = asNumber(payload.omittedSlotCount)
+  const saves = savesOf(payload.saves)
   return {
     startStepId: asString(payload.startStepId),
     landedStepId: asString(payload.landedStepId),
@@ -209,6 +233,7 @@ export const buildRoutineRunTrace = (
     filledSlotKeys: asStringArray(payload.filledSlotKeys),
     ...(Array.isArray(payload.slotValues) ? { slotValues: slotValuesOf(payload.slotValues) } : {}),
     ...(omittedSlotCount !== undefined && omittedSlotCount > 0 ? { omittedSlotCount } : {}),
+    ...(saves.length > 0 ? { saves } : {}),
     steps,
   }
 }

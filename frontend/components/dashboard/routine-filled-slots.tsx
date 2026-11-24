@@ -1,6 +1,22 @@
 'use client'
 
-import type { RoutineRunTraceView } from '@/lib/routine-run-trace'
+import type { RoutineRunTraceView, RoutineTraceSaveView } from '@/lib/routine-run-trace'
+
+/**
+ * What each save to an attribute did when the run ended (#1884): the field, the attribute, the
+ * scope and the outcome code. The trace never carries the value.
+ */
+function RoutineAttributeSaves({ saves }: { saves: readonly RoutineTraceSaveView[] }) {
+  return (
+    <ul aria-label="Saved to attributes" className="space-y-0.5 text-xs">
+      {saves.map((save) => (
+        <li key={`${save.slotKey}:${save.scope}`} className="font-mono text-muted-foreground">
+          {save.slotKey} → {save.contextVariable} ({save.scope}): <span className="text-foreground">{save.outcome}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 /**
  * The slots a routine holds after the turn, marked new or replaced when this turn stored them.
@@ -8,6 +24,15 @@ import type { RoutineRunTraceView } from '@/lib/routine-run-trace'
  * slot names alone.
  */
 export function RoutineFilledSlots({ trace }: { trace: RoutineRunTraceView }) {
+  return (
+    <div className="space-y-2">
+      <FilledSlots trace={trace} />
+      {trace.saves ? <RoutineAttributeSaves saves={trace.saves} /> : null}
+    </div>
+  )
+}
+
+function FilledSlots({ trace }: { trace: RoutineRunTraceView }) {
   const capturedThisTurn = new Set(trace.capturedSlotKeys)
   const replacedThisTurn = new Set(trace.replacedSlotKeys ?? [])
   if (trace.filledSlotKeys.length === 0) {

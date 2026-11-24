@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { RoutineSlotType } from "./index.js";
+
 /**
  * Where a slot keeps its value once the routine ends (#1884): `conversation` for this conversation,
  * `person` for the person the conversation is with, when it has a verified one.
@@ -18,3 +20,21 @@ export const routineSlotSaveToSchemaFor = <TName extends z.ZodTypeAny>(contextVa
 }).strict().describe("The attribute this field's value is saved to when the routine ends complete or with a handoff. Set only to the attribute the operator names; never matched by the field's key or type.");
 
 export type RoutineSlotSaveScope = typeof routineSlotSaveScopes[number];
+
+/**
+ * The attribute value types a field of each type saves to. A field's value is already in its type's
+ * canonical form (a trimmed string, a number, a boolean, an ISO calendar date), which is how the
+ * attribute stores it. An item, a card the visitor picked, saves to none.
+ */
+const routineSlotSaveValueTypes: Readonly<Record<RoutineSlotType, readonly string[]>> = {
+  text: ["string"],
+  email: ["string"],
+  number: ["number"],
+  boolean: ["boolean"],
+  date: ["date"],
+  item: [],
+};
+
+/** Whether a field of `slotType` may save to an attribute of `valueType`. */
+export const routineSlotSavesToValueType = (slotType: RoutineSlotType, valueType: string): boolean =>
+  routineSlotSaveValueTypes[slotType].includes(valueType);

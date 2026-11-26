@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
-import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../shared/domain/skillTargetUses.js";
+import { skillTargetInUseError, type RoutineExportUse, type SkillTargetUse, type SkillTargetUseReader } from "../../shared/domain/skillTargetUses.js";
 import {
   decryptField,
   encryptField,
@@ -39,7 +39,8 @@ export interface WebhookDestinationRepositoryPort {
 }
 
 export interface WebhookDestinationRoutineReferencePort {
-  listRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
+  /** Every routine that exports to the destination, in an agent's draft or its published release. */
+  listRoutineExportUses(workspaceId: string, destinationId: string): Promise<RoutineExportUse[]>;
 }
 
 export interface WebhookDestinationExistencePort {
@@ -65,20 +66,21 @@ export class EncryptionNotConfiguredError extends AppError {
 }
 
 /**
- * The refusal to delete a destination in use: by the completion export of an enabled routine's
- * latest version, or by skills in an agent's draft or its published release.
+ * The refusal to delete a destination in use: by the completion export of a routine, or by a skill,
+ * in an agent's draft or its published release.
  */
-const destinationInUse = (destinationId: string, routineNames: string[], skillUses: readonly SkillTargetUse[]): AppError =>
+const destinationInUse = (destinationId: string, routineUses: readonly RoutineExportUse[], skillUses: readonly SkillTargetUse[]): AppError =>
   skillTargetInUseError({
     code: "webhook_destination_in_use",
     targetLabel: "Webhook destination",
     uses: skillUses,
-    ...(routineNames.length > 0
-      ? { otherUses: `Used by ${routineNames.length === 1 ? "routine" : "routines"} ${routineNames.map((name) => `"${name}"`).join(", ")}.` }
-      : {}),
+    routineUses,
     details: {
       destinationId,
-      references: [...routineNames, ...new Set(skillUses.map((use) => `skill:${use.skillName}`))],
+      references: [
+        ...new Set(routineUses.map((use) => use.routineName)),
+        ...new Set(skillUses.map((use) => `skill:${use.skillName}`)),
+      ],
     },
   });
 
@@ -237,9 +239,9 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
   }
 
   async delete(workspaceId: string, id: string, actor: WebhookDestinationActor): Promise<void> {
-    const [routineNames, skillUses] = await this.uses(workspaceId, id);
-    if (routineNames.length > 0 || skillUses.length > 0) {
-      throw destinationInUse(id, routineNames, skillUses);
+    const [routineUses, skillUses] = await this.uses(workspaceId, id);
+    if (routineUses.length > 0 || skillUses.length > 0) {
+      throw destinationInUse(id, routineUses, skillUses);
     }
     const existing = await this.requireRecord(workspaceId, id);
     let deleted: boolean;
@@ -262,9 +264,9 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     });
   }
 
-  private async uses(workspaceId: string, destinationId: string): Promise<[string[], SkillTargetUse[]]> {
+  private async uses(workspaceId: string, destinationId: string): Promise<[RoutineExportUse[], SkillTargetUse[]]> {
     return Promise.all([
-      this.options.routineReferences?.listRoutineNamesReferencingDestination(workspaceId, destinationId) ?? Promise.resolve([]),
+      this.options.routineReferences?.listRoutineExportUses(workspaceId, destinationId) ?? Promise.resolve([]),
       this.options.skillTargetUses.listSkillTargetUses({ workspaceId, targetType: "webhook_destination", targetId: destinationId }),
     ]);
   }

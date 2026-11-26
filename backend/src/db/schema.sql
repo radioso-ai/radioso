@@ -212,21 +212,22 @@ CREATE FUNCTION public.block_webhook_destination_delete_if_published_reference()
     LANGUAGE plpgsql
     AS $$
 DECLARE
-  referencing_routine_names TEXT[];
+  use_list TEXT;
 BEGIN
-  SELECT ARRAY_AGG(DISTINCT d.name ORDER BY d.name)
-  INTO referencing_routine_names
-  FROM routine_completion_export ce
-  JOIN routine_definition d ON d.id = ce.definition_id
-  JOIN agents a ON a.id = d.agent_id
-  WHERE a.workspace_id = OLD.workspace_id
-    AND d.enabled = TRUE
-    AND d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
-    AND ce.enabled = TRUE
-    AND lower(ce.destination_ref) = OLD.id::text;
+  -- Deleting the workspace removes its agents, routines and destinations together.
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
 
-  IF COALESCE(array_length(referencing_routine_names, 1), 0) > 0 THEN
-    RAISE EXCEPTION 'webhook destination % is referenced by enabled routines: %', OLD.id, array_to_string(referencing_routine_names, ', ')
+  SELECT string_agg(
+    format('%s on %s%s', uses.routine_name, uses.agent_name, CASE WHEN uses.in_draft THEN '' ELSE ' (published release)' END),
+    ', '
+  )
+  INTO use_list
+  FROM routine_export_destination_uses(OLD.workspace_id, OLD.id::text) uses;
+
+  IF use_list IS NOT NULL THEN
+    RAISE EXCEPTION 'webhook destination % is referenced by enabled routines: %', OLD.id, use_list
       USING ERRCODE = '23503',
             CONSTRAINT = 'workspace_webhook_destinations_published_routine_reference';
   END IF;
@@ -524,6 +525,50 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
+$$;
+
+
+--
+-- Name: routine_export_destination_uses(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routine_export_destination_uses(p_workspace_id uuid, p_destination_id text) RETURNS TABLE(agent_id uuid, agent_name text, routine_name text, in_draft boolean, in_published_release boolean)
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT
+    agent.id,
+    COALESCE(NULLIF(agent.internal_name, ''), agent.name),
+    uses.routine_name,
+    bool_or(uses.in_draft),
+    bool_or(NOT uses.in_draft)
+  FROM (
+    SELECT d.agent_id, d.name AS routine_name, TRUE AS in_draft
+    FROM routine_completion_export ce
+    JOIN routine_definition d ON d.id = ce.definition_id
+    JOIN agents draft_agent ON draft_agent.id = d.agent_id
+    WHERE draft_agent.workspace_id = p_workspace_id
+      AND d.enabled = TRUE
+      AND d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
+      AND ce.enabled = TRUE
+      AND lower(ce.destination_ref) = lower(p_destination_id)
+    UNION ALL
+    SELECT published_agent.id, released_routine ->> 'name', FALSE
+    FROM agents published_agent
+    JOIN agent_revisions published_release ON published_release.id = published_agent.published_revision_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(published_release.snapshot -> 'routines') = 'array'
+        THEN published_release.snapshot -> 'routines'
+        ELSE '[]'::jsonb
+      END
+    ) AS released_routine
+    WHERE published_agent.workspace_id = p_workspace_id
+      AND COALESCE((released_routine ->> 'enabled')::boolean, TRUE)
+      AND COALESCE((released_routine #>> '{completionExport,enabled}')::boolean, FALSE)
+      AND lower(released_routine #>> '{completionExport,destinationRef}') = lower(p_destination_id)
+  ) uses
+  JOIN agents agent ON agent.id = uses.agent_id
+  GROUP BY agent.id, agent.internal_name, agent.name, uses.routine_name
+  ORDER BY 2, 3, 1;
 $$;
 
 

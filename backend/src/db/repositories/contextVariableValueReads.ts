@@ -69,7 +69,8 @@ export const conversationHoldsValue = (
 
 /**
  * The scope id as a value is stored under. A conversation's id is a UUID, which Postgres writes in
- * lowercase, so an id sent in uppercase still names the stored value.
+ * lowercase, so an id sent in uppercase still names the stored value. A channel's person key arrives
+ * as its channel stores it (`ContextVariableService`, the connector chat port).
  */
 export const storedScopeId = (scope: ContextVariableScope): string =>
   scope.type === "conversation" ? scope.id.toLowerCase() : scope.id;

@@ -31,14 +31,18 @@ import type {
 import {
   exportJson,
   exportTimestamp,
+  type ChannelPersonValueHolders,
   type DataSubjectDataExporter,
   type DataSubjectExportRecord,
   type DataSubjectExportScope,
 } from "../../shared/domain/dataSubjectAccess.js";
+import { isChannelPersonKeyKind, type ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
+  ChannelPersonDataEraser,
+  ChannelPersonErasureScope,
   ConversationDataEraser,
   ConversationErasureScope,
   VerifiedCustomerDataEraser,
@@ -824,7 +828,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
  * workspace values describe the operator's own configuration and stay. A workspace's values cascade
  * with its variables, so the workspace scope has nothing to add.
  */
-export class ContextVariableValueEraser implements ConversationDataEraser, VerifiedCustomerDataEraser {
+export class ContextVariableValueEraser implements ConversationDataEraser, VerifiedCustomerDataEraser, ChannelPersonDataEraser {
   readonly owner = "context-variables";
 
   constructor(private readonly db: Db) {}
@@ -870,21 +874,49 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }
+
+  /** A channel person's values, a WhatsApp number's, when the channel that keeps the key says they go. */
+  async eraseChannelPersons(scope: ChannelPersonErasureScope): Promise<number> {
+    if (scope.keys.length === 0) return 0;
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => eb.or(scope.keys.map((key) => eb.and([eb("scope_type", "=", key.kind), eb("scope_id", "=", key.id)]))))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
 }
 
 /**
  * The export's `context_values` section: what was stored about the subject, on their conversations,
- * in the chat sessions of those conversations and under their verified customer ids, with the kind
- * of writer that last set each value.
+ * in the chat sessions of those conversations, under their verified customer ids and under the person
+ * keys channels attest for them (a WhatsApp number), with the kind of writer that last set each value.
  */
+/** Which WhatsApp numbers and other channel person keys a workspace keeps values under (#1884). */
+export class ChannelPersonValueReads implements ChannelPersonValueHolders {
+  constructor(private readonly db: Db) {}
+
+  async keysWithValues(input: { workspaceId: string; keys: readonly ChannelPersonKey[] }): Promise<ChannelPersonKey[]> {
+    if (input.keys.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("context_variable_values")
+      .select(["scope_type", "scope_id"])
+      .distinct()
+      .where("workspace_id", "=", input.workspaceId)
+      .where((eb) => eb.or(input.keys.map((key) => eb.and([eb("scope_type", "=", key.kind), eb("scope_id", "=", key.id)]))))
+      .execute();
+    return rows.flatMap((row) => (isChannelPersonKeyKind(row.scope_type) ? [{ kind: row.scope_type, id: row.scope_id }] : []));
+  }
+}
+
 export class ContextVariableValueExporter implements DataSubjectDataExporter {
   readonly section = "context_values";
 
   constructor(private readonly db: Db) {}
 
   async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
-    const { workspaceId, conversationIds, verifiedCustomerIds } = scope;
-    if (conversationIds.length === 0 && verifiedCustomerIds.length === 0) return [];
+    const { workspaceId, conversationIds, verifiedCustomerIds, channelPersonKeys } = scope;
+    if (conversationIds.length === 0 && verifiedCustomerIds.length === 0 && channelPersonKeys.length === 0) return [];
     const rows = await this.db
       .selectFrom("context_variable_values as v")
       .innerJoin("context_variables as cv", "cv.id", "v.variable_id")
@@ -909,6 +941,7 @@ export class ContextVariableValueExporter implements DataSubjectDataExporter {
           eb("v.scope_type", "=", "customer"),
           anyOf(eb.ref("v.scope_id"), verifiedCustomerIds, "text[]"),
         ]),
+        ...channelPersonKeys.map((key) => eb.and([eb("v.scope_type", "=", key.kind), eb("v.scope_id", "=", key.id)])),
       ]))
       .orderBy("v.scope_type")
       .orderBy("cv.name")

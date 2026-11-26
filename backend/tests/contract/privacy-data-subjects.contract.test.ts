@@ -12,6 +12,8 @@ const ROUTES = ["lookup", "conversations", "export", "erase"] as const;
 const IDENTITIES = [
   { kind: "web_visitor", key: randomUUID() },
   { kind: "email_address", key: "jane@example.com" },
+  // Obviously fake: the reserved 555-01xx range.
+  { kind: "whatsapp_number", key: "15550100101" },
 ];
 
 const harness = async () => {

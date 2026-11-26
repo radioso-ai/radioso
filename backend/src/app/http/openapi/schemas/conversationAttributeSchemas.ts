@@ -33,7 +33,7 @@ export const registerConversationAttributeSchema = (registry: OpenAPIRegistry) =
       description: "True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain.",
     }),
     scope: scopeSchema.openapi({
-      description: "Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed.",
+      description: "Where the value is kept: set for this conversation, the visitor's chat session, the verified customer, or the WhatsApp number the conversation is with (`whatsapp_contact`; the number itself is not returned). The most specific one wins. A value set for an agent or the workspace is a default and is not listed.",
     }),
     writtenBy: z.object({
       kind: z.enum(CONTEXT_VALUE_WRITER_KINDS),
@@ -58,7 +58,7 @@ export const registerConversationAttributeChangeSchema = (registry: OpenAPIRegis
   "ConversationAttributeChange",
   z.object({
     attribute: z.union([attribute, z.null()]).openapi({
-      description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value.",
+      description: "The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session, verified customer or WhatsApp number holds. Null when none of the conversation's rungs holds a value.",
     }),
     classificationQueued: z.boolean().openapi({
       description: "True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued.",

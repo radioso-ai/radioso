@@ -8,6 +8,8 @@
  * use case runs them before it deletes the conversations themselves.
  */
 
+import type { ChannelPersonKey } from "./channelPersonKey.js";
+
 /**
  * What one erasure removes: some conversations of a workspace, or a whole workspace just before it
  * is deleted. Erasers run while the conversations still exist, so an eraser can read whatever it
@@ -35,6 +37,22 @@ export interface VerifiedCustomerErasureScope {
 export interface VerifiedCustomerDataEraser {
   readonly owner: string;
   eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number>;
+}
+
+/**
+ * People a channel knows by a key it attests (a WhatsApp number), whose person-level data goes when
+ * the channel says so: for WhatsApp, with the number's latest conversation. The channel that keeps the
+ * key decides, inside the erasure's transaction, and hands the keys over before its own rows go.
+ */
+export interface ChannelPersonErasureScope {
+  readonly workspaceId: string;
+  readonly keys: readonly ChannelPersonKey[];
+}
+
+/** One module's rows keyed by a channel's person key rather than a conversation, beside {@link VerifiedCustomerDataEraser}. */
+export interface ChannelPersonDataEraser {
+  readonly owner: string;
+  eraseChannelPersons(scope: ChannelPersonErasureScope): Promise<number>;
 }
 
 /**

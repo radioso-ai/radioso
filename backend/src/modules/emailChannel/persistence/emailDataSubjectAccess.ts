@@ -51,7 +51,7 @@ export class EmailSenderIdentityFinder implements DataSubjectIdentityFinder {
     const addresses = [...new Set(input.keys.map(normalizeAddress))];
     const rows = addresses.length === 0 ? [] : await this.threads(input.workspaceId, addresses).select("l.conversation_id").execute();
     const conversationIds = rows.map((row) => row.conversation_id);
-    return { conversationIds, visitorIds: [], verifiedCustomerIds: [], recordIds: conversationIds };
+    return { conversationIds, visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [], recordIds: conversationIds };
   }
 
   /** The workspace's threads with these participants, through the mailbox and participant index. */

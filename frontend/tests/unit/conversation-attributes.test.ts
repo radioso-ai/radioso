@@ -131,10 +131,12 @@ describe('attributeWrittenText', () => {
     expect(attributeWrittenText(attribute({ writtenBy: { kind: 'routine', ref: null } }))).toBe('Set by a routine')
   })
 
-  it('says a value kept for the session or the customer is for this visitor', () => {
+  it('says a value kept for the session, the customer or the WhatsApp number is for this visitor', () => {
     expect(attributeWrittenText(attribute({ scope: 'session', writtenBy: { kind: 'api', ref: null } })))
       .toBe('Set by your website or API for this visitor')
     expect(attributeWrittenText(attribute({ scope: 'customer', writtenBy: { kind: 'api', ref: null } })))
       .toBe('Set by your website or API for this visitor')
+    expect(attributeWrittenText(attribute({ scope: 'whatsapp_contact', writtenBy: { kind: 'routine', ref: null } })))
+      .toBe('Set by a routine for this visitor')
   })
 })

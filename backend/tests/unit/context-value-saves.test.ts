@@ -35,8 +35,9 @@ const harness = (
     storeIn: vi.fn(async () => stored),
   };
   // The conversation's release keeps every attribute the test defines, unless the test says otherwise.
-  const read = vi.fn(async () => ({
+  const read = vi.fn(async (): Promise<ConversationSaveContext> => ({
     verifiedCustomerId: null,
+    channelPersonKey: null,
     keptVariableIds: new Set(definitions.map((candidate) => candidate.id)),
     ...context,
   }));
@@ -93,6 +94,7 @@ describe("ContextValueSaves", () => {
       data: 4,
       writtenBy,
       routineId: "routine-1",
+      conversationId,
     });
     expect(incrementCounter).toHaveBeenCalledWith(CONTEXT_VALUE_WRITES_TOTAL, expect.objectContaining({ labels: { writer: "routine", outcome: "written" } }));
   });
@@ -105,6 +107,31 @@ describe("ContextValueSaves", () => {
     expect(outcomes).toEqual(["written"]);
     expect(read).toHaveBeenCalledWith(trx, { workspaceId: "workspace-1", conversationId });
     expect(store.storeIn).toHaveBeenCalledWith(trx, expect.objectContaining({ scope: { type: "customer", id: "customer-a" } }));
+  });
+
+  it("saves a person value for the WhatsApp number the turn's channel attested, naming the conversation it was saved in", async () => {
+    const { saves, store } = harness([definition("party_size")]);
+
+    const outcomes = await saves.saveAll(trx, {
+      workspaceId: "workspace-1",
+      conversationId,
+      channelPersonKey: { kind: "whatsapp_contact", id: "15550100101" },
+      writtenBy,
+      routineId: "routine-1",
+      saves: [save("party_size", 4, { scope: "person" })],
+    });
+
+    expect(outcomes).toEqual(["written"]);
+    expect(store.storeIn).toHaveBeenCalledWith(trx, expect.objectContaining({ scope: { type: "whatsapp_contact", id: "15550100101" }, conversationId }));
+  });
+
+  it("finds the WhatsApp number of a conversation through its channel when the turn carried none, as a decision's resume does", async () => {
+    const { saves, store } = harness([definition("party_size")], "written", { channelPersonKey: { kind: "whatsapp_contact", id: "15550100101" } });
+
+    const outcomes = await saves.saveAll(trx, { workspaceId: "workspace-1", conversationId, writtenBy, routineId: "routine-1", saves: [save("party_size", 4, { scope: "person" })] });
+
+    expect(outcomes).toEqual(["written"]);
+    expect(store.storeIn).toHaveBeenCalledWith(trx, expect.objectContaining({ scope: { type: "whatsapp_contact", id: "15550100101" } }));
   });
 
   it("writes nothing to an attribute the conversation's release does not keep, and counts it", async () => {

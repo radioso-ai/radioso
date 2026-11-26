@@ -100,7 +100,7 @@ const isOpen = (target: ClassificationTarget): boolean => !target.held;
 
 /**
  * A held variable whose conversation value the classifier wrote before the other writer set theirs
- * for the session or customer: the conversation's own value would hide theirs, so it is cleared,
+ * for the session or the person: the conversation's own value would hide theirs, so it is cleared,
  * with no call.
  */
 const hidesHeldValue = (target: ClassificationTarget): boolean =>

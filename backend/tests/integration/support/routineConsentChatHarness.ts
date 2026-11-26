@@ -4,6 +4,7 @@ import { createConversationEngine } from "@radioso/conversation-engine";
 
 import { bindConsentMessageWithholding } from "../../../src/app/composition/consentWithdrawal.js";
 import { createWorkspaceConversationDataErasure } from "../../../src/app/composition/conversationErasure.js";
+import { conversationReadSources } from "../../../src/app/composition/conversationReadSources.js";
 import { composeRoutineTurnProvider } from "../../../src/app/composition/routineTurnProvider.js";
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { AuditEventRepository } from "../../../src/db/repositories/auditEventRepository.js";
@@ -29,6 +30,7 @@ import { legacyAgentWithoutWorkspace } from "../../../src/modules/chat/services/
 import { compileRoutineDefinition, createRoutineConsentTelemetry, type RoutineDefinition } from "../../../src/modules/routines/public.js";
 import type { UserMessageInputMetadata } from "../../../src/shared/domain/chatInputMetadata.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import type { AppLogger } from "../../../src/shared/observability/logger.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../../support/fakes.js";
 import { postgresWorkspaceEventRecorder } from "../../../src/db/repositories/workspaceEventLogRepository.js";
@@ -81,9 +83,10 @@ export const classBooking = (onDecline: "continue" | "handoff", options: { askTi
 
 /**
  * Chat turns through the production ChatService, routine provider and turn persistence, on a
- * scripted model, for one published agent per conversation that runs `definition`.
+ * scripted model, for one published agent per conversation that runs `definition`. With `logger`,
+ * the turns log through it instead of into `logged`.
  */
-export const createRoutineConsentChatHarness = (database: Database, model: ChatGateway) => {
+export const createRoutineConsentChatHarness = (database: Database, model: ChatGateway, options: { logger?: AppLogger } = {}) => {
   const seededAccountIds: string[] = [];
   const metrics = new MetricsRegistry();
   const logged: Array<Record<string, unknown>> = [];
@@ -141,7 +144,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       routine: compileRoutineDefinition(definition),
       trigger: { description: definition.activation.triggerDescription, priority: 0 },
     };
-    const logger = {
+    const logger = options.logger ?? {
       debug: () => undefined,
       info: (fields: Record<string, unknown>) => void logged.push(fields),
       warn: () => undefined,
@@ -174,6 +177,8 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       : undefined;
     const chat = new ChatService({
       ...(backgroundJobs ? { backgroundJobs } : {}),
+      ...(options.logger ? { logger: options.logger } : {}),
+      channelPersonKeys: conversationReadSources(database.kysely).personKeys,
       conversationRepository: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messageRepository: new MessageRepository(database.kysely),
       retrievalTurn: {
@@ -255,6 +260,7 @@ export const createRoutineConsentChatHarness = (database: Database, model: ChatG
       [conversationId],
     );
     return {
+      chat,
       send,
       reloaded,
       records,

@@ -1,5 +1,6 @@
 import type { ValueSensitivity } from "@radioso/conversation-contract";
 
+import type { ChannelPersonKey, ChannelPersonKeyKind } from "../../shared/domain/channelPersonKey.js";
 import { AppError } from "../../shared/domain/errors.js";
 import type { SameType } from "../../shared/types/sameType.js";
 
@@ -22,9 +23,16 @@ export type ContextVariableSensitivity = ValueSensitivity;
  */
 export const CONTEXT_VARIABLE_SOURCES = ["pushed", "browser", "resolver", "request", "classified"] as const;
 export type ContextVariableSource = typeof CONTEXT_VARIABLE_SOURCES[number];
-/** Every scope a value can be kept under, the types `context_variable_values.scope_type` accepts. */
-export const CONTEXT_VARIABLE_SCOPE_TYPES = ["conversation", "session", "customer", "agent", "workspace"] as const;
+/**
+ * Every scope a value can be kept under, the types `context_variable_values.scope_type` accepts. A
+ * person is a `customer`, by the host's verified customer id, or a channel's person key, such as a
+ * `whatsapp_contact` by the number.
+ */
+export const CONTEXT_VARIABLE_SCOPE_TYPES = ["conversation", "session", "customer", "whatsapp_contact", "agent", "workspace"] as const;
 export type ContextVariableScopeType = typeof CONTEXT_VARIABLE_SCOPE_TYPES[number];
+// Each channel person key is a scope of its own: one added to the shared list fails tsc here until it is listed above.
+const channelPersonKindsAreScopes: SameType<Extract<ContextVariableScopeType, ChannelPersonKeyKind>, ChannelPersonKeyKind> = true;
+void channelPersonKindsAreScopes;
 
 /**
  * One described choice of an `enum` variable. A stored value holds the key, which never changes;
@@ -220,28 +228,43 @@ export interface ContextScopeKeys {
   conversationId: string | null;
   chatSessionId: string | null;
   verifiedCustomerId: string | null;
+  /** The person key the conversation's channel attests, a WhatsApp number; ignored beside a verified customer. */
+  channelPersonKey?: ChannelPersonKey | null;
   agentId: string;
   workspaceId: string;
 }
 
 /** The keys of the rungs that hold facts about one conversation. */
-export type ConversationScopeKeys = Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId">;
+export type ConversationScopeKeys = Pick<ContextScopeKeys, "conversationId" | "chatSessionId" | "verifiedCustomerId" | "channelPersonKey">;
+
+/**
+ * The person a conversation is with, as its one person key: the verified customer, or else the person
+ * its channel attests. A conversation has at most one, so a customer's and a number's values never
+ * meet in one turn. Null when it has none.
+ */
+const personRung = (keys: Pick<ConversationScopeKeys, "verifiedCustomerId" | "channelPersonKey">) => {
+  if (keys.verifiedCustomerId) return { type: "customer" as const, id: keys.verifiedCustomerId };
+  return keys.channelPersonKey ? { type: keys.channelPersonKey.kind, id: keys.channelPersonKey.id } : null;
+};
 
 /**
  * A conversation's own rungs of the ladder, most specific first: what it, the visitor's chat session
- * and the verified customer hold. The agent's and the workspace's rungs below them hold defaults that
- * every conversation of the agent or workspace shares.
+ * and the person hold. The agent's and the workspace's rungs below them hold defaults that every
+ * conversation of the agent or workspace shares.
  */
-export const conversationScopeLadder = (keys: ConversationScopeKeys) => [
-  ...(keys.conversationId ? [{ type: "conversation" as const, id: keys.conversationId }] : []),
-  ...(keys.chatSessionId ? [{ type: "session" as const, id: keys.chatSessionId }] : []),
-  ...(keys.verifiedCustomerId ? [{ type: "customer" as const, id: keys.verifiedCustomerId }] : []),
-];
+export const conversationScopeLadder = (keys: ConversationScopeKeys) => {
+  const person = personRung(keys);
+  return [
+    ...(keys.conversationId ? [{ type: "conversation" as const, id: keys.conversationId }] : []),
+    ...(keys.chatSessionId ? [{ type: "session" as const, id: keys.chatSessionId }] : []),
+    ...(person ? [person] : []),
+  ];
+};
 export type ConversationScope = ReturnType<typeof conversationScopeLadder>[number];
 export type ConversationScopeType = ConversationScope["type"];
 
 /** The types of a conversation's own rungs, most specific first. Each surface that names one takes it from here. */
-export const CONVERSATION_SCOPE_TYPES = ["conversation", "session", "customer"] as const;
+export const CONVERSATION_SCOPE_TYPES = ["conversation", "session", "customer", "whatsapp_contact"] as const;
 // A rung added to conversationScopeLadder fails tsc here until it is listed, and every schema built on the list follows.
 const conversationScopeTypesListed: SameType<typeof CONVERSATION_SCOPE_TYPES[number], ConversationScopeType> = true;
 void conversationScopeTypesListed;
@@ -254,16 +277,14 @@ export type ConversationSaveScope = "conversation" | "person";
 
 /**
  * Where a save for one conversation is kept: the conversation's own scope, or the conversation's
- * person key, its verified customer. Null for the person of a conversation that has none: no other
- * scope stands in for a person.
+ * person key, its verified customer or the person its channel attests. Null for the person of a
+ * conversation that has none: no other scope stands in for a person.
  */
 export const conversationSaveScope = (
   scope: ConversationSaveScope,
-  keys: { conversationId: string; verifiedCustomerId: string | null },
-): ContextVariableScope | null => {
-  if (scope === "conversation") return { type: "conversation", id: keys.conversationId };
-  return keys.verifiedCustomerId ? { type: "customer", id: keys.verifiedCustomerId } : null;
-};
+  keys: { conversationId: string } & Pick<ConversationScopeKeys, "verifiedCustomerId" | "channelPersonKey">,
+): ContextVariableScope | null =>
+  scope === "conversation" ? { type: "conversation", id: keys.conversationId } : personRung(keys);
 
 /** The resolution ladder, most specific first: conversation, session, person, agent, workspace. */
 export const contextScopeLadder = (keys: ContextScopeKeys): ContextVariableScope[] => [

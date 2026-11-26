@@ -15,6 +15,7 @@ import { VisitorImageEraser } from "../../modules/visitorImages/composition.js";
 import { VoiceSessionEraser } from "../../modules/voiceChannel/public.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
 import type {
+  ChannelPersonDataEraser,
   ConversationDataEraser,
   VendorHeldConversationDataEraser,
   VerifiedCustomerDataEraser,
@@ -28,6 +29,7 @@ import { lockConversationsInOrder, runTransactionWithDeadlockRetry } from "./con
 /** An owning module's eraser, bound to the transaction that runs it. */
 type ConversationDataEraserBinding = (trx: Db) => ConversationDataEraser;
 type VerifiedCustomerDataEraserBinding = (trx: Db) => VerifiedCustomerDataEraser;
+type ChannelPersonDataEraserBinding = (trx: Db) => ChannelPersonDataEraser;
 type VisitorKeyDataEraserBinding = (trx: Db) => VisitorKeyDataEraser;
 type VendorHeldConversationDataEraserBinding = (trx: Db) => VendorHeldConversationDataEraser;
 
@@ -43,7 +45,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new EmailInboundEraser(trx),
   (trx) => new EmailSkillActivityEraser(trx),
   (trx) => new EvalConversationEraser(trx),
-  (trx) => new WhatsAppMessageLogEraser(trx),
+  // A number whose latest conversation goes takes its transport log and its person values with it.
+  (trx) => new WhatsAppMessageLogEraser(trx, new ContextVariableValueEraser(trx)),
   (trx) => new AudiencePulseSnapshotEraser(trx),
   (trx) => new VoiceSessionEraser(trx),
   // A conversation's photos: their objects go to the deletion job in the erasure's transaction.
@@ -57,6 +60,12 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */
 export const defaultVerifiedCustomerDataErasers: readonly VerifiedCustomerDataEraserBinding[] = [
   (trx) => new ContextVariableValueEraser(trx),
+];
+
+/** Every module's eraser for the rows it keys by a channel's person key: a WhatsApp number's values and message log. */
+const defaultChannelPersonDataErasers: readonly ChannelPersonDataEraserBinding[] = [
+  (trx) => new ContextVariableValueEraser(trx),
+  (trx) => new WhatsAppMessageLogEraser(trx, new ContextVariableValueEraser(trx)),
 ];
 
 /** Every module's eraser for the rows an erased visitor left by their key before any conversation. */
@@ -76,12 +85,14 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
   logger: Pick<AppLogger, "warn">;
   conversationErasers?: readonly ConversationDataEraserBinding[];
   verifiedCustomerErasers?: readonly VerifiedCustomerDataEraserBinding[];
+  channelPersonErasers?: readonly ChannelPersonDataEraserBinding[];
   visitorKeyErasers?: readonly VisitorKeyDataEraserBinding[];
   /** What vendors hold for the erased subjects, read in the erasure's own transaction. */
   vendorHeldData?: VendorHeldConversationDataEraserBinding;
 }): ConversationErasureUnitOfWork => {
   const conversationErasers = deps.conversationErasers ?? defaultConversationDataErasers;
   const verifiedCustomerErasers = deps.verifiedCustomerErasers ?? defaultVerifiedCustomerDataErasers;
+  const channelPersonErasers = deps.channelPersonErasers ?? defaultChannelPersonDataErasers;
   const visitorKeyErasers = deps.visitorKeyErasers ?? defaultVisitorKeyDataErasers;
   return {
     run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
@@ -103,6 +114,7 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
         },
         conversationErasers: conversationErasers.map((bind) => bind(trx)),
         verifiedCustomerErasers: verifiedCustomerErasers.map((bind) => bind(trx)),
+        channelPersonErasers: channelPersonErasers.map((bind) => bind(trx)),
         visitorKeyErasers: visitorKeyErasers.map((bind) => bind(trx)),
         vendorHeldData: deps.vendorHeldData ? deps.vendorHeldData(trx) : null,
         audit: {

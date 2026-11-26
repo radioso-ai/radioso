@@ -1,8 +1,10 @@
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 import type { AuditEventInput } from "../audit/contracts/index.js";
+import type { ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import { notFound } from "../../shared/domain/errors.js";
 import type {
+  ChannelPersonDataEraser,
   ConversationDataEraser,
   VendorHeldConversationDataEraser,
   VendorHeldConversationDataScope,
@@ -33,6 +35,12 @@ export interface ConversationErasureReceipt {
 export interface ConversationErasure {
   eraseConversation(input: { workspaceId: string; conversationId: string; actor: ConversationErasureActor }): Promise<ConversationErasureReceipt>;
   eraseVisitor(input: { workspaceId: string; visitorId: string; actor: ConversationErasureActor }): Promise<ConversationErasureReceipt>;
+  /**
+   * Erases what modules keep under channel person keys (a WhatsApp number's values and message log),
+   * leaving the conversations, which go through their own erasure. Part of a data subject's erasure,
+   * whose event records it; it records none of its own.
+   */
+  eraseChannelPersons(input: { workspaceId: string; keys: readonly ChannelPersonKey[]; actor: ConversationErasureActor }): Promise<ConversationErasureReceipt>;
 }
 
 /**
@@ -107,6 +115,8 @@ export interface ConversationErasureWriteScope {
   subjects: ErasureSubjects;
   conversationErasers: readonly ConversationDataEraser[];
   verifiedCustomerErasers: readonly VerifiedCustomerDataEraser[];
+  /** Rows kept under a channel's person key rather than a conversation, such as a WhatsApp number's values. */
+  channelPersonErasers: readonly ChannelPersonDataEraser[];
   /** Rows a visitor left by their key before any conversation of theirs, such as a call never answered. */
   visitorKeyErasers: readonly VisitorKeyDataEraser[];
   /**
@@ -203,6 +213,20 @@ export class ConversationErasureService implements ConversationErasure, Inactive
       }
       await scope.subjects.deleteVisitor(input.workspaceId, input.visitorId);
       return { ...receipt, rowsByOwner };
+    });
+  }
+
+  async eraseChannelPersons(input: {
+    workspaceId: string;
+    keys: readonly ChannelPersonKey[];
+    actor: ConversationErasureActor;
+  }): Promise<ConversationErasureReceipt> {
+    return this.commit(input.workspaceId, input.actor.accountId, () => null, async (scope) => {
+      const rowsByOwner: Record<string, number> = {};
+      for (const eraser of scope.channelPersonErasers) {
+        addRows(rowsByOwner, eraser.owner, await eraser.eraseChannelPersons({ workspaceId: input.workspaceId, keys: input.keys }));
+      }
+      return { conversationCount: 0, messageCount: 0, rowsByOwner };
     });
   }
 

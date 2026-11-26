@@ -1,7 +1,7 @@
 ---
 title: "Workspace event log"
 description: "Poll the workspace event log for conversations started, contact requests, handoffs, routine endings, pending decisions and document processing outcomes, by a cursor that never skips an event."
-last_updated: 2026-11-20
+last_updated: 2026-11-24
 ---
 
 # Workspace event log
@@ -78,7 +78,7 @@ A conversation event's `data` starts with the conversation it is about: `convers
 | `handoff.requested` | The agent hands a conversation to a person. | `reason`, the handoff reason code (see below). |
 | `routine.completed` | A routine run ends, whichever way it ends. | `routineId`, `executionId`, `outcome` (`complete`, `handoff`, `action`, `stuck` or `consent_declined`), `values` (the routine's declared slots) and `sensitiveSlotKeys`. A visitor who corrects a value after the run ended records the run again, with the corrected values and the same `executionId`. |
 | `decision.pending` | A routine stops at a decision step and waits for a teammate. A teammate decides in the Inbox: the event tells an automation the decision is waiting. | `decisionHandle`, `routineId`, `stepId`, `reason` (the text the routine's author wrote on the step), `options` (`id` and `label`) and `deadline`. |
-| `context_value.changed` | The value a conversation holds for one of its [attributes](/operators/context-variables) changes: the AI picks or clears an option, a teammate sets or resets it in the Inbox, through Ray or an operator MCP client, or an API token writes or deletes it. A write that leaves the value as it was records nothing. | `variableId` (the attribute's id, the same after a rename), `variable` (the attribute's name), `valueType`, `scope` (`conversation`), `value` (an option key for a Choice attribute; `null` when the value was cleared), `redacted`, `writtenBy` (`classifier`, `operator`, `api` or `routine`) and `routineId` (set when a routine wrote it). |
+| `context_value.changed` | The value a conversation holds for one of its [attributes](/operators/context-variables) changes: the AI picks or clears an option, a teammate sets or resets it in the Inbox, through Ray or an operator MCP client, an API token writes or deletes it, or a routine saves it, to the conversation or to the person the conversation is with. A write that leaves the value as it was records nothing. | `variableId` (the attribute's id, the same after a rename), `variable` (the attribute's name), `valueType`, `scope` (`conversation`, or the person's: `customer` or `whatsapp_contact`; never the customer id or number), `value` (an option key for a Choice attribute; `null` when the value was cleared), `redacted`, `writtenBy` (`classifier`, `operator`, `api` or `routine`) and `routineId` (set when a routine wrote it). |
 
 A slot the routine's author marked sensitive reads `[redacted]` in `values`, as it does in every notice and export, and so does a notify step's input bound to one. `sensitiveSlotKeys` names a routine run's masked keys.
 

@@ -9,6 +9,7 @@ import {
   type WebhookDestinationRecord,
   type WebhookDestinationRepositoryPort,
 } from "../../src/modules/webhooks/public.js";
+import type { RoutineExportUse } from "../../src/shared/domain/skillTargetUses.js";
 import type { SkillTargetUse } from "../../src/shared/domain/skillTargetUses.js";
 import { decryptField, type FieldEncryptionKeyRing } from "../../src/shared/infra/crypto/fieldEncryption.js";
 import { fixedSkillTargetUses } from "../support/skillTargetUses.js";
@@ -103,6 +104,8 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
   }
 }
 
+const draftExport: RoutineExportUse = { agentId: "agent-1", agentName: "Sales", routineName: "lead intake", inDraft: true, inPublishedRelease: false };
+
 const audit = () => ({
   record: vi.fn(async () => undefined),
 });
@@ -111,7 +114,7 @@ const createService = (overrides: {
   key?: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => Promise<void>;
   allowHttpLoopback?: boolean;
-  referencedRoutineNames?: string[];
+  routineExports?: RoutineExportUse[];
   skillUses?: SkillTargetUse[];
 } = {}) => {
   const repository = new FakeWebhookDestinationRepository();
@@ -122,8 +125,8 @@ const createService = (overrides: {
     assertPublicUrl: overrides.assertPublicUrl ?? (async () => undefined),
     allowHttpLoopback: overrides.allowHttpLoopback,
     routineReferences: {
-      async listRoutineNamesReferencingDestination() {
-        return overrides.referencedRoutineNames ?? [];
+      async listRoutineExportUses() {
+        return overrides.routineExports ?? [];
       },
     },
     skillTargetUses: fixedSkillTargetUses(overrides.skillUses ?? []),
@@ -241,7 +244,7 @@ describe("WebhookDestinationService", () => {
   });
 
   it("blocks deletion when enabled routines reference the destination", async () => {
-    const { service } = createService({ referencedRoutineNames: ["lead intake"] });
+    const { service } = createService({ routineExports: [draftExport] });
     const created = await service.create({
       workspaceId,
       name: "crm",
@@ -272,7 +275,7 @@ describe("WebhookDestinationService", () => {
 
   it("blocks deletion while an agent's published release still uses the destination, and says to publish", async () => {
     const { repository, service } = createService({
-      referencedRoutineNames: ["lead intake"],
+      routineExports: [draftExport],
       skillUses: [{ agentId: "agent-1", agentName: "Sales", skillName: "send_lead", inDraft: false, inPublishedRelease: true }],
     });
     const created = await service.create({
@@ -285,10 +288,28 @@ describe("WebhookDestinationService", () => {
     await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" })).rejects.toMatchObject({
       statusCode: 409,
       code: "webhook_destination_in_use",
-      message: 'Webhook destination is in use. Used by routine "lead intake". The published version of agent "Sales" still uses skill "send_lead". Publish agent "Sales" first.',
+      message: 'Webhook destination is in use. Used by routine "lead intake" on agent "Sales". Point its export elsewhere or turn it off first. The published version of agent "Sales" still uses skill "send_lead". Publish agent "Sales" first.',
       details: { destinationId: created.destination.id, references: ["lead intake", "skill:send_lead"] },
     });
     expect(repository.rows.has(created.destination.id)).toBe(true);
+  });
+
+  it("tells the operator once to publish an agent whose release holds the destination through a routine and a skill", async () => {
+    const { service } = createService({
+      routineExports: [{ ...draftExport, inDraft: false, inPublishedRelease: true }],
+      skillUses: [{ agentId: "agent-1", agentName: "Sales", skillName: "send_lead", inDraft: false, inPublishedRelease: true }],
+    });
+    const created = await service.create({
+      workspaceId,
+      name: "crm",
+      url: "https://example.com",
+      actor: { accountId: "acc-1" },
+    });
+
+    await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" })).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'Webhook destination is in use. The published version of agent "Sales" still uses skill "send_lead" and exports routine "lead intake" to it. Publish agent "Sales" first.',
+    });
   });
 
   it("translates the database's skill-reference refusal into the same conflict", async () => {

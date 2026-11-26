@@ -26,6 +26,7 @@ const resolveAccountId = async (
   return workspace?.account_id ?? null;
 };
 
+const CONVERSATION_LINK_CONSTRAINT = "usage_events_conversation_id_fkey";
 const MESSAGE_LINK_CONSTRAINT = "usage_events_message_id_fkey";
 const COPILOT_CONVERSATION_LINK_CONSTRAINT = "usage_events_copilot_conversation_id_fkey";
 const COPILOT_MESSAGE_LINK_CONSTRAINT = "usage_events_copilot_message_id_fkey";
@@ -39,6 +40,7 @@ const violatesLinkConstraint = (error: unknown, constraint: string): boolean =>
   && (error as { constraint?: unknown }).constraint === constraint;
 
 interface UsageEventLinks {
+  readonly conversationId: string | null;
   readonly messageId: string | null;
   readonly copilotConversationId: string | null;
   readonly copilotMessageId: string | null;
@@ -48,7 +50,7 @@ interface UsageEventLinks {
 
 /** One per constraint this ledger's optional links can hit, plus one final attempt with every
  * matching link cleared -- never more retries than there are constraints to clear. */
-const MAX_LINK_FALLBACK_ATTEMPTS = 5;
+const MAX_LINK_FALLBACK_ATTEMPTS = 6;
 
 /**
  * Inserts with the event's optional links, dropping whichever one a foreign key rejects and
@@ -62,6 +64,9 @@ const MAX_LINK_FALLBACK_ATTEMPTS = 5;
  * row that, if it still exists, no longer means anything without the conversation around it.
  * A document can be deleted while a call made for it -- embedding or metadata extraction -- is
  * still recording (the document link, cleared with the revision it qualifies).
+ * A Test Chat side is the third: its conversation and messages live in the test-execution store,
+ * so every call it makes names a conversation and message that `conversations` and `messages` never
+ * held, and the conversation link is dropped (with the message's) the same way.
  * Either way: the spend is the record, the link is context.
  */
 const withLinkFallback = async <T>(
@@ -75,6 +80,10 @@ const withLinkFallback = async <T>(
   } catch (error) {
     if (attempt >= MAX_LINK_FALLBACK_ATTEMPTS) {
       throw error;
+    }
+    if (links.conversationId && violatesLinkConstraint(error, CONVERSATION_LINK_CONSTRAINT)) {
+      logger?.warn({ constraint: CONVERSATION_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, conversationId: null, messageId: null }, insert, logger, attempt + 1);
     }
     if (links.messageId && violatesLinkConstraint(error, MESSAGE_LINK_CONSTRAINT)) {
       logger?.warn({ constraint: MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
@@ -124,6 +133,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
 
     const inserted = await withLinkFallback(
       {
+        conversationId: event.conversationId ?? null,
         messageId: event.messageId ?? null,
         copilotConversationId: event.copilotConversationId ?? null,
         copilotMessageId: event.copilotMessageId ?? null,
@@ -142,7 +152,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           source_id: event.sourceId ?? null,
           document_id: links.documentId,
           document_revision: links.documentRevision,
-          conversation_id: event.conversationId ?? null,
+          conversation_id: links.conversationId,
           message_id: links.messageId,
           copilot_conversation_id: links.copilotConversationId,
           copilot_message_id: links.copilotMessageId,
@@ -246,6 +256,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
 
     const inserted = await withLinkFallback(
       {
+        conversationId: event.conversationId ?? null,
         messageId: event.messageId ?? null,
         copilotConversationId: event.copilotConversationId ?? null,
         copilotMessageId: event.copilotMessageId ?? null,
@@ -263,7 +274,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           agent_id: event.agentId ?? null,
           document_id: links.documentId,
           document_revision: links.documentRevision,
-          conversation_id: event.conversationId ?? null,
+          conversation_id: links.conversationId,
           message_id: links.messageId,
           copilot_conversation_id: links.copilotConversationId,
           copilot_message_id: links.copilotMessageId,

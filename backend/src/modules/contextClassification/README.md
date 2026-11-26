@@ -36,7 +36,8 @@ Consumed:
   value an earlier run read from it is recomputed without it.
 - `ClassificationInferenceFactory`: the workspace's `rewrite` model, metered
   through the usage events every model call records (`surface:
-  context_classification`).
+  context_classification`). A Test Chat run records them too, with no
+  conversation link, since a test side is not a stored conversation.
 
 Exposed:
 

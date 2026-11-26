@@ -40,6 +40,13 @@ when one exists, otherwise `none`.
 Retries that can consume provider resources must use distinct `attemptKey`
 values. Replays of the same provider attempt must reuse the same key.
 
+A Test Chat turn is metered like live traffic. Every model call it makes records an
+event: the answer and the other replayed turn operations under surface
+`test_execution`, and the attribute classifier under `context_classification`.
+A Test Chat side is not a stored conversation, so its events carry no
+conversation or message link: the ledger drops a link whose foreign key rejects
+it and keeps the spend. These events appear in the internal reporting view.
+
 ## Recorded Dimensions
 
 Every new pipeline write sets `event_kind` to `model` or `embedding`. The
@@ -130,6 +137,7 @@ spend.
 | `eval` | `rerank` | Eval replay model reranking | workspace, eval run |
 | `eval` | `full_assistant` | Eval replay of full assistant answer generation | workspace, eval run |
 | `eval` | `llm_judge` | Eval judge assertions | workspace, eval run |
+| `test_execution` | `answer`, `turn_planning`, and the other `assistant` operations | A Test Chat turn's own model calls, under Test Chat's surface rather than `assistant` | account, workspace, agent |
 | `agent_wizard` | `analyze_website` | Agent Wizard website analysis | workspace, analysis request |
 | `agents` | `draft_directive` | Drafting a directive from an operator's coaching input | workspace, agent, request |
 | `agents` | `directive_coherence` | Checking a proposed directive against the agent's existing directives | workspace, agent |

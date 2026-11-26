@@ -190,6 +190,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under
       // Test Chat's own retention, unlike eval replay, which must never request this.
       includeSlotValues: true,
+      // Its model calls land on the usage ledger under Test Chat's own surface, apart from live traffic.
+      usageAttribution: { surface: "test_execution" },
       signal: abort.signal,
     }));
   });

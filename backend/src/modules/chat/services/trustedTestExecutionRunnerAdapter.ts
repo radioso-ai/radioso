@@ -226,6 +226,8 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       // Chat" run seeded from a customer conversation, whose seeded messages are already
       // in that transcript.
       includeSlotValues: true,
+      // Metered like live traffic, under the surface Test Chat's answer reservation already uses.
+      usageAttribution: { surface: "test_execution" },
     };
     return { replay, revision, attributes: continuation.attributes };
   }

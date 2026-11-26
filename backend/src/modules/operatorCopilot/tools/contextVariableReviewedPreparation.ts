@@ -125,7 +125,7 @@ export const createContextVariableReviewedPreparationTool = (deps: ContextVariab
         publicationRequired: payload.enablement !== null,
       });
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "context_variable", targetRef: validated.targetRef, payload, versionToken: validated.versionToken, reviewSnapshot: review, operation: NAME, metadata: { contextVariableKind: kind, ...(variableId ? { variableId } : {}) }, effect: effectOf(writesDefinition) });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "context_variable", targetRef: validated.targetRef, payload, versionToken: validated.versionToken, reviewSnapshot: review, operation: NAME, metadata: { contextVariableKind: kind, ...(variableId ? { variableId } : {}) }, effect: effectOf(writesDefinition), affectedAgents: { agents: [...(payload.enablement !== null ? [{ id: agentId }] : []), ...(users?.users ?? []).map((user) => ({ id: user.agentId, name: user.agentName }))], truncated: users?.truncated ?? false }, summary: rationale });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     } }),
   };

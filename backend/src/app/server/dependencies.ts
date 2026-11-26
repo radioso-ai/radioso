@@ -803,7 +803,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely, copilotContributions.proposals.targetTypes),
       retrievalAuthoring,
     }),
-    createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
+    createAgentPublicationProposalAdapter({ revisions: agentRevisionService, agents: agentService }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely, copilotContributions.proposals.targetTypes) }),
     createDocumentCopilotProposalAdapter({
       documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),

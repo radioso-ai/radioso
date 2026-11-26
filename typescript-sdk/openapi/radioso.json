@@ -66150,24 +66150,45 @@
                             "null"
                           ]
                         },
+                        "summary": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reach": {
+                          "type": "boolean"
+                        },
                         "affectedAgents": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "name": {
-                                "type": "string"
+                          "type": "object",
+                          "properties": {
+                            "agents": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ]
                               }
                             },
-                            "required": [
-                              "id",
-                              "name"
-                            ]
-                          }
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "agents",
+                            "truncated"
+                          ]
                         },
                         "review": {}
                       },
@@ -66179,6 +66200,8 @@
                         "expiresAt",
                         "approvedAt",
                         "clientName",
+                        "summary",
+                        "reach",
                         "affectedAgents"
                       ]
                     }

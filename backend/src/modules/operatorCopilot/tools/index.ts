@@ -69,6 +69,7 @@ import { createAgentPublicationCopilotTools } from "./agentPublication.js";
 import type { AgentPublicationCopilotToolDependencies } from "./agentPublication.js";
 import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
+import { withoutStoredPresentation } from "../reviewedOperation.js";
 import { createProposalDetailTool } from "./proposalDetail.js";
 import type { CopilotProposalTargetTypeSet } from "../proposalContribution.js";
 import type { CopilotProposalDetailReadPort } from "../service.js";
@@ -131,8 +132,11 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
-  deps: CopilotToolCatalogDependencies,
-): ReadonlyArray<CopilotToolDescriptor> => attachOperatorMcpDispositions(attachCopilotCapabilityProvenance([
+  catalogDeps: CopilotToolCatalogDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => {
+  // Each owner's strict review schema reads back exactly what it wrote, so recovery never shows it the stored presentation.
+  const deps = { ...catalogDeps, proposalRecovery: withoutStoredPresentation(catalogDeps.proposalRecovery) };
+  return attachOperatorMcpDispositions(attachCopilotCapabilityProvenance([
   ...createAgentConfigurationCopilotTools(deps),
   ...createRoutineDefinitionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createChatCopilotTools(deps),
@@ -170,24 +174,25 @@ export const createCopilotToolDescriptors = (
   ...createWebsiteAnalysisProbeCopilotTools(deps),
   ...createAgentProposalCopilotTools(deps),
   ...createDocumentProposalCopilotTools(deps),
-  ...createDocumentReviewedOperationTools(deps),
+  ...createDocumentReviewedOperationTools({ ...deps, agentLookup: deps.agentService }),
   ...createIngestionSettingsProposalCopilotTools(deps),
-  createIngestionSettingsReviewedPreparationTool(deps),
-  createAgentSettingsReviewedPreparationTool(deps),
-  createDirectiveReviewedPreparationTool(deps),
-  createContextVariableReviewedPreparationTool(deps),
+  createIngestionSettingsReviewedPreparationTool({ ...deps, agentLookup: deps.agentService }),
+  createAgentSettingsReviewedPreparationTool({ ...deps, agentLookup: deps.agentService }),
+  createDirectiveReviewedPreparationTool({ ...deps, agentLookup: deps.agentService }),
+  createContextVariableReviewedPreparationTool({ ...deps, agentLookup: deps.agentService }),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createPrivacySettingProposalCopilotTools(deps),
   ...createTimeZoneSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
-  createRoutineStructuralPreparationTool(deps),
-  ...createAgentPublicationCopilotTools(deps),
-  ...createRetrievalAuthoringCopilotTools(deps),
+  createRoutineStructuralPreparationTool({ ...deps, agentLookup: deps.agentService }),
+  ...createAgentPublicationCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createRetrievalAuthoringCopilotTools({ ...deps, agentLookup: deps.agentService }),
   createProposalDetailTool(deps.proposalDetail, deps.proposalTargetTypes),
   createReviewedProposalExecutionTool(deps.reviewedProposalExecution),
   createReviewedProposalOutcomeTool(deps.reviewedProposalOutcome),
   createCancelReviewedProposalTool(deps.cancelReviewedProposal),
 ]));
+};
 
 export type { CopilotAgentSkillsPort, CopilotOperatorNoticeDestinationsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 export type { CopilotNotificationDeliveriesPort } from "./notificationDeliveries.js";

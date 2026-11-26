@@ -1,4 +1,4 @@
-import { buildCopilotProposalDiff } from '@/components/dashboard/copilot-proposal-changes'
+import { buildCopilotProposalDiff } from '@/lib/copilot-proposal-diff'
 import type { CopilotProposalDetail } from '@/lib/api-copilot'
 
 type ReviewedOperation = NonNullable<CopilotProposalDetail['reviewedOperation']>
@@ -6,10 +6,14 @@ type ReviewedOperation = NonNullable<CopilotProposalDetail['reviewedOperation']>
 interface ReviewedOperationView {
   /** What the change is called, as the dashboard proposal card names it. */
   label: string
+  /** The producer's one-line statement of intent, when it gave one. */
+  summary: string | null
   /** Owner-declared consequences of applying it; each is a short fact, not a guess. */
   effects: string[]
-  /** Names of the agents the review says the change reaches. */
-  agents: string[]
+  /** Whether the change alters who can reach an agent. */
+  reach: boolean
+  /** Names of the agents the review says the change reaches, and whether more are affected than listed. */
+  agents: { names: string[]; hasMore: boolean }
   /** The same current/proposed rows a dashboard proposal shows. */
   rows: ReturnType<typeof buildCopilotProposalDiff>
 }
@@ -24,8 +28,10 @@ export const buildReviewedOperationView = (proposal: CopilotProposalDetail): Rev
   const operation = proposal.reviewedOperation!
   return {
     label: proposal.targetLabel ?? '',
+    summary: operation.summary,
     effects: effectLines(operation.effect),
-    agents: (operation.affectedAgents ?? []).map((agent) => agent.name),
+    reach: operation.reach,
+    agents: { names: operation.affectedAgents.agents.map((agent) => agent.name), hasMore: operation.affectedAgents.truncated },
     rows: buildCopilotProposalDiff(proposal.preview ?? { current: null, proposed: null }),
   }
 }

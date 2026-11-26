@@ -214,7 +214,10 @@ describe("createCopilotRoutes", () => {
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", targetType: "routine", targetRef: {}, status: "pending", reason: null, appliedRef: null, evidence: null,
       reviewDigest: "a".repeat(43), confirmationRequirement: "signed_in_approval" as const,
       changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false }, expiresAt: new Date("2026-09-27T00:15:00.000Z"), approvedAt: null,
-      reviewSnapshot: { review: { visible: true }, fullReview: { steps: Array.from({ length: 2_000 }, () => "hidden") } },
+      reviewSnapshot: {
+        review: { visible: true }, fullReview: { steps: Array.from({ length: 2_000 }, () => "hidden") },
+        presentation: { summary: "Tighten the greeting", affectedAgents: { agents: [{ id: "11111111-1111-4111-8111-111111111111", name: "Support" }], truncated: true }, reach: true },
+      },
     };
     const getProposal = vi.fn(async () => ({ proposal, preview: { targetLabel: "Routine", current: null, proposed: {} }, currentVersionMatches: true }));
     const describeReviewedProposalClient = vi.fn(async () => ({ clientId: "client-record-1", clientName: "Operator test client" }));
@@ -236,6 +239,13 @@ describe("createCopilotRoutes", () => {
     expect(response.status).toBe(200);
     expect(response.body.reviewedOperation).toMatchObject({ clientName: "Operator test client", review: { review: { visible: true } } });
     expect(response.body.reviewedOperation.review).not.toHaveProperty("fullReview");
+    // The producer-declared presentation is returned as its own fields, never inside the review.
+    expect(response.body.reviewedOperation).toMatchObject({
+      summary: "Tighten the greeting",
+      reach: true,
+      affectedAgents: { agents: [{ id: "11111111-1111-4111-8111-111111111111", name: "Support" }], truncated: true },
+    });
+    expect(response.body.reviewedOperation.review).not.toHaveProperty("presentation");
     expect(JSON.stringify(response.body)).not.toContain("hidden");
     expect(describeReviewedProposalClient).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, operatorUserId: USER_ID, proposal });
   });

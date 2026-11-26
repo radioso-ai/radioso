@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink, Globe } from 'lucide-react'
 
-import { buildCopilotProposalDiff, ProposalChangesTable } from '@/components/dashboard/copilot-proposal-changes'
+import { ProposalChangesTable } from '@/components/dashboard/copilot-proposal-changes'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +31,7 @@ import {
 } from '@/lib/api-copilot'
 import { announceAgentDraftSaved, announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { buildCopilotProposalDiff } from '@/lib/copilot-proposal-diff'
 import {
   createCopilotProposalCardState,
   failCopilotProposalApply,
@@ -55,8 +56,6 @@ const statusVariant = (status: CopilotProposalStatus) => {
   if (status === 'applied') return 'secondary' as const
   return 'outline' as const
 }
-
-export { buildCopilotProposalDiff }
 
 const statusBadgeClassName = (status: CopilotProposalStatus) =>
   status === 'failed' || status === 'stale' ? 'border-destructive/40 text-destructive' : undefined

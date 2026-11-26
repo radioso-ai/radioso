@@ -33,28 +33,51 @@ export const presentReviewedOperationSnapshot = (value: unknown): { readonly vis
   return { visible, full: fullReview };
 };
 
-interface ReviewedAffectedAgent { readonly id: string; readonly name: string }
+/**
+ * What an approval page needs beyond the owner's own review shape, declared by each preparation
+ * when it persists: the agents the change reaches, a one-line summary, and whether it changes who
+ * can reach an agent. It is stored beside the review (so the digest binds it) under one reserved
+ * key, and only the proposal detail route reads it; no consumer reads a producer's snapshot keys.
+ */
+const REVIEWED_PRESENTATION_KEY = "presentation";
+export const REVIEWED_AFFECTED_AGENTS_LIMIT = 25;
+const reviewedPresentationSchema = z.object({
+  summary: z.string().max(1_000).optional(),
+  affectedAgents: z.object({
+    agents: z.array(z.object({ id: z.string().uuid(), name: z.string().max(200) }).strict()).max(REVIEWED_AFFECTED_AGENTS_LIMIT),
+    /** True when more agents are affected than `agents` lists. */
+    truncated: z.boolean(),
+  }).strict(),
+  reach: z.boolean().optional(),
+}).strict();
+type ReviewedPresentation = z.infer<typeof reviewedPresentationSchema>;
 
-const agentOf = (value: unknown): ReviewedAffectedAgent | null => {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  const name = record.agentName;
-  return typeof record.agentId === "string" && typeof name === "string" && name.length > 0 ? { id: record.agentId, name } : null;
+export const withReviewedPresentation = (review: unknown, presentation: ReviewedPresentation): Record<string, unknown> => ({
+  ...(review && typeof review === "object" && !Array.isArray(review) ? review as Record<string, unknown> : {}),
+  [REVIEWED_PRESENTATION_KEY]: reviewedPresentationSchema.parse(presentation),
+});
+
+/** Separates the owner's review from the presentation declared beside it; absent or invalid presentation reads as none. */
+export const splitStoredReview = (value: unknown): { readonly review: unknown; readonly presentation: ReviewedPresentation | null } => {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !(REVIEWED_PRESENTATION_KEY in value)) return { review: value, presentation: null };
+  const { [REVIEWED_PRESENTATION_KEY]: stored, ...review } = value as Record<string, unknown>;
+  const parsed = reviewedPresentationSchema.safeParse(stored);
+  return { review, presentation: parsed.success ? parsed.data : null };
 };
 
 /**
- * The agents a stored review says its change reaches: the one an agent-scoped review targets and
- * each user of a live workspace-level definition. Read from the review's own named agents so the
- * approval page answers "which agents" without a second lookup; a review that names none yields [].
+ * Hides the presentation key from a recovered proposal so each owner's strict review schema keeps
+ * parsing exactly what it wrote.
  */
-export const reviewedAffectedAgents = (snapshot: unknown): ReviewedAffectedAgent[] => {
-  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
-  const review = snapshot as Record<string, unknown>;
-  const definition = review.definition && typeof review.definition === "object" ? review.definition as Record<string, unknown> : null;
-  const candidates = [agentOf(review.target), ...(Array.isArray(definition?.usedBy) ? definition.usedBy.map(agentOf) : [])];
-  const seen = new Set<string>();
-  return candidates.filter((agent): agent is ReviewedAffectedAgent => agent !== null && !seen.has(agent.id) && Boolean(seen.add(agent.id)));
-};
+export const withoutStoredPresentation = <TPort extends { recoverOperatorMcpProposal(input: never): Promise<unknown> }>(port: TPort): TPort => ({
+  ...port,
+  recoverOperatorMcpProposal: async (input: never) => {
+    const result = await port.recoverOperatorMcpProposal(input) as { status: string; proposal?: { reviewSnapshot: unknown } };
+    return result.status === "recovered" && result.proposal
+      ? { ...result, proposal: { ...result.proposal, reviewSnapshot: splitStoredReview(result.proposal.reviewSnapshot).review } }
+      : result;
+  },
+});
 
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;

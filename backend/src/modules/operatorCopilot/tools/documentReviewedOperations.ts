@@ -82,7 +82,7 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
       const targetRef = { sourceId: input.sourceId ?? null };
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan), affectedAgents: { agents: [] } });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     },
   }),
@@ -123,7 +123,7 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
       const payload = plan;
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan), affectedAgents: { agents: [] } });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     } }),
   };
@@ -161,7 +161,7 @@ function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): C
       const targetRef = { sourceId: input.sourceId ?? null };
       const payload = plan;
       const versionToken = plan.fence; const reviewSnapshot = { review, fullReview: summary.fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible }, effect: documentReviewedChangeEffect(plan) });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible }, effect: documentReviewedChangeEffect(plan), affectedAgents: { agents: [] } });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     } }),
   };

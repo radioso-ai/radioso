@@ -167,7 +167,11 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
     expiresAt: string | null
     approvedAt: string | null
     clientName: string | null
-    affectedAgents: Array<{ id: string; name: string }>
+    /** The producer's one-line statement of intent; null when it gave none. */
+    summary: string | null
+    /** True when the change alters who can reach an agent. */
+    reach: boolean
+    affectedAgents: { agents: Array<{ id: string; name: string }>; truncated: boolean }
     review: unknown
   } | null
 }

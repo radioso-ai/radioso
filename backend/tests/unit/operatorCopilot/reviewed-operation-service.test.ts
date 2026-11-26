@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   awaitReviewedApproval,
   canonicalReviewedOperationDigest,
-  reviewedAffectedAgents,
   reviewedApprovalOutstanding,
+  splitStoredReview,
+  withoutStoredPresentation,
+  withReviewedPresentation,
   type ReviewedApprovalPollState,
 } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 
@@ -143,23 +145,28 @@ describe("awaitReviewedApproval", () => {
   });
 });
 
-describe("reviewedAffectedAgents", () => {
+describe("stored review presentation", () => {
   const a = "11111111-1111-4111-8111-111111111111";
-  const b = "22222222-2222-4222-8222-222222222222";
+  const presentation = { summary: "Rename the variable", affectedAgents: { agents: [{ id: a, name: "Support" }], truncated: true }, reach: false };
 
-  it("names the target agent of an agent-scoped review", () => {
-    expect(reviewedAffectedAgents({ target: { agentId: a, agentName: "Support" }, changes: [] })).toEqual([{ id: a, name: "Support" }]);
+  it("stores the declared presentation beside the review and splits it back out", () => {
+    const stored = withReviewedPresentation({ target: { agentId: a } }, presentation);
+    expect(splitStoredReview(stored)).toEqual({ review: { target: { agentId: a } }, presentation });
   });
 
-  it("lists every agent a live definition change reaches, once each", () => {
-    expect(reviewedAffectedAgents({
-      target: { agentId: a },
-      definition: { usedBy: [{ agentId: b, agentName: "Sales", uses: "both" }, { agentId: a, agentName: "Support", uses: "draft" }] },
-    })).toEqual([{ id: b, name: "Sales" }, { id: a, name: "Support" }]);
+  it("reads a review with no presentation as having none", () => {
+    expect(splitStoredReview({ counts: { create: 3 } })).toEqual({ review: { counts: { create: 3 } }, presentation: null });
+    expect(splitStoredReview(null)).toEqual({ review: null, presentation: null });
   });
 
-  it("returns nothing for a review that names no agents", () => {
-    expect(reviewedAffectedAgents({ counts: { create: 3 } })).toEqual([]);
-    expect(reviewedAffectedAgents(null)).toEqual([]);
+  it("refuses a presentation that lists more agents than it can show", () => {
+    const agents = Array.from({ length: 26 }, (_, index) => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, name: `Agent ${index}` }));
+    expect(() => withReviewedPresentation({}, { affectedAgents: { agents, truncated: true } })).toThrow();
+  });
+
+  it("hides the presentation from a recovered proposal so each owner's strict schema still parses its review", async () => {
+    const stored = withReviewedPresentation({ target: { agentId: a } }, presentation);
+    const port = withoutStoredPresentation({ recoverOperatorMcpProposal: async () => ({ status: "recovered", proposal: { id: "p", reviewSnapshot: stored } }) });
+    await expect((port.recoverOperatorMcpProposal as (input?: unknown) => Promise<unknown>)(undefined)).resolves.toEqual({ status: "recovered", proposal: { id: "p", reviewSnapshot: { target: { agentId: a } } } });
   });
 });

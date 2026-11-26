@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { splitStoredReview } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -57,6 +58,7 @@ const fixture = (seed: ContextVariable[] = [], seedEnablements: AgentContextVari
     // The agents module answers who uses a variable, from each agent's draft and published release.
     contextVariableUsers: { listContextVariableUsers },
     contextVariables,
+    agentLookup: { listExisting: async () => [{ id: agentId, name: "Support", isDefault: true, assistantBootstrapActive: false }] },
     now: () => new Date("2026-11-22T10:00:00.000Z"), appBaseUrl: "https://app.example",
   };
   const tool = createContextVariableReviewedPreparationTool(deps as never).createTool(context);
@@ -66,6 +68,9 @@ const fixture = (seed: ContextVariable[] = [], seedEnablements: AgentContextVari
   }>;
   return { invoke, proposalRepository, repository, listContextVariableUsers };
 };
+
+const storedPresentation = (repository: { createProposal: { mock: { calls: unknown[][] } } }) =>
+  splitStoredReview((repository.createProposal.mock.calls.at(-1)![0] as { reviewSnapshot: unknown }).reviewSnapshot).presentation;
 
 const enablementOf = (variableId: string, overrides: Partial<AgentContextVariableEnablementRecord & AgentContextVariableEnablement> = {}): AgentContextVariableEnablement => ({
   id: randomUUID(), agentId, variableId, source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null,
@@ -103,7 +108,7 @@ describe("reviewed context-variable preparation", () => {
   });
 
   it("states a create with this agent's enablement as a live definition plus a draft that needs publication", async () => {
-    const { invoke } = fixture();
+    const { invoke, proposalRepository } = fixture();
 
     const output = await invoke({ ...createInput, enablement: { source: "classified", surfacing: "on_reference" } });
 
@@ -113,13 +118,16 @@ describe("reviewed context-variable preparation", () => {
       publicationRequired: true,
     });
     expect(output.confirmation.requirement).toBe("signed_in_approval");
+    // The page names the agent whose draft the enablement lands on, though the review only holds its id.
+    expect(storedPresentation(proposalRepository)?.affectedAgents).toEqual({ agents: [{ id: agentId, name: "Support" }], truncated: false });
   });
 
   it("prepares an edit with what it was before and every agent that uses it, by its draft, its published release or both", async () => {
     const topic = choice();
-    const { invoke, listContextVariableUsers } = fixture([topic], [enablementOf(topic.id)]);
+    const { invoke, listContextVariableUsers, proposalRepository } = fixture([topic], [enablementOf(topic.id)]);
 
     const output = await invoke({ kind: "edit", agentId, variableId: topic.id, description: "The visitor's reason for writing." });
+    expect(storedPresentation(proposalRepository)?.affectedAgents).toEqual({ agents: [{ id: agentId, name: "Support" }, { id: otherAgentId, name: "Sales" }], truncated: false });
 
     expect(listContextVariableUsers).toHaveBeenCalledOnce();
     expect(listContextVariableUsers).toHaveBeenCalledWith({ workspaceId, variableId: topic.id, limit: 25 });

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, ChevronDown, ChevronRight, Zap } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, Globe, Zap } from 'lucide-react'
 
 import { ProposalChangesTable } from '@/components/dashboard/copilot-proposal-changes'
 import { Button } from '@/components/ui/button'
@@ -30,14 +30,18 @@ export function ReviewedOperationApproval({ proposal }: { proposal: CopilotPropo
     <div className="space-y-4">
       <div className="space-y-1">
         <p className="text-sm font-medium">{view.label}</p>
+        {view.summary ? <p className="text-sm text-muted-foreground">{view.summary}</p> : null}
         <p className="text-xs text-muted-foreground">Requested by {clientName}. Review code: {operation.reviewCode}</p>
       </div>
       <ul className="space-y-1 text-sm">
         {view.effects.map((effect) => (
           <li key={effect} className="flex items-center gap-2"><Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />{effect}</li>
         ))}
-        {view.agents.length > 0 ? (
-          <li className="flex items-center gap-2"><Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />Affects {view.agents.join(', ')}</li>
+        {view.reach ? (
+          <li className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />Changes who can reach the agent.</li>
+        ) : null}
+        {view.agents.names.length > 0 ? (
+          <li className="flex items-center gap-2"><Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />Affects {view.agents.names.join(', ')}{view.agents.hasMore ? ' and more' : ''}</li>
         ) : null}
       </ul>
       {view.rows.length > 0 ? <ProposalChangesTable rows={view.rows} /> : null}

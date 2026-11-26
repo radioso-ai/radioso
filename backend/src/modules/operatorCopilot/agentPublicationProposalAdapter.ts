@@ -23,7 +23,11 @@ const currentVersionToken = async (revisions: AgentPublicationRevisionPort, work
 };
 
 /** Candidate preparation stays in the MCP tool; this adapter owns one standard apply path. */
-export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPublicationRevisionPort }): CopilotAgentPublicationProposalAdapter => ({
+export const createAgentPublicationProposalAdapter = (deps: {
+  revisions: AgentPublicationRevisionPort;
+  /** Names the agent a publication preview is about. */
+  agents: { get(workspaceId: string, agentId: string): Promise<{ readonly name: string }> };
+}): CopilotAgentPublicationProposalAdapter => ({
   targetType: "agent_publication",
   proposalDetailTargetRef: (rawTargetRef) => {
     const targetRef = targetSchema.parse(rawTargetRef);
@@ -42,15 +46,26 @@ export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPu
     return currentVersionToken(deps.revisions, workspaceId, targetRef.agentId);
   },
 
-  async preview(workspaceId, rawTargetRef, rawPayload) {
+  /**
+   * The change a publication makes: each field that differs between what is live and the candidate,
+   * with the live value as current and the candidate's as proposed. A field the candidate adds has
+   * no current value and one it removes has no proposed value. Fences and revision ids are the
+   * adapter's own bookkeeping and stay out of the preview.
+   */
+  async preview(workspaceId, rawTargetRef) {
     const targetRef = targetSchema.parse(rawTargetRef);
-    const payload = payloadSchema.parse(rawPayload);
-    const state = await deps.revisions.state(workspaceId, targetRef.agentId);
-    return {
-      targetLabel: "Agent publication",
-      current: { draftGeneration: state.draft.generation, publishedRevisionId: state.publishedRevision?.id ?? null },
-      proposed: { candidateRevisionId: targetRef.candidateRevisionId, ...payload },
-    };
+    const [agent, review] = await Promise.all([
+      deps.agents.get(workspaceId, targetRef.agentId),
+      deps.revisions.describeCandidatePublicationReview(workspaceId, targetRef.agentId, targetRef.candidateRevisionId),
+    ]);
+    const current: Record<string, string> = {};
+    const proposed: Record<string, string> = {};
+    for (const change of review.changes) {
+      const field = change.id === "agent" ? change.field : `${change.field} ${change.id}`;
+      if (change.before !== null) current[field] = change.before;
+      if (change.after !== null) proposed[field] = change.after;
+    }
+    return { targetLabel: `Publish ${agent.name}`, current, proposed };
   },
 
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, suppliedVersionToken, context?: CopilotProposalApplyContext) {

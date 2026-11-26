@@ -2871,7 +2871,7 @@ export const createTestDependencies = (overrides: {
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
-    createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
+    createAgentPublicationProposalAdapter({ revisions: agentRevisionService, agents: agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),

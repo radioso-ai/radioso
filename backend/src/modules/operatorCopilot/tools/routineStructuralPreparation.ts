@@ -219,7 +219,7 @@ export const createRoutineStructuralPreparationTool = (
         const after = boundedRoutineReview(input.draft);
         const catalog = await deps.routines.advisoryCatalog(context.workspaceId, input.agentId);
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), advisories: routineAdvisoriesWithMessages(input.draft, catalog).slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
-        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind), affectedAgents: { agents: [{ id: input.agentId }] } });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
       }
       const current = await deps.routines.get(context.workspaceId, input.agentId, input.routineId);
@@ -231,7 +231,7 @@ export const createRoutineStructuralPreparationTool = (
         const before = boundedRoutineReview(current);
         // Nothing survives a delete to advise on.
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: [], advisories: [], review: { before: before.summary, after: {}, truncated: before.truncated, detailAvailable: before.truncated, beforeConnections: connectionsForReview(current.transitions ?? []), afterConnections: [], connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "delete" }], operationsTruncated: false }, fullReview: { before: before.full, after: {} } });
-        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind), affectedAgents: { agents: [{ id: input.agentId }] } });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
       }
       const removedReferences: { current: { readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] } | null } = { current: null };
@@ -278,7 +278,7 @@ export const createRoutineStructuralPreparationTool = (
       const after = boundedRoutineReview(draft);
       const catalog = await deps.routines.advisoryCatalog(context.workspaceId, input.agentId);
       const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), advisories: routineAdvisoriesWithMessages(draft, catalog).slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect("edit") });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect("edit"), affectedAgents: { agents: [{ id: input.agentId }] } });
       return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
     },
   }),

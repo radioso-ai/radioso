@@ -73,6 +73,7 @@ const withLinkFallback = async <T>(
   links: UsageEventLinks,
   insert: (links: UsageEventLinks) => Promise<T>,
   logger: Pick<AppLogger, "warn"> | undefined,
+  event: { workspaceId: string; surface?: string; operation?: string },
   attempt = 1,
 ): Promise<T> => {
   try {
@@ -82,24 +83,24 @@ const withLinkFallback = async <T>(
       throw error;
     }
     if (links.conversationId && violatesLinkConstraint(error, CONVERSATION_LINK_CONSTRAINT)) {
-      logger?.warn({ constraint: CONVERSATION_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
-      return withLinkFallback({ ...links, conversationId: null, messageId: null }, insert, logger, attempt + 1);
+      logger?.warn({ constraint: CONVERSATION_LINK_CONSTRAINT, workspaceId: event.workspaceId, surface: event.surface, operation: event.operation }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, conversationId: null, messageId: null }, insert, logger, event, attempt + 1);
     }
     if (links.messageId && violatesLinkConstraint(error, MESSAGE_LINK_CONSTRAINT)) {
-      logger?.warn({ constraint: MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
-      return withLinkFallback({ ...links, messageId: null }, insert, logger, attempt + 1);
+      logger?.warn({ constraint: MESSAGE_LINK_CONSTRAINT, workspaceId: event.workspaceId, surface: event.surface, operation: event.operation }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, messageId: null }, insert, logger, event, attempt + 1);
     }
     if (links.copilotConversationId && violatesLinkConstraint(error, COPILOT_CONVERSATION_LINK_CONSTRAINT)) {
-      logger?.warn({ constraint: COPILOT_CONVERSATION_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
-      return withLinkFallback({ ...links, copilotConversationId: null, copilotMessageId: null }, insert, logger, attempt + 1);
+      logger?.warn({ constraint: COPILOT_CONVERSATION_LINK_CONSTRAINT, workspaceId: event.workspaceId, surface: event.surface, operation: event.operation }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, copilotConversationId: null, copilotMessageId: null }, insert, logger, event, attempt + 1);
     }
     if (links.copilotMessageId && violatesLinkConstraint(error, COPILOT_MESSAGE_LINK_CONSTRAINT)) {
-      logger?.warn({ constraint: COPILOT_MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
-      return withLinkFallback({ ...links, copilotMessageId: null }, insert, logger, attempt + 1);
+      logger?.warn({ constraint: COPILOT_MESSAGE_LINK_CONSTRAINT, workspaceId: event.workspaceId, surface: event.surface, operation: event.operation }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, copilotMessageId: null }, insert, logger, event, attempt + 1);
     }
     if (links.documentId && violatesLinkConstraint(error, DOCUMENT_LINK_CONSTRAINT)) {
-      logger?.warn({ constraint: DOCUMENT_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
-      return withLinkFallback({ ...links, documentId: null, documentRevision: null }, insert, logger, attempt + 1);
+      logger?.warn({ constraint: DOCUMENT_LINK_CONSTRAINT, workspaceId: event.workspaceId, surface: event.surface, operation: event.operation }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, documentId: null, documentRevision: null }, insert, logger, event, attempt + 1);
     }
     throw error;
   }
@@ -202,6 +203,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       return true;
     }),
       this.logger,
+      event,
     );
 
     if (inserted && accountId && event.status === "succeeded") {
@@ -304,6 +306,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       return Boolean(insertedRow);
     }),
       this.logger,
+      event,
     );
 
     if (inserted && accountId && event.status === "succeeded") {

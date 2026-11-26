@@ -20,4 +20,10 @@ export interface ModelCallUsageContext {
   attemptKey: string;
 }
 
-export type ModelCallUsageAttribution = Pick<ModelCallUsageContext, "surface" | "requestId">;
+/**
+ * What a caller that replays a turn stamps on every model call the turn makes. A `null`
+ * `conversationId` or `messageId` says the turn's conversation is not a stored row (a Test Chat
+ * side), so the ledger insert does not name one; `requestId` then scopes the calls' idempotency
+ * to one attempt, so a retried turn's calls are counted again.
+ */
+export type ModelCallUsageAttribution = Pick<ModelCallUsageContext, "surface" | "requestId" | "conversationId" | "messageId">;

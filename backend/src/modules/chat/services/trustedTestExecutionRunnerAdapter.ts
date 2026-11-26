@@ -20,7 +20,7 @@ import type { AssistantClientContextCapabilities } from "../types/assistantApi.j
 import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
 import { readItemSelection, type SelectedItem } from "./replyBlocks/itemSelection.js";
 import type { ConversationClassificationService } from "../../contextClassification/public.js";
-import { classifyTestChatTurn, testChatAttributeInputs, type TestChatAttributeState } from "./testChatClassification.js";
+import { classifyTestChatTurn, testChatAttributeInputs, testChatUsageAttribution, type TestChatAttributeState } from "./testChatClassification.js";
 
 type TestExecutionRunInput = Parameters<TrustedTestExecutionRunnerPort["stream"]>[0];
 
@@ -143,6 +143,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
           conversationId: input.conversationId, revision, history: input.history, message: replay.query,
           ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
           samples: input.testValues, previous: attributes, sensitiveSlotKeys: replayed.sensitiveSlotKeys ?? [],
+          attemptId: input.attemptId,
           ...(input.signal ? { signal: input.signal } : {}),
         })
       : null;
@@ -227,7 +228,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       // in that transcript.
       includeSlotValues: true,
       // Metered like live traffic, under the surface Test Chat's answer reservation already uses.
-      usageAttribution: { surface: "test_execution" },
+      usageAttribution: testChatUsageAttribution(input.attemptId),
     };
     return { replay, revision, attributes: continuation.attributes };
   }

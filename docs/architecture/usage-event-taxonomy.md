@@ -41,11 +41,14 @@ Retries that can consume provider resources must use distinct `attemptKey`
 values. Replays of the same provider attempt must reuse the same key.
 
 A Test Chat turn is metered like live traffic. Every model call it makes records an
-event: the answer and the other replayed turn operations under surface
-`test_execution`, and the attribute classifier under `context_classification`.
-A Test Chat side is not a stored conversation, so its events carry no
-conversation or message link: the ledger drops a link whose foreign key rejects
-it and keeps the spend. These events appear in the internal reporting view.
+event: the replayed turn's calls (the answer, turn planning, query embeddings) under
+surface `test_execution`, and the attribute classifier under `context_classification`.
+A Test Chat side is not a stored conversation, so its events carry no conversation or
+message link and are scoped by the test attempt as `request:{attemptId}`: a retried
+turn is a new attempt and is metered again. These events appear in the internal
+reporting view. Should a call still name a conversation or message the ledger has no
+row for, the ledger drops that link, keeps the event, and logs the workspace, surface
+and operation.
 
 ## Recorded Dimensions
 

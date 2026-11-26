@@ -10,6 +10,7 @@ import type {
   ConnectorStoredImage,
 } from "@radioso/connector-api";
 
+import { WHATSAPP_SOURCE_CHANNEL } from "../../../../shared/domain/conversationSource.js";
 import { isStructuredAppError } from "../../../../shared/domain/errors.js";
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
@@ -421,6 +422,7 @@ export class WhatsAppMessageHandler {
     }
     const response = await this.answerOnChat({
       workspaceId: first.workspaceId,
+      waId: first.waId,
       conversationId,
       query,
       photoMessages,
@@ -582,7 +584,7 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * Runs the turn on the chat port: the typed text and the photos. Photos an earlier attempt
+   * Runs the turn on the chat port: the typed text and the photos, as the sender the number names. Photos an earlier attempt
    * stored are sent by receipt, so a retry downloads, reads and pays for nothing twice; the host
    * says when a receipt is stale (a message already carries the photo, or it was swept) and the
    * photos are then sent again, once. A refusal that means the photos are not ones the turn takes
@@ -590,6 +592,7 @@ export class WhatsAppMessageHandler {
    */
   private async answerOnChat(input: {
     workspaceId: string;
+    waId: string;
     conversationId: string | undefined;
     query: string;
     photoMessages: WhatsAppInboundMessage[];
@@ -607,7 +610,10 @@ export class WhatsAppMessageHandler {
           workspaceId: input.workspaceId,
           conversationId: input.conversationId,
           query: input.query,
-          sourceChannel: "whatsapp",
+          sourceChannel: WHATSAPP_SOURCE_CHANNEL,
+          // Meta attests the sender's number on a signed webhook: the person the host keeps WhatsApp values for.
+          personKey: { id: input.waId },
+          onMessageStored: ({ conversationId }) => this.persistence.recordConversation({ workspaceId: input.workspaceId, waId: input.waId, conversationId }),
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),

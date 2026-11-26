@@ -64,7 +64,13 @@ export type RoutineEventOutcome = typeof ROUTINE_EVENT_OUTCOMES[number];
  * context-variables module checks at compile time that its own lists match.
  */
 export const CONTEXT_VALUE_EVENT_VALUE_TYPES = ["string", "json", "enum", "boolean", "number", "date"] as const;
-const CONTEXT_VALUE_EVENT_SCOPES = ["conversation"] as const;
+/**
+ * `conversation`: the conversation's own value. `customer` and `whatsapp_contact`: a value a routine
+ * saved, in this conversation, for the person it is with. A person value written outside a
+ * conversation, through the values API, names no conversation and records no event.
+ */
+export const CONTEXT_VALUE_EVENT_SCOPES = ["conversation", "customer", "whatsapp_contact"] as const;
+export type ContextValueEventScope = typeof CONTEXT_VALUE_EVENT_SCOPES[number];
 export const CONTEXT_VALUE_EVENT_WRITERS = ["api", "operator", "routine", "classifier"] as const;
 
 const slotValues = z.record(z.string(), z.unknown())
@@ -120,7 +126,7 @@ interface WorkspaceEventDetails {
     variableId: string;
     variable: string;
     valueType: typeof CONTEXT_VALUE_EVENT_VALUE_TYPES[number];
-    scope: typeof CONTEXT_VALUE_EVENT_SCOPES[number];
+    scope: ContextValueEventScope;
     value: unknown;
     redacted: boolean;
     writtenBy: typeof CONTEXT_VALUE_EVENT_WRITERS[number];
@@ -161,7 +167,7 @@ const workspaceEventDetailSchemas: Readonly<Record<WorkspaceEventType, z.ZodObje
     variableId: z.string().uuid().describe("The attribute's id, as `GET /api/v1/context-variables` lists it. It stays the same when the attribute is renamed."),
     variable: z.string().describe("The attribute's name when the value changed, as `GET /api/v1/context-variables` lists it."),
     valueType: z.enum(CONTEXT_VALUE_EVENT_VALUE_TYPES).describe("The attribute's type. A Choice attribute is `enum`, and its value is an option's key."),
-    scope: z.enum(CONTEXT_VALUE_EVENT_SCOPES).describe("Where the value is kept. Version 1 records the values kept for the conversation."),
+    scope: z.enum(CONTEXT_VALUE_EVENT_SCOPES).describe("Where the value is kept: `conversation` for the conversation's own value; `customer` (a verified customer) or `whatsapp_contact` (a WhatsApp number) for a value a routine saved in this conversation for the person it is with. The person's id or number is never sent."),
     // Present and null for a cleared or Private value: refusing `undefined` makes the field required.
     value: z.unknown().refine((value) => value !== undefined).describe("The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute."),
     redacted: z.boolean().describe("True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded."),

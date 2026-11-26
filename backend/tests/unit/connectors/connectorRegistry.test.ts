@@ -40,7 +40,7 @@ const createFakePlugin = (overrides: Partial<ConnectorPlugin> = {}): ConnectorPl
 const lifecycleContext = () => ({
   db: {} as any,
   logger: { info: () => {}, error: () => {}, warn: () => {} },
-  chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+  chat: (() => ({ answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) })) as any,
   ingestion: {
     ingest: async () => ({ documentId: "doc-1", status: "queued" }),
     deleteByExternalId: async () => false,
@@ -103,7 +103,7 @@ describe("ConnectorRegistry", () => {
     const context = {
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} },
-      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      chat: (() => ({ answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) })) as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
@@ -203,7 +203,7 @@ describe("ConnectorRegistry", () => {
     await registry.initializeAll({
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} },
-      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      chat: (() => ({ answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) })) as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
@@ -237,7 +237,7 @@ describe("ConnectorRegistry", () => {
     await registry.initializeAll({
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} },
-      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      chat: (() => ({ answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) })) as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
@@ -268,7 +268,7 @@ describe("ConnectorRegistry", () => {
     const context = {
       db: {} as any,
       logger: { info: () => {}, error: () => {}, warn: () => {} },
-      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      chat: (() => ({ answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) })) as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,

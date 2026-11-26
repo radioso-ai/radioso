@@ -1143,12 +1143,30 @@ Every value write goes through `validateValue` and records its writer
 (`written_by_kind` `api | operator | routine | classifier`, `written_by_ref`);
 the repository applies `mayOverwrite` inside the upsert, so the classifier
 fills only an empty or classifier-written value. `contextScopeLadder` is the
-resolution order, `conversation → session → customer → agent → workspace`;
-chat builds each turn's scopes with it. The resolver service owns turn-time
-reads, caching, timeouts, and compatibility checks. It caches under the chat
-session or verified customer, or under the conversation when the turn has
-neither, never under the agent or workspace, and hands its skill the first
-scope past the conversation.
+resolution order, `conversation → session → person → agent → workspace`, where
+the person is the verified customer, else a channel's person key
+(`shared/domain/channelPersonKey.ts`: `whatsapp_contact`, the WhatsApp sender's
+number as `wa_id` digits; `readWhatsAppNumber` there is the one reading of a typed
+number, and `contextScopeLadder`'s person rung the one precedence beside a verified
+customer); chat builds each turn's scopes with it. A turn carries the key its
+connector attested: `ConnectorChatPort.answer({ personKey: { id } })`, read as the
+kind `app/composition/connectorChat.ts` binds to that connector id (only `whatsapp`
+has one; a key from another connector, or one that can't be read, is counted in
+`radioso_connector_person_keys_unused_total{connector, reason}` and the turn runs
+without it) → `AssistantChatRequest.channelPersonKey` →
+`PreparedSession.channelPersonKey`. A turn that carries none (a review, an approval
+resume: `modules/chat/services/turnChannelPersonKey.ts`) and readers outside a turn
+(Inbox, classifier, consent withholder) ask the `ConversationChannelPersonKeys`
+port, bound in `app/composition/conversationReadSources.ts` to the WhatsApp
+plugin's `connector_whatsapp_conversations` lookup (migration 282), which answers
+only for a conversation whose source channel is WhatsApp. The plugin writes the row
+through `answer({ onMessageStored })`, as soon as the conversation's first message
+is stored and before any model call. The resolver service
+owns turn-time reads, caching, timeouts, and compatibility checks. It caches
+under the chat session, verified customer or channel person key, or under the
+conversation when the turn has none, never under the agent or workspace, and
+hands its skill the first scope past the conversation that is not a channel
+person key, so a number never reaches a host skill.
 
 An enablement's source is `pushed`, `resolver` or `classified` (`browser` and
 `request` are refused at authoring). `pushed` and `classified` values are
@@ -1177,7 +1195,7 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/modules/context-variables/identitySigning.ts` (`verifySignedIdentityOutcome` names why a visitor identity token did not verify, from a closed set; `verifySignedIdentity` is its null-or-identity form) and `backend/src/app/http/shared/publicChatIdentity.ts` (the public chat message's use of it: `radioso_public_chat_identity_verifications_total{outcome}`, one log line per refusal with ids and the outcome)
 - `backend/src/app/composition/identityNoncePrune.ts` and `backend/src/db/repositories/identityNonceRepository.ts` (the built-in `identity-nonce-prune` periodic task, every 15 minutes, deletes spent nonces in bounded batches; `identity_nonce_prune_schedule` in `infra/terraform/scheduler.tf` calls its `/internal/tasks/periodic-tasks/:taskId/run` route)
-- `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser` and `ContextVariableValueExporter`, which cover the `conversation`, `session` and `customer` scopes)
+- `backend/src/db/repositories/contextVariableRepository.ts` (also `ContextVariableValueEraser`, which is the `ChannelPersonDataEraser` too, and `ContextVariableValueExporter`, which cover the `conversation`, `session`, `customer` and `whatsapp_contact` scopes)
 - `backend/src/db/repositories/contextVariableValueReads.ts` (stored-value reads; `readMostSpecificValues` reads every variable's ladder for a turn in one query; `filterIndexPredicate`, which a read filtering by an enum key carries to use the filter index)
 - `backend/src/db/repositories/classifiedContextVariableReads.ts` (the classifier's reads: a conversation's classified variables from its pinned revision, read through the agents module's `findRevisionEnablements`, which reads only the release's enablements, with what its ladder holds for each)
 - `backend/src/db/migrations/273_classified_context_variables.sql` (the `classified` enablement source)
@@ -1189,7 +1207,7 @@ Public surfaces and key files:
 - `frontend/components/dashboard/settings/assistant-context-variables-section.tsx` and `frontend/components/dashboard/settings/attribute-options-editor.tsx` (the agent's **Attributes** page)
 - `backend/src/modules/context-variables/conversationAttributes.ts` (`ConversationAttributeService`: a conversation's attributes as the operator reads them, the most specific of its `conversation`, `session` and `customer` values, a Private value redacted; and `resolveFilter`, which turns an attribute name and option key, or `_not_set`, into the list filter and refuses anything but a non-Private Choice) with its read port in `backend/src/db/repositories/conversationAttributeReads.ts`; the list filter is `conversationHoldsValue` in `contextVariableValueReads.ts`, used by `historyItemsRepository.ts` and `conversationRepository.ts`. `ChatHistoryService` takes it as its attribute reader (default in `historyReaderDefaults.ts`): it adds `attributes` to the first page of an operator detail read and resolves `attribute` + `attributeOption` on the history lists, so REST and Ray's `conversation_transcript` and `conversation_history_search` (`operatorCopilot/tools/chat.ts`) read through the history service alike
 - `backend/src/modules/context-variables/conversationAttributeEdits.ts` (`ConversationAttributeEditService`: a teammate's set and reset of one conversation's Choice attribute, refusing Private and non-Choice attributes; a reset of an attribute the conversation's release classifies queues the classification job; content-free audit and the `radioso_conversation_attribute_edits_total` counter), composed in `backend/src/app/composition/conversationAttributeEdits.ts` and called by the Inbox's `PUT`/`DELETE /api/v1/history/chat/{conversationId}/attributes/{name}` (`historyAttributeRoutes.ts`) and by Ray and operator MCP's `set_conversation_attribute` and `reset_conversation_attribute` (`operatorCopilot/tools/conversationAttributes.ts`)
-- `backend/src/modules/context-variables/contextValueSaves.ts` (`ContextValueSaves`: saves values a visitor gave by attribute name in a transaction its caller owns, refusing a signed attribute, a sensitive value into a non-Private one and a value of the wrong type against the definition as it is now; reads the conversation's save context in the same transaction (`readConversationSaveContext` in `conversationClassifiedVariables.ts`: the customer its row is bound to, for a `person` save or `no_person_key`, and the attributes its pinned release keeps, else `not_enabled`); counted in `radioso_context_value_writes_total{writer, outcome}`) with its store port implemented by `backend/src/db/repositories/contextVariableValueWrites.ts` (`lockDefinitionNamedIn`, `storeIn`, which records a conversation value's `context_value.changed` with the routine id in the same transaction). A routine's ending uses it (#1884): `routines/slotSaves.ts` (`routineSlotSaves`, a complete or handoff ending's filled slots with a `saveTo`) rides the turn's captured transition (`chat/services/routines/routineRunEvents.ts`), `chat/infra/routineSlotSaveWrites.ts` saves them inside `PostgresAssistantTurnPersistence`'s transaction and puts each outcome on the routine's trace (`routineSaveTrace.ts`), composed in `backend/src/app/composition/routineValueSaves.ts`. `backend/src/db/repositories/contextValueConsentWithholder.ts` deletes, in the withdrawal's transaction, the values a withdrawn routine's runs in that conversation saved (matched in SQL on the writer ref `<routineId>:<executionId>@<conversationId>`). A `safe_test` or review turn saves nothing (`TurnExecutionCapabilities.routineValueSaves`), and Test Chat's trace shows each save as `not_saved_in_test` (`withUnwrittenRoutineSavesOnTrace`). Save targets are validated by `routines/saveTargetValidation.ts`; the Document tab's **Save to** is `frontend/components/dashboard/settings/routine-slot-save-to.tsx` over `frontend/lib/routine-save-targets.ts`
+- `backend/src/modules/context-variables/contextValueSaves.ts` (`ContextValueSaves`: saves values a visitor gave by attribute name in a transaction its caller owns, refusing a signed attribute, a sensitive value into a non-Private one and a value of the wrong type against the definition as it is now; reads the conversation's save context in the same transaction (`readConversationSaveContext` in `conversationClassifiedVariables.ts`: the customer its row is bound to, else the channel person key the turn carries or the conversation is recorded with, for a `person` save or `no_person_key`, and the attributes its pinned release keeps, else `not_enabled`); counted in `radioso_context_value_writes_total{writer, outcome}`) with its store port implemented by `backend/src/db/repositories/contextVariableValueWrites.ts` (`lockDefinitionNamedIn`, `storeIn`, which records `context_value.changed` with the routine id in the same transaction, for a person value with the saving conversation and its scope, never the person's id). A routine's ending uses it (#1884): `routines/slotSaves.ts` (`routineSlotSaves`, a complete or handoff ending's filled slots with a `saveTo`) rides the turn's captured transition (`chat/services/routines/routineRunEvents.ts`), `chat/infra/routineSlotSaveWrites.ts` saves them inside `PostgresAssistantTurnPersistence`'s transaction and puts each outcome on the routine's trace (`routineSaveTrace.ts`), composed in `backend/src/app/composition/routineValueSaves.ts`. `backend/src/db/repositories/contextValueConsentWithholder.ts` deletes, in the withdrawal's transaction, the values a withdrawn routine's runs in that conversation saved (matched in SQL on the writer ref `<routineId>:<executionId>@<conversationId>`). A `safe_test` or review turn saves nothing (`TurnExecutionCapabilities.routineValueSaves`), and Test Chat's trace shows each save as `not_saved_in_test` (`withUnwrittenRoutineSavesOnTrace`). Save targets are validated by `routines/saveTargetValidation.ts`; the Document tab's **Save to** is `frontend/components/dashboard/settings/routine-slot-save-to.tsx` over `frontend/lib/routine-save-targets.ts`
 - `frontend/components/dashboard/conversation-attributes.tsx` (the **Attributes** block in the Inbox reading pane and the conversation drawer, kept current by `use-live-conversation-attributes.ts`) and the Inbox's **Attribute** filter in `frontend/components/dashboard/inbox/all-conversations-list-pane.tsx`, fed by `use-inbox-attribute-options.ts` (one cached catalog read per workspace, shared with the block's menus) and `frontend/lib/conversation-attributes.ts`
 
 Focused checks:
@@ -1406,7 +1424,9 @@ Rows a foreign key cannot reach belong to the module that owns them, which
 implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
 customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
 context-variable conversation, session and customer values (an eraser reads the session ids
-it keys by from the conversations before they go), `chat.answer` /
+it keys by from the conversations before they go), a WhatsApp number's values (the WhatsApp eraser
+hands the numbers whose latest conversation goes to `ChannelPersonDataEraser` in the same
+transaction; `WhatsAppNumberChanges` hands it a number Meta reports its sender left), `chat.answer` /
 `chat.suspended` audit events, inbound email deliveries and their events, email
 skill activity, eval cases and runs built on a conversation's snapshot, the
 WhatsApp message log of a number whose latest conversation goes, an Audience
@@ -1662,7 +1682,14 @@ The ports live in `backend/src/shared/domain/dataSubjectAccess.ts`. Each module
 that keeps identities implements `DataSubjectIdentityFinder` (web visitors by
 verified customer id in `db/repositories/visitorRepository.ts`, email senders in
 `modules/emailChannel/persistence/emailDataSubjectAccess.ts`, Slack thread
-starters in `modules/connectors/plugins/slack/slackPersistence.ts`); each module
+starters in `modules/connectors/plugins/slack/slackPersistence.ts`, WhatsApp
+numbers in `modules/connectors/plugins/whatsapp/whatsappNumbers.ts`, which also
+exports `whatsapp_contacts` and, through `whatsappMessageExport.ts`'s projection of
+the subject's own message, `whatsapp_messages`; a reach carries the
+`channelPersonKeys` the context-value and WhatsApp exporters and
+`ConversationErasure.eraseChannelPersons` key by, on one page of a paged request); a
+finder may refuse a query or a key written as its kind but impossible
+(`misreadQuery`, `400`); each module
 that keeps data about the subject implements `DataSubjectDataExporter` for its
 export section. Composition binds both to one read-only, repeatable-read
 transaction. A table that names a conversation, session, visitor or message
@@ -1679,7 +1706,8 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/data-subject-access-service.test.ts tests/contract/privacy-data-subjects.contract.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/data-subject-access.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/data-subject-access.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts tests/integration/whatsapp-person-values.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/whatsapp-turn.integration.test.ts` (real turns from Meta's webhook: the number is recorded before the first model call, and its digits are in no log line, metric, span, event, job or audit record)
 
 Related docs:
 

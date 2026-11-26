@@ -262,7 +262,7 @@ describeIntegration("visitor images on Postgres", () => {
     const message = await carry([image]);
     await store.bindClaim({ workspaceId, claimId, conversationId, messageId: message.id, boundAt: new Date() });
 
-    const exported = await new VisitorImageExporter(database.kysely).export({ workspaceId, conversationIds: [conversationId], visitorIds: [], verifiedCustomerIds: [] });
+    const exported = await new VisitorImageExporter(database.kysely).export({ workspaceId, conversationIds: [conversationId], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [] });
 
     expect(exported).toContainEqual(expect.objectContaining({
       imageId: image,

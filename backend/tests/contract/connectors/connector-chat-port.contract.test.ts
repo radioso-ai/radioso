@@ -7,6 +7,7 @@ import type {
   ConnectorImageAllowance,
   ConnectorInboundImage,
   ConnectorItemSelection,
+  ConnectorPersonKey,
   ConnectorReplyBlocks,
   ConnectorReplyBlocksCapability,
   ConnectorIngestInput,
@@ -35,7 +36,7 @@ const answerResponse = {
   citations: [{ chunkId: "chunk-1" }],
 };
 
-const portFor = (review?: ChatReviewResult) => {
+const portFor = (review?: ChatReviewResult, binding: { connectorId?: string; personKeyKind?: "whatsapp_contact" } = {}) => {
   const chatService = {
     answer: vi.fn(async () => answerResponse),
     review: vi.fn(async () => review),
@@ -52,7 +53,7 @@ const portFor = (review?: ChatReviewResult) => {
   return {
     chatService,
     conversationIngest,
-    port: createConnectorChatPort(chatService as unknown as ChatAnswerPort, conversationIngest),
+    port: createConnectorChatPort(chatService as unknown as ChatAnswerPort, conversationIngest, binding),
   };
 };
 
@@ -68,9 +69,12 @@ describe("ConnectorChatPort contract", () => {
         channelContext?: ConversationChannelContext | null;
         images?: readonly ConnectorInboundImage[];
         onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+        onMessageStored?: (stored: { conversationId: string }) => Promise<void>;
         replyBlocks?: ConnectorReplyBlocksCapability;
         selection?: ConnectorItemSelection;
+        personKey?: ConnectorPersonKey;
       }>();
+      expectTypeOf<ConnectorPersonKey>().toEqualTypeOf<{ id: string }>();
       expectTypeOf<Awaited<ReturnType<ConnectorChatPort["answer"]>>>().toEqualTypeOf<{
         conversationId: string;
         answer: string;
@@ -158,6 +162,47 @@ describe("ConnectorChatPort contract", () => {
         answer: "Refunds take five days.",
         outcome: "answered",
       });
+    });
+  });
+
+  describe("a person key", () => {
+    const whatsApp = { connectorId: "whatsapp", personKeyKind: "whatsapp_contact" as const };
+
+    it("runs the turn as the person the connector attests, under the kind its binding names, in the form the channel stores the key", async () => {
+      const { chatService, port } = portFor(undefined, whatsApp);
+
+      await port.answer({
+        workspaceId: "workspace-1",
+        query: "Do you deliver on Sundays?",
+        sourceChannel: "whatsapp",
+        personKey: { id: "+1 555 010 0101" },
+      });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({
+        channelPersonKey: { kind: "whatsapp_contact", id: "15550100101" },
+      }));
+    });
+
+    it("answers without a person when the key is not one the channel stores", async () => {
+      const { chatService, port } = portFor(undefined, whatsApp);
+
+      const answered = await port.answer({
+        workspaceId: "workspace-1",
+        query: "Do you deliver on Sundays?",
+        sourceChannel: "whatsapp",
+        personKey: { id: "customer-1" },
+      });
+
+      expect(answered.conversationId).toBe(answerResponse.conversationId);
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+    });
+
+    it("answers without a person for a connector bound to no person-key kind", async () => {
+      const { chatService, port } = portFor(undefined, { connectorId: "slack" });
+
+      await port.answer({ workspaceId: "workspace-1", query: "Do you deliver on Sundays?", personKey: { id: "15550100101" } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
     });
   });
 

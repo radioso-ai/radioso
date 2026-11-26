@@ -21,6 +21,7 @@ export type {
   ConnectorInboundImage,
   ConnectorItemSelection,
   ConnectorLogger,
+  ConnectorPersonKey,
   ConnectorPlugin,
   ConnectorPublicHttpPort,
   ConnectorRegisteredSource,

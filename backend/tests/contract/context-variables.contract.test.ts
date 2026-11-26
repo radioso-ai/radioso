@@ -445,6 +445,49 @@ describe("context variable HTTP API", () => {
     expect(madePrivate.body.error.message).toMatch(/source "classified"/u);
   });
 
+  it("keeps a WhatsApp number's value under its digits, however the number is written, and refuses an id that is not a number", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestToken(app, "context-vars-whatsapp@example.com");
+    const variable = await request(app).post("/api/v1/context-variables")
+      .set("Cookie", session.cookie).set("X-Workspace-Id", session.workspaceId)
+      .send({ name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always" })
+      .expect(201);
+    const values = `/api/v1/context-variables/${variable.body.contextVariable.id}/values`;
+
+    for (const id of ["customer-1", "+1 555 01x 0101", "12345"]) {
+      await request(app).put(values).set("Authorization", `Bearer ${session.token}`)
+        .send({ scope: { type: "whatsapp_contact", id }, data: "gold" })
+        .expect(400);
+    }
+    // A leading 0 or 00 is a dialling prefix no WhatsApp id starts with: the refusal says to write the country code.
+    for (const id of ["0015550100101", "0555 010 0101"]) {
+      const refused = await request(app).put(values).set("Authorization", `Bearer ${session.token}`)
+        .send({ scope: { type: "whatsapp_contact", id }, data: "gold" })
+        .expect(400);
+      expect(refused.body.error.message).toMatch(/country code/u);
+    }
+    const refusedRead = await request(app).get(values).query({ scopeType: "whatsapp_contact", scopeId: "0015550100101" })
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(400);
+    expect(refusedRead.body.error.message).toMatch(/country code/u);
+    // Obviously fake: the reserved 555-01xx range.
+    const put = await request(app).put(values).set("Authorization", `Bearer ${session.token}`)
+      .send({ scope: { type: "whatsapp_contact", id: "+1 (555) 010-0101" }, data: "gold" })
+      .expect(200);
+    expect(put.body.value).toMatchObject({ scope: { type: "whatsapp_contact", id: "15550100101" }, data: "gold" });
+
+    const get = await request(app).get(values).query({ scopeType: "whatsapp_contact", scopeId: "+15550100101" })
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(200);
+    expect(get.body.value).toMatchObject({ scope: { type: "whatsapp_contact", id: "15550100101" }, data: "gold" });
+    await request(app).get(values).query({ scopeType: "customer", scopeId: "15550100101" })
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(404);
+    await request(app).delete(values).set("Authorization", `Bearer ${session.token}`)
+      .send({ scope: { type: "whatsapp_contact", id: "15550100101" } })
+      .expect(204);
+  });
+
   it("writes a conversation's value and records which credential or teammate wrote it", async () => {
     const { app } = createTestApp();
     const session = await issueTestToken(app, "context-vars-writer@example.com");

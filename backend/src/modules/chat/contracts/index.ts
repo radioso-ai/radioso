@@ -1,7 +1,8 @@
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
-import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
+import type { AssistantClientContextCapabilities, UserMessageStoredListener } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 import type { ItemSelection } from "../../../shared/domain/chatInputMetadata.js";
 import type { VisitorImageOwner } from "../../visitorImages/public.js";
 import type { ReplyBlock } from "./replyBlocks.js";
@@ -9,6 +10,7 @@ import type { ReplyBlock } from "./replyBlocks.js";
 export type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
+  UserMessageStoredListener,
 } from "../types/assistantApi.js";
 export type {
   AnswerSegment,
@@ -149,7 +151,10 @@ export interface ChatDoorPhotoTurnPort {
     stream: false;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    channelPersonKey?: ChannelPersonKey | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
+    /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
+    onUserMessageStored?: UserMessageStoredListener;
     imageIds: readonly string[];
     imageOwner: VisitorImageOwner;
   }): Promise<ChatDoorTurnReply | null>;
@@ -171,7 +176,10 @@ export interface ChatDoorPickTurnPort {
     inputMetadata: { method: "item_select"; selection: ItemSelection };
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    channelPersonKey?: ChannelPersonKey | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
+    /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
+    onUserMessageStored?: UserMessageStoredListener;
   }): Promise<ChatDoorTurnReply | null>;
 }
 
@@ -191,6 +199,10 @@ export interface ChatAnswerPort {
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    /** The person the channel attests the turn is with, in its stored form; see `AssistantChatRequest`. */
+    channelPersonKey?: ChannelPersonKey | null;
+    /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
+    onUserMessageStored?: UserMessageStoredListener;
     chatSessionId?: string | null;
     /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;

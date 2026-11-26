@@ -5,6 +5,7 @@ import type {
   AssistantChatRequest,
   AssistantChatResponse,
   AssistantChatStreamEvent,
+  UserMessageStoredListener,
 } from "../types/assistantApi.js";
 import { AssistantRouteService } from "./assistantRouteService.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
@@ -22,6 +23,15 @@ import {
  * The text a turn runs on: the message, or a tool call rendered as the text a
  * person would have typed so the LLM-visible history matches chat.
  */
+/** The door's own listener (a pick's or the photos'), then the caller's: photos are bound before a connector hears of the message. */
+const inOrder = (...listeners: ReadonlyArray<UserMessageStoredListener | undefined>): UserMessageStoredListener | undefined => {
+  const present = listeners.filter((listener): listener is UserMessageStoredListener => listener !== undefined);
+  if (present.length <= 1) return present[0];
+  return async (message) => {
+    for (const listener of present) await listener(message);
+  };
+};
+
 const queryFor = (input: Pick<AssistantChatRequest, "message" | "routineInvocation">): string | undefined =>
   input.routineInvocation ? renderRoutineInvocation(input.routineInvocation) : input.message?.trim();
 
@@ -116,11 +126,12 @@ export class AssistantChatService {
         visitorTimeZone: input.visitorTimeZone,
         inputMetadata: selected?.inputMetadata ?? images?.inputMetadata ?? input.inputMetadata,
         itemSelection: selected?.item,
-        onUserMessageStored: selected?.onUserMessageStored ?? images?.onUserMessageStored,
+        onUserMessageStored: inOrder(selected?.onUserMessageStored ?? images?.onUserMessageStored, input.onUserMessageStored),
         metadataFilter: input.metadataFilter,
         pageContext: input.pageContext,
         clientContextCapabilities: input.clientContextCapabilities,
         verifiedCustomerId: input.verifiedCustomerId,
+        channelPersonKey: input.channelPersonKey,
         verifiedIdentity: input.verifiedIdentity,
         requestContext: input.requestContext,
         entryReferrer: input.entryReferrer,
@@ -161,11 +172,12 @@ export class AssistantChatService {
         visitorTimeZone: input.visitorTimeZone,
         inputMetadata: selected?.inputMetadata ?? images?.inputMetadata ?? input.inputMetadata,
         itemSelection: selected?.item,
-        onUserMessageStored: selected?.onUserMessageStored ?? images?.onUserMessageStored,
+        onUserMessageStored: inOrder(selected?.onUserMessageStored ?? images?.onUserMessageStored, input.onUserMessageStored),
         metadataFilter: input.metadataFilter,
         pageContext: input.pageContext,
         clientContextCapabilities: input.clientContextCapabilities,
         verifiedCustomerId: input.verifiedCustomerId,
+        channelPersonKey: input.channelPersonKey,
         verifiedIdentity: input.verifiedIdentity,
         requestContext: input.requestContext,
         entryReferrer: input.entryReferrer,

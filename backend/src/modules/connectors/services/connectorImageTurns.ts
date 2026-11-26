@@ -3,8 +3,14 @@ import { randomUUID } from "node:crypto";
 import type { ConnectorImageAllowance, ConnectorInboundImage, ConnectorStoredImage } from "@radioso/connector-api";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
+import type { ChannelPersonKey } from "../../../shared/domain/channelPersonKey.js";
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
-import type { AssistantClientContextCapabilities, ChatDoorPhotoTurnPort, ReplyBlock } from "../../chat/contracts/index.js";
+import type {
+  AssistantClientContextCapabilities,
+  ChatDoorPhotoTurnPort,
+  ReplyBlock,
+  UserMessageStoredListener,
+} from "../../chat/contracts/index.js";
 import {
   VISITOR_IMAGE_LIMITS,
   type VisitorImageAvailability,
@@ -98,10 +104,14 @@ export interface ConnectorImageTurns {
     /** The channel the photos came through (`whatsapp`), for usage attribution and the turn's source. */
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    /** The person key the channel attested for the sender, in its stored form. */
+    channelPersonKey?: ChannelPersonKey;
     /** The reply blocks the channel draws, passed to the turn as it declares them. */
     clientContextCapabilities?: AssistantClientContextCapabilities;
     /** The photos stored just now, handed back before the turn runs, so a retry can reuse them. */
     onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+    /** Told the moment the turn stores the customer message, after its photos are bound to it. */
+    onUserMessageStored?: UserMessageStoredListener;
   }): Promise<ConnectorImageAnswer | null>;
 }
 
@@ -207,7 +217,9 @@ export const createConnectorImageTurns = (deps: {
         stream: false,
         sourceChannel: input.sourceChannel,
         channelContext: input.channelContext,
+        ...(input.channelPersonKey ? { channelPersonKey: input.channelPersonKey } : {}),
         ...(input.clientContextCapabilities ? { clientContextCapabilities: input.clientContextCapabilities } : {}),
+        ...(input.onUserMessageStored ? { onUserMessageStored: input.onUserMessageStored } : {}),
         imageIds,
         imageOwner: owner,
       }).catch(async (error: unknown) => {

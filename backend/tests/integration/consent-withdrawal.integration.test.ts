@@ -459,7 +459,7 @@ describeIntegration("consent withdrawal (Postgres, #1544)", () => {
         workspaceId: seeded.workspaceId,
         conversationIds: [seeded.conversationId],
         visitorIds: [],
-        verifiedCustomerIds: [],
+        verifiedCustomerIds: [], channelPersonKeys: [],
       });
       expect(exported).toEqual([expect.objectContaining({ id: seeded.recordId, decision: "granted", withdrawnAt: withdrawnAt!.toISOString() })]);
     });

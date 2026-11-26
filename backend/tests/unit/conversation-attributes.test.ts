@@ -18,7 +18,7 @@ import {
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
-const keys = { conversationId, chatSessionId: "session-1", verifiedCustomerId: "customer-1" };
+const keys = { conversationId, chatSessionId: "session-1", verifiedCustomerId: "customer-1", sourceChannel: "website_embed" };
 
 const variable = (overrides: Partial<ContextVariable> & Pick<ContextVariable, "id" | "name">): ContextVariable => ({
   workspaceId,
@@ -79,6 +79,7 @@ const serviceOver = (
       new Set(workspace === workspaceId && conversation === conversationId ? classifiedIds : []),
     findByName: async (workspace, name) =>
       definitions.find((definition) => definition.workspaceId === workspace && definition.name === name) ?? null,
+    readChannelPersonKey: async () => null,
   };
   return Object.assign(new ConversationAttributeService(reads), { asked });
 };
@@ -97,7 +98,7 @@ describe("a conversation's attributes", () => {
   it("reads only the rungs the conversation has: no session or customer rung without their keys", async () => {
     const service = serviceOver([]);
 
-    await service.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null });
+    await service.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null, sourceChannel: null });
 
     expect(service.asked).toEqual([[{ type: "conversation", id: conversationId }]]);
   });

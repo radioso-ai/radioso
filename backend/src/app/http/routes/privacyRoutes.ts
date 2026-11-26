@@ -18,7 +18,7 @@ type PrivacyRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependenc
 /** An email address can run to 320 characters; nothing a lookup matches is longer. */
 export const dataSubjectLookupRequestSchema = z.object({
   query: z.string().trim().min(1).max(320).describe(
-    "A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored.",
+    "A verified customer id, an email address, a Slack member id, or a WhatsApp number in international form. Matched exactly: an address without regard to case, a number by its digits whatever spaces, dashes or brackets it is written with, the others as stored.",
   ),
 }).strict();
 

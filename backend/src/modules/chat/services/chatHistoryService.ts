@@ -955,7 +955,7 @@ export class ChatHistoryService {
           : Promise.resolve(null),
         this.loadActivity(workspaceId, conversation.id, options.activity),
         options.includeAttributes && !input.cursor && !input.offset ? this.attributes.read(workspaceId, {
-          conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId, verifiedCustomerId: conversation.verifiedCustomerId,
+          conversationId: conversation.id, chatSessionId: conversation.anonymousSessionId, verifiedCustomerId: conversation.verifiedCustomerId, sourceChannel: conversation.sourceChannel ?? null,
         }) : Promise.resolve(null),
       ]);
     const assistantMessageIds = messages

@@ -133,6 +133,16 @@ export interface ConnectorItemSelection {
   itemKey: string;
 }
 
+/**
+ * Who the customer is, as the channel's provider attests it: the key the host keeps person-level
+ * values under for this channel, read only on this channel. The host binds each connector to the
+ * kind of key it may attest, and ignores a key from a connector it binds none to. The host never
+ * logs it.
+ */
+export interface ConnectorPersonKey {
+  id: string;
+}
+
 /** The blocks a reply carries, and the id of the message that stored them, which a pick names. */
 export interface ConnectorReplyBlocks {
   messageId: string;
@@ -174,6 +184,13 @@ export interface ConnectorChatPort {
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     channelContext?: ConversationChannelContext | null;
     /**
+     * The person the message is from, when the channel's provider attests it. The turn reads the
+     * values kept for that person, and a routine saves its person values to them. Without it, or
+     * with one the host cannot read, the turn runs with no person key on this channel.
+     */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    personKey?: ConnectorPersonKey;
+    /**
      * The photos the customer sent with this message, at most `imageAllowance().maxImages`.
      * `query` is what they typed with them and may be empty. The host stores and reads each photo,
      * runs the turn on the text and the readings, and keeps the photos with the conversation. A
@@ -193,6 +210,14 @@ export interface ConnectorChatPort {
      * Photos stored before another photo's upload failed are reported too.
      */
     onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
+    /**
+     * Called with the conversation's id as soon as the host has stored the customer's message in it,
+     * before the turn runs and even when the turn then fails: a connector records what it keeps
+     * about the conversation here, so readers find it from the first turn on. A rejection fails the
+     * turn.
+     */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    onMessageStored?: (stored: { conversationId: string }) => Promise<void>;
     /** The reply blocks the channel draws; without it, a reply carries none. */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     replyBlocks?: ConnectorReplyBlocksCapability;

@@ -707,6 +707,11 @@ class InMemoryConversationAttributeReads implements ConversationAttributeReadPor
       : null;
   }
 
+  /** The in-memory app runs no WhatsApp channel, so no conversation is with a channel person. */
+  async readChannelPersonKey(): Promise<null> {
+    return null;
+  }
+
   /** The in-memory app pins no release snapshot of enablements, so the agent's draft stands in for it. */
   async readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>> {
     const conversation = await this.conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -3527,6 +3532,7 @@ export const createTestDependencies = (overrides: {
       // tests/integration/conversation-erasure.integration.test.ts.
       eraseConversation: async () => { throw notFound("Conversation not found"); },
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
+      eraseChannelPersons: async () => ({ conversationCount: 0, messageCount: 0, rowsByOwner: {} }),
     },
     conversationConsents: overrides.conversationConsents ?? {
       // The Postgres withdrawal is covered by tests/integration/consent-withdrawal.integration.test.ts.
@@ -3604,7 +3610,7 @@ export const createTestDependencies = (overrides: {
   void connectorRegistry.initializeAll({
     db: connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
+    chat: () => createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
     ingestion: dependencies.connectorIngestionPort,
     agentStarterPrompts: dependencies.agentStarterPromptReader,
     conversationLinks: dependencies.conversationLinks,

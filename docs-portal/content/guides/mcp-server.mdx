@@ -66,6 +66,8 @@ The browser consent page lets you choose a workspace and the capabilities the cl
 
 For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_URL` at request time. Point it at the exact public resource, for example `https://mcp.example.com/operator/mcp`. A deployment must also enable and configure the Operator MCP backend values described in [Deployment](/operators/deployment#operator-mcp).
 
+On a development backend (`NODE_ENV` other than `production`), a client running on your machine can identify itself with an `http://` loopback `client_id` such as `http://127.0.0.1:55103/client.json` and serve its own metadata document there. A production backend only fetches public HTTPS metadata documents. The document carries `client_id` (the URL it is served from), `client_name`, loopback `redirect_uris`, `response_types` of `["code"]`, `grant_types` of `["authorization_code"]`, and `token_endpoint_auth_method` of `none`; Radioso fetches it directly and follows no redirects.
+
 ## Connect a client
 
 Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client and name the connection, and Radioso issues a credential bound to that agent and to the MCP audience. **Expires** starts at **Never**, so the connection keeps working until you rotate or revoke it; choose **On a date** when it should stop on its own. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.

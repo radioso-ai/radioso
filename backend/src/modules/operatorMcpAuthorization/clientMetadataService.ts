@@ -34,6 +34,12 @@ export interface OperatorMcpClientMetadataServiceOptions {
   fetchImpl?: typeof fetch;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   preregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
+  /**
+   * Local development only: accept an `http://` client_id on a loopback host (a local client serving its own
+   * metadata document) and fetch it without the public-address check. Composition derives this from NODE_ENV;
+   * production leaves it off so the SSRF guard on client metadata fetches is unchanged.
+   */
+  allowLoopbackClientIds?: boolean;
   timeoutMs?: number;
   now?: () => Date;
 }
@@ -68,10 +74,20 @@ const safeText = (value: string, field: string, max: number): string => {
   return value;
 };
 
-const assertClientId = (clientId: string): void => {
+const isLoopbackClientId = (clientId: string): boolean => {
+  try {
+    const url = new URL(clientId);
+    return url.protocol === "http:" && NATIVE_LOOPBACK_HOSTNAMES.includes(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const assertClientId = (clientId: string, allowLoopback: boolean): void => {
   let url: URL;
   try { url = new URL(clientId); } catch { throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid client metadata URL"); }
-  if (url.protocol !== "https:" || url.pathname === "/" || url.search || url.hash || url.username || url.password) {
+  const schemeAllowed = url.protocol === "https:" || (allowLoopback && isLoopbackClientId(clientId));
+  if (!schemeAllowed || url.pathname === "/" || url.search || url.hash || url.username || url.password) {
     throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid client metadata URL");
   }
 };
@@ -170,27 +186,31 @@ const readBoundedText = async (response: Response): Promise<string> => {
 
 export const createOperatorMcpClientMetadataService = (options: OperatorMcpClientMetadataServiceOptions = {}): OperatorMcpClientMetadataService => {
   const fetchImpl = options.fetchImpl ?? fetchPublicUrl;
+  const loopbackFetchImpl = options.fetchImpl ?? fetch;
   const assertPublicUrl = options.assertPublicUrl ?? ((url: string) => assertPublicHttpUrl(url));
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const now = options.now ?? (() => new Date());
 
+  const allowLoopbackClientIds = options.allowLoopbackClientIds === true;
+
   const fetchMetadata = async (clientId: string): Promise<Record<string, unknown>> => {
     let current = clientId;
+    const loopback = allowLoopbackClientIds && isLoopbackClientId(clientId);
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
       try {
-        if (new URL(current).protocol !== "https:") throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid");
+        if (new URL(current).protocol !== "https:" && !loopback) throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid");
       } catch (error) {
         if (error instanceof OperatorMcpClientMetadataError) throw error;
         throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid");
       }
-      await assertPublicUrl(current);
+      if (!loopback) await assertPublicUrl(current);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetchImpl(current, { redirect: "manual", signal: controller.signal });
+        const response = await (loopback ? loopbackFetchImpl : fetchImpl)(current, { redirect: "manual", signal: controller.signal });
         if (response.status >= 300 && response.status < 400) {
           const location = response.headers.get("location");
-          if (!location || redirects === MAX_REDIRECTS) throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid");
+          if (loopback || !location || redirects === MAX_REDIRECTS) throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid");
           try { current = new URL(location, current).toString(); } catch { throw new OperatorMcpClientMetadataError("metadata_unavailable", "Client metadata redirect is invalid"); }
           continue;
         }
@@ -225,7 +245,7 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
           validatedAt: new Date(preregistered.validatedAt),
         });
       }
-      assertClientId(input.clientId);
+      assertClientId(input.clientId, allowLoopbackClientIds);
       const parsed = metadataSchema.safeParse(await fetchMetadata(input.clientId));
       if (!parsed.success) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata is invalid");
       const metadata = parsed.data;

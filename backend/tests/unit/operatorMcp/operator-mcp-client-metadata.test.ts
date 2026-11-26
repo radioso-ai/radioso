@@ -221,4 +221,48 @@ describe("operator MCP client metadata", () => {
     expect(second.displayName).toBe("Mutated client");
     expect(first.metadataDigest).not.toBe(second.metadataDigest);
   });
+
+  describe("loopback client ids for local development", () => {
+    const loopbackId = "http://127.0.0.1:55103/client.json";
+    const loopbackMetadata = {
+      client_id: loopbackId,
+      client_name: "Local client",
+      grant_types: ["authorization_code"],
+      redirect_uris: ["http://127.0.0.1:55103/callback"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    };
+
+    it("resolves a loopback metadata document outside production without the public-address check", async () => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(loopbackMetadata));
+      const assertPublicUrl = vi.fn().mockRejectedValue(new Error("private address"));
+      const service = createOperatorMcpClientMetadataService({ fetchImpl, assertPublicUrl, allowLoopbackClientIds: true });
+      await expect(service.resolve({ clientId: loopbackId, redirectUri: "http://127.0.0.1:55103/callback" }))
+        .resolves.toMatchObject({ clientId: loopbackId, applicationType: "native" });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    });
+
+    it("rejects a loopback client id unless local development is enabled", async () => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(loopbackMetadata));
+      const service = createOperatorMcpClientMetadataService({ fetchImpl });
+      await expect(service.resolve({ clientId: loopbackId, redirectUri: "http://127.0.0.1:55103/callback" }))
+        .rejects.toThrow(/Invalid client metadata URL/u);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("does not follow redirects from a loopback metadata document", async () => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 302, headers: { location: "http://10.0.0.5/x" } }));
+      const service = createOperatorMcpClientMetadataService({ fetchImpl, allowLoopbackClientIds: true });
+      await expect(service.resolve({ clientId: loopbackId, redirectUri: "http://127.0.0.1:55103/callback" })).rejects.toThrow(/redirect/iu);
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    });
+
+    it("still requires https for a non-loopback http client id when local development is enabled", async () => {
+      const fetchImpl = vi.fn<typeof fetch>();
+      const service = createOperatorMcpClientMetadataService({ fetchImpl, allowLoopbackClientIds: true });
+      await expect(service.resolve({ clientId: "http://client.example/client.json", redirectUri: "http://127.0.0.1/cb" }))
+        .rejects.toThrow(/Invalid client metadata URL/u);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+  });
 });

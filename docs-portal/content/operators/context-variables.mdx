@@ -533,7 +533,7 @@ Radioso resolves values from most specific to least specific:
 
 1. `conversation`
 2. `session`
-3. `customer`
+3. the person: `customer` or `whatsapp_contact`
 4. `agent`
 5. `workspace`
 
@@ -542,6 +542,28 @@ Every channel has it, and the id must name a conversation of the workspace, or
 the call returns `404`. Use session scope for short-lived visitor state on the
 website, customer scope for account data, agent scope for agent-specific
 defaults, and workspace scope for shared defaults.
+
+A conversation has one person at most. On the website it is the customer your
+site verifies. On WhatsApp it is the sender's number, scope
+`whatsapp_contact`, which WhatsApp vouches for on every message. Write the
+number in international form, country code first; Radioso keeps its digits:
+
+```json
+{
+  "scope": { "type": "whatsapp_contact", "id": "+15550100101" },
+  "data": "gold"
+}
+```
+
+A number's values are read on that number's WhatsApp conversations only, every
+one of them, and on no other channel: a customer id never names them, and a
+number never reaches a resolver skill. An id that is not a number, or one that
+starts with `0` or `00` instead of its country code, returns `400`.
+
+The id is the number as WhatsApp reports it, its `wa_id`. A value is read only
+when its id matches that `wa_id` digit for digit, so take the id from
+WhatsApp's own webhook when you have it. A sender who uses a WhatsApp username
+and shares no phone number has no number values.
 
 ### Who set a value
 
@@ -566,14 +588,20 @@ conversation it ran in; see
 [Save a field to an attribute](/guides/authoring-routines#save-a-field-to-an-attribute).
 
 Conversation-scope values are deleted with their conversation, and a data
-subject export lists them with the kind of writer that set each one.
+subject export lists them with the kind of writer that set each one. A
+WhatsApp number's values go with its latest conversation, whether a teammate
+deletes it or retention ages it out, when a
+[data subject request](/operators/data-subject-requests) erases the number, and
+when WhatsApp reports that its owner moved to another number. Values for a
+number that has no conversation stay until you delete them or erase the number.
 
 ## Inbox
 
 Open a conversation from the Inbox's **All** list. Its **Attributes** block,
 above the messages, lists what the conversation holds: each attribute's
 value, who set it and when, for example "Billing", "Set by the AI". A value kept
-for the visitor's chat session or verified customer reads "for this visitor".
+for the visitor's chat session, verified customer or WhatsApp number reads "for
+this visitor".
 When the same attribute has values at several of those levels, the most
 specific one is shown, the way the agent reads it. Agent-wide and
 workspace-wide values are defaults and stay off the list. A Private attribute
@@ -658,10 +686,13 @@ makes it your team's without changing it.
 A write that changes the value a conversation holds for itself is recorded as
 [`context_value.changed`](/api/workspace-event-log#event-types): the AI's
 choices, a teammate's set or reset in the Inbox, through Ray or an operator MCP
-client, and a write or delete through the values API with `conversation` scope.
-These record no event: a write that leaves the value as it was, a value the
-agent fetches through a resolver skill, a value kept for the visitor's session
-or customer, and deleting the attribute, which removes its values with it.
+client, a write or delete through the values API with `conversation` scope, and
+a routine's save to the person, recorded with the conversation the routine ran
+in. A person's event carries `scope` `customer` or `whatsapp_contact` and never
+the customer id or number. These record no event: a write that leaves the value
+as it was, a value the agent fetches through a resolver skill, a value your API
+writes for the visitor's session, customer or WhatsApp number, and deleting the
+attribute, which removes its values with it.
 
 ## Read next
 

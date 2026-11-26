@@ -33,11 +33,7 @@ import type {
   ConversationOwnershipRequestHandoffInput,
   ConversationOwnershipRequestHandoffResult,
 } from "../../../db/repositories/conversationOwnershipRepository.js";
-import {
-  ActivitySummaryPresenter,
-  ActivityTracePresenter,
-  type ActivityTrace,
-} from "../../retrieval/public.js";
+import { ActivitySummaryPresenter, ActivityTracePresenter, type ActivityTrace } from "../../retrieval/public.js";
 import {
   type AssistantTurnOutcome,
   type SkillTurnOutcome,
@@ -186,6 +182,8 @@ export interface AssistantTurnPersistencePort {
     workspaceId: string;
     accountId?: string | null;
     conversationId: string;
+    /** The person the turn's channel attested, whom the routine's person-level saves are kept for (#1884). */
+    channelPersonKey?: PreparedSession["channelPersonKey"];
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
@@ -777,6 +775,7 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
+        channelPersonKey: input.session.channelPersonKey,
         actions,
         routineStateTransition: saving.transition,
         pendingDecisionTransition: input.pendingDecisionTransition,

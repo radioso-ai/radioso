@@ -30,7 +30,7 @@ export interface AttributeEditActor {
 export interface ConversationAttributeEditResult {
   /**
    * The attribute as the conversation reads it now: the value just set, or after a reset what the
-   * visitor's session or customer holds. Null when none of the conversation's rungs holds one.
+   * visitor's session or person holds. Null when none of the conversation's rungs holds one.
    */
   readonly attribute: ConversationAttribute | null;
   /** True when a reset handed the attribute back to the AI and a run to fill it is queued. */

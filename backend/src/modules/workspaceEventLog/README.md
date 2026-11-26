@@ -32,7 +32,7 @@ its own facts:
 | `contact_request.created`, `decision.pending`, `routine.completed` | `modules/chat/services/workspaceEventLogDrafts.ts`, recorded in the turn's transaction by `modules/chat/infra/turnOutboxWrites.ts`, and by `ContactRequestRecordingOutbox` for a notify step |
 | `handoff.requested` | `modules/conversationActivity/workspaceEventLogBridge.ts`, beside every `handoff_requested` activity |
 | `document.processed`, `document.failed` | `modules/documents/services/documentWorkspaceEvents.ts`, recorded by the job's fenced terminal write in `db/repositories/documentProcessingJobOutcomes.ts` |
-| `context_value.changed` | `modules/context-variables/contextValueChangedEvent.ts`, recorded by every write or delete that changes a conversation's value in `db/repositories/contextVariableValueWrites.ts`; making the attribute Private redacts its earlier events (`redactContextValueEvents`) in the same transaction |
+| `context_value.changed` | `modules/context-variables/contextValueChangedEvent.ts`, recorded by every write or delete that changes a conversation's value, and by a routine's save to the person (scope `customer` or `whatsapp_contact`, subject the saving conversation, never the person's id), in `db/repositories/contextVariableValueWrites.ts`; making the attribute Private redacts its earlier events (`redactContextValueEvents`) in the same transaction |
 
 `app/composition/workspaceEventLog.ts` is the one seam: it owns the recorder and the bridged
 activity recorder, and every construction that records an event is handed them from there.

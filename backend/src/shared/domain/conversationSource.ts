@@ -29,6 +29,8 @@ export const isOperatorTestSourceChannel = (sourceChannel: string | null | undef
 // A spoken session through a voice vendor. The vendor's runtime makes the HTTP call, but the caller
 // is the person on the call or in the browser, so voice is a human channel.
 export const VOICE_SOURCE_CHANNEL = "voice" as const;
+/** The source channel of a conversation the WhatsApp connector carries. */
+export const WHATSAPP_SOURCE_CHANNEL = "whatsapp" as const;
 
 // Channels on which the caller is another piece of software rather than a person: the MCP converse
 // door, the REST agent channel, and the A2A JSON-RPC door. Slack, the embed, the anonymous link,

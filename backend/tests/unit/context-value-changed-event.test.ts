@@ -45,6 +45,23 @@ describe("the context_value.changed event a writer records (#1884)", () => {
     expect(() => workspaceEventDataSchema("context_value.changed").strict().parse({ ...subject, ...draft.detail })).not.toThrow();
   });
 
+  it("names a person value a routine saved in the conversation by its scope, never by the person's key", () => {
+    const draft = contextValueChangedEvent({
+      workspaceId: "w-1",
+      conversationId: subject.conversationId,
+      scope: "whatsapp_contact",
+      variable: { ...topic, name: "party_size", valueType: "number" },
+      value: 4,
+      writtenBy: { kind: "routine", ref: `routine-1:execution-1@${subject.conversationId}` },
+      routineId: "routine-1",
+    });
+
+    expect(draft.conversationId).toBe(subject.conversationId);
+    expect(draft.detail).toMatchObject({ scope: "whatsapp_contact", value: 4, writtenBy: "routine", routineId: "routine-1" });
+    expect(() => workspaceEventDataSchema("context_value.changed").strict().parse({ ...subject, ...draft.detail })).not.toThrow();
+    expect(workspaceEventDataSchema("context_value.changed").safeParse({ ...subject, ...draft.detail, scope: "session" }).success).toBe(false);
+  });
+
   it("requires the value, null when cleared or Private, so a payload that leaves it out is not one", () => {
     const { value: _value, ...withoutValue } = contextValueChangedEvent({
       workspaceId: "w-1",

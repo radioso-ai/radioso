@@ -48,6 +48,7 @@ export const saveRoutineSlotValues = async (
     : await saver.saveAll(db, {
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
+      channelPersonKey: input.channelPersonKey,
       writtenBy: routineValueWriter(routineId, executionId ?? null, input.conversationId),
       routineId,
       saves: transition.slotSaves.map((save) => ({

@@ -55,8 +55,9 @@ describe("a conversation's attributes on the history read", () => {
     const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50 }, { includeAttributes: true });
 
     expect(detail.attributes).toEqual([topic]);
+    // The channel is passed so a reader looks a person key up only where a channel keeps one.
     expect(attributes.read).toHaveBeenCalledWith("workspace-1", {
-      conversationId: conversation.id, chatSessionId: "session-1", verifiedCustomerId: "customer-1",
+      conversationId: conversation.id, chatSessionId: "session-1", verifiedCustomerId: "customer-1", sourceChannel: null,
     });
   });
 

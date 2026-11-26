@@ -387,6 +387,8 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
         "routine_values",
         "visitor_images",
         "visitors",
+        "whatsapp_contacts",
+        "whatsapp_messages",
       ]);
       const conversationIds = sections.conversations.map((conversation) => conversation.id);
       expect([...conversationIds].sort()).toEqual([jane.webConversationId, ...jane.emailConversationIds, jane.slackConversationId].sort());

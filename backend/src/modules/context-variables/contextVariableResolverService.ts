@@ -1,3 +1,4 @@
+import { isChannelPersonKeyKind } from "../../shared/domain/channelPersonKey.js";
 import type { ConversationSkillSet } from "../../shared/domain/conversationSkills.js";
 import type { ContextVariableResolverRepositoryPort } from "./repository.js";
 import { notFound } from "../../shared/domain/errors.js";
@@ -46,12 +47,14 @@ const RESOLVER_CACHE_WRITER: ContextValueWriter = { kind: "api", ref: null };
  * Where a resolver keeps its cache, and the scope it hands its skill.
  *
  * A resolver fetches about the visitor, so it caches under the most specific visitor scope, the
- * chat session or the verified customer, and under the conversation when the turn has neither. It
- * never caches under the agent or the workspace: every visitor of the agent reads those, and would be
- * served one visitor's value until it aged out.
+ * chat session or the person (a verified customer, or a channel's person key such as a WhatsApp
+ * number), and under the conversation when the turn has none. It never caches under the agent or
+ * the workspace: every visitor of the agent reads those, and would be served one visitor's value
+ * until it aged out.
  *
- * The skill is handed the first scope past the conversation, as it always was. Hosts receive it, as
- * the skill's `scope` input and a webhook skill's `source.sessionId`, so only the cache key moves.
+ * The skill is handed the first scope past the conversation, as it always was, except a channel's
+ * person key: hosts receive the scope, as the skill's `scope` input and a webhook skill's
+ * `source.sessionId`, and a WhatsApp number never goes to a webhook. Only the cache key moves.
  */
 interface ResolverScopes {
   cache: ContextVariableScope;
@@ -59,9 +62,9 @@ interface ResolverScopes {
 }
 
 const resolverScopes = (scopes: readonly ContextVariableScope[]): ResolverScopes | undefined => {
-  const visitor = scopes.find((scope) => scope.type === "session" || scope.type === "customer");
+  const visitor = scopes.find((scope) => scope.type === "session" || scope.type === "customer" || isChannelPersonKeyKind(scope.type));
   const cache = visitor ?? scopes.find((scope) => scope.type === "conversation");
-  const skill = scopes.find((scope) => scope.type !== "conversation");
+  const skill = scopes.find((scope) => scope.type !== "conversation" && !isChannelPersonKeyKind(scope.type));
   return cache && skill ? { cache, skill } : undefined;
 };
 const RESOLVE_METRIC_HELP = "Context variable resolver outcomes.";

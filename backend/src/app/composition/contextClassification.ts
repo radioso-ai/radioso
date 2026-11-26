@@ -1,4 +1,3 @@
-import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { ClassifiedContextVariableReads } from "../../db/repositories/classifiedContextVariableReads.js";
 import type { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
@@ -17,6 +16,7 @@ import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { conversationReadSources } from "./conversationReadSources.js";
 
 /**
  * The classifier of agents' classified attributes: the context-variable reads (over the agents
@@ -41,7 +41,7 @@ export const buildContextClassification = (deps: {
   const db = deps.infrastructure.database.kysely;
   const classifier = new ConversationClassificationService({
     // The pinned revision's enablements come through the agents module's revision reader, which owns the snapshot.
-    targets: new ClassifiedContextVariableReads(db, new AgentRevisionRuntimeRepository(db)),
+    targets: new ClassifiedContextVariableReads(db, conversationReadSources(db)),
     excerpts: new ContextClassificationExcerptReader({
       conversations: deps.repositories.conversationRepository,
       messages: deps.repositories.messageRepository,

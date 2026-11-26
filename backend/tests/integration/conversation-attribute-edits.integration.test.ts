@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { buildConversationAttributeEdits } from "../../src/app/composition/conversationAttributeEdits.js";
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { BackgroundJobRepository } from "../../src/db/repositories/backgroundJobRepository.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
@@ -58,7 +58,7 @@ describeIntegration("a teammate's edit of a conversation's attribute, against th
 
   /** The classifier as the job runs it, answering `key` for every attribute it is asked about, after `thinkMs`. */
   const classifierAnswering = (key: string, thinkMs = 0) => new ConversationClassificationService({
-    targets: new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)),
+    targets: new ClassifiedContextVariableReads(database.kysely, conversationReadSources(database.kysely)),
     excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Where is my parcel?"], withheldCount: 0 }) },
     values: new ConversationValueWriterService({ repository: variables }),
     inference: {

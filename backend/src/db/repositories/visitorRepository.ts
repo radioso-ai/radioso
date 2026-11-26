@@ -324,7 +324,7 @@ export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
 
   async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const keys = input.keys.filter((key) => UUID_PATTERN.test(key));
-    if (keys.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
+    if (keys.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [], recordIds: [] };
     const visitors = await this.db
       .selectFrom("visitors")
       .select(["id", "verified_customer_id"])
@@ -342,6 +342,7 @@ export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
       conversationIds: conversations.map((conversation) => conversation.id),
       visitorIds,
       verifiedCustomerIds: visitors.flatMap((visitor) => (visitor.verified_customer_id ? [visitor.verified_customer_id] : [])),
+      channelPersonKeys: [],
       recordIds: visitorIds,
     };
   }

@@ -5,6 +5,7 @@ import {
   type ContextValueSaveStore,
   contextValueChanged,
   contextValueChangedEvent,
+  contextValueEventScope,
   keepsWriterOfEqualValue,
   mayOverwrite,
   validateValue,
@@ -20,7 +21,7 @@ import {
   type SaveTargetDefinition,
 } from "../../modules/context-variables/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
-import type { WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
+import type { ContextValueEventScope, WorkspaceEventRecorder } from "../../shared/domain/workspaceEventLog.js";
 import type { WorkspaceEventDeliveryWake } from "../../shared/domain/workspaceEventSubscriptions.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -100,6 +101,15 @@ const lockConversationValue = async (trx: Db, variableId: string, conversationId
   return readStoredValue(trx, variableId, { type: "conversation", id: conversationId });
 };
 
+/**
+ * The same for a person's value a save records a change of: two turns of one person queue here, so a
+ * change is recorded once. The lock's key is hashed by Postgres and never leaves the database.
+ */
+const lockPersonValue = async (trx: Db, variableId: string, scope: ContextVariableScope): Promise<StoredValue | undefined> => {
+  await transactionAdvisoryLock(`context-variable-value:${variableId}:${scope.type}:${storedScopeId(scope)}`).execute(trx);
+  return readStoredValue(trx, variableId, scope);
+};
+
 const readStoredValue = async (trx: Db, variableId: string, scope: ContextVariableScope): Promise<StoredValue | undefined> => {
   const row = await trx
     .selectFrom("context_variable_values")
@@ -156,10 +166,11 @@ const upsertRow = async (
  * Writes and deletes of stored values. A conversation's value is about that conversation, so a write
  * that changes it records `context_value.changed` in its own transaction, through the events
  * composition hands in: the value and its event commit together or not at all, and delivery is woken
- * once they have. A write that leaves the value as it was records nothing. Values kept at any other
- * scope record no event: a session's or a customer's value spans conversations, and an agent's or
- * workspace's is a default. `events` is null only where composition says a write is no change an
- * automation acts on.
+ * once they have. A write that leaves the value as it was records nothing. A person's value (a
+ * customer's, a WhatsApp number's) records one only when a save in a conversation changes it, on
+ * that conversation (`storeIn`); written through the values API it names no conversation and records
+ * none. A session's value spans conversations, and an agent's or workspace's is a default, so neither
+ * records one. `events` is null only where composition says a write is no change an automation acts on.
  */
 export class ContextVariableValueWrites implements ContextValueSaveStore {
   constructor(
@@ -204,9 +215,10 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
   /**
    * The transaction-joining write: stores a value in a transaction the caller owns, a chat turn's, with
    * the same locks, overwrite rule and change event as `upsertValue`, so they commit or roll back
-   * with what the caller commits. The caller has checked the value against `definition` under its
-   * lock, and its commit wakes delivery. A value its writer already stored, same writer and same
-   * value, is `unchanged` and writes nothing, as is a value a teammate or the host already set
+   * with what the caller commits. A person value's change is recorded too, on the conversation the
+   * save was made in. The caller has checked the value against `definition` under its lock, and its
+   * commit wakes delivery. A value its writer already stored, same writer and same value, is
+   * `unchanged` and writes nothing, as is a value a teammate or the host already set
    * (`keepsWriterOfEqualValue`); the same value from any other writer rewrites only the provenance
    * and records no event.
    */
@@ -214,14 +226,17 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
     const { definition, data, writtenBy } = write;
     const conversationId = write.scope.type === "conversation" ? await requireConversation(trx, definition.workspaceId, write.scope.id) : null;
     const scope: ContextVariableScope = conversationId ? { type: "conversation", id: conversationId } : write.scope;
+    const eventScope = contextValueEventScope(scope.type);
     const previous = conversationId
       ? await lockConversationValue(trx, definition.id, conversationId)
-      : await readStoredValue(trx, definition.id, scope);
+      : eventScope ? await lockPersonValue(trx, definition.id, scope) : await readStoredValue(trx, definition.id, scope);
     const sameWriter = previous?.writtenBy.kind === writtenBy.kind && previous.writtenBy.ref === writtenBy.ref;
     if (previous && !contextValueChanged(previous.data, data) && (sameWriter || keepsWriterOfEqualValue(previous.writtenBy.kind))) return "unchanged";
     if (!await upsertRow(trx, definition, scope, data, writtenBy)) return "kept";
-    if (conversationId && contextValueChanged(previous?.data, data)) {
-      await this.recordChange(trx, { definition, conversationId, value: data, writtenBy, routineId: write.routineId });
+    if (eventScope && contextValueChanged(previous?.data, data)) {
+      await this.recordChange(trx, {
+        definition, conversationId: conversationId ?? write.conversationId, scope: eventScope, value: data, writtenBy, routineId: write.routineId,
+      });
     }
     return "written";
   }
@@ -273,6 +288,7 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
   private async recordChange(trx: Db, change: {
     definition: ValueDefinition;
     conversationId: string;
+    scope?: ContextValueEventScope;
     value: unknown;
     writtenBy: ContextValueWriter;
     routineId: string | null;
@@ -281,6 +297,7 @@ export class ContextVariableValueWrites implements ContextValueSaveStore {
     await this.events.recorder.record(trx, contextValueChangedEvent({
       workspaceId: change.definition.workspaceId,
       conversationId: change.conversationId,
+      ...(change.scope ? { scope: change.scope } : {}),
       variable: change.definition,
       value: change.value,
       writtenBy: change.writtenBy,

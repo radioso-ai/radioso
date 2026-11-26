@@ -5,9 +5,12 @@ import {
   type ChatDoorPickTurnPort,
   type ChatDoorTurnReply,
   type ConversationIngestPort,
+  type UserMessageStoredListener,
 } from "../../chat/contracts/index.js";
-import type { ConnectorChatPort, ConnectorReplyBlocksCapability } from "@radioso/connector-api";
+import type { ConnectorChatPort, ConnectorPersonKey, ConnectorReplyBlocksCapability } from "@radioso/connector-api";
+import { channelPersonKeyId, type ChannelPersonKey, type ChannelPersonKeyKind } from "../../../shared/domain/channelPersonKey.js";
 import { AppError, badRequest, isStructuredAppError } from "../../../shared/domain/errors.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorChatOutcome, connectorTurnResult } from "./connectorTurnFacts.js";
 import { CONNECTOR_IMAGES_UNUSABLE_CODE, type ConnectorImageTurns } from "./connectorImageTurns.js";
 
@@ -33,6 +36,47 @@ const capabilitiesFor = (replyBlocks: ConnectorReplyBlocksCapability | undefined
     : undefined;
 };
 
+/**
+ * The person-key kind composition binds to the connector a port serves, so only the connector whose
+ * provider attests a kind (WhatsApp's number) can run a turn as one.
+ */
+interface ConnectorPersonKeyBinding {
+  connectorId?: string;
+  personKeyKind?: ChannelPersonKeyKind | null;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
+}
+
+/** Why a turn ran without the key its connector sent: bounded, and never the key itself. */
+type UnusedPersonKeyReason = "not_attested" | "unreadable";
+
+/**
+ * The person key a connector's turn runs as, in the form its channel stores it. A connector bound to
+ * no kind, or a key the host cannot read, runs the turn with no person key, as a channel that attests
+ * none does: the customer is still answered. Each is counted, without the key.
+ */
+const channelPersonKeyFor = (
+  binding: ConnectorPersonKeyBinding,
+  personKey: ConnectorPersonKey | undefined,
+): { channelPersonKey?: ChannelPersonKey } => {
+  if (!personKey) return {};
+  const unused = (reason: UnusedPersonKeyReason) => {
+    binding.metrics?.incrementCounter("connector_person_keys_unused_total", {
+      help: "Person keys a connector sent that its turn ran without, by connector and why: a connector bound to no person-key kind, or a key the host cannot read",
+      labels: { connector: binding.connectorId ?? "unknown", reason },
+    });
+    return {};
+  };
+  if (!binding.personKeyKind) return unused("not_attested");
+  const id = channelPersonKeyId(binding.personKeyKind, personKey.id);
+  return id ? { channelPersonKey: { kind: binding.personKeyKind, id } } : unused("unreadable");
+};
+
+/** Tells the connector which conversation its message was stored in, the moment the turn stores it. */
+const storedMessageListener = (
+  onMessageStored: ((stored: { conversationId: string }) => Promise<void>) | undefined,
+): { onUserMessageStored?: UserMessageStoredListener } =>
+  onMessageStored ? { onUserMessageStored: ({ conversationId }) => onMessageStored({ conversationId }) } : {};
+
 /** A turn's reply as a connector receives it: the blocks only when the reply carries any. */
 const connectorAnswer = (reply: ChatDoorTurnReply & { conversationId: string }): ConnectorAnswer => ({
   conversationId: reply.conversationId,
@@ -55,12 +99,13 @@ const pickRefused = (): AppError =>
  * read and run; a port built without it takes no photos, and refuses a turn that carries them.
  * `picks` is the chat door a card the customer picked runs through, and `replyPictures` tells
  * whether a reply's pictures are stored; a port built without them refuses every pick and answers
- * that pictures are ready.
+ * that pictures are ready. `personKeyKind` is the kind of person key the connector may attest; a port
+ * bound to none runs every turn without one.
  */
 export const createConnectorChatPort = (
   chatService: ChatAnswerPort,
   conversationIngest: ConversationIngestPort,
-  options: {
+  options: ConnectorPersonKeyBinding & {
     imageTurns?: ConnectorImageTurns | null;
     picks?: ChatDoorPickTurnPort | null;
     replyPictures?: ConnectorReplyPictures | null;
@@ -72,6 +117,8 @@ export const createConnectorChatPort = (
   answer: async (input) => {
     const clientContextCapabilities = capabilitiesFor(input.replyBlocks);
     const capabilities = clientContextCapabilities ? { clientContextCapabilities } : {};
+    const person = channelPersonKeyFor(options, input.personKey);
+    const stored = storedMessageListener(input.onMessageStored);
 
     // A pick runs on the card the stored reply holds, through the same claim as the web chat's,
     // and is refused where the web chat's is: the card's words never run as typed text.
@@ -89,6 +136,8 @@ export const createConnectorChatPort = (
           inputMetadata: { method: "item_select", selection: input.selection },
           sourceChannel: input.sourceChannel,
           channelContext: input.channelContext,
+          ...person,
+          ...stored,
           ...capabilities,
         });
         if (!picked?.conversationId) {
@@ -115,6 +164,8 @@ export const createConnectorChatPort = (
         sourceChannel: input.sourceChannel,
         channelContext: input.channelContext,
         onImagesStored: input.onImagesStored,
+        ...person,
+        ...stored,
         ...capabilities,
       });
       if (answered) {
@@ -134,6 +185,8 @@ export const createConnectorChatPort = (
       stream: false,
       sourceChannel: input.sourceChannel,
       channelContext: input.channelContext,
+      ...person,
+      ...stored,
       ...capabilities,
     });
 

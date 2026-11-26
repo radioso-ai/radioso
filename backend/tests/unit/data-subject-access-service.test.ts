@@ -25,7 +25,7 @@ const ACTOR = { accountId: "acct-1", userId: "user-1" };
 const NOW = new Date("2026-10-19T12:00:00.000Z");
 const ADDRESS = "jane@example.com";
 
-const noReach: DataSubjectIdentityReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
+const noReach: DataSubjectIdentityReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [], recordIds: [] };
 
 const finder = (
   kind: DataSubjectIdentityKind,
@@ -33,12 +33,14 @@ const finder = (
     channel: string;
     matches?: Record<string, DataSubjectIdentityMatch[]>;
     reach?: Record<string, Partial<DataSubjectIdentityReach>>;
+    misread?: (query: string) => string | null;
   },
 ) => {
   const reached: string[][] = [];
   const port: DataSubjectIdentityFinder = {
     kind,
     channel: options.channel,
+    ...(options.misread ? { misreadQuery: options.misread } : {}),
     async find({ query }) {
       return options.matches?.[query] ?? [];
     },
@@ -49,6 +51,7 @@ const finder = (
         conversationIds: parts.flatMap((part) => part.conversationIds),
         visitorIds: parts.flatMap((part) => part.visitorIds),
         verifiedCustomerIds: parts.flatMap((part) => part.verifiedCustomerIds),
+        channelPersonKeys: parts.flatMap((part) => part.channelPersonKeys),
         recordIds: parts.flatMap((part) => part.recordIds),
       };
     },
@@ -74,10 +77,15 @@ const conversation = (id: string, channel: string, lastActivityAt: string): Data
   messageCount: 2,
 });
 
+// Obviously fake numbers in the reserved 555-01xx range.
+const NUMBER = "15550100101";
+const VALUES_ONLY_NUMBER = "15550100102";
+const numberKey = { kind: "whatsapp_contact" as const, id: NUMBER };
+
 const createHarness = (options: { maxConversations?: number; auditFails?: boolean } = {}) => {
   const web = finder("web_visitor", {
     channel: "web",
-    matches: { "cust-42": [match("visitor-1", "cust-42", 2, ["visitor-1"])] },
+    matches: { "cust-42": [match("visitor-1", "cust-42", 2, ["visitor-1"])], "0042": [match("visitor-2", "0042", 1, ["visitor-2"])] },
     reach: { "visitor-1": { conversationIds: ["conv-web-1", "conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], recordIds: ["visitor-1"] } },
   });
   // Email thread links are keyed by their conversation.
@@ -87,6 +95,16 @@ const createHarness = (options: { maxConversations?: number; auditFails?: boolea
     reach: { [ADDRESS]: { conversationIds: ["conv-mail-1", "conv-web-1"], recordIds: ["conv-mail-1", "conv-web-1"] } },
   });
   const slack = finder("slack_user", { channel: "slack" });
+  const whatsapp = finder("whatsapp_number", {
+    channel: "whatsapp",
+    matches: { [NUMBER]: [match(NUMBER, `+${NUMBER}`, 2, ["conv-wa-1", "conv-wa-2"])] },
+    reach: {
+      [NUMBER]: { conversationIds: ["conv-wa-1", "conv-wa-2"], channelPersonKeys: [numberKey], recordIds: ["conv-wa-1", "conv-wa-2"] },
+      // A number a host kept values for that never wrote: no conversation, only its values.
+      [VALUES_ONLY_NUMBER]: { channelPersonKeys: [{ kind: "whatsapp_contact", id: VALUES_ONLY_NUMBER }] },
+    },
+    misread: (query) => (query.startsWith("0") ? "A WhatsApp number starts with its country code" : null),
+  });
   const exportScopes: DataSubjectExportScope[] = [];
   const exported: string[] = [];
   const exporters: DataSubjectDataExporter[] = [
@@ -108,13 +126,14 @@ const createHarness = (options: { maxConversations?: number; auditFails?: boolea
   const reads = {
     run: async <T>(work: (scope: DataSubjectReadScope) => Promise<T>): Promise<T> => {
       runs += 1;
-      return work({ finders: [web.port, email.port, slack.port], exporters, conversations: directory });
+      return work({ finders: [web.port, email.port, slack.port, whatsapp.port], exporters, conversations: directory });
     },
   };
   const audit: AuditEventInput[] = [];
   const erasure = {
     eraseConversation: vi.fn<ConversationErasure["eraseConversation"]>(async () => ({ conversationCount: 1, messageCount: 3, rowsByOwner: {} })),
     eraseVisitor: vi.fn<ConversationErasure["eraseVisitor"]>(async () => ({ conversationCount: 2, messageCount: 5, rowsByOwner: {} })),
+    eraseChannelPersons: vi.fn<ConversationErasure["eraseChannelPersons"]>(async () => ({ conversationCount: 0, messageCount: 0, rowsByOwner: {} })),
   };
   const logger = { warn: vi.fn() };
   const service = new DataSubjectAccessService({
@@ -175,6 +194,22 @@ describe("DataSubjectAccessService", () => {
       }]);
     });
 
+    it("refuses a query written as a number no finder can read, saying how to write it, and records no lookup", async () => {
+      const h = createHarness();
+
+      await expect(h.service.lookup({ workspaceId: WORKSPACE, query: " 0015550100101 ", actor: ACTOR }))
+        .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/country code/u) });
+      expect(h.audit).toEqual([]);
+    });
+
+    it("answers a query another finder matches, however one finder misreads it", async () => {
+      const h = createHarness();
+
+      const candidates = await h.service.lookup({ workspaceId: WORKSPACE, query: "0042", actor: ACTOR });
+
+      expect(candidates.map((candidate) => candidate.identity)).toEqual([{ kind: "web_visitor", key: "visitor-2" }]);
+    });
+
     it("records a lookup that found nobody", async () => {
       const h = createHarness();
 
@@ -223,6 +258,7 @@ describe("DataSubjectAccessService", () => {
         conversationIds: ["conv-mail-1", "conv-web-1", "conv-web-2"],
         visitorIds: ["visitor-1"],
         verifiedCustomerIds: ["cust-42"],
+        channelPersonKeys: [],
       }]);
       expect(h.runs()).toBe(1);
     });
@@ -286,8 +322,8 @@ describe("DataSubjectAccessService", () => {
 
       expect(pages.flatMap((page) => page.sections.conversations.map((record) => record.id))).toEqual(["conv-web-2", "conv-web-1"]);
       expect(h.exportScopes).toEqual([
-        { workspaceId: WORKSPACE, conversationIds: ["conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
-        { workspaceId: WORKSPACE, conversationIds: ["conv-web-1"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], channelPersonKeys: [] },
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-1"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], channelPersonKeys: [] },
       ]);
       expect(h.audit.map((event) => event.metadata)).toEqual([
         expect.objectContaining({ conversationCount: 1 }),
@@ -314,6 +350,43 @@ describe("DataSubjectAccessService", () => {
       expect(h.erasure.eraseVisitor).not.toHaveBeenCalled();
       expect(h.erasure.eraseConversation).not.toHaveBeenCalled();
       expect(h.audit).toEqual([]);
+    });
+  });
+
+  describe("a number's own records", () => {
+    const identities = [{ kind: "whatsapp_number" as const, key: NUMBER }];
+
+    it("go out on one page only of a paged export, and with an export that lists no page", async () => {
+      const h = createHarness();
+
+      await h.service.export({ workspaceId: WORKSPACE, identities, actor: ACTOR });
+      await h.service.export({ workspaceId: WORKSPACE, identities, conversationIds: ["conv-wa-2"], actor: ACTOR });
+      await h.service.export({ workspaceId: WORKSPACE, identities, conversationIds: ["conv-wa-1"], actor: ACTOR });
+
+      expect(h.exportScopes.map((scope) => scope.channelPersonKeys)).toEqual([[numberKey], [], [numberKey]]);
+    });
+
+    it("are erased beside the number's conversations, once across the pages", async () => {
+      const h = createHarness();
+
+      await h.service.erase({ workspaceId: WORKSPACE, identities, conversationIds: ["conv-wa-2"], actor: ACTOR });
+      expect(h.erasure.eraseChannelPersons).not.toHaveBeenCalled();
+      await h.service.erase({ workspaceId: WORKSPACE, identities, conversationIds: ["conv-wa-1"], actor: ACTOR });
+
+      expect(h.erasure.eraseChannelPersons).toHaveBeenCalledTimes(1);
+      expect(h.erasure.eraseChannelPersons).toHaveBeenCalledWith({ workspaceId: WORKSPACE, keys: [numberKey], actor: ACTOR });
+    });
+
+    it("are erased for a number that has values but no conversation", async () => {
+      const h = createHarness();
+
+      const receipt = await h.service.erase({ workspaceId: WORKSPACE, identities: [{ kind: "whatsapp_number", key: VALUES_ONLY_NUMBER }], actor: ACTOR });
+
+      expect(receipt.complete).toBe(true);
+      expect(h.erasure.eraseConversation).not.toHaveBeenCalled();
+      expect(h.erasure.eraseChannelPersons).toHaveBeenCalledWith({
+        workspaceId: WORKSPACE, keys: [{ kind: "whatsapp_contact", id: VALUES_ONLY_NUMBER }], actor: ACTOR,
+      });
     });
   });
 

@@ -1,4 +1,5 @@
 import { connectorEncryptionKeys, parseEmailChannelConfig, type Env } from "../config/env.js";
+import { ContextVariableValueEraser } from "../../db/repositories/contextVariableRepository.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { workspaceEventRecorder } from "./workspaceEventLog.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/public.js";
@@ -274,6 +275,7 @@ export const createDefaultConnectorRegistry = (
       workspaceEvents: workspaceEventRecorder,
     },
     email: builtIn.email,
+    whatsapp: { personValues: (db) => new ContextVariableValueEraser(db) },
   });
   for (const connector of connectors) {
     registry.register(connector);

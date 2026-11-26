@@ -298,7 +298,7 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       workspaceId: tenant.workspaceId,
       conversationIds: [byConversation.conversationId, foreign.conversationId],
       visitorIds: [byVisitor.visitorId],
-      verifiedCustomerIds: [],
+      verifiedCustomerIds: [], channelPersonKeys: [],
     });
 
     expect(exported).toEqual([
@@ -329,7 +329,7 @@ describeIntegration("routine consent records (Postgres, #1544)", () => {
       workspaceId: tenant.workspaceId,
       conversationIds: [],
       visitorIds: [],
-      verifiedCustomerIds: [],
+      verifiedCustomerIds: [], channelPersonKeys: [],
     })).toEqual([]);
   });
 

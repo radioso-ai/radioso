@@ -2264,6 +2264,18 @@ CREATE TABLE public.connector_whatsapp_contacts (
 
 
 --
+-- Name: connector_whatsapp_conversations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.connector_whatsapp_conversations (
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    wa_id character varying(32) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: connector_whatsapp_message_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2309,7 +2321,7 @@ CREATE TABLE public.context_variable_values (
     last_modified timestamp with time zone DEFAULT now() NOT NULL,
     written_by_kind text DEFAULT 'api'::text NOT NULL,
     written_by_ref text,
-    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['conversation'::text, 'session'::text, 'customer'::text, 'agent'::text, 'workspace'::text]))),
+    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['conversation'::text, 'session'::text, 'customer'::text, 'whatsapp_contact'::text, 'agent'::text, 'workspace'::text]))),
     CONSTRAINT context_variable_values_written_by_kind_check CHECK ((written_by_kind = ANY (ARRAY['api'::text, 'operator'::text, 'routine'::text, 'classifier'::text])))
 );
 
@@ -6091,6 +6103,14 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 
 --
+-- Name: connector_whatsapp_conversations connector_whatsapp_conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_whatsapp_conversations
+    ADD CONSTRAINT connector_whatsapp_conversations_pkey PRIMARY KEY (conversation_id);
+
+
+--
 -- Name: connector_whatsapp_message_log connector_whatsapp_message_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8999,6 +9019,13 @@ CREATE INDEX idx_connector_configs_workspace_id ON public.connector_configs USIN
 --
 
 CREATE INDEX idx_connector_sync_state_workspace_id ON public.connector_sync_state USING btree (workspace_id);
+
+
+--
+-- Name: idx_connector_whatsapp_conversations_workspace_wa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_connector_whatsapp_conversations_workspace_wa ON public.connector_whatsapp_conversations USING btree (workspace_id, wa_id);
 
 
 --
@@ -12162,6 +12189,22 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 ALTER TABLE ONLY public.connector_whatsapp_contacts
     ADD CONSTRAINT connector_whatsapp_contacts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: connector_whatsapp_conversations connector_whatsapp_conversations_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_whatsapp_conversations
+    ADD CONSTRAINT connector_whatsapp_conversations_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: connector_whatsapp_conversations connector_whatsapp_conversations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_whatsapp_conversations
+    ADD CONSTRAINT connector_whatsapp_conversations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

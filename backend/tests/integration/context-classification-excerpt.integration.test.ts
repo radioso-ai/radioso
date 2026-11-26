@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
@@ -31,7 +31,7 @@ describeIntegration("context classification over a stored conversation (Postgres
   });
   // The rewrite-tier model is stubbed; the reads, the excerpt and the writes are the real ones.
   const classifier = new ConversationClassificationService({
-    targets: new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)),
+    targets: new ClassifiedContextVariableReads(database.kysely, conversationReadSources(database.kysely)),
     excerpts: new ContextClassificationExcerptReader({
       conversations: new ConversationRepository(database.kysely, postgresWorkspaceEventRecorder),
       messages: new MessageRepository(database.kysely),

@@ -374,7 +374,7 @@ describeIntegration("typed attributes (Postgres)", () => {
     await repository.upsertValue(topic.id, { type: "conversation", id: kept }, "shipping", api);
 
     const exported = await new ContextVariableValueExporter(database.kysely).export({
-      workspaceId, conversationIds: [erased], visitorIds: [], verifiedCustomerIds: [],
+      workspaceId, conversationIds: [erased], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [],
     });
     expect(exported).toEqual([expect.objectContaining({ variable: topic.name, scope: "conversation", value: "billing", writtenBy: "api" })]);
 

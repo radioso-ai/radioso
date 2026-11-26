@@ -589,10 +589,14 @@ the Inbox and your API read it from then on.
 Say your booking routine collects `@guests`, a number field. Save it to
 `party_size` for **This conversation**, and a visitor who books for four leaves
 the conversation's `party_size` at `4`, set by the routine. The other scope,
-**The verified person**, keeps the value on the visitor's
-[verified customer id](/operators/context-variables#signed-visitor-identity),
-so their next conversation reads it too. A conversation with no verified person
-saves nothing for that field, and the routine ends as it would anyway.
+**The verified person**, keeps the value for the person the conversation is
+with, so their next conversation reads it too: on the website the visitor's
+[verified customer id](/operators/context-variables#signed-visitor-identity), and
+on WhatsApp the sender's number, which WhatsApp vouches for on every message. A
+value saved for a WhatsApp number is read on that number's WhatsApp
+conversations only. A conversation with no verified person, such as a website
+visitor your site hasn't signed in, saves nothing for that field, and the
+routine ends as it would anyway.
 
 The picker offers the attributes this agent keeps a value of, set by your
 website or API, that aren't treated as proof, and whose type fits
@@ -614,9 +618,10 @@ release the conversation runs on keeps its value. The last writer wins among
 the routine, your team and your API, with one exception: when the attribute
 already holds the same value from your team or your API, the value stays
 theirs, so a consent withdrawn later leaves it in place. The saved value's
-`writtenBy` is `routine`, and a conversation value's change is a
-`context_value.changed` event naming the routine. A value saved for the
-verified person records no event, so automations see conversation values only.
+`writtenBy` is `routine`, and each change is a `context_value.changed` event
+naming the routine, recorded with the conversation it ran in. A value saved for
+the verified person carries its scope, `customer` or `whatsapp_contact`, and
+never the customer id or number.
 
 Inspect the ending turn to see what each save did. The routine's stage lists
 each field with its attribute, scope and outcome, such as `written`,
@@ -847,7 +852,7 @@ from a test that kept skills off.
   **Draft**.
 - A field's value never reaches its attribute: inspect the ending turn's
   routine stage. `no_person_key` means the conversation had no verified
-  person; `refused_type`, `refused_trust` or `refused_sensitive` mean the
+  person, neither a signed-in customer nor a WhatsApp number; `refused_type`, `refused_trust` or `refused_sensitive` mean the
   attribute's type, proof setting or Private setting changed after the routine
   was published; `gone` means the attribute was deleted or renamed;
   `not_enabled` means the agent release the conversation runs on doesn't keep

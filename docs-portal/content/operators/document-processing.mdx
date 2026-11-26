@@ -1,7 +1,7 @@
 ---
 title: "Document processing"
 description: "Operating the document worker and understanding the implications for user-visible behavior."
-last_updated: 2026-11-17
+last_updated: 2026-11-26
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -57,7 +57,7 @@ When the content names pictures (a crawled page's `og:image` and the images in i
 - `DOCUMENT_STORAGE_DRIVER` selects local filesystem or GCS storage for uploaded source files.
 - `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
 - workspace ingestion settings control chunking strategy and chunk sizes.
-- **Reprocess Existing Documents** in **Knowledge → Ingestion** rebuilds every document's chunks with the current settings and boundary rules and re-embeds each of them, so it costs one embedding pass over the workspace, and a document can come back with a few more chunks than before. A chunk keeps the boundaries and document facts it was built with until its document processes again.
+- **Reprocess Existing Documents** in **Knowledge → Ingestion** rebuilds every document's chunks with the current settings and boundary rules and re-embeds each of them, so it costs one embedding pass over the workspace, and a document can come back with a few more chunks than before. A chunk keeps the boundaries, section line, and document facts it was built with until its document processes again, and a recrawl skips a page whose content and title are unchanged, so reprocess the document or its source to rebuild one page.
 - `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
 - The document type catalog in **Knowledge → Ingestion** decides what extraction classifies against and which fields it pulls. Edits apply to processing that happens after the save; **Reprocess source** applies them to documents a source already ingested. [Extract document metadata](/guides/document-metadata) walks through authoring a type and using its fields.
 - `documentMetadata` on a document source holds the tags stamped onto every chunk that source produces. A document's own metadata wins on any key the two share, and the tags land on existing chunks the next time those documents process — which is what a source reprocess is for.

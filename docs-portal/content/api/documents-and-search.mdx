@@ -1,7 +1,7 @@
 ---
 title: Documents and search
 description: Upload documents, requeue processing, inspect search behavior, and replay historical searches.
-last_updated: 2026-11-22
+last_updated: 2026-11-26
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -180,7 +180,7 @@ curl -sS -X POST https://api.radioso.ai/api/v1/document/search \
   -d '{"query":"uploaded content","metadataFilter":{"category":"support"}}'
 ```
 
-`query` is required. `metadataFilter` is optional.
+`query` is required. `metadataFilter` is optional. The results are the passages an answer would read, so a long page can return more than two of them when no other document is left to take the room.
 
 ## Search history
 

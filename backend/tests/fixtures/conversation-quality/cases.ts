@@ -3,6 +3,7 @@ import { renderVisitorImageTurn } from "../../../src/modules/visitorImages/publi
 import { seedDirectiveConfigWith } from "./agent.js";
 import { replyBlockCases } from "./replyBlockCases.js";
 import { routineCardCases } from "./routineCardCases.js";
+import { sectionedPageCases } from "./sectionedPageCases.js";
 import { toolCardCases } from "./toolCardCases.js";
 import {
   BREATH_COURSE_DOC_ID,
@@ -1429,4 +1430,5 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   ...replyBlockCases,
   ...toolCardCases,
   ...routineCardCases,
+  ...sectionedPageCases,
 ];

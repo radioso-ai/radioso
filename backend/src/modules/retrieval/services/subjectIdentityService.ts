@@ -45,7 +45,31 @@ export const deriveDocumentSubject = (input: { title: string; content: string })
   return null;
 };
 
+const SECTION_LABEL_SEPARATOR = " · ";
+// The reranker reads only the first `rerank.maxRetrievalTextChars` characters of a chunk's search
+// text, which opens with its title, subject and section lines. The label stops adding headings at
+// this length, so that view still reaches the chunk's own text.
+const SECTION_LABEL_MAX_CHARS = 80;
+
+/**
+ * The section label of a chunk's search text: every heading the chunk holds, in order, so a chunk
+ * that runs from one section into the next is found under each of them. A heading that would take
+ * the label past its length cap is left out whole, along with every heading after it.
+ */
 export const deriveChunkSection = (content: string): string | null => {
-  const headingMatch = content.match(/^#{1,6}\s+(.+)$/m);
-  return headingMatch?.[1] ? normalizeSubject(headingMatch[1]) : null;
+  const headings: string[] = [];
+  let labelLength = 0;
+  for (const match of content.matchAll(/^#{1,6}[ \t]+(.+)$/gm)) {
+    const heading = match[1] ? normalizeSubject(match[1]) : null;
+    if (!heading || headings.includes(heading)) {
+      continue;
+    }
+    const nextLength = labelLength + (headings.length > 0 ? SECTION_LABEL_SEPARATOR.length : 0) + heading.length;
+    if (headings.length > 0 && nextLength > SECTION_LABEL_MAX_CHARS) {
+      break;
+    }
+    headings.push(heading);
+    labelLength = nextLength;
+  }
+  return headings.length > 0 ? headings.join(SECTION_LABEL_SEPARATOR) : null;
 };

@@ -39,6 +39,7 @@ import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
 import { propertyFlowRoutine } from "../../fixtures/conversation-quality/routineCardCases.js";
 import { replyBlockCases, replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
+import { sectionedPageCases, sectionedPageDocuments } from "../../fixtures/conversation-quality/sectionedPageCases.js";
 import {
   canonicalAnswerEnvelope,
   conversationQualityChatHarness,
@@ -1396,10 +1397,14 @@ describe("seed fixtures", () => {
     const sharedDocumentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
     const replyBlockDocumentIds = new Set(replyBlockDocuments.map((doc) => doc.id));
     const replyBlockCaseIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
+    const sectionedPageDocumentIds = new Set(sectionedPageDocuments.map((doc) => doc.id));
+    const sectionedPageCaseIds = new Set(sectionedPageCases.map((evalCase) => evalCase.id));
     // The routine-card cases run on their own agent, with its own routine.
     const routineIds = new Set([...conversationQualityRoutines.map((routine) => routine.id), propertyFlowRoutine.id]);
     for (const evalCase of conversationQualityCases) {
-      const documentIds = replyBlockCaseIds.has(evalCase.id) ? replyBlockDocumentIds : sharedDocumentIds;
+      const documentIds = replyBlockCaseIds.has(evalCase.id)
+        ? replyBlockDocumentIds
+        : sectionedPageCaseIds.has(evalCase.id) ? sectionedPageDocumentIds : sharedDocumentIds;
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {
           expect(documentIds.has(assertion.documentId)).toBe(true);

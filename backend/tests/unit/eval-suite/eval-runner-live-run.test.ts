@@ -10,6 +10,7 @@ import { parseConversationQualityCases, type ConversationQualityCase } from "../
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
 import { conversationQualityCorpus } from "../../fixtures/conversation-quality/corpus.js";
 import { replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
+import { sectionedPageDocuments } from "../../fixtures/conversation-quality/sectionedPageCases.js";
 import { VOICE_EVAL_BRIDGE_LINES, VOICE_EVAL_FALLBACK_LINE } from "../../fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
@@ -470,8 +471,14 @@ describe("live runner reply block corpus", () => {
     expect(conversationQualityCorpus.filter((document) => document.metadata?.sourceUrl)).toEqual([]);
   });
 
+  it("keeps the sectioned pricing page out of the corpus every other case grounds against", () => {
+    const sharedIds = new Set(conversationQualityCorpus.map((document) => document.id));
+
+    expect(sectionedPageDocuments.filter((document) => sharedIds.has(document.id))).toEqual([]);
+  });
+
   it("runs the reply block and tool-card cases apart, and every committed case in exactly one part", () => {
-    const { shared, replyBlocks, toolCards, routineCards } = partitionCasesByCorpus(conversationQualityCases);
+    const { shared, replyBlocks, toolCards, routineCards, sectionedPages } = partitionCasesByCorpus(conversationQualityCases);
 
     expect(replyBlocks.map((evalCase) => evalCase.id).sort()).toEqual([
       "reply-blocks-guest-house-photos",
@@ -485,8 +492,12 @@ describe("live runner reply block corpus", () => {
       "tool-cards-records-without-pictures",
     ]);
     expect(routineCards.map((evalCase) => evalCase.id)).toEqual(["routine-property-flow"]);
-    expect(shared).toHaveLength(conversationQualityCases.length - replyBlocks.length - toolCards.length - routineCards.length);
+    expect(sectionedPages.map((evalCase) => evalCase.id)).toEqual(["retrieval-sectioned-page-later-section-figure"]);
+    expect(shared).toHaveLength(
+      conversationQualityCases.length - replyBlocks.length - toolCards.length - routineCards.length - sectionedPages.length,
+    );
     expect(shared.some((evalCase) => evalCase.id.startsWith("reply-blocks-") || evalCase.id.startsWith("tool-cards-") || evalCase.id === "routine-property-flow")).toBe(false);
+    expect(shared.some((evalCase) => evalCase.id === "retrieval-sectioned-page-later-section-figure")).toBe(false);
   });
 
   const targetPorts = (workspaces: Array<{ id: string; name: string }>) => {

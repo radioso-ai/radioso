@@ -66,7 +66,7 @@ The browser consent page lets you choose a workspace and the capabilities the cl
 
 For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_URL` at request time. Point it at the exact public resource, for example `https://mcp.example.com/operator/mcp`. A deployment must also enable and configure the Operator MCP backend values described in [Deployment](/operators/deployment#operator-mcp).
 
-On a development backend (`NODE_ENV` other than `production`), a client running on your machine can identify itself with an `http://` loopback `client_id` such as `http://127.0.0.1:55103/client.json` and serve its own metadata document there. A production backend only fetches public HTTPS metadata documents. The document carries `client_id` (the URL it is served from), `client_name`, loopback `redirect_uris`, `response_types` of `["code"]`, `grant_types` of `["authorization_code"]`, and `token_endpoint_auth_method` of `none`; Radioso fetches it directly and follows no redirects.
+On a development backend (`NODE_ENV=development`), a client running on your machine can identify itself with an `http://` loopback `client_id` such as `http://127.0.0.1:55103/client.json` and serve its own metadata document there. A production backend only fetches public HTTPS metadata documents. The document carries `client_id` (the URL it is served from), `client_name`, loopback `redirect_uris`, `response_types` of `["code"]`, `grant_types` of `["authorization_code"]`, and `token_endpoint_auth_method` of `none`; Radioso fetches it directly and follows no redirects. Run the backend on the same host as the client (`cd backend && pnpm run dev`), not in the `./run-dev.sh` Docker stack, where `127.0.0.1` is the container itself.
 
 ## Connect a client
 

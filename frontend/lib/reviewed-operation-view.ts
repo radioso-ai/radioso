@@ -28,10 +28,11 @@ export const buildReviewedOperationView = (proposal: CopilotProposalDetail): Rev
   const operation = proposal.reviewedOperation!
   return {
     label: proposal.targetLabel ?? '',
-    summary: operation.summary,
+    summary: operation.summary ?? null,
     effects: effectLines(operation.effect),
-    reach: operation.reach,
-    agents: { names: operation.affectedAgents.agents.map((agent) => agent.name), hasMore: operation.affectedAgents.truncated },
+    reach: operation.reach ?? false,
+    // A backend that has not deployed these fields yet omits them; the page reads that as none.
+    agents: { names: (operation.affectedAgents?.agents ?? []).map((agent) => agent.name), hasMore: operation.affectedAgents?.truncated ?? false },
     rows: buildCopilotProposalDiff(proposal.preview ?? { current: null, proposed: null }),
   }
 }

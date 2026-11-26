@@ -168,10 +168,10 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
     approvedAt: string | null
     clientName: string | null
     /** The producer's one-line statement of intent; null when it gave none. */
-    summary: string | null
+    summary?: string | null
     /** True when the change alters who can reach an agent. */
-    reach: boolean
-    affectedAgents: { agents: Array<{ id: string; name: string }>; truncated: boolean }
+    reach?: boolean
+    affectedAgents?: { agents: Array<{ id: string; name: string }>; truncated: boolean }
     review: unknown
   } | null
 }

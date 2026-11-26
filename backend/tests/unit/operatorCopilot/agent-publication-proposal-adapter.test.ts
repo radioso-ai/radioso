@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createAgentPublicationProposalAdapter, type AgentPublicationRevisionPort } from "../../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import type { AgentRevisionService } from "../../../src/modules/agents/public.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 
 const target = { agentId: "00000000-0000-4000-8000-000000000001", candidateRevisionId: "00000000-0000-4000-8000-000000000002" };
 const payload = { expectedDraftGeneration: 4, expectedPublishedRevisionId: "00000000-0000-4000-8000-000000000003" };
 const state = { draft: { generation: 4, basePublishedRevisionId: payload.expectedPublishedRevisionId }, publishedRevision: { id: payload.expectedPublishedRevisionId } };
 const context = { surface: "mcp" as const, accountId: "account-1", executionInvocationId: "execution-1" };
-const revisionPort = (overrides: Partial<AgentPublicationRevisionPort>): AgentPublicationRevisionPort => ({
+const revisionPort = (overrides: Partial<AgentPublicationRevisionPort & Pick<AgentRevisionService, "describeCandidatePublicationPreview">>) => ({
+  describeCandidatePublicationPreview: vi.fn(),
   state: vi.fn(), createCandidate: vi.fn(), detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn(), ...overrides,
 });
 
@@ -82,20 +84,27 @@ describe("agent publication reviewed proposal adapter", () => {
       .rejects.toThrow("connection reset");
   });
 
-  it("previews what publishing changes, not the fences, and names the agent", async () => {
-    const describeCandidatePublicationReview = vi.fn().mockResolvedValue({
-      changeCount: 3, changesTruncated: false, contentHash: "h",
-      changes: [
-        { field: "customInstruction", id: "agent", before: "Be brief.", after: "Be brief and kind.", truncated: false },
-        { field: "directives", id: "directive-1", before: null, after: "{\"name\":\"Refunds\"}", truncated: false },
-        { field: "routines", id: "routine-1", before: "{\"name\":\"Booking\"}", after: null, truncated: false },
+  it("previews what publishing changes under each item's name, not the fences, and counts what it hides", async () => {
+    const describeCandidatePublicationPreview = vi.fn().mockResolvedValue({
+      hidden: 3,
+      rows: [
+        { label: "Custom instruction", before: "Be brief.", after: "Be brief and kind." },
+        { label: "Directive: Refund tone", before: null, after: { when: "visitor asks about a refund", then: "Stay warm", enabled: true } },
+        { label: "Routine: Booking", before: { enabled: true, steps: 4 }, after: null },
+        { label: "Directive: Refund tone", before: { enabled: true }, after: { enabled: false } },
       ],
     });
-    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ describeCandidatePublicationReview }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ describeCandidatePublicationPreview }) });
     const preview = await adapter.preview("workspace-1", target, payload);
+    expect(describeCandidatePublicationPreview).toHaveBeenCalledWith("workspace-1", target.agentId, target.candidateRevisionId, 40);
     expect(preview.targetLabel).toBe("Publish Support");
-    expect(preview.current).toEqual({ customInstruction: "Be brief.", "routines routine-1": "{\"name\":\"Booking\"}" });
-    expect(preview.proposed).toEqual({ customInstruction: "Be brief and kind.", "directives directive-1": "{\"name\":\"Refunds\"}" });
+    expect(preview.current).toEqual({ "Custom instruction": "Be brief.", "Routine: Booking": { enabled: true, steps: 4 }, "Directive: Refund tone (2)": { enabled: true } });
+    expect(preview.proposed).toEqual({
+      "Custom instruction": "Be brief and kind.",
+      "Directive: Refund tone": { when: "visitor asks about a refund", then: "Stay warm", enabled: true },
+      "Directive: Refund tone (2)": { enabled: false },
+      "More changes": "and 3 more not shown",
+    });
     expect(JSON.stringify(preview)).not.toMatch(/draftGeneration|expectedPublishedRevisionId|candidateRevisionId|publishedRevisionId/);
   });
 });

@@ -11,6 +11,7 @@ import { CONTEXT_VARIABLE_SOURCES, type AvailableContextVariable } from "../cont
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGreeting.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
+import { describeCandidateReleasePreview } from "./candidateReleasePreview.js";
 import { sameVisitorImagesSwitch } from "./agentRevisionVisitorImages.js";
 import { diffAgentRevisionSkills, redactedRevisionSkill } from "./agentRevisionSkills.js";
 import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
@@ -454,6 +455,12 @@ export class AgentRevisionService {
       // already reduce them to, rather than teaching the canonical hasher about domain types.
       contentHash: canonicalContentHash(JSON.parse(JSON.stringify(candidate.snapshot)) as unknown),
     };
+  }
+  /** The readable face of `describeCandidatePublicationReview`: named changes an operator can read, bounded to `limit` rows. */
+  async describeCandidatePublicationPreview(workspaceId: string, agentId: string, revisionId: string, limit: number) {
+    const candidate = await this.detail(workspaceId, agentId, revisionId);
+    const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
+    return describeCandidateReleasePreview(base?.snapshot ?? null, candidate.snapshot, limit);
   }
   async readCandidateReleaseChange(workspaceId: string, agentId: string, revisionId: string, input: { field: "customInstruction" | "greeting" | "directives" | "routines" | "contextVariableEnablements" | "agentSkills"; id: string; side: "before" | "after"; offset: number; limit: number }): Promise<{ text: string | null; nextOffset: number | null; totalLength: number }> {
     if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 2000) throw new AppError(400, "invalid_release_review_chunk", "Invalid release review chunk range.");

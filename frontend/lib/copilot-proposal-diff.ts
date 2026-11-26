@@ -19,6 +19,8 @@ export const displayPath = (path: string) => {
 
 const valuesEqual = (left: unknown, right: unknown) => {
   if (Object.is(left, right)) return true
+  // Absent and null both mean "no value", so a create does not list a null as a change.
+  if ((left === undefined || left === null) && (right === undefined || right === null)) return true
   try {
     return JSON.stringify(left) === JSON.stringify(right)
   } catch {

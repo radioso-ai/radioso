@@ -59,4 +59,11 @@ describe('buildReviewedOperationView', () => {
     }))
     expect(view).toMatchObject({ summary: 'Open the agent to everyone.', reach: true, agents: { names: ['Support'], hasMore: true } })
   })
+
+  it('reads a backend that has not deployed summary, reach or affected agents as having none', () => {
+    const base = detail({})
+    const { summary: _summary, reach: _reach, affectedAgents: _agents, ...older } = base.reviewedOperation!
+    const view = buildReviewedOperationView({ ...base, reviewedOperation: older as typeof base.reviewedOperation })
+    expect(view).toMatchObject({ summary: null, reach: false, agents: { names: [], hasMore: false } })
+  })
 })

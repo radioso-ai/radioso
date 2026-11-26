@@ -3,18 +3,24 @@ import { describe, expect, it } from "vitest";
 import { createDocumentReviewedOperationAdapter } from "../../../src/modules/operatorCopilot/documentReviewedOperationAdapter.js";
 
 const adapter = createDocumentReviewedOperationAdapter({ operations: {} as never });
-const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const id = (n: number) => `${String(n).padStart(8, "0")}-0000-4000-8000-000000000000`;
 const updatedAt = "2026-11-01T00:00:00.000Z";
 const hash = "a".repeat(64);
 
 describe("document reviewed operation preview", () => {
-  it("lists the titles of the documents a removal deletes, with nothing proposed in their place", async () => {
+  it("lists one row per document for a removal, even when titles collide", async () => {
     const preview = await adapter.preview("workspace-1", { sourceId: null }, {
       operation: "removal", fence: "f", unknownIds: [],
-      documents: [{ id: id(1), title: "Returns policy", updatedAt }, { id: id(2), title: "Returns policy", updatedAt }, { id: id(3), title: "Shipping", updatedAt }],
+      documents: [
+        { id: id(1), title: "Returns policy", updatedAt }, { id: id(2), title: "Returns policy", updatedAt },
+        { id: id(3), title: "Returns policy (00000001)", updatedAt }, { id: id(4), title: "Shipping", updatedAt },
+      ],
     });
-    expect(preview.targetLabel).toBe("Remove 3 documents");
-    expect(preview.current).toEqual({ "Returns policy": "Stored", "Returns policy (2)": "Stored", Shipping: "Stored" });
+    expect(preview.targetLabel).toBe("Remove 4 documents");
+    const rows = Object.keys(preview.current as object);
+    expect(rows).toHaveLength(4);
+    expect(rows).toContain("Shipping");
+    expect(rows.filter((row) => row.startsWith("Returns policy"))).toHaveLength(3);
     expect(preview.proposed).toEqual({});
   });
 

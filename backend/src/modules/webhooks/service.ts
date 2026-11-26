@@ -1,8 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
-import { describeRoutineExportUses, type RoutineExportUse } from "./routineExportUses.js";
-import { skillTargetInUseError, type SkillTargetUse, type SkillTargetUseReader } from "../../shared/domain/skillTargetUses.js";
+import { skillTargetInUseError, type RoutineExportUse, type SkillTargetUse, type SkillTargetUseReader } from "../../shared/domain/skillTargetUses.js";
 import {
   decryptField,
   encryptField,
@@ -75,7 +74,7 @@ const destinationInUse = (destinationId: string, routineUses: readonly RoutineEx
     code: "webhook_destination_in_use",
     targetLabel: "Webhook destination",
     uses: skillUses,
-    ...(routineUses.length > 0 ? { otherUses: describeRoutineExportUses(routineUses) } : {}),
+    routineUses,
     details: {
       destinationId,
       references: [

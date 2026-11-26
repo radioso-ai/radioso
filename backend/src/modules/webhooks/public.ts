@@ -14,7 +14,6 @@ export {
   type WebhookDestinationRepositoryPort,
   type WebhookDestinationRoutineReferencePort,
 } from "./service.js";
-export type { RoutineExportUse } from "./routineExportUses.js";
 export {
   DefaultWebhookDestinationResolver,
   type WebhookDestinationResolver,

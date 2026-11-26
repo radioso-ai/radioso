@@ -145,6 +145,24 @@ describeIntegration("deleting a webhook destination a published routine export u
     expect(await destinationExists(destination)).toBe(false);
   });
 
+  it("keeps the destination while the published release exports to it after the draft disabled the routine", async () => {
+    const workspaceId = await createWorkspace();
+    const destination = await createDestination(workspaceId);
+    const { agentId, routineId } = await publishedExport(workspaceId, destination);
+
+    await routines.setEnabledWithAgentDraft(workspaceId, agentId, routineId, false);
+
+    await expect(service.delete(workspaceId, destination, {})).rejects.toMatchObject({
+      statusCode: 409,
+      code: "webhook_destination_in_use",
+      message: expect.stringContaining(`still exports routine "Order intake"`),
+    });
+
+    await publish(workspaceId, agentId);
+    await service.delete(workspaceId, destination, {});
+    expect(await destinationExists(destination)).toBe(false);
+  });
+
   it("refuses in the database too, for a delete that skips the service", async () => {
     const workspaceId = await createWorkspace();
     const oldDestination = await createDestination(workspaceId);

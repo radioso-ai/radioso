@@ -9,7 +9,7 @@ import {
   type WebhookDestinationRecord,
   type WebhookDestinationRepositoryPort,
 } from "../../src/modules/webhooks/public.js";
-import type { RoutineExportUse } from "../../src/modules/webhooks/public.js";
+import type { RoutineExportUse } from "../../src/shared/domain/skillTargetUses.js";
 import type { SkillTargetUse } from "../../src/shared/domain/skillTargetUses.js";
 import { decryptField, type FieldEncryptionKeyRing } from "../../src/shared/infra/crypto/fieldEncryption.js";
 import { fixedSkillTargetUses } from "../support/skillTargetUses.js";
@@ -292,6 +292,24 @@ describe("WebhookDestinationService", () => {
       details: { destinationId: created.destination.id, references: ["lead intake", "skill:send_lead"] },
     });
     expect(repository.rows.has(created.destination.id)).toBe(true);
+  });
+
+  it("tells the operator once to publish an agent whose release holds the destination through a routine and a skill", async () => {
+    const { service } = createService({
+      routineExports: [{ ...draftExport, inDraft: false, inPublishedRelease: true }],
+      skillUses: [{ agentId: "agent-1", agentName: "Sales", skillName: "send_lead", inDraft: false, inPublishedRelease: true }],
+    });
+    const created = await service.create({
+      workspaceId,
+      name: "crm",
+      url: "https://example.com",
+      actor: { accountId: "acc-1" },
+    });
+
+    await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" })).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'Webhook destination is in use. The published version of agent "Sales" still uses skill "send_lead" and exports routine "lead intake" to it. Publish agent "Sales" first.',
+    });
   });
 
   it("translates the database's skill-reference refusal into the same conflict", async () => {

@@ -10,7 +10,7 @@ import {
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDeleteDraftResult,
 } from "../../modules/routines/public.js";
-import type { RoutineExportUse } from "../../modules/webhooks/public.js";
+import type { RoutineExportUse } from "../../shared/domain/skillTargetUses.js";
 import {
   pgVectorCosineDistance,
   toPgVector,

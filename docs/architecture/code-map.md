@@ -580,7 +580,7 @@ held by routine completion exports: `routine_export_destination_uses` (migration
 `280_webhook_destination_delete_checks_published_routine_exports.sql`) lists the
 enabled routines that export to it in each agent's draft and published release,
 the destination's delete trigger refuses on it, and the webhook service reads it
-through `RoutineExportUse` (`webhooks/routineExportUses.ts`, implemented by
+through `RoutineExportUse` (`shared/domain/skillTargetUses.ts`, implemented by
 `RoutineDefinitionRepository.listRoutineExportUses`). Each module's
 repository port and record shape own kind-specific config validation, so future
 config-backed skill kinds should not add a table or migration unless they need

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { RoutineExportUse } from "../../src/modules/webhooks/public.js";
+import type { RoutineExportUse } from "../../src/shared/domain/skillTargetUses.js";
 import type {
   AccountInvitationNotification,
   AccountInvitationNotifier,

@@ -564,6 +564,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     });
 
     expect(workbench.calls[0]).toMatchObject({ candidateRevision: frozenCandidate, executionMode: "safe_test" });
+    expect(workbench.calls[0]?.usageAttribution).toEqual({ surface: "eval", requestId: "frozen-full", conversationId: null, messageId: null });
     expect(workbench.calls[0]?.routineStartState).toBeUndefined();
   });
 });
@@ -1463,9 +1464,12 @@ describe("EvalRunService.execute (retrieval_only) case recording", () => {
       sourceAgentId: agent.id,
       executionMode: "safe_test",
       query: "what is the refund policy?",
+      // The replay's conversation is not a stored row, so the run names none: its calls insert without a dropped link.
       usageAttribution: {
         surface: "eval",
         requestId: run.id,
+        conversationId: null,
+        messageId: null,
       },
     });
     expect(run.observedOutput.answer).toBe("Replay answer.");

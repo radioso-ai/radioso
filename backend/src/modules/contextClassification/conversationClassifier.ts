@@ -11,7 +11,7 @@ import {
   type StoredConversationValue,
 } from "../context-variables/public.js";
 import { AppError } from "../../shared/domain/errors.js";
-import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
+import type { ModelCallUsageAttribution, ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
@@ -80,6 +80,8 @@ interface ClassificationRun {
   readExcerpt: () => Promise<ConversationExcerpt | null>;
   values: ConversationValueWriter;
   trigger: ClassificationTrigger;
+  /** Overrides how the run's model call is attributed, for a caller whose conversation is not a stored row. */
+  usageAttribution?: ModelCallUsageAttribution;
   signal?: AbortSignal;
 }
 
@@ -165,6 +167,7 @@ export class ConversationClassificationService implements ConversationClassifier
     stored: ReadonlyMap<string, StoredConversationValue>;
     excerpt: ConversationExcerpt;
     values: ConversationValueWriter;
+    usageAttribution?: ModelCallUsageAttribution;
     signal?: AbortSignal;
   }): Promise<ClassificationRunResult> {
     const { variables } = input;
@@ -300,6 +303,8 @@ export class ConversationClassificationService implements ConversationClassifier
       surface: "context_classification",
       operation: "classification",
       attemptKey: `context-classification:${run.conversationId}:${randomUUID()}`,
+      // The surface stays the classifier's own; only the links and the request scope are the caller's.
+      ...(run.usageAttribution ? { conversationId: run.usageAttribution.conversationId ?? null, messageId: run.usageAttribution.messageId ?? null, requestId: run.usageAttribution.requestId } : {}),
     };
     const inference = await this.deps.inference.create({ workspaceContext: { workspaceId: run.workspaceId }, modelCallContext });
     const completion = await inference.complete({

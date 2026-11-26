@@ -65,6 +65,7 @@ const turn = (overrides: Partial<Parameters<typeof classifyTestChatTurn>[0]> = {
   workspaceId: "ws-1",
   agentId: "agent-1",
   conversationId: "private-side-1",
+  attemptId: "attempt-1",
   revision: revision(["classified"]),
   history: [
     { turnId: "t0", attemptId: "a0", role: "user" as const, content: "Hello", messageId: "m0", createdAt: new Date(0) },

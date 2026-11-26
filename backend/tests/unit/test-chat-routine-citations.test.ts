@@ -114,6 +114,7 @@ const sendOnce = async (streamed: boolean) => {
     workspaceId: "ws-1",
     agentId: "agent-1",
     candidateRevision: revision,
+    attemptId: "attempt-1",
     conversationId: "test-chat-side-1",
     message: "When is the studio open?",
     history: [],

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
@@ -20,12 +21,19 @@ const backendDir = fileURLToPath(new URL("../..", import.meta.url));
 
 describeIfDatabase("operator authoring acceptance backend entry", () => {
   it("starts, listens, and exits cleanly on SIGTERM", async () => {
+    // The entry runs its own migrations, so it gets a database of its own rather than the shared,
+    // already-prepared integration database.
+    const scratchName = `acceptance_entry_${randomUUID().replaceAll("-", "").slice(0, 12)}_test`;
+    const admin = new Database(databaseUrl!);
+    await admin.query(`CREATE DATABASE ${scratchName}`);
+    const scratchUrl = new URL(databaseUrl!);
+    scratchUrl.pathname = `/${scratchName}`;
     const port = 39000 + Math.floor(Math.random() * 900);
     const child = spawn(process.execPath, ["--import", "tsx", entry], {
       cwd: backendDir,
       env: {
         ...process.env,
-        DATABASE_URL: databaseUrl,
+        DATABASE_URL: scratchUrl.toString(),
         NODE_ENV: "development",
         PORT: String(port),
         SESSION_COOKIE_SECRET: "x".repeat(40),
@@ -51,7 +59,12 @@ describeIfDatabase("operator authoring acceptance backend entry", () => {
       const [code] = await Promise.race([exited, timeout]);
       expect(code).toBe(0);
     } finally {
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await exited.catch(() => undefined);
+      }
+      await admin.query(`DROP DATABASE IF EXISTS ${scratchName} WITH (FORCE)`).catch(() => undefined);
+      await admin.close().catch(() => undefined);
     }
   }, 60_000);
 });

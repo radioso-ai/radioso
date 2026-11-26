@@ -167,6 +167,7 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
     expiresAt: string | null
     approvedAt: string | null
     clientName: string | null
+    affectedAgents: Array<{ id: string; name: string }>
     review: unknown
   } | null
 }

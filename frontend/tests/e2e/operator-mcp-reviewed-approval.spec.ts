@@ -16,7 +16,7 @@ const reviewedOperationDetail = (overrides: Record<string, unknown> = {}) => ({
   summary: "Import 3 documents.",
   status: "pending",
   targetRef: { sourceId: null },
-  preview: { current: null, proposed: null },
+  preview: { current: { name: "Order number" }, proposed: { name: "Order reference" } },
   currentVersionMatches: true,
   evidenceCases: null,
   workspaceId,
@@ -28,6 +28,7 @@ const reviewedOperationDetail = (overrides: Record<string, unknown> = {}) => ({
     expiresAt: "2026-09-27T00:15:00.000Z",
     approvedAt: null,
     clientName: "Operator test client",
+    affectedAgents: [{ id: "agent-1", name: "Support agent" }],
     review: { counts: { create: 3, replace: 0, unchanged: 0 } },
   },
   ...overrides,
@@ -59,7 +60,10 @@ test("approves a signed-in-tier reviewed operation and shows the return-to-clien
   // The effect line comes straight from the owner-declared facts, not a copilot-side guess.
   await expect(page.getByText("Goes live when applied", { exact: false })).toBeVisible();
   await expect(page.getByText("Can't be undone", { exact: false })).toBeVisible();
-  await expect(page.getByText("Review code: AB12CD34")).toBeVisible();
+  await expect(page.getByText("Review code: AB12CD34", { exact: false })).toBeVisible();
+  // The review reads as a change, not as JSON: what changes and which agents it reaches.
+  await expect(page.getByLabel("Proposal changes").getByText("Order reference")).toBeVisible();
+  await expect(page.getByText("Affects Support agent")).toBeVisible();
 
   await page.getByRole("button", { name: "Approve" }).click();
 
@@ -88,7 +92,7 @@ test("declines a signed-in-tier reviewed operation", async ({ page }) => {
 
   await page.goto(`/oauth/operator-mcp/proposal/${proposalId}`);
 
-  await expect(page.getByText("Review code: AB12CD34")).toBeVisible();
+  await expect(page.getByText("Review code: AB12CD34", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Decline" }).click();
 
   await expect(page.getByText("Declined.")).toBeVisible();
@@ -105,7 +109,7 @@ test("shows a conversation-tier operation as already confirmed, with no approval
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") {
       return route.fulfill({ json: reviewedOperationDetail({
         id: proposalId,
-        reviewedOperation: { requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false }, reviewDigest: "e".repeat(43), reviewCode: "EF56GH78", expiresAt: "2026-09-27T00:15:00.000Z", approvedAt: null, clientName: "Operator test client", review: {} },
+        reviewedOperation: { requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false }, reviewDigest: "e".repeat(43), reviewCode: "EF56GH78", expiresAt: "2026-09-27T00:15:00.000Z", approvedAt: null, clientName: "Operator test client", affectedAgents: [], review: {} },
       }) });
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled Copilot request: ${path}` } } });

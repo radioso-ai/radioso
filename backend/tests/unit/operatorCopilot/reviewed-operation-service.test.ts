@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   awaitReviewedApproval,
   canonicalReviewedOperationDigest,
+  reviewedAffectedAgents,
   reviewedApprovalOutstanding,
   type ReviewedApprovalPollState,
 } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
@@ -139,5 +140,26 @@ describe("awaitReviewedApproval", () => {
 
     expect(result).toEqual({ outcome: "aborted", waitedMs: 1_000 });
     expect(checkApproval).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("reviewedAffectedAgents", () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+
+  it("names the target agent of an agent-scoped review", () => {
+    expect(reviewedAffectedAgents({ target: { agentId: a, agentName: "Support" }, changes: [] })).toEqual([{ id: a, name: "Support" }]);
+  });
+
+  it("lists every agent a live definition change reaches, once each", () => {
+    expect(reviewedAffectedAgents({
+      target: { agentId: a },
+      definition: { usedBy: [{ agentId: b, agentName: "Sales", uses: "both" }, { agentId: a, agentName: "Support", uses: "draft" }] },
+    })).toEqual([{ id: b, name: "Sales" }, { id: a, name: "Support" }]);
+  });
+
+  it("returns nothing for a review that names no agents", () => {
+    expect(reviewedAffectedAgents({ counts: { create: 3 } })).toEqual([]);
+    expect(reviewedAffectedAgents(null)).toEqual([]);
   });
 });

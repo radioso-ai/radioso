@@ -33,6 +33,29 @@ export const presentReviewedOperationSnapshot = (value: unknown): { readonly vis
   return { visible, full: fullReview };
 };
 
+interface ReviewedAffectedAgent { readonly id: string; readonly name: string }
+
+const agentOf = (value: unknown): ReviewedAffectedAgent | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const name = record.agentName;
+  return typeof record.agentId === "string" && typeof name === "string" && name.length > 0 ? { id: record.agentId, name } : null;
+};
+
+/**
+ * The agents a stored review says its change reaches: the one an agent-scoped review targets and
+ * each user of a live workspace-level definition. Read from the review's own named agents so the
+ * approval page answers "which agents" without a second lookup; a review that names none yields [].
+ */
+export const reviewedAffectedAgents = (snapshot: unknown): ReviewedAffectedAgent[] => {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
+  const review = snapshot as Record<string, unknown>;
+  const definition = review.definition && typeof review.definition === "object" ? review.definition as Record<string, unknown> : null;
+  const candidates = [agentOf(review.target), ...(Array.isArray(definition?.usedBy) ? definition.usedBy.map(agentOf) : [])];
+  const seen = new Set<string>();
+  return candidates.filter((agent): agent is ReviewedAffectedAgent => agent !== null && !seen.has(agent.id) && Boolean(seen.add(agent.id)));
+};
+
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;
 

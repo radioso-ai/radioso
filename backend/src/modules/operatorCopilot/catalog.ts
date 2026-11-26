@@ -28,7 +28,10 @@ export const hasCurrentCopilotToolPermissions = async (
   context: CopilotToolInvocationContext,
 ): Promise<boolean> => hasCurrentCopilotPermissions(context, descriptor.requiredPermissions);
 
-const linkedOutputSchema = z.object({ dashboardUrl: z.string().startsWith("/") }).passthrough();
+const linkedOutputSchema = z.object({ dashboardUrl: z.string().startsWith("/").optional() }).passthrough();
+
+/** Outcomes after which a proposal's approval page has nothing left to ask. */
+const SETTLED_PROPOSAL_STATUSES: ReadonlySet<string> = new Set(["applied", "stale", "failed", "refused", "uncertain", "dismissed"]);
 
 const isEntityResolution = (
   description: CopilotEntityDescription<unknown>,
@@ -98,7 +101,10 @@ const enrichSuccessfulOutput = (input: {
     && typeof input.output.proposalId === "string"
     ? input.output.proposalId
     : null;
-  const enrichedOutput = {
+  // A settled operation has nothing left to approve and no single object page to name, so its
+  // result carries no link rather than one to an approval page that no longer asks anything.
+  const settled = proposalId !== null && typeof input.output.status === "string" && SETTLED_PROPOSAL_STATUSES.has(input.output.status);
+  const enrichedOutput = settled ? { ...input.output } : {
     ...input.output,
     dashboardUrl: proposalId
       ? buildOperatorMcpProposalLink(proposalId)

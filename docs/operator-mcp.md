@@ -73,6 +73,8 @@ A client that declares URL-mode elicitation on protocol `2026-07-28` opens the a
 
 Prepared results include `confirmation`. For `signed_in_approval`, it includes the approval link. Calling execution before approval returns `approval_required` with that link, delivered as a URL elicitation to a client that declared it. Approval expires with the 15-minute reviewed operation and cannot be transferred to another digest or user.
 
+The approval page reads like a dashboard proposal: what the change is, whether it goes live, can't be undone or uses quota, which agents it affects, and a field-by-field comparison of current and proposed values. The full stored review sits behind "Show full review". `execute_reviewed_proposal` results carry a `dashboardUrl` to that page only while the result is `approval_required`. Once an operation is applied, stale, failed, refused or uncertain, nothing is left to approve and the result has no `dashboardUrl`.
+
 Routine edits and publication are separate operations. Applying a routine or retrieval proposal changes the relevant draft according to its existing lifecycle; publishing requires a separately prepared candidate and confirmation. A changed draft, target, or expired review needs a fresh preparation.
 
 Only reviewed MCP proposals created by this flow can use the reviewed execution, outcome, or cancellation tools. Existing dashboard and conversation proposals remain on their original surfaces.

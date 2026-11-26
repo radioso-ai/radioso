@@ -19,7 +19,7 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
-import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOperation.js";
+import { presentReviewedOperationSnapshot, reviewCodeFor, reviewedAffectedAgents } from "./reviewedOperation.js";
 import type { CopilotEmptyStateService } from "./services/emptyStateService.js";
 import { workspaceSetupStatePermissions } from "./tools/workspaceSetupState.js";
 
@@ -145,6 +145,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
           expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
           approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
           clientName: client?.clientName ?? null,
+          affectedAgents: reviewedAffectedAgents(result.proposal.reviewSnapshot),
           review: presentReviewedOperationSnapshot(result.proposal.reviewSnapshot)?.visible ?? result.proposal.reviewSnapshot,
         } : null,
       });

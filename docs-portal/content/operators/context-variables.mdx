@@ -560,10 +560,10 @@ one of them, and on no other channel: a customer id never names them, and a
 number never reaches a resolver skill. An id that is not a number, or one that
 starts with `0` or `00` instead of its country code, returns `400`.
 
-The id is the number as WhatsApp reports it, its `wa_id`. In some countries,
-Brazil and Mexico among them, that can differ by a digit or two from the number
-people dial, and a value set under the dialled number is never read. Take the
-id from WhatsApp's own webhook when you have it.
+The id is the number as WhatsApp reports it, its `wa_id`. A value is read only
+when its id matches that `wa_id` digit for digit, so take the id from
+WhatsApp's own webhook when you have it. A sender who uses a WhatsApp username
+and shares no phone number has no number values.
 
 ### Who set a value
 

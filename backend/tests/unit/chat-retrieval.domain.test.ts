@@ -1481,7 +1481,7 @@ describe("chat retrieval domain", () => {
     ]);
   });
 
-  it("fills from the same document up to the same-document cap when no alternates are available", () => {
+  it("fills the answer's room past the same-document cap once no other document's passage is waiting", () => {
     const selector = new PromptContextSelectorService(500);
 
     const result = selector.select({
@@ -1514,7 +1514,91 @@ describe("chat retrieval domain", () => {
       ],
     });
 
-    expect(result.map((context) => context.chunkId)).toEqual(["overview-1", "overview-2"]);
+    expect(result.map((context) => context.chunkId)).toEqual(["overview-1", "overview-2", "overview-3"]);
+  });
+
+  it("keeps a sectioned page's later section when weaker documents leave the answer room to spare (#1876)", () => {
+    const selector = new PromptContextSelectorService(4_800);
+    const pricingPage = { documentId: "pricing", title: "Lumenfold plans and pricing" };
+
+    const result = selector.select({
+      topK: 12,
+      contexts: [
+        // Two passages that name the asked plan in passing rank first: they hold every query word.
+        rerankedCandidate({
+          ...pricingPage,
+          chunkId: "pricing-models",
+          content: "On Lumenfold's keys, every plan uses one answer model. On Planet the customer can add their own model keys.",
+          score: 0.99,
+          rerankPosition: 0,
+        }),
+        rerankedCandidate({
+          ...pricingPage,
+          chunkId: "pricing-star",
+          content: "### Star\n\nStar is the tier above Planet, by agreement. Top-ups are not available on the free plan.",
+          score: 0.98,
+          rerankPosition: 1,
+        }),
+        rerankedCandidate({
+          chunkId: "other-pricing",
+          documentId: "other-pricing",
+          title: "Plans and Pricing",
+          content: "The Pro plan costs $49 per month and includes unlimited documents.",
+          score: 0.8,
+          rerankPosition: 2,
+        }),
+        // The section that states the asked plan's price ranks third on its own page.
+        rerankedCandidate({
+          ...pricingPage,
+          chunkId: "pricing-satellite-planet",
+          content: "### Satellite\n\nSatellite costs €149 a month.\n\n### Planet\n\nPlanet costs €579 a month, or €5,790 a year.",
+          score: 0.77,
+          rerankPosition: 3,
+        }),
+        rerankedCandidate({
+          chunkId: "refunds",
+          documentId: "refunds",
+          title: "Refund Policy",
+          content: "Customers may request a full refund within 30 days of purchase.",
+          score: 0.69,
+          rerankPosition: 4,
+        }),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual([
+      "pricing-models",
+      "other-pricing",
+      "refunds",
+      "pricing-star",
+      "pricing-satellite-planet",
+    ]);
+  });
+
+  it("still gives a contested slot to another document's passage before a third passage of one page", () => {
+    const selector = new PromptContextSelectorService(4_800);
+    const passage = (chunkId: string, documentId: string, score: number, rerankPosition: number) =>
+      rerankedCandidate({
+        chunkId,
+        documentId,
+        title: documentId,
+        content: `Passage ${chunkId}, long enough to be read as evidence.`,
+        score,
+        rerankPosition,
+      });
+
+    const result = selector.select({
+      topK: 4,
+      contexts: [
+        passage("page-1", "long-page", 0.99, 0),
+        passage("page-2", "long-page", 0.98, 1),
+        passage("page-3", "long-page", 0.97, 2),
+        passage("other-1", "other-page", 0.5, 3),
+        passage("other-2", "other-page", 0.4, 4),
+      ],
+    });
+
+    expect(result.map((context) => context.chunkId)).toEqual(["page-1", "other-1", "page-2", "other-2"]);
   });
 
   it("caps the candidate set sent to semantic reranking independently from final contexts", async () => {

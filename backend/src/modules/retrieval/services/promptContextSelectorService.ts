@@ -10,23 +10,52 @@ const DEFAULT_MAX_CONTEXTS_PER_DOCUMENT = RETRIEVAL_BEHAVIOR.promptContextMaxPer
 const DEFAULT_MAX_CHARS_PER_CONTEXT = RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext;
 const DEFAULT_MIN_USEFUL_CHARS = RETRIEVAL_BEHAVIOR.promptContextMinUsefulChars;
 
+interface SelectionPass {
+  allowSiblingContext: boolean;
+  allowLowInformation: boolean;
+  allowPastDocumentCap: boolean;
+}
+
+const CAPPED_PASSES: readonly SelectionPass[] = [
+  { allowSiblingContext: false, allowLowInformation: false, allowPastDocumentCap: false },
+  { allowSiblingContext: true, allowLowInformation: false, allowPastDocumentCap: false },
+  { allowSiblingContext: true, allowLowInformation: true, allowPastDocumentCap: false },
+];
+
+// Runs after every capped pass, so another document's passage always goes in first.
+const PAST_DOCUMENT_CAP_PASS: SelectionPass = {
+  allowSiblingContext: true,
+  allowLowInformation: false,
+  allowPastDocumentCap: true,
+};
+
 export class PromptContextSelectorService {
   constructor(private readonly tokenBudget: number = DEFAULT_CONTEXT_TOKEN_BUDGET) {}
 
+  /**
+   * The answer's passages, up to `topK`. The same-document cap only hands room to other
+   * documents: once none of theirs is left to take, a document's further passages fill what
+   * remains, so the section that answers a question about one long page is not dropped while
+   * the answer has room for it.
+   */
   select(input: {
     contexts: RerankedCandidate[];
     topK: number;
   }): FinalPromptContext[] {
-    return this.selectInStages([{ contexts: input.contexts, until: input.topK }]);
+    return this.selectInStages([{ contexts: input.contexts, until: input.topK, fillPastDocumentCap: true }]);
   }
 
   /**
    * Selects from each stage's contexts in turn until the whole selection reaches that stage's
    * `until`. The stages share one token budget, one count per document, and one duplicate
    * check, so a caller can set aside room for one group of contexts before another fills the
-   * rest. Within a stage, each document's first passage is taken before any second one.
+   * rest. Within a stage, each document's first passage is taken before any second one, and a
+   * document gives no more than the same-document cap unless the stage asks to
+   * `fillPastDocumentCap`: then, last, its further passages take the stage's remaining room.
    */
-  selectInStages(stages: ReadonlyArray<{ contexts: RerankedCandidate[]; until: number }>): FinalPromptContext[] {
+  selectInStages(
+    stages: ReadonlyArray<{ contexts: RerankedCandidate[]; until: number; fillPastDocumentCap?: boolean }>,
+  ): FinalPromptContext[] {
     const selected: FinalPromptContext[] = [];
     const selectedChunkIds = new Set<string>();
     const seenNormalizedContents = new Set<string>();
@@ -35,7 +64,7 @@ export class PromptContextSelectorService {
 
     const trySelect = (
       context: RerankedCandidate,
-      options: { allowSiblingContext: boolean; allowLowInformation: boolean },
+      options: SelectionPass,
     ): boolean => {
       if (selectedChunkIds.has(context.chunkId)) {
         return false;
@@ -51,7 +80,7 @@ export class PromptContextSelectorService {
         return false;
       }
 
-      if (documentCount >= DEFAULT_MAX_CONTEXTS_PER_DOCUMENT) {
+      if (documentCount >= DEFAULT_MAX_CONTEXTS_PER_DOCUMENT && !options.allowPastDocumentCap) {
         return false;
       }
 
@@ -89,13 +118,8 @@ export class PromptContextSelectorService {
       return true;
     };
 
-    const passes = [
-      { allowSiblingContext: false, allowLowInformation: false },
-      { allowSiblingContext: true, allowLowInformation: false },
-      { allowSiblingContext: true, allowLowInformation: true },
-    ];
     for (const stage of stages) {
-      for (const pass of passes) {
+      for (const pass of stage.fillPastDocumentCap ? [...CAPPED_PASSES, PAST_DOCUMENT_CAP_PASS] : CAPPED_PASSES) {
         for (const context of stage.contexts) {
           if (selected.length >= stage.until) {
             break;

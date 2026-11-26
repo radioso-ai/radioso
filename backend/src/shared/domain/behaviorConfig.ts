@@ -283,8 +283,10 @@ export const RETRIEVAL_BEHAVIOR = {
   // The longest `Attributes:` line one passage carries (dates, author, and the facts its
   // document states about itself), so its text keeps at least 700 of the 900 characters.
   promptContextMaxAttributeChars: 200,
-  // Caps how many of the final prompt contexts may come from the same document, so one
-  // long document cannot crowd out every other source in the answer.
+  // Caps how many of the final prompt contexts may come from the same document while another
+  // document's passage is waiting, so one long document cannot crowd out every other source in
+  // the answer. Once none is left, a plain answer fills its remaining room past the cap, so the
+  // section answering a question about one long page is not dropped (#1876).
   promptContextMaxPerDocument: 2,
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,

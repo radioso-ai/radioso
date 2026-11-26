@@ -25,7 +25,7 @@
  *     and is published when the run includes review or voice cases. A run that would publish over
  *     a named agent's live revision is refused unless --allow-named-agent-republish is passed.
  *     The reply block cases run in a workspace of their own beside the target, in its account,
- *     seeded with their pages alone (`ensureReplyBlockTarget`).
+ *     seeded with their pages alone (`ensureReplyBlockTarget`); the sectioned page cases do too.
  *   - A non-production NODE_ENV when the run includes review cases: publishing needs the skills
  *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
  *     destination for the length of the publication only.
@@ -68,6 +68,7 @@ import { conversationQualityCorpus, type ConversationQualityDocument } from "../
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
 import { replyBlockDocuments } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
 import { conversationQualityRoutines } from "../tests/fixtures/conversation-quality/routines.js";
+import { sectionedPageDocuments } from "../tests/fixtures/conversation-quality/sectionedPageCases.js";
 import { VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
 import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
@@ -87,6 +88,7 @@ import {
   seedReplyBlockImages,
   seedVoiceSettings,
   ROUTINE_CARD_EVAL_WORKSPACE_NAME,
+  SECTIONED_PAGE_EVAL_WORKSPACE_NAME,
   TOOL_CARD_EVAL_WORKSPACE_NAME,
 } from "./evalRunnerSupport.js";
 import { seedRoutineCardAgent, seedToolCardAgent, toolCardStubModule } from "./evalToolCards.js";
@@ -570,6 +572,44 @@ const runReplyBlockCases = async (
 };
 
 /**
+ * Runs the sectioned page cases in their own workspace beside the target, seeded with their pricing
+ * page and plan-change help page alone, on that workspace's agent, which carries the seed directives
+ * as the target's agent does.
+ */
+const runSectionedPageCases = async (
+  deps: Deps,
+  flags: Flags,
+  cases: ConversationQualityCase[],
+  judge: SuiteJudge | undefined,
+): Promise<SuiteResult> => {
+  const target = await ensureReplyBlockTarget(
+    { workspaces: deps.workspaceRepository, workspaceService: deps.workspaceService, agentService: deps.agentService },
+    flags.workspaceId,
+    SECTIONED_PAGE_EVAL_WORKSPACE_NAME,
+  );
+  console.log(`Seeding the sectioned pages onto agent ${target.agentId} in workspace ${target.workspaceId}…`);
+  const documentIds = await ingestDocuments(deps, target.workspaceId, sectionedPageDocuments);
+  await seedDirectives(deps, target.workspaceId, target.agentId);
+  await waitForDocumentsReady(deps, target.workspaceId, documentIds);
+
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
+  }
+  const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    baselineAgentConfig: projectInternalAgentConfig(agent),
+  });
+  return runConversationQualitySuiteSampled(remapIds(cases, documentIds, new Map()), port, {
+    workspaceId: target.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(judge ? { judge } : {}),
+  });
+};
+
+/**
  * Runs the tool-card cases on an agent of their own beside the target, whose every turn is bound
  * to the stub catalog search (`evalToolCards.ts`): the reply is written from the search's records.
  */
@@ -651,7 +691,7 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   if (flags.samples > 1) {
     console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
   }
-  const { shared, replyBlocks, toolCards, routineCards } = partitionCasesByCorpus(run.cases);
+  const { shared, replyBlocks, toolCards, routineCards, sectionedPages } = partitionCasesByCorpus(run.cases);
   const parts: SuiteResult[] = [];
   if (shared.length > 0) {
     parts.push(await runSharedCases(deps, flags, { ...run, cases: shared }, suiteJudge?.judge));
@@ -664,6 +704,9 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   }
   if (routineCards.length > 0) {
     parts.push(await runRoutineCardCases(deps, flags, routineCards, suiteJudge?.judge));
+  }
+  if (sectionedPages.length > 0) {
+    parts.push(await runSectionedPageCases(deps, flags, sectionedPages, suiteJudge?.judge));
   }
   const reports = parts.flatMap((part) => part.reports);
   const outcomes = parts.flatMap((part) => part.outcomes);

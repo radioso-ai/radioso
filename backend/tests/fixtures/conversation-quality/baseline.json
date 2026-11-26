@@ -391,6 +391,11 @@
       "status": "fail",
       "passRate": 0.8,
       "samples": 5
+    },
+    "retrieval-sectioned-page-later-section-figure": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     }
   }
 }

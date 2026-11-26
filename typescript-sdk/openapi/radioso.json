@@ -66150,6 +66150,25 @@
                             "null"
                           ]
                         },
+                        "affectedAgents": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          }
+                        },
                         "review": {}
                       },
                       "required": [
@@ -66159,7 +66178,8 @@
                         "reviewCode",
                         "expiresAt",
                         "approvedAt",
-                        "clientName"
+                        "clientName",
+                        "affectedAgents"
                       ]
                     }
                   },

@@ -44118,6 +44118,19 @@ paths:
                         type:
                           - string
                           - "null"
+                      affectedAgents:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            name:
+                              type: string
+                          required:
+                            - id
+                            - name
                       review: {}
                     required:
                       - requirement
@@ -44127,6 +44140,7 @@ paths:
                       - expiresAt
                       - approvedAt
                       - clientName
+                      - affectedAgents
                 required:
                   - id
                   - workspaceId

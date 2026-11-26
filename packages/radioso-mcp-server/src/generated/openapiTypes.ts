@@ -34026,6 +34026,11 @@ export interface operations {
                             expiresAt: string | null;
                             approvedAt: string | null;
                             clientName: string | null;
+                            affectedAgents: {
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                            }[];
                             review?: unknown;
                         } | null;
                     };

@@ -8,10 +8,14 @@ import type { ConversationQualityDocument } from "./corpus.js";
  * in passing and hold every query word, so they rank above the section that states its price; an
  * answer that never reads the section declines, or quotes the price one heading above it.
  *
- * The page runs in a workspace of its own, seeded with it alone: it lists plans of a product the
+ * A help page on changing plans competes with it: it names Planet and every query word in passing
+ * and states no price, so the answer's room is shared between two documents, as in a real workspace.
+ *
+ * The two pages run in a workspace of their own, seeded with them alone: they describe a product the
  * shared corpus's own pricing page does not sell, so every "which plans" case there would read both.
  */
 export const SECTIONED_PLANS_DOC_ID = "22222222-2222-4222-8222-222222222218";
+const PLAN_CHANGE_HELP_DOC_ID = "22222222-2222-4222-8222-222222222219";
 
 export const sectionedPageDocuments: ConversationQualityDocument[] = [
   {
@@ -111,6 +115,21 @@ export const sectionedPageDocuments: ConversationQualityDocument[] = [
       "## How to get started",
       "",
       "Create a workspace at https://app.lumenfold.example. The free plan needs no card. To self-host, follow https://docs.lumenfold.example/quickstarts/run-locally. To talk to the team, email hello@lumenfold.example.",
+    ].join("\n"),
+  },
+  {
+    id: PLAN_CHANGE_HELP_DOC_ID,
+    title: "Changing your Lumenfold plan",
+    content: [
+      "# Changing your Lumenfold plan",
+      "",
+      "You can change plan at any time from Settings → Billing. Moving up, for example from Satellite to Planet, takes effect at once, and the difference is charged pro rata for the rest of the month. Moving down takes effect at the next renewal, so a workspace on the Planet plan keeps its Planet limits until then.",
+      "",
+      "Agents, documents, directives and routines stay as they are when the plan changes. If the workspace holds more content than the new plan allows, nothing is deleted: new uploads wait until the content fits or the plan moves up again.",
+      "",
+      "Annual plans renew on the date they started. Switching between monthly and annual billing on the same plan takes effect at the next renewal.",
+      "",
+      "Questions about an invoice go to billing@lumenfold.example.",
     ].join("\n"),
   },
 ];

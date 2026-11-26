@@ -1,7 +1,7 @@
 ---
 title: "Call Radioso from n8n, Zapier and Make"
 description: "Create a service-account token, test the connection, and ask an agent, search knowledge, or add a document from an HTTP step in n8n, Zapier or Make."
-last_updated: 2026-11-19
+last_updated: 2026-11-26
 ---
 
 import { Callout, Tabs } from 'nextra/components'
@@ -113,7 +113,7 @@ The permission this route needs is `workspace.chat.use`, which both Member and A
 }
 ```
 
-`query` is required (up to 4,000 characters). `topK` is optional, from 1 to 100. The `results` array holds one entry per passage with `documentId`, `chunkId`, `title`, `content` and `metadata`. Pass `agentId` to search only what that agent can see, and `metadataFilter` to narrow by document metadata.
+`query` is required (up to 4,000 characters). `topK` is optional, from 1 to 100. The `results` array holds one entry per passage with `documentId`, `chunkId`, `title`, `content` and `metadata`. The passages are the ones an answer would read: each matching document's first and second passages come before a third from any one document, and when no other document is left, one long page fills the remaining results. An MCP client calling this route gets the same results. Pass `agentId` to search only what that agent can see, and `metadataFilter` to narrow by document metadata.
 
 When you want a written answer instead of passages, `POST /api/v1/retrieval/answer` takes the same `query` and returns `answer`, `citations` and a `validation.status` of `supported`, `unsupported` or `not_checked`. It answers from your documents alone, with no agent persona or directives. Both routes need `workspace.retrieval.query`.
 

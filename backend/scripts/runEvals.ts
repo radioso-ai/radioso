@@ -573,7 +573,8 @@ const runReplyBlockCases = async (
 
 /**
  * Runs the sectioned page cases in their own workspace beside the target, seeded with their pricing
- * page alone, on that workspace's agent, which carries the seed directives as the target's agent does.
+ * page and plan-change help page alone, on that workspace's agent, which carries the seed directives
+ * as the target's agent does.
  */
 const runSectionedPageCases = async (
   deps: Deps,

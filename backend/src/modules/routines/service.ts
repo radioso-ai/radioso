@@ -39,7 +39,6 @@ export interface RoutineDefinitionRepositoryPort {
   updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDraftUpdate>;
   setEnabledWithAgentDraft(workspaceId: string, agentId: string, id: string, enabled: boolean): Promise<RoutineDefinition | null>;
   deleteDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDeleteDraftResult>;
-  listRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
   findNameVersionOneOccupant?(agentId: string, name: string): Promise<{ id: string; updatedAt: Date } | null>;
 }
 

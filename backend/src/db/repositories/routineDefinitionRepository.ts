@@ -10,6 +10,7 @@ import {
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDeleteDraftResult,
 } from "../../modules/routines/public.js";
+import type { RoutineExportUse } from "../../modules/webhooks/public.js";
 import {
   pgVectorCosineDistance,
   toPgVector,
@@ -631,27 +632,29 @@ export class RoutineDefinitionRepository {
   }
 
   /**
-   * Routines that reference a webhook destination, so deleting it cannot orphan one. Matches the
-   * `enabled`-gated delete-block trigger on `workspace_webhook_destinations` (migration 182):
-   * a disabled routine no longer holds the destination in service, so it must not appear here
-   * either, or the friendly pre-check would report a block the trigger itself would not enforce.
+   * The routines that export to a webhook destination, so deleting it cannot orphan one: those the
+   * agent's draft exports and those its published release still does, which is what completed
+   * conversations deliver to. Read through `routine_export_destination_uses`, the function the
+   * destination's delete trigger refuses on, so the 409 names what the database refuses for.
    */
-  async listRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {
-    const rows = await this.db
-      .selectFrom("routine_completion_export as ce")
-      .innerJoin("routine_definition as d", "d.id", "ce.definition_id")
-      .innerJoin("agents as a", "a.id", "d.agent_id")
-      .select("d.name")
-      .where("a.workspace_id", "=", workspaceId)
-      .where("d.enabled", "=", true)
-      .where("ce.enabled", "=", true)
-      .where(sql<boolean>`lower(ce.destination_ref) = lower(${destinationId})`)
-      .where(canonicalLineageRow)
-      .orderBy("d.name", "asc")
-      .orderBy("d.version", "asc")
-      .orderBy("d.id", "asc")
-      .execute();
-    return rows.map((row) => row.name);
+  async listRoutineExportUses(workspaceId: string, destinationId: string): Promise<RoutineExportUse[]> {
+    const { rows } = await sql<{
+      agent_id: string;
+      agent_name: string;
+      routine_name: string;
+      in_draft: boolean;
+      in_published_release: boolean;
+    }>`
+      SELECT agent_id, agent_name, routine_name, in_draft, in_published_release
+      FROM routine_export_destination_uses(${workspaceId}::uuid, ${destinationId})
+    `.execute(this.db);
+    return rows.map((row) => ({
+      agentId: row.agent_id,
+      agentName: row.agent_name,
+      routineName: row.routine_name,
+      inDraft: row.in_draft,
+      inPublishedRelease: row.in_published_release,
+    }));
   }
 
   /**

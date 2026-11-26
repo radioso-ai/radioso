@@ -797,7 +797,7 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     await database.query(`DELETE FROM agents WHERE id = $1`, [localAgent]).catch(() => undefined);
   });
 
-  it("listRoutineNamesReferencingDestination matches enabled exports case-insensitively", async () => {
+  it("listRoutineExportUses matches enabled exports case-insensitively", async () => {
     // The completion export's destination_ref must reference a real workspace webhook
     // destination (a database trigger validates it), so seed one and key off its id.
     const destinationId = randomUUID();
@@ -814,14 +814,11 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
       }),
     );
 
-    const names = await repository.listRoutineNamesReferencingDestination(
-      workspaceId,
-      destinationId.toUpperCase(),
-    );
-    expect(names).toContain("Export flow");
+    const uses = await repository.listRoutineExportUses(workspaceId, destinationId.toUpperCase());
+    expect(uses.map((use) => use.routineName)).toContain("Export flow");
   });
 
-  it("listRoutineNamesReferencingDestination excludes a disabled routine's reference", async () => {
+  it("listRoutineExportUses excludes a disabled routine's reference", async () => {
     // The friendly pre-check in WebhookDestinationService.delete calls this before ever
     // attempting the delete; it must agree with the DB trigger (migration 182) on which
     // routines actually hold a destination in service, or it would report a block the trigger
@@ -839,7 +836,7 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
         completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: destinationId },
       }),
     );
-    expect(await repository.listRoutineNamesReferencingDestination(workspaceId, destinationId))
+    expect((await repository.listRoutineExportUses(workspaceId, destinationId)).map((use) => use.routineName))
       .toContain("Excluded flow");
 
     await repository.updateDraft(agentId, created.id, baseDraft({
@@ -848,7 +845,7 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
       completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: destinationId },
     }));
 
-    expect(await repository.listRoutineNamesReferencingDestination(workspaceId, destinationId))
+    expect((await repository.listRoutineExportUses(workspaceId, destinationId)).map((use) => use.routineName))
       .not.toContain("Excluded flow");
   });
 

@@ -575,7 +575,13 @@ each target's service reads it through `SkillTargetUseReader`
 `agentSkills/targetUses.ts`, wired in `app/server/builders/integrations.ts`) to
 answer a `409` that names each agent and skill, and maps the trigger's refusal
 with `isForeignKeyViolationOn` (`shared/infra/kysely/sqlHelpers.ts`). The MCP
-connection's `usedByAgents` reads the same uses. Each module's
+connection's `usedByAgents` reads the same uses. A webhook destination is also
+held by routine completion exports: `routine_export_destination_uses` (migration
+`280_webhook_destination_delete_checks_published_routine_exports.sql`) lists the
+enabled routines that export to it in each agent's draft and published release,
+the destination's delete trigger refuses on it, and the webhook service reads it
+through `RoutineExportUse` (`webhooks/routineExportUses.ts`, implemented by
+`RoutineDefinitionRepository.listRoutineExportUses`). Each module's
 repository port and record shape own kind-specific config validation, so future
 config-backed skill kinds should not add a table or migration unless they need
 genuinely relational state outside the shared skill definition.

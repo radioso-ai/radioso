@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import { unstoredConversationUsage, type ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { AgentRevision } from "../../agents/public.js";
 import {
   CONTEXT_VALUE_WRITER_KINDS,
@@ -60,9 +60,7 @@ export interface TestChatAttributesPreview {
  * How a Test Chat attempt's model calls are metered: under Test Chat's own surface, named by the
  * attempt rather than by the side's conversation and message, which the ledger holds no row for.
  */
-export const testChatUsageAttribution = (attemptId: string): ModelCallUsageAttribution => ({
-  surface: "test_execution", requestId: attemptId, conversationId: null, messageId: null,
-});
+export const testChatUsageAttribution = (attemptId: string): ModelCallUsageAttribution => unstoredConversationUsage("test_execution", attemptId);
 
 /** The classifier's entry for a caller that holds the conversation itself. */
 type TestChatClassifier = Pick<ConversationClassificationService, "readDefinitions" | "classifyTranscript">;

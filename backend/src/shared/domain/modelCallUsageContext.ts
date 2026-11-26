@@ -27,3 +27,8 @@ export interface ModelCallUsageContext {
  * to one attempt, so a retried turn's calls are counted again.
  */
 export type ModelCallUsageAttribution = Pick<ModelCallUsageContext, "surface" | "requestId" | "conversationId" | "messageId">;
+
+/** Attribution for a replayed turn whose conversation and messages are not stored rows (Test Chat, Workbench replay, eval runs), scoped by the run's own id. */
+export const unstoredConversationUsage = (surface: string, requestId: string): ModelCallUsageAttribution => ({
+  surface, requestId, conversationId: null, messageId: null,
+});

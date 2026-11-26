@@ -14,6 +14,7 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
+| `sectionedPageCases.ts` | the sectioned page case and its own corpus: an invented product's markdown pricing page with one heading per plan (see [Sectioned page case](#sectioned-page-case)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -169,6 +170,22 @@ capture would leave them: a cover as its page's primary image, a photo anchored 
 first chunk. `tests/unit/eval-suite/reply-block-cases.test.ts` drives each case through
 the chat pipeline with scripted replies, and shows that a case without the capability gets no
 `present` field and no block.
+
+## Sectioned page case
+
+`retrieval-sectioned-page-later-section-figure` (#1876) asks "How much does the Planet plan
+cost?" over a markdown pricing page that gives each plan a heading and a section opening with the
+plan's price. Planet is the third plan, and its section shares a chunk with the one before it.
+Two other passages of the page name Planet in passing and hold every query word, so they rank
+above the section that states its price. The case checks that the answer quotes 579 and not
+Satellite's 149, the price one heading above. An answer that only reads the two passages
+declines instead, and one that reads the section before Planet's without Planet's own can quote
+Satellite's price under Planet's name.
+
+The page sells plans of an invented product, and the shared corpus has a pricing page of its own,
+so the case runs in a workspace beside the target named `Conversation-quality sectioned pages`,
+seeded with this page alone, on an agent that carries the seed directives
+(`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`).
 
 ## Slot-filling cases
 

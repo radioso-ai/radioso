@@ -127,7 +127,12 @@ imports from `services/` or `infra/`.
   then caps the final prompt at `finalContextTopK` passages (a range answer's
   quotas allow up to `temporal.dateRangeListingContextTopK`),
   `promptContextMaxPerDocument` per document, each at most
-  `promptContextMaxCharsPerContext` characters. `vectorTopK` sets fetch depth
+  `promptContextMaxCharsPerContext` characters. For the plain answer
+  (`select`), that per-document cap only hands room to other documents: once
+  none of their passages is left, a document's further passages fill the
+  remaining room in pool order (`fillPastDocumentCap`), so a question about one
+  section of a long page keeps that section when cross-references on the same
+  page outrank it. A range answer's staged quotas keep the cap. `vectorTopK` sets fetch depth
   before candidate preparation filters, boosts, and merges; the pool size
   bounds what reaches the answer.
 - Date questions: the rewrite returns `temporalQueryMode` and an optional

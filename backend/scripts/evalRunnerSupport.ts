@@ -21,6 +21,7 @@ import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
 import { routineCardCases } from "../tests/fixtures/conversation-quality/routineCardCases.js";
+import { sectionedPageCases } from "../tests/fixtures/conversation-quality/sectionedPageCases.js";
 import { toolCardCases } from "../tests/fixtures/conversation-quality/toolCardCases.js";
 import { DOCUMENT_IMAGE_RENDITION_WIDTHS } from "../src/modules/documents/contracts/documentImages.js";
 import { workspaceStoragePrefix } from "../src/modules/documents/contracts/storage.js";
@@ -286,7 +287,9 @@ export const runThenClose = async <T>(
  * workspace of their own, seeded with their pages alone; every other case runs in the run's
  * target, which never holds those pages. The pages carry `Source:` addresses, which the
  * invented-link checks assume no document has, and hiking books, which a mountain-course
- * question could otherwise retrieve.
+ * question could otherwise retrieve. The sectioned page cases run in one of their own too: their
+ * pricing page sells another product's plans, which every "which plans" question in the target
+ * would otherwise read beside the target's own.
  */
 export const partitionCasesByCorpus = (
   cases: readonly ConversationQualityCase[],
@@ -295,19 +298,25 @@ export const partitionCasesByCorpus = (
   replyBlocks: ConversationQualityCase[];
   toolCards: ConversationQualityCase[];
   routineCards: ConversationQualityCase[];
+  sectionedPages: ConversationQualityCase[];
 } => {
   const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
   // The tool-card cases bind every turn of their agent to a search, so they need an agent of their own.
   const toolCardIds = new Set(toolCardCases.map((evalCase) => evalCase.id));
   // The routine-card cases need the search as a routine's tool step, with no directive claiming the turn.
   const routineCardIds = new Set(routineCardCases.map((evalCase) => evalCase.id));
+  const sectionedPageIds = new Set(sectionedPageCases.map((evalCase) => evalCase.id));
   const apart = (evalCase: ConversationQualityCase) =>
-    replyBlockIds.has(evalCase.id) || toolCardIds.has(evalCase.id) || routineCardIds.has(evalCase.id);
+    replyBlockIds.has(evalCase.id)
+    || toolCardIds.has(evalCase.id)
+    || routineCardIds.has(evalCase.id)
+    || sectionedPageIds.has(evalCase.id);
   return {
     shared: cases.filter((evalCase) => !apart(evalCase)),
     replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
     toolCards: cases.filter((evalCase) => toolCardIds.has(evalCase.id)),
     routineCards: cases.filter((evalCase) => routineCardIds.has(evalCase.id)),
+    sectionedPages: cases.filter((evalCase) => sectionedPageIds.has(evalCase.id)),
   };
 };
 
@@ -319,6 +328,9 @@ export const TOOL_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality tool cards";
 
 /** The name of the workspace the routine-card cases run in. */
 export const ROUTINE_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality routine cards";
+
+/** The name of the workspace the sectioned page cases run in. */
+export const SECTIONED_PAGE_EVAL_WORKSPACE_NAME = "Conversation-quality sectioned pages";
 
 /** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
 interface ReplyBlockTargetPorts {

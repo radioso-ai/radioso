@@ -23,7 +23,7 @@ export type SkillTargetType =
   | "slack_installation";
 
 /** Where an agent holds a target: in its draft, in its published release, or both. */
-export interface AgentTargetUse {
+interface AgentTargetUse {
   readonly agentId: string;
   readonly agentName: string;
   /** The draft holds the target: deleting or retargeting what holds it frees it. */
@@ -143,7 +143,7 @@ const describeHolders = (all: readonly Holder[]): string => {
  * it and needs publishing. One message covers both, so an agent is told to publish once. An agent
  * the draft sentence already says to publish is not told to again.
  */
-export const describeTargetUses = (
+const describeTargetUses = (
   skillUses: readonly SkillTargetUse[],
   routineUses: readonly RoutineExportUse[] = [],
 ): string => describeHolders(holders(skillUses, routineUses));

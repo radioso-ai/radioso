@@ -62,8 +62,11 @@ describe('buildReviewedOperationView', () => {
 
   it('reads a backend that has not deployed summary, reach or affected agents as having none', () => {
     const base = detail({})
-    const { summary: _summary, reach: _reach, affectedAgents: _agents, ...older } = base.reviewedOperation!
-    const view = buildReviewedOperationView({ ...base, reviewedOperation: older as typeof base.reviewedOperation })
+    const older = { ...base.reviewedOperation } as Partial<ReviewedOperation>
+    delete older.summary
+    delete older.reach
+    delete older.affectedAgents
+    const view = buildReviewedOperationView({ ...base, reviewedOperation: older as ReviewedOperation })
     expect(view).toMatchObject({ summary: null, reach: false, agents: { names: [], hasMore: false } })
   })
 })

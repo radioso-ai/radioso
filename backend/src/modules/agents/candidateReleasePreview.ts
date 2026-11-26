@@ -5,7 +5,7 @@ import { canonicalGreeting, readAgentRevisionGreeting } from "./agentRevisionGre
 import { diffAgentRevisionSkills } from "./agentRevisionSkills.js";
 
 /** One thing publishing changes, named and valued for a person: a missing side means it is added or removed. */
-export interface CandidatePreviewRow {
+interface CandidatePreviewRow {
   readonly label: string;
   readonly before: unknown;
   readonly after: unknown;

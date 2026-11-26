@@ -15,12 +15,12 @@ const TAGS = ["Privacy"];
 
 const registerPrivacySchemas = (registry: OpenAPIRegistry) => {
   const DataSubjectIdentitySchema = registry.register("DataSubjectIdentity", dataSubjectIdentitySchema.openapi({
-    description: "One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id.",
+    description: "One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. `whatsapp_number`: a WhatsApp number, keyed by its digits, country code first.",
   }));
   const DataSubjectIdentityCandidateSchema = registry.register("DataSubjectIdentityCandidate", z.object({
     identity: DataSubjectIdentitySchema,
-    channel: z.string().openapi({ description: "The conversation channel the identity is on: `web`, `email` or `slack`." }),
-    label: z.string().openapi({ description: "How the channel knows the person: a verified customer id, an address, or a Slack member id." }),
+    channel: z.string().openapi({ description: "The conversation channel the identity is on: `web`, `email`, `slack` or `whatsapp`." }),
+    label: z.string().openapi({ description: "How the channel knows the person: a verified customer id, an address, a Slack member id, or a WhatsApp number (`+15550100101`)." }),
     conversationCount: z.number().int().min(0),
     firstSeenAt: z.string().datetime().nullable(),
     lastSeenAt: z.string().datetime().nullable(),
@@ -40,7 +40,7 @@ const registerPrivacySchemas = (registry: OpenAPIRegistry) => {
     workspaceId: z.string().uuid(),
     identities: z.array(DataSubjectIdentitySchema),
     sections: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))).openapi({
-      description: "Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list.",
+      description: "Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `whatsapp_contacts`, `whatsapp_messages`, `answer_feedback`. A section with nothing for the subject is an empty list.",
     }),
   }));
   const DataSubjectErasureSchema = registry.register("DataSubjectErasure", z.object({
@@ -76,14 +76,14 @@ export const registerPrivacyPaths = (
   const json = (schema: z.ZodTypeAny) => ({ "application/json": { schema } });
   const errorResponse = (description: string) => ({ description, content: json(schemas.ErrorResponseSchema) });
   const common = {
-    400: errorResponse("Request validation failed"),
+    400: errorResponse("Request validation failed, or a WhatsApp number is not its country code and number, such as one written with a leading `0` or `00`"),
     401: errorResponse("Authentication required"),
     403: errorResponse("Caller lacks workspace.history.delete"),
   };
   const identitiesBody = { body: { content: json(privacy.DataSubjectIdentitiesRequestSchema), required: true } };
   const selectionBody = { body: { content: json(privacy.DataSubjectSelectionRequestSchema), required: true } };
   const selectionRefusals = {
-    400: errorResponse("Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one."),
+    400: errorResponse("Request validation failed, a `whatsapp_number` key that is not a country code and number, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one."),
     413: errorResponse(
       `\`data_subject_request_too_large\`: the identities reach more than ${DATA_SUBJECT_MAX_CONVERSATIONS} conversations. \`details\` carries \`conversationCount\` and \`maxConversations\`; list the conversations and send them at most ${DATA_SUBJECT_MAX_CONVERSATIONS} at a time as \`conversationIds\`.`,
     ),
@@ -94,7 +94,7 @@ export const registerPrivacyPaths = (
     path: "/api/v1/privacy/data-subjects/lookup",
     tags: TAGS,
     summary: "Find a data subject's identities",
-    description: "Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.",
+    description: "Returns every identity whose verified customer id, email address, Slack member id or WhatsApp number is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.",
     operationId: "lookupDataSubject",
     security: sec,
     request: { body: { content: json(privacy.DataSubjectLookupRequestSchema), required: true } },
@@ -124,7 +124,7 @@ export const registerPrivacyPaths = (
     path: "/api/v1/privacy/data-subjects/export",
     tags: TAGS,
     summary: "Export a data subject's data",
-    description: `One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With \`conversationIds\`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values, so identities that reach more than ${DATA_SUBJECT_MAX_CONVERSATIONS} conversations export in pages. Records one \`data_subject.exported\` audit event with identity references and counts per section, never content.`,
+    description: `One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With \`conversationIds\`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values; what is kept by WhatsApp number is in the one document that lists the reached conversation whose id sorts first. So identities that reach more than ${DATA_SUBJECT_MAX_CONVERSATIONS} conversations export in pages. Records one \`data_subject.exported\` audit event with identity references and counts per section, never content.`,
     operationId: "exportDataSubject",
     security: sec,
     request: selectionBody,
@@ -140,7 +140,7 @@ export const registerPrivacyPaths = (
     path: "/api/v1/privacy/data-subjects/erase",
     tags: TAGS,
     summary: "Permanently erase a data subject's data",
-    description: `Erases each web visitor among the confirmed identities as \`DELETE /api/v1/history/visitors/{visitorId}\` does, then every other conversation the identities reach as \`DELETE /api/v1/history/chat/{conversationId}\` does, each with its own audit event, and records one \`data_subject.erased\` audit event for the request with identity records and totals. One already erased is skipped. With \`conversationIds\`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; once the identities reach at most ${DATA_SUBJECT_MAX_CONVERSATIONS}, a request without the list erases the rest and the visitors. There is no undo.`,
+    description: `Erases each web visitor among the confirmed identities as \`DELETE /api/v1/history/visitors/{visitorId}\` does, then every other conversation the identities reach as \`DELETE /api/v1/history/chat/{conversationId}\` does, each with its own audit event, and records one \`data_subject.erased\` audit event for the request with identity records and totals. One already erased is skipped. With \`conversationIds\`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; a WhatsApp number's logged messages and values go with the request that lists the reached conversation whose id sorts first. Once the identities reach at most ${DATA_SUBJECT_MAX_CONVERSATIONS}, a request without the list erases the rest and the visitors. There is no undo.`,
     operationId: "eraseDataSubject",
     security: sec,
     request: selectionBody,

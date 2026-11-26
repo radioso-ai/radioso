@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { RoutineExportUse } from "../../src/shared/domain/skillTargetUses.js";
 import type {
   AccountInvitationNotification,
   AccountInvitationNotifier,
@@ -1906,17 +1907,23 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return result;
   }
 
-  async listRoutineNamesReferencingDestination(
+  async listRoutineExportUses(
     _workspaceId: string,
     destinationId: string,
-  ): Promise<string[]> {
+  ): Promise<RoutineExportUse[]> {
     return [...this.items.values()]
       .filter((definition) =>
         definition.completionExport?.enabled &&
         definition.completionExport.destinationRef === destinationId
       )
-      .map((definition) => definition.name)
-      .sort((left, right) => left.localeCompare(right));
+      .map((definition) => ({
+        agentId: definition.agentId,
+        agentName: definition.agentId,
+        routineName: definition.name,
+        inDraft: true,
+        inPublishedRelease: false,
+      }))
+      .sort((left, right) => left.routineName.localeCompare(right.routineName));
   }
 }
 

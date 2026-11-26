@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Kysely, PostgresDialect, sql, type CompiledQuery } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ConversationAttributeReads } from "../../src/db/repositories/conversationAttributeReads.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
@@ -28,7 +28,7 @@ const option = (key: string): ContextVariableOption => ({
 describeIntegration("a conversation's attributes and the attribute filter (Postgres, #1884)", () => {
   const database = new Database(integrationDatabaseUrl);
   const variables = new ContextVariableRepository(database.kysely, null);
-  const attributes = new ConversationAttributeService(new ConversationAttributeReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)));
+  const attributes = new ConversationAttributeService(new ConversationAttributeReads(database.kysely, conversationReadSources(database.kysely)));
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
@@ -85,7 +85,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     await variables.upsertValue(region.id, { type: "workspace", id: workspaceId }, "eu", api);
     await variables.upsertValue(region.id, { type: "agent", id: agentId }, "us", api);
 
-    const read = await attributes.read(workspaceId, { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId });
+    const read = await attributes.read(workspaceId, { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, sourceChannel: null });
 
     expect(read.map(({ name, value, scope, writtenBy }) => ({ name, value, scope, writtenBy }))).toEqual(
       [
@@ -94,7 +94,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
       ].sort((left, right) => left.name.localeCompare(right.name)),
     );
     expect(read.find((attribute) => attribute.name === topic.name)?.option).toEqual({ label: "Billing", archived: false });
-    await expect(attributes.read(randomUUID(), { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId })).resolves.toEqual([]);
+    await expect(attributes.read(randomUUID(), { conversationId, chatSessionId: sessionId, verifiedCustomerId: customerId, sourceChannel: null })).resolves.toEqual([]);
   });
 
   it("redacts a Private value read from Postgres, and keeps who set it", async () => {
@@ -105,7 +105,7 @@ describeIntegration("a conversation's attributes and the attribute filter (Postg
     const conversationId = await createConversation();
     await variables.upsertValue(careNeed.id, { type: "conversation", id: conversationId }, "dental", api);
 
-    const [attribute] = await attributes.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null });
+    const [attribute] = await attributes.read(workspaceId, { conversationId, chatSessionId: null, verifiedCustomerId: null, sourceChannel: null });
 
     expect(attribute).toEqual({
       name: careNeed.name, valueType: "enum", value: null, redacted: true, scope: "conversation", writtenBy: api, updatedAt: expect.any(Date), classified: false,

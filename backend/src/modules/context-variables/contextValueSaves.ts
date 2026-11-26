@@ -1,3 +1,4 @@
+import type { ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { countContextValueWrite } from "./conversationValueWriter.js";
@@ -17,8 +18,8 @@ export type SaveTargetDefinition = Pick<
 >;
 
 /**
- * What a save did. `no_person_key`: it named the person of a conversation bound to no verified
- * person. `gone`: no attribute has the name any more. `not_enabled`: the conversation's release does
+ * What a save did. `no_person_key`: it named the person of a conversation with no person key, no
+ * verified customer and no person its channel attests. `gone`: no attribute has the name any more. `not_enabled`: the conversation's release does
  * not keep the attribute's value. `unchanged`: the attribute already held the value, from the same
  * writer or from a teammate or the host, who keep it. `kept` cannot happen for a writer the
  * overwrite rule lets replace anything, and is reported for any other.
@@ -36,11 +37,13 @@ export type ContextValueSaveOutcome =
 
 /**
  * What a save reads of its conversation, in the caller's transaction: the verified customer its row
- * is bound to, the one every reader of a person value and a consent withdrawal key on, and the
+ * is bound to, the one every reader of a person value and a consent withdrawal key on; the person
+ * its channel keeps a key for, a WhatsApp number, for a save whose turn carried none; and the
  * attributes the release it is pinned to keeps (`keepsStoredValue`).
  */
 export interface ConversationSaveContext {
   readonly verifiedCustomerId: string | null;
+  readonly channelPersonKey: ChannelPersonKey | null;
   readonly keptVariableIds: ReadonlySet<string>;
 }
 
@@ -63,8 +66,9 @@ export interface ContextValueSaveStore {
   /** The workspace's variable of that name, key-shared for the rest of the transaction; null when none has it. */
   lockDefinitionNamedIn(trx: Db, workspaceId: string, name: string): Promise<SaveTargetDefinition | null>;
   /**
-   * Stores the value under the overwrite rule and records a conversation value's change in the same
-   * transaction, naming `routineId`. The caller's commit wakes delivery.
+   * Stores the value under the overwrite rule and records its change in the same transaction, on
+   * `conversationId`, the conversation it was saved for, naming `routineId`. The caller's commit
+   * wakes delivery.
    */
   storeIn(trx: Db, write: {
     definition: SaveTargetDefinition;
@@ -72,6 +76,7 @@ export interface ContextValueSaveStore {
     data: unknown;
     writtenBy: ContextValueWriter;
     routineId: string | null;
+    conversationId: string;
   }): Promise<"written" | "unchanged" | "kept">;
 }
 
@@ -95,6 +100,8 @@ export interface ContextValueSaver {
   saveAll(trx: Db, input: {
     workspaceId: string;
     conversationId: string;
+    /** The person key the turn's channel attested, which a person save goes to when no verified customer is bound. */
+    channelPersonKey?: ChannelPersonKey | null;
     writtenBy: ContextValueWriter;
     /** The routine whose values these are, named on each change event; null for any other writer. */
     routineId: string | null;
@@ -108,8 +115,9 @@ const saveOrderKey = (request: ContextValueSaveRequest): string => `${request.va
 /**
  * Saves values a visitor gave, a routine's slot values at its ending, by attribute name, in a
  * transaction the caller owns, so the values and their change events commit with what the caller
- * commits or not at all. A person save goes to the customer the conversation's row is bound to, and
- * only an attribute the conversation's release keeps is written. Saves run by attribute and scope,
+ * commits or not at all. A person save goes to the customer the conversation's row is bound to, or
+ * else to the person its channel attests, and only an attribute the conversation's release keeps is
+ * written. Saves run by attribute and scope,
  * so two turns of one person lock its rows in one order. Each is counted by writer kind and outcome
  * (`failed` for a thrown one, which fails the caller's transaction), never by variable or value, as
  * it runs: a save its caller's transaction later rolls back stays counted.
@@ -149,13 +157,19 @@ export class ContextValueSaves implements ContextValueSaver {
     context: ConversationSaveContext,
     request: ContextValueSaveRequest,
   ): Promise<ContextValueSaveOutcome> {
-    const scope = conversationSaveScope(request.scope, { conversationId: input.conversationId, verifiedCustomerId: context.verifiedCustomerId });
+    const scope = conversationSaveScope(request.scope, {
+      conversationId: input.conversationId,
+      verifiedCustomerId: context.verifiedCustomerId,
+      channelPersonKey: input.channelPersonKey ?? context.channelPersonKey,
+    });
     if (!scope) return "no_person_key";
     const definition = await this.deps.store.lockDefinitionNamedIn(trx, input.workspaceId, request.variableName);
     if (!definition) return "gone";
     if (!context.keptVariableIds.has(definition.id)) return "not_enabled";
     const refusal = visitorValueRefusal(definition, request);
     if (refusal) return refusal;
-    return this.deps.store.storeIn(trx, { definition, scope, data: request.data, writtenBy: input.writtenBy, routineId: input.routineId });
+    return this.deps.store.storeIn(trx, {
+      definition, scope, data: request.data, writtenBy: input.writtenBy, routineId: input.routineId, conversationId: input.conversationId,
+    });
   }
 }

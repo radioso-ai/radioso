@@ -283,6 +283,8 @@ export interface TrustedTestExecutionRunnerPort {
     agentId: string;
     candidateRevision: AgentRevision;
     conversationId: string;
+    /** This attempt of the turn; a retry runs under a new one, so its model calls are metered again. */
+    attemptId: string;
     message: string;
     /** The card the message picks, named by the assistant message in `history` that showed it; the runner reads the card from that message. */
     itemSelection?: ItemSelection;
@@ -852,7 +854,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, ...(identity.selection ? { itemSelection: identity.selection } : {}), ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}), history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
+      const turn = this.options.runner.stream({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, attemptId: identity.attemptId, message: claim.attempt.message, ...(identity.selection ? { itemSelection: identity.selection } : {}), ...(claim.attempt.userMessageId ? { userMessageId: claim.attempt.userMessageId } : {}), history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId, userTimeZone: identity.userTimeZone, signal: identity.signal });
       let streamed = "";
       let step = await turn.next();
       while (!step.done) {

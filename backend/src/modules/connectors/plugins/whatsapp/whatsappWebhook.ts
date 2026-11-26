@@ -7,6 +7,7 @@ import type { ConnectorLogger, ConnectorStatePort } from "@radioso/connector-api
 import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import type { WhatsAppInboundMessage, WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
 import type { WhatsAppPersistencePort } from "./whatsappPersistence.js";
+import { extractNumberChanges, type WhatsAppNumberChanges } from "./whatsappNumberChanges.js";
 import { readTap } from "./whatsappReplyTaps.js";
 
 interface WhatsAppWebhookRouterOptions {
@@ -14,6 +15,8 @@ interface WhatsAppWebhookRouterOptions {
   state: Pick<ConnectorStatePort, "getConfig">;
   persistence: Pick<WhatsAppPersistencePort, "createInboundMessageLog">;
   messageHandler: Pick<WhatsAppMessageHandler, "handleInboundMessage" | "handleFailedStatus">;
+  /** Forgets what is kept under a number its sender left; without it, a number change is not acted on. */
+  numberChanges?: Pick<WhatsAppNumberChanges, "forget">;
 }
 
 interface WebhookRequest extends Request {
@@ -162,6 +165,7 @@ export const createWhatsAppWebhookRouter = ({
   state,
   persistence,
   messageHandler,
+  numberChanges,
 }: WhatsAppWebhookRouterOptions): Router => {
   const router = Router({ mergeParams: true });
 
@@ -275,6 +279,17 @@ export const createWhatsAppWebhookRouter = ({
               },
               "WhatsApp inbound message processing failed",
             );
+          });
+        });
+      }
+
+      for (const change of numberChanges ? extractNumberChanges(req.body) : []) {
+        if (change.phoneNumberId && change.phoneNumberId !== config.config.phone_number_id) {
+          continue;
+        }
+        queueMicrotask(() => {
+          void numberChanges?.forget({ workspaceId, previousNumber: change.previousNumber }).catch((error) => {
+            logger.error({ workspaceId, errorClass: errorClassOf(error) }, "WhatsApp number change could not be acted on");
           });
         });
       }

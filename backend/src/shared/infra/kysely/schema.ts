@@ -653,6 +653,13 @@ export interface ConnectorWhatsappContacts {
   workspace_id: string;
 }
 
+export interface ConnectorWhatsappConversations {
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  wa_id: string;
+  workspace_id: string;
+}
+
 export interface ConnectorWhatsappMessageLog {
   created_at: Generated<Timestamp>;
   direction: string;
@@ -2459,6 +2466,7 @@ export interface DB {
   connector_migrations: ConnectorMigrations;
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
+  connector_whatsapp_conversations: ConnectorWhatsappConversations;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
   context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;

@@ -2,7 +2,9 @@ import type { ConnectorPlugin } from "@radioso/connector-api";
 
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import type { ChannelPersonDataEraser } from "../../../shared/domain/conversationDataErasure.js";
 import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import { getSlackReadiness, type RequiredSlackEnvVar } from "../../slack/public.js";
 import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
@@ -19,6 +21,13 @@ export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
 export { buildSlackInboundJobComposition } from "./slack/slackInboundJobComposition.js";
 export { SlackUserIdentityFinder } from "./slack/slackPersistence.js";
 export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
+export { WHATSAPP_CONNECTOR_ID } from "./whatsapp/whatsappPlugin.js";
+export {
+  WhatsAppContactExporter,
+  WhatsAppConversationPersonKeys,
+  WhatsAppMessageLogExporter,
+  WhatsAppNumberIdentityFinder,
+} from "./whatsapp/whatsappNumbers.js";
 
 import type { WorkspaceEventRecorder } from "../../../shared/domain/workspaceEventLog.js";
 
@@ -33,6 +42,10 @@ interface BuiltInConnectorOptions {
   };
   /** The email channel's plugin, built by its composition only when an email provider is configured. */
   email?: ConnectorPlugin | null;
+  whatsapp?: {
+    /** Erases the person values kept under a number; without it a number change is not acted on. */
+    personValues?: (db: Db) => ChannelPersonDataEraser;
+  };
 }
 
 /**
@@ -41,7 +54,7 @@ interface BuiltInConnectorOptions {
  */
 export const registerBuiltInConnectors = (registry: ConnectorRegistry, options: BuiltInConnectorOptions = {}): void => {
   registry.register(new WordpressConnector());
-  registry.register(new WhatsAppPlugin());
+  registry.register(new WhatsAppPlugin({ personValues: options.whatsapp?.personValues }));
   if (getSlackReadiness({
     SLACK_OAUTH_CLIENT_ID: options.slack?.SLACK_OAUTH_CLIENT_ID,
     SLACK_OAUTH_CLIENT_SECRET: options.slack?.SLACK_OAUTH_CLIENT_SECRET,

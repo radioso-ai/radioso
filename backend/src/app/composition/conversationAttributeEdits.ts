@@ -1,4 +1,3 @@
-import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { ConversationAttributeReads } from "../../db/repositories/conversationAttributeReads.js";
 import type { AuditEventInput } from "../../modules/audit/contracts/index.js";
 import {
@@ -12,6 +11,7 @@ import type { BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { conversationReadSources } from "./conversationReadSources.js";
 
 /** An edit as an audit event: the ids, the action and the teammate, never the value. */
 export const conversationAttributeEditAudit = (audit: { record(event: AuditEventInput): Promise<void> }): AttributeEditAudit => ({
@@ -43,7 +43,7 @@ export const buildConversationAttributeEdits = (deps: {
   metrics: MetricsRegistry | null;
   logger: AppLogger;
 }): ConversationAttributeEditService => {
-  const reads = new ConversationAttributeReads(deps.db, new AgentRevisionRuntimeRepository(deps.db));
+  const reads = new ConversationAttributeReads(deps.db, conversationReadSources(deps.db));
   // The run the classifier makes after a turn, keyed by conversation: a reset that lands while one
   // waits folds into it.
   const reclassification: ConversationReclassification = {

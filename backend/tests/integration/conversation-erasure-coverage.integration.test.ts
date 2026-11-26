@@ -191,6 +191,11 @@ const contextValueScopeCoverage: Record<string, ErasureCoverage> = {
     reason: "Keyed by a chat session; erased once no remaining conversation of the workspace carries the session.",
   },
   customer: { kind: "eraser", owner: "context-variables", reason: "Keyed by a verified customer id; erased with that customer." },
+  whatsapp_contact: {
+    kind: "eraser",
+    owner: "context-variables",
+    reason: "Keyed by a WhatsApp number; erased, through the WhatsApp eraser, with the number's latest conversation.",
+  },
   agent: { kind: "not_a_conversation", reason: "The operator's own configuration for an agent." },
   workspace: { kind: "not_a_conversation", reason: "The operator's own configuration for the workspace; cascades with its variables." },
 };

@@ -171,6 +171,7 @@ const testChatAtCards = () => {
       workspaceId: "ws-1",
       agentId: "agent-1",
       candidateRevision: revision,
+      attemptId: "attempt-1",
       conversationId: "test-chat-side-1",
       message,
       ...(itemSelection ? { itemSelection } : {}),

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { unstoredConversationUsage, type ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { AgentRevision } from "../../agents/public.js";
 import {
   CONTEXT_VALUE_WRITER_KINDS,
@@ -54,6 +55,12 @@ export interface TestChatAttributesPreview {
   outcome: ClassificationRunOutcome;
   values: Array<{ name: string; value: string | null; label?: string; writtenBy: "classifier" | "operator" | null }>;
 }
+
+/**
+ * How a Test Chat attempt's model calls are metered: under Test Chat's own surface, named by the
+ * attempt rather than by the side's conversation and message, which the ledger holds no row for.
+ */
+export const testChatUsageAttribution = (attemptId: string): ModelCallUsageAttribution => unstoredConversationUsage("test_execution", attemptId);
 
 /** The classifier's entry for a caller that holds the conversation itself. */
 type TestChatClassifier = Pick<ConversationClassificationService, "readDefinitions" | "classifyTranscript">;
@@ -117,6 +124,8 @@ export const classifyTestChatTurn = async (input: {
   previous: TestChatAttributeState;
   /** The sensitive slots the replayed turn's routine held. */
   sensitiveSlotKeys: readonly string[];
+  /** The attempt the run belongs to: its model call is metered under it, with no conversation link. */
+  attemptId: string;
   signal?: AbortSignal;
   timeoutMs?: number;
 }): Promise<{ state: TestChatAttributeState; trace: TestChatAttributesPreview } | null> => {
@@ -160,6 +169,7 @@ const classify = async (input: {
   previous: readonly TestChatAttributeValue[];
   held: Map<string, TestChatAttributeValue>;
   withheldMessageIds: readonly string[];
+  attemptId: string;
   signal?: AbortSignal;
   timeoutMs?: number;
 }): Promise<ClassificationRunOutcome> => {
@@ -190,6 +200,7 @@ const classify = async (input: {
       withheldCount: input.history.filter((entry) => entry.role === "user").length - sendable.length,
     },
     values,
+    usageAttribution: testChatUsageAttribution(input.attemptId),
     signal: input.signal ? AbortSignal.any([input.signal, timeout]) : timeout,
   });
   // A provider that ignores the abort still cannot hold the turn past the bound.

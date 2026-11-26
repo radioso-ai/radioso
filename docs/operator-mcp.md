@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-11-24
+last_updated: 2026-11-26
 ---
 
 # Operator MCP OAuth Access
@@ -60,7 +60,7 @@ An MCP client can set up a Choice attribute the AI fills from the conversation, 
 3. `prepare_context_variable` with `kind: "set_enablement"`, the `variableId`, and `enablement: { "source": "classified", "surfacing": "on_reference" }`. This goes to the agent's draft (`enablement.lifecycle: "agent_draft"`, `publicationRequired: true`), confirmed in the conversation like a directive change, then `execute_reviewed_proposal`. The preparation is refused, with the reason, for an attribute that is not a Choice, is Private (`sensitivity: sensitive`) or treated as proof (`trustTier: signed`), and for a ninth classified attribute on one agent. `context_variables` then shows the enablement's `source` as `classified`.
 4. `send_test_chat_message` on the saved draft, then `test_chat_turn_trace` for a turn. Its `turnTrace.attributes` lists each classified attribute's value after the turn (an option key, or `null`), its label, and `writtenBy`: `classifier` for the AI, `operator` for a Test Chat sample, which the AI never replaces.
 5. `prepare_agent_publication`, approve its review, then `execute_reviewed_proposal` to publish. New customer conversations, which run on that release, are then classified by a background job after each committed turn; a conversation pinned to an earlier release keeps that release's attributes.
-6. `conversation_history_search` with `attribute: { "name": "topic", "option": "billing" }` lists the customer conversations whose own `topic` is that option, archived options included; `"option": "_not_set"` lists those with no `topic` of their own. The name matches exactly as written. A name no attribute has, an option it lacks, or an attribute that is not a Choice or is Private is refused with the reason. `conversation_transcript` returns the conversation's `attributes`: each one's `name`, `valueType`, `value` (an option key for a Choice), `option` (`label` and `archived`, or `null`), `scope` (`conversation`, `session` or `customer`, whichever is most specific), `writtenBy`, `updatedAt`, and `classified`, which is `true` when the conversation's agent fills the attribute with the AI. A Private attribute comes back with `redacted: true` and a `value` of `null`. A value longer than 500 characters comes back as its first 500, as text, with `truncated: true`. Agent-wide and workspace-wide values are defaults and are left out.
+6. `conversation_history_search` with `attribute: { "name": "topic", "option": "billing" }` lists the customer conversations whose own `topic` is that option, archived options included; `"option": "_not_set"` lists those with no `topic` of their own. The name matches exactly as written. A name no attribute has, an option it lacks, or an attribute that is not a Choice or is Private is refused with the reason. `conversation_transcript` returns the conversation's `attributes`: each one's `name`, `valueType`, `value` (an option key for a Choice), `option` (`label` and `archived`, or `null`), `scope` (`conversation`, `session`, `customer` or `whatsapp_contact`, whichever is most specific; a `whatsapp_contact` value is the WhatsApp number's, and the number itself is never returned), `writtenBy`, `updatedAt`, and `classified`, which is `true` when the conversation's agent fills the attribute with the AI. A Private attribute comes back with `redacted: true` and a `value` of `null`. A value longer than 500 characters comes back as its first 500, as text, with `truncated: true`. Agent-wide and workspace-wide values are defaults and are left out.
 7. `set_conversation_attribute` with the conversation's id, `name: "topic"` and `value: "shipping"`, an option key, corrects what the AI chose. The value becomes the conversation's own, written by `operator` with the teammate's user id, and the AI leaves it alone from then on; setting the option the AI already picked keeps it that way without changing it. `reset_conversation_attribute` with the conversation's id and `name` deletes it; when the conversation's agent classifies the attribute, the AI is asked to fill it again and the result says `classificationQueued: true`. Both refuse a Private attribute. A set also refuses an attribute that is not a Choice, and an option the attribute lacks, naming its option keys; a reset clears a value of any other type, such as a wrong `party_size` a routine saved. Both return the attribute as `conversation_transcript` then reads it, or `null` when nothing holds a value.
 
 `kind: "edit"` changes an existing definition the same way as a create, with `definition.usedBy` listing the agents it reaches, each with `uses`: `draft`, `published` or `both`, since a definition is read live by an agent's draft and its published release alike; a type change on an attribute that has values is refused. Ray in the dashboard drafts the same changes with `propose_context_variable`, which a person applies from its card. Test Chat classifies in its own runner, once the answer is out, because a Test Chat side is not a stored conversation.
@@ -94,6 +94,22 @@ https://mcp.example.com/.well-known/oauth-protected-resource/operator/mcp
 ```
 
 Authorization-server metadata comes from the configured Radioso issuer at `/.well-known/oauth-authorization-server`. The resource URL is byte-for-byte significant; a trailing slash is a different audience and is rejected.
+
+## Sign in from a local client
+
+A client identifies itself with a `client_id` that is the HTTPS URL of its metadata document, and Radioso fetches that document from a public address. Outside production, Radioso also accepts a `client_id` on a loopback host over plain HTTP, so a client running on your machine can serve its own document:
+
+```text
+http://127.0.0.1:55103/client.json
+```
+
+The document has the same fields as any other: `client_id` (byte-for-byte the URL it is served from), `client_name`, `redirect_uris` on a loopback host, `response_types` of `["code"]`, `grant_types` of `["authorization_code"]`, and `token_endpoint_auth_method` of `none`. Radioso fetches it directly, follows no redirects, and checks it the way it checks a public document. Only `127.0.0.1`, `[::1]`, and `localhost` qualify; any other HTTP `client_id` is rejected.
+
+The mode follows `NODE_ENV`, the same setting that allows HTTP Operator MCP URLs. A backend started with `NODE_ENV=development` (the default) accepts loopback client ids; a backend with `NODE_ENV=test` or `NODE_ENV=production` rejects them and keeps fetching client metadata only from public HTTPS addresses. Set the `OPERATOR_MCP_*` values from [Deployment](#deployment) with a loopback resource and issuer URL, start the backend, and a client that sends the authorize request with its loopback `client_id` receives a redirect to the consent page.
+
+Run the backend on the same host as the client (`cd backend && pnpm run dev`), not in the `./run-dev.sh` Docker stack: inside that stack `127.0.0.1` is the container itself, so it cannot reach a client on your machine.
+
+A client that already publishes an HTTPS metadata document, such as Claude's connector, works unchanged on a development backend that can reach the internet. Radioso supports Client ID Metadata Documents and preregistered clients; it does not offer Dynamic Client Registration, so a client that can only register itself dynamically needs to be given a metadata document URL instead.
 
 ## Deployment
 

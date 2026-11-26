@@ -29,7 +29,10 @@ export const buildOperatorMcpServices = (input: {
   operatorMcpClientMetadataOptions?: Pick<OperatorMcpClientMetadataServiceOptions, "preregisteredClients">;
 }) => {
   const repository = new OperatorMcpAuthorizationRepository(input.database.kysely);
-  const metadata = createOperatorMcpClientMetadataService(input.operatorMcpClientMetadataOptions);
+  const metadata = createOperatorMcpClientMetadataService({
+    ...input.operatorMcpClientMetadataOptions,
+    allowLoopbackClientIds: input.env.NODE_ENV === "development",
+  });
   const operatorMcpClientResolver = {
     resolve: async (clientId: string, redirectUri: string) => repository.persistClientSnapshot(
       await metadata.resolve({ clientId, redirectUri }),

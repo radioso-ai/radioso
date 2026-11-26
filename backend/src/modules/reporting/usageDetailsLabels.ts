@@ -20,6 +20,7 @@ const contextPrefix = (input: {
   conversationSourceChannel?: string | null;
 }): string | null => {
   if (input.surface === "eval") return "Evaluation";
+  if (input.surface === "test_execution") return "Test chat";
   if (input.conversationSourceChannel === "authenticated_chat") return "Test chat";
   if (input.conversationSourceChannel === "workbench_replay") return "Workbench replay";
   return null;

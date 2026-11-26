@@ -28,7 +28,7 @@ export const registerHistoryAttributePaths = (
     summary: "Set a conversation's attribute",
     description: [
       "Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`).",
-      "The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here.",
+      "The AI never replaces a teammate's value. A value the visitor's session, verified customer or WhatsApp number holds stays as it is, and this conversation reads the one set here.",
       "Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`.",
       "Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe.",
       "A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value.",
@@ -58,7 +58,7 @@ export const registerHistoryAttributePaths = (
     summary: "Reset a conversation's attribute",
     description: [
       "Deletes the value this conversation holds for an attribute of any type that is not Private, whoever wrote it: a teammate's, the AI's, an API token's or a routine's. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too.",
-      "The conversation then reads what the visitor's session or verified customer holds, if anything.",
+      "The conversation then reads what the visitor's session, verified customer or WhatsApp number holds, if anything.",
       "A conversation with no value of its own changes nothing and answers `200` the same way.",
       "A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value.",
       refusals,

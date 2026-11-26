@@ -10,7 +10,7 @@ import {
 } from "../../agents/public.js";
 import type { WorkbenchReplayResult } from "../../chat/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import { unstoredConversationUsage, type ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { frozenTestValueInput, type ResolvedVariableInput } from "../../context-variables/public.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
@@ -297,7 +297,7 @@ export class EvalRunService {
           // preceding user turn, so historical replay deliberately never feeds it as pre-turn
           // state; no pre-turn routine/clarification/directive-firing snapshot exists.
           preResolvedHostVariables: input.testValues,
-          usageAttribution: { surface: "eval", requestId: input.correlationId },
+          usageAttribution: unstoredConversationUsage("eval", input.correlationId),
           conversationSummary: replay.conversationSummary,
         });
         observed = {
@@ -636,7 +636,7 @@ export class EvalRunService {
         // routine one or more steps ahead. There is no per-turn pre-turn state source.
         routineStartState: overrides.routineStartState,
         retrievalSettingsOverride,
-        usageAttribution: { surface: "eval", requestId: runId },
+        usageAttribution: unstoredConversationUsage("eval", runId),
         // Frozen rolling summary — hermetically threaded, never regenerated.
         conversationSummary: replay.conversationSummary,
       });

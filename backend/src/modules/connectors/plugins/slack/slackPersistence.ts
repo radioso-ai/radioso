@@ -321,7 +321,7 @@ export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
 
   async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const users = input.keys.flatMap((key) => parseSlackUserKey(key) ?? []);
-    if (users.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
+    if (users.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [], recordIds: [] };
     const rows = await this.links(input.workspaceId)
       .select(["c.id", "l.id as link_id"])
       .where((eb) => eb.or(users.map((user) => eb.and([eb("i.team_id", "=", user.teamId), eb(threadUserId, "=", user.userId)]))))
@@ -330,6 +330,7 @@ export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
       conversationIds: rows.map((row) => row.id),
       visitorIds: [],
       verifiedCustomerIds: [],
+      channelPersonKeys: [],
       recordIds: rows.map((row) => row.link_id),
     };
   }

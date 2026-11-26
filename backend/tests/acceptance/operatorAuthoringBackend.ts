@@ -1,3 +1,5 @@
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { getEnv } from "../../src/app/config/env.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { startApiRuntime } from "../../src/runtime/startApiRuntime.js";
@@ -28,4 +30,6 @@ const runtime = await startApiRuntime({
     }]]),
   }),
 });
-process.once("SIGTERM", () => { void runtime.shutdown("SIGTERM"); });
+process.once("SIGTERM", () => {
+  runtime.shutdown("SIGTERM").then(() => process.exit(0), () => process.exit(1));
+});

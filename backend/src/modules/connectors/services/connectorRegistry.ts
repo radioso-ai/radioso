@@ -129,7 +129,8 @@ export class ConnectorRegistry {
   async initializeAll(context: {
     db: ConnectorDatabasePort;
     logger: ConnectorLogger;
-    chat: ConnectorChatPort;
+    /** The chat port each plugin gets, bound to that plugin by its id. */
+    chat: (connectorId: string) => ConnectorChatPort;
     ingestion: ConnectorIngestionPort;
     sourceDirectory?: ConnectorSourceDirectory;
     approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
@@ -149,7 +150,7 @@ export class ConnectorRegistry {
         await plugin.initialize({
           db: context.db,
           logger: context.logger,
-          chat: context.chat,
+          chat: context.chat(plugin.id),
           ingestion: context.ingestion,
           approvalDecisionService: context.approvalDecisionService,
           conversationOwnershipService: context.conversationOwnershipService,

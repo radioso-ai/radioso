@@ -3877,13 +3877,13 @@ export interface paths {
         get?: never;
         /**
          * Set a conversation's attribute
-         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session or verified customer holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
+         * @description Sets a Choice attribute's value for this conversation to one of its active options, with the signed-in teammate as its writer (`writtenBy.kind` `operator`). The AI never replaces a teammate's value. A value the visitor's session, verified customer or WhatsApp number holds stays as it is, and this conversation reads the one set here. Setting the option the AI, an API token or a routine already set keeps it as the teammate's value, which the AI then no longer changes; the value itself is unchanged, so it records no `context_value.changed`. Setting the option a teammate already set changes nothing and records nothing, so a retried request is safe. A change of value records `context_value.changed`; each write records a `conversation_attribute.set` audit event that names the attribute's id and the conversation, never the value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. An option that is archived or not the attribute's is refused with `400`, naming the active option keys. Dashboard sessions only. Requires workspace.conversation.takeover.
          */
         put: operations["setHistoryConversationAttribute"];
         post?: never;
         /**
          * Reset a conversation's attribute
-         * @description Deletes the value this conversation holds for an attribute of any type that is not Private, whoever wrote it: a teammate's, the AI's, an API token's or a routine's. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session or verified customer holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
+         * @description Deletes the value this conversation holds for an attribute of any type that is not Private, whoever wrote it: a teammate's, the AI's, an API token's or a routine's. When the conversation's agent classifies the attribute, the AI is asked to fill it again now (`classificationQueued`), so a finished conversation gets a value back too. The conversation then reads what the visitor's session, verified customer or WhatsApp number holds, if anything. A conversation with no value of its own changes nothing and answers `200` the same way. A change records `context_value.changed` with `value: null` and a `conversation_attribute.reset` audit event with no value. `404` when the conversation or an attribute by that exact name does not exist. `400` `attribute_not_editable` for an attribute a teammate doesn't edit here, with `details.reason`: `private` for a Private attribute, whose value a teammate never sees, and `not_choice` for a set of one that is not a Choice. Dashboard sessions only. Requires workspace.conversation.takeover.
          */
         delete: operations["resetHistoryConversationAttribute"];
         options?: never;
@@ -3936,7 +3936,7 @@ export interface paths {
         put?: never;
         /**
          * Find a data subject's identities
-         * @description Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.
+         * @description Returns every identity whose verified customer id, email address, Slack member id or WhatsApp number is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.
          */
         post: operations["lookupDataSubject"];
         delete?: never;
@@ -3976,7 +3976,7 @@ export interface paths {
         put?: never;
         /**
          * Export a data subject's data
-         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With `conversationIds`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values, so identities that reach more than 200 conversations export in pages. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
+         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With `conversationIds`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values; what is kept by WhatsApp number is in the one document that lists the reached conversation whose id sorts first. So identities that reach more than 200 conversations export in pages. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
          */
         post: operations["exportDataSubject"];
         delete?: never;
@@ -3996,7 +3996,7 @@ export interface paths {
         put?: never;
         /**
          * Permanently erase a data subject's data
-         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. With `conversationIds`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; once the identities reach at most 200, a request without the list erases the rest and the visitors. There is no undo.
+         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. With `conversationIds`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; a WhatsApp number's logged messages and values go with the request that lists the reached conversation whose id sorts first. Once the identities reach at most 200, a request without the list erases the rest and the visitors. There is no undo.
          */
         post: operations["eraseDataSubject"];
         delete?: never;
@@ -10314,10 +10314,10 @@ export interface components {
             /** @description True for a Private (`sensitive`) attribute: its value and option are left out, and who set it and when remain. */
             redacted: boolean;
             /**
-             * @description Where the value is kept: set for this conversation, the visitor's chat session, or the verified customer. The most specific one wins. A value set for an agent or the workspace is a default and is not listed.
+             * @description Where the value is kept: set for this conversation, the visitor's chat session, the verified customer, or the WhatsApp number the conversation is with (`whatsapp_contact`; the number itself is not returned). The most specific one wins. A value set for an agent or the workspace is a default and is not listed.
              * @enum {string}
              */
-            scope: "conversation" | "session" | "customer";
+            scope: "conversation" | "session" | "customer" | "whatsapp_contact";
             /** @description The value's last writer. */
             writtenBy: {
                 /** @enum {string} */
@@ -10506,7 +10506,7 @@ export interface components {
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
         ConversationAttributeChange: {
-            /** @description The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session or verified customer holds. Null when none of the conversation's rungs holds a value. */
+            /** @description The attribute as the conversation reads it now: the value just set, or after a reset the value the visitor's session, verified customer or WhatsApp number holds. Null when none of the conversation's rungs holds a value. */
             attribute: components["schemas"]["ConversationAttribute"] | null;
             /** @description True when a reset handed the attribute back to the AI: the conversation's agent classifies it, and a run that fills it is queued. */
             classificationQueued: boolean;
@@ -11210,7 +11210,7 @@ export interface components {
         };
         AgentContextVariableEnablementRequest: {
             /**
-             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session` or `customer` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
+             * @description Where the value comes from. `pushed`: your API writes it. `resolver`: a skill fetches it. `classified`: the AI picks one of an `enum` variable's options from the conversation after each reply, into the `conversation` scope; it never replaces a value your API or a teammate set for this visitor or conversation (`conversation`, `session`, `customer` or `whatsapp_contact` scope), and an `agent` or `workspace` value is a default that applies until the AI picks one. `classified` takes an `enum` variable that is neither `sensitive` nor `signed`, at most 8 per agent.
              * @enum {string}
              */
             source: "pushed" | "browser" | "resolver" | "classified";
@@ -11230,10 +11230,10 @@ export interface components {
         };
         ContextVariableScope: {
             /**
-             * @description Where a value is kept. A `conversation` scope id is the conversation's id.
+             * @description Where a value is kept. A `conversation` scope id is the conversation's id. A `customer` scope id is the customer id your site verifies. A `whatsapp_contact` scope id is a WhatsApp number in international form, country code first (`+15550100101`); it is stored as its digits, and its values are read on that number's WhatsApp conversations only.
              * @enum {string}
              */
-            type: "conversation" | "session" | "customer" | "agent" | "workspace";
+            type: "conversation" | "session" | "customer" | "whatsapp_contact" | "agent" | "workspace";
             id: string;
         };
         ContextVariableValue: {
@@ -12484,10 +12484,10 @@ export interface components {
                  */
                 valueType: "string" | "json" | "enum" | "boolean" | "number" | "date";
                 /**
-                 * @description Where the value is kept. Version 1 records the values kept for the conversation.
+                 * @description Where the value is kept: `conversation` for the conversation's own value; `customer` (a verified customer) or `whatsapp_contact` (a WhatsApp number) for a value a routine saved in this conversation for the person it is with. The person's id or number is never sent.
                  * @enum {string}
                  */
-                scope: "conversation";
+                scope: "conversation" | "customer" | "whatsapp_contact";
                 /** @description The value as stored now: an option key for `enum`, text for `string`, any JSON for `json`, `true` or `false` for `boolean`, a number for `number`, and an ISO calendar date (`2026-11-24`) for `date`. Null when the value was cleared, and always null for a Private attribute. */
                 value: unknown;
                 /** @description True for a Private attribute, whose value is never sent, whether it was set or cleared. Making an attribute Private redacts the events it already recorded. */
@@ -12747,18 +12747,18 @@ export interface components {
         ConversationConsentWithdrawal: {
             consent: components["schemas"]["ConversationConsent"];
         };
-        /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. */
+        /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. `whatsapp_number`: a WhatsApp number, keyed by its digits, country code first. */
         DataSubjectIdentity: {
             /** @enum {string} */
-            kind: "web_visitor" | "email_address" | "slack_user";
+            kind: "web_visitor" | "email_address" | "slack_user" | "whatsapp_number";
             /** @description The identity's key, as the lookup returned it. */
             key: string;
         };
         DataSubjectIdentityCandidate: {
             identity: components["schemas"]["DataSubjectIdentity"];
-            /** @description The conversation channel the identity is on: `web`, `email` or `slack`. */
+            /** @description The conversation channel the identity is on: `web`, `email`, `slack` or `whatsapp`. */
             channel: string;
-            /** @description How the channel knows the person: a verified customer id, an address, or a Slack member id. */
+            /** @description How the channel knows the person: a verified customer id, an address, a Slack member id, or a WhatsApp number (`+15550100101`). */
             label: string;
             conversationCount: number;
             /** Format: date-time */
@@ -12790,7 +12790,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             identities: components["schemas"]["DataSubjectIdentity"][];
-            /** @description Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list. */
+            /** @description Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `whatsapp_contacts`, `whatsapp_messages`, `answer_feedback`. A section with nothing for the subject is an empty list. */
             sections: {
                 [key: string]: {
                     [key: string]: unknown;
@@ -12805,14 +12805,14 @@ export interface components {
             complete: boolean;
         };
         DataSubjectLookupRequest: {
-            /** @description A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored. */
+            /** @description A verified customer id, an email address, a Slack member id, or a WhatsApp number in international form. Matched exactly: an address without regard to case, a number by its digits whatever spaces, dashes or brackets it is written with, the others as stored. */
             query: string;
         };
         DataSubjectIdentitiesRequest: {
             /** @description The identities the operator confirmed belong to the data subject. */
             identities: {
                 /** @enum {string} */
-                kind: "web_visitor" | "email_address" | "slack_user";
+                kind: "web_visitor" | "email_address" | "slack_user" | "whatsapp_number";
                 /** @description The identity's key, as the lookup returned it. */
                 key: string;
             }[];
@@ -12821,7 +12821,7 @@ export interface components {
             /** @description The identities the operator confirmed belong to the data subject. */
             identities: {
                 /** @enum {string} */
-                kind: "web_visitor" | "email_address" | "slack_user";
+                kind: "web_visitor" | "email_address" | "slack_user" | "whatsapp_number";
                 /** @description The identity's key, as the lookup returned it. */
                 key: string;
             }[];
@@ -22311,8 +22311,8 @@ export interface operations {
     getContextVariableValue: {
         parameters: {
             query: {
-                /** @description Where a value is kept. A `conversation` scope id is the conversation's id. */
-                scopeType: "conversation" | "session" | "customer" | "agent" | "workspace";
+                /** @description Where a value is kept. A `conversation` scope id is the conversation's id. A `customer` scope id is the customer id your site verifies. A `whatsapp_contact` scope id is a WhatsApp number in international form, country code first (`+15550100101`); it is stored as its digits, and its values are read on that number's WhatsApp conversations only. */
+                scopeType: "conversation" | "session" | "customer" | "whatsapp_contact" | "agent" | "workspace";
                 scopeId: string;
             };
             header?: never;
@@ -30897,7 +30897,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or a WhatsApp number is not its country code and number, such as one written with a leading `0` or `00` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -30950,7 +30950,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or a WhatsApp number is not its country code and number, such as one written with a leading `0` or `00` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -31001,7 +31001,7 @@ export interface operations {
                     "application/json": components["schemas"]["DataSubjectExport"];
                 };
             };
-            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
+            /** @description Request validation failed, a `whatsapp_number` key that is not a country code and number, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -31061,7 +31061,7 @@ export interface operations {
                     "application/json": components["schemas"]["DataSubjectErasure"];
                 };
             };
-            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
+            /** @description Request validation failed, a `whatsapp_number` key that is not a country code and number, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
             400: {
                 headers: {
                     [name: string]: unknown;

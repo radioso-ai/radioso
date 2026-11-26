@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { ContextVariableResolverService, ConversationValueWriterService, contextScopeLadder } from "../../src/modules/context-variables/public.js";
@@ -18,7 +19,7 @@ const option = (key: string): ContextVariableOption => ({ key, label: key, descr
 describeIntegration("classified attributes (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new ContextVariableRepository(database.kysely, null);
-  const reads = new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely));
+  const reads = new ClassifiedContextVariableReads(database.kysely, conversationReadSources(database.kysely));
   const writer = new ConversationValueWriterService({ repository });
   const accountId = randomUUID();
   const workspaceId = randomUUID();

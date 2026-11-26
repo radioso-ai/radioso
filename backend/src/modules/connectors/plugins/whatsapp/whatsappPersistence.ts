@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import type { ConversationDataEraser, ConversationErasureScope } from "../../../../shared/domain/conversationDataErasure.js";
+import type {
+  ChannelPersonDataEraser,
+  ChannelPersonErasureScope,
+  ConversationDataEraser,
+  ConversationErasureScope,
+} from "../../../../shared/domain/conversationDataErasure.js";
 import { anyOf, toJsonb } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 
@@ -33,6 +38,11 @@ export interface WhatsAppMessageLogRecord {
 
 export interface WhatsAppPersistencePort {
   findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null>;
+  /**
+   * Records the number a conversation is with, once, as soon as the host stores a message in it, so
+   * readers outside a turn and a data subject's finder reach it from its first turn, failed or not.
+   */
+  recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void>;
   upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -194,6 +204,20 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     return row ? mapContact(row) : null;
   }
 
+  /**
+   * Points the number's contact row at the conversation it is in now, and records the conversation's
+   * number, which outlives the contact row's move to a later conversation: it is how a data subject
+   * found by number reaches every conversation the number had. The conversation's number goes first,
+   * so a contact row never names a conversation the number is not recorded for.
+   */
+  async recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void> {
+    await this.db
+      .insertInto("connector_whatsapp_conversations")
+      .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
+      .onConflict((oc) => oc.column("conversation_id").doNothing())
+      .execute();
+  }
+
   async upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -201,6 +225,8 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     conversationId: string;
     lastMessageAt: Date;
   }): Promise<WhatsAppContactRecord> {
+    // Recorded when the message was stored; again here for a turn that stored none.
+    await this.recordConversation(input);
     const row = await this.db
       .insertInto("connector_whatsapp_contacts")
       .values({
@@ -445,35 +471,58 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
 }
 
 /**
- * Erases the WhatsApp transport log of a number whose conversation is erased: the raw inbound and
- * outbound payloads, message text included, keyed by the number rather than the conversation. The
- * number is found through its contact row, which cascades with the conversation, so this runs first.
+ * Erases what Radioso keeps by a WhatsApp number whose conversation is erased: the transport log, the
+ * raw inbound and outbound payloads with their message text, and, through `persons`, the values kept
+ * for the number as a person (#1884). Both are keyed by the number rather than the conversation. The
+ * number is found through its contact row, which cascades with the conversation, so this runs first,
+ * and `persons` is bound to the same transaction.
  *
  * A number has one contact row, pointing at its latest conversation; a message after the
- * conversation timeout starts a new conversation and moves the row. The log cannot be split by
- * conversation, so erasing the number's latest conversation erases the whole log for the number,
+ * conversation timeout starts a new conversation and moves the row. Neither the log nor the values
+ * can be split by conversation, so erasing the number's latest conversation erases both whole,
  * earlier conversations' entries included. Erasing an earlier conversation reaches no number, and
- * its entries stay until the number's latest conversation is erased. A workspace's log cascades
- * with the workspace.
+ * they stay until the number's latest conversation is erased. A workspace's log cascades with the
+ * workspace. The count includes the values `persons` erased.
  */
-export class WhatsAppMessageLogEraser implements ConversationDataEraser {
+export class WhatsAppMessageLogEraser implements ConversationDataEraser, ChannelPersonDataEraser {
   readonly owner = "whatsapp";
 
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly persons: ChannelPersonDataEraser,
+  ) {}
 
   async erase(scope: ConversationErasureScope): Promise<number> {
     if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
       return 0;
     }
-    const result = await this.db
-      .deleteFrom("connector_whatsapp_message_log")
+    const numbers = (await this.db
+      .selectFrom("connector_whatsapp_contacts")
+      .select("wa_id")
       .where("workspace_id", "=", scope.workspaceId)
-      .where("wa_id", "in", (eb) => eb
-        .selectFrom("connector_whatsapp_contacts")
-        .select("wa_id")
-        .where("workspace_id", "=", scope.workspaceId)
-        .where((inner) => anyOf(inner.ref("conversation_id"), scope.conversationIds, "uuid[]")))
+      .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .execute()).map((row) => row.wa_id);
+    if (numbers.length === 0) return 0;
+    const log = await this.deleteLog(scope.workspaceId, numbers);
+    const values = await this.persons.eraseChannelPersons({
+      workspaceId: scope.workspaceId,
+      keys: numbers.map((id) => ({ kind: "whatsapp_contact", id })),
+    });
+    return log + values;
+  }
+
+  /** The message log of the numbers a data subject's erasure names, whether or not they have a conversation left. */
+  async eraseChannelPersons(scope: ChannelPersonErasureScope): Promise<number> {
+    const numbers = scope.keys.flatMap((key) => (key.kind === "whatsapp_contact" ? [key.id] : []));
+    return numbers.length === 0 ? 0 : this.deleteLog(scope.workspaceId, numbers);
+  }
+
+  private async deleteLog(workspaceId: string, numbers: readonly string[]): Promise<number> {
+    const log = await this.db
+      .deleteFrom("connector_whatsapp_message_log")
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("wa_id"), numbers, "text[]"))
       .executeTakeFirst();
-    return Number(result.numDeletedRows);
+    return Number(log.numDeletedRows);
   }
 }

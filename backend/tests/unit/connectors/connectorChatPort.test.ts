@@ -318,6 +318,108 @@ describe("createConnectorChatPort", () => {
     });
   });
 
+  describe("the person key a channel attests", () => {
+    const NUMBER = { kind: "whatsapp_contact" as const, id: "15550100101" };
+    const reply = { conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" };
+    const metricsRegistry = () => ({ incrementCounter: vi.fn() });
+    /** A port bound, as composition binds the WhatsApp connector's, to the person-key kind its connector attests. */
+    const attesting = (metrics = metricsRegistry()) => ({ connectorId: "whatsapp", personKeyKind: "whatsapp_contact" as const, metrics });
+
+    it("runs a text turn as the person the key names, in the form the channel stores it", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, attesting());
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", sourceChannel: "whatsapp", personKey: { id: "+1 555 010 0101" } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+    });
+
+    it("runs a photo turn and a pick as that person too", async () => {
+      const imageTurns: ConnectorImageTurns = { imageAllowance: vi.fn(async () => ({ maxImages: 3 })), answer: vi.fn(async () => reply) };
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => reply) };
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { imageTurns, picks, ...attesting() });
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", personKey: { id: NUMBER.id }, images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] });
+      await connectorChat.answer({
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        query: "Casa Blu",
+        personKey: { id: NUMBER.id },
+        selection: { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" },
+      });
+
+      expect(imageTurns.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+      expect(picks.answer).toHaveBeenCalledWith(expect.objectContaining({ channelPersonKey: NUMBER }));
+    });
+
+    it("answers without a person when it cannot read the key, and counts that without the key", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const metrics = metricsRegistry();
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, attesting(metrics));
+
+      const answered = await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { id: "user.example-handle" } });
+
+      expect(answered.answer).toBe("Hello again.");
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("connector_person_keys_unused_total", expect.objectContaining({
+        labels: { connector: "whatsapp", reason: "unreadable" },
+      }));
+      expect(JSON.stringify(metrics.incrementCounter.mock.calls)).not.toContain("example-handle");
+    });
+
+    it("ignores a key from a connector bound to no person-key kind, so no other channel can claim a WhatsApp number", async () => {
+      const chatService = { answer: vi.fn(async () => reply) } as unknown as ChatAnswerPort;
+      const metrics = metricsRegistry();
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest, { connectorId: "slack", metrics });
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", personKey: { id: NUMBER.id } });
+
+      expect(chatService.answer).toHaveBeenCalledWith(expect.not.objectContaining({ channelPersonKey: expect.anything() }));
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("connector_person_keys_unused_total", expect.objectContaining({
+        labels: { connector: "slack", reason: "not_attested" },
+      }));
+    });
+  });
+
+  describe("the conversation a turn's message is stored in", () => {
+    it("is told to the connector before the turn runs, even when the turn then fails", async () => {
+      const chatService = {
+        answer: vi.fn(async (input: { onUserMessageStored?: (stored: { conversationId: string; messageId: string }) => Promise<void> }) => {
+          await input.onUserMessageStored?.({ conversationId: "conversation-1", messageId: "message-1" });
+          throw new Error("model unavailable");
+        }),
+      } as unknown as ChatAnswerPort;
+      const onMessageStored = vi.fn(async () => undefined);
+      const connectorChat = createConnectorChatPort(chatService, unusedIngest);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", onMessageStored })).rejects.toThrow("model unavailable");
+
+      expect(onMessageStored).toHaveBeenCalledWith({ conversationId: "conversation-1" });
+    });
+
+    it("is told on a photo turn and a pick too", async () => {
+      const reply = { conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" };
+      const imageTurns: ConnectorImageTurns = { imageAllowance: vi.fn(async () => ({ maxImages: 3 })), answer: vi.fn(async () => reply) };
+      const picks: ChatDoorPickTurnPort = { answer: vi.fn(async () => reply) };
+      const connectorChat = createConnectorChatPort({ answer: vi.fn() } as unknown as ChatAnswerPort, unusedIngest, { imageTurns, picks });
+      const onMessageStored = vi.fn(async () => undefined);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", query: "Like this", onMessageStored, images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] });
+      await connectorChat.answer({
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        query: "Casa Blu",
+        onMessageStored,
+        selection: { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" },
+      });
+
+      const toldTo = (call: unknown) => (call as { onUserMessageStored: (stored: { conversationId: string; messageId: string }) => Promise<void> }).onUserMessageStored;
+      await toldTo(vi.mocked(imageTurns.answer).mock.calls[0][0])({ conversationId: "conversation-2", messageId: "message-2" });
+      await toldTo(vi.mocked(picks.answer).mock.calls[0][0])({ conversationId: "conversation-1", messageId: "message-3" });
+      expect(onMessageStored.mock.calls).toEqual([[{ conversationId: "conversation-2" }], [{ conversationId: "conversation-1" }]]);
+    });
+  });
+
   describe("respond", () => {
     const respondInput: ConnectorRespondInput = {
       workspaceId: "workspace-1",

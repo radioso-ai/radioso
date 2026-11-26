@@ -8,7 +8,7 @@ export interface ClassificationTarget {
   readonly stored: StoredConversationValue | null;
   /**
    * Whether a writer the classifier may not replace set a value for this conversation, its session
-   * or its customer. Such a value is a fact about the visitor or the conversation: the classifier
+   * or its person. Such a value is a fact about the visitor or the conversation: the classifier
    * leaves the variable alone, so that value stays the one the conversation resolves. An agent-wide
    * or workspace-wide value is a default and never holds a variable.
    */
@@ -23,6 +23,7 @@ const DESCRIBES_THE_VISITOR: Record<ContextVariableScopeType, boolean> = {
   conversation: true,
   session: true,
   customer: true,
+  whatsapp_contact: true,
   agent: false,
   workspace: false,
 };

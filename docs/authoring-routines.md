@@ -529,9 +529,11 @@ Inbox and your API read it from then on.
 Say a booking routine collects `@guests`, a number field. Save it to
 `party_size` for **This conversation**, and a visitor who books for four leaves
 the conversation's `party_size` at `4`. **The verified person** keeps the value
-on the visitor's verified customer id instead, so their next conversation reads
-it too. A conversation with no verified person saves nothing for that field,
-and the routine ends as it would anyway.
+for the person the conversation is with instead, so their next conversation
+reads it too: the visitor's verified customer id on the website, and the
+sender's number on WhatsApp, read on that number's WhatsApp conversations only.
+A conversation with no verified person saves nothing for that field, and the
+routine ends as it would anyway.
 
 Over the API, the field carries the choice as `saveTo`:
 
@@ -574,11 +576,11 @@ conversation runs on keeps the attribute's value. The last writer wins among the
 routine, your team and your API, with one exception: when the attribute already
 holds the same value from your team or your API, the value stays theirs, so a
 consent withdrawn later leaves it in place. The saved value's `writtenBy` is
-`{ "kind": "routine", "ref": "<routineId>:<executionId>@<conversationId>" }`. A
-conversation value's change is a `context_value.changed` event whose `routineId`
-names the routine. A value saved for the verified person records no event, so
-an automation listening for `context_value.changed` sees conversation values
-only.
+`{ "kind": "routine", "ref": "<routineId>:<executionId>@<conversationId>" }`.
+Each change is a `context_value.changed` event of the conversation the routine
+ran in, whose `routineId` names the routine. A value saved for the verified
+person carries `scope` `customer` or `whatsapp_contact`, and never the customer
+id or number.
 
 The ending turn's trace lists each save on the routine's stage as `saves`: the
 field, the attribute, the scope, and an outcome, never the value. The turn

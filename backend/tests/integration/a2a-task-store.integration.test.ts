@@ -243,7 +243,7 @@ describeIntegration("A2A task and receipt stores (Postgres)", () => {
     await tasks.commit({ updates: [], insert: task });
     await receipts.complete({ workspaceId, conversationId, messageKey: "digest-export-00000001", claimToken: null, expiresAt: null, result: { kind: "task", taskId: task.id } });
 
-    const exported = await new A2aTaskExporter(database.kysely).export({ workspaceId, conversationIds: [conversationId], visitorIds: [], verifiedCustomerIds: [] });
+    const exported = await new A2aTaskExporter(database.kysely).export({ workspaceId, conversationIds: [conversationId], visitorIds: [], verifiedCustomerIds: [], channelPersonKeys: [] });
     expect(exported).toEqual([{
       conversationId,
       state: "completed",

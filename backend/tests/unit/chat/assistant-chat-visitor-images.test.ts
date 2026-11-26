@@ -214,6 +214,20 @@ describe("AssistantChatService with photos", () => {
     await expect(service.answer(send)).rejects.toMatchObject({ statusCode: 400 });
   });
 
+  it("tells the caller the stored message too, after binding the photos, and tells a caller sending no photos", async () => {
+    const visitorImages = imagesPort();
+    const told: string[] = [];
+    const onUserMessageStored = vi.fn<UserMessageStoredListener>(async ({ conversationId }) => {
+      told.push(`${conversationId}:${visitorImages.bind.mock.calls.length}`);
+    });
+    const service = new AssistantChatService(answered("conversation-9") as never, { startConversation: vi.fn() } as never, { visitorImages });
+
+    await service.answer({ ...send, onUserMessageStored });
+    await service.answer({ workspaceId: "workspace-1", agentId: "agent-1", stream: false, message: "Hello", onUserMessageStored });
+
+    expect(told).toEqual(["conversation-9:1", "conversation-9:1"]);
+  });
+
   it("leaves a message without photos as it was", async () => {
     const chatService = answered();
     const visitorImages = imagesPort();

@@ -7,6 +7,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import type { ConversationChannelPersonKeys } from "../../../shared/domain/channelPersonKey.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -49,6 +50,7 @@ import {
 } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import type { WorkspaceTimeZoneReader } from "../../retrieval/public.js";
+import { turnChannelPersonKey } from "./turnChannelPersonKey.js";
 import {
   recordedVisitorTimeZone,
   referenceTimeZoneTraceStage,
@@ -80,6 +82,8 @@ interface ApprovalResumeTurnOptions {
   suspendedRoutineReader?: SuspendedRoutineReader;
   /** Read for the resumed turn's zone when the conversation recorded none. */
   workspaceTimeZones?: WorkspaceTimeZoneReader;
+  /** The person the conversation's channel keeps, whom the resumed turn runs as. */
+  channelPersonKeys?: ConversationChannelPersonKeys;
   detectResponseLanguage(input: {
     workspaceId: string;
     accountId?: string;
@@ -363,10 +367,13 @@ export class ApprovalResumeTurn {
       workspaceId: record.workspaceId,
       conversationTimeZone: recordedVisitorTimeZone(userMessage.metadata),
     });
+    // Nothing live attests a person on a resume, so it is the one the conversation's channel keeps.
+    const channelPersonKey = await turnChannelPersonKey(this.options.channelPersonKeys, { workspaceId: record.workspaceId }, conversation);
     const startedAt = new Date().toISOString();
     return {
       agent,
       conversation,
+      channelPersonKey,
       history,
       retrieval,
       turnRoute: CHAT_TURN_ROUTE.DIRECT,

@@ -1,4 +1,3 @@
-import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type {
   ContextVariable,
   ConversationAttributeEditReads,
@@ -7,37 +6,48 @@ import type {
   EditedConversation,
   StoredConversationAttributeValue,
 } from "../../modules/context-variables/public.js";
+import type { ChannelPersonKey } from "../../shared/domain/channelPersonKey.js";
 import { anyOf } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { contextVariableColumns, mapContextVariableRow, type ContextVariableRow } from "./contextVariableRepository.js";
 import { readWorkspaceMostSpecificValues } from "./contextVariableValueReads.js";
-import { readConversationClassification } from "./conversationClassifiedVariables.js";
+import { readConversationClassification, type ConversationReadSources } from "./conversationClassifiedVariables.js";
 
 /**
  * A conversation's attributes as the operator surfaces read them: each variable's most specific
  * value on the conversation's own rungs, then the definitions of the variables that have one. Two
  * reads. Definitions are workspace-level, so a value reads under the definition as it is now,
  * whichever release ran the conversation. Which of them the AI fills comes from the release the
- * conversation is pinned to, through the agents module's revision reader.
+ * conversation is pinned to, through the agents module's revision reader, and the person a WhatsApp
+ * conversation is with from the channel that keeps the number.
  */
 export class ConversationAttributeReads implements ConversationAttributeReadPort, ConversationAttributeEditReads {
   constructor(
     private readonly db: Db,
-    private readonly revisions: AgentRevisionEnablementReader,
+    private readonly sources: ConversationReadSources,
   ) {}
 
   async readConversation(workspaceId: string, conversationId: string): Promise<EditedConversation | null> {
-    const conversation = await readConversationClassification(this.db, this.revisions, { workspaceId, conversationId });
+    const conversation = await readConversationClassification(this.db, this.sources, { workspaceId, conversationId });
     return conversation
       ? {
-        keys: { conversationId: conversation.conversationId, chatSessionId: conversation.chatSessionId, verifiedCustomerId: conversation.verifiedCustomerId },
+        keys: {
+          conversationId: conversation.conversationId,
+          chatSessionId: conversation.chatSessionId,
+          verifiedCustomerId: conversation.verifiedCustomerId,
+          channelPersonKey: conversation.channelPersonKey,
+        },
         classifiedVariableIds: new Set(conversation.classifiedVariableIds),
       }
       : null;
   }
 
+  readChannelPersonKey(workspaceId: string, conversationId: string, sourceChannel: string | null): Promise<ChannelPersonKey | null> {
+    return this.sources.personKeys.personKeyOf({ workspaceId, conversationId, sourceChannel });
+  }
+
   async readClassifiedVariableIds(workspaceId: string, conversationId: string): Promise<ReadonlySet<string>> {
-    const conversation = await readConversationClassification(this.db, this.revisions, { workspaceId, conversationId });
+    const conversation = await readConversationClassification(this.db, this.sources, { workspaceId, conversationId });
     return new Set(conversation?.classifiedVariableIds ?? []);
   }
 

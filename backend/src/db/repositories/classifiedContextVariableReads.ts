@@ -5,27 +5,26 @@ import {
   type ClassifiedVariableReader,
   type ContextVariable,
 } from "../../modules/context-variables/public.js";
-import type { AgentRevisionEnablementReader } from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { contextVariableColumns, mapContextVariableRow, type ContextVariableRow } from "./contextVariableRepository.js";
 import { readLadderValues } from "./contextVariableValueReads.js";
-import { readConversationClassification } from "./conversationClassifiedVariables.js";
+import { readConversationClassification, type ConversationReadSources } from "./conversationClassifiedVariables.js";
 
 /**
  * The classifier's reads. A conversation's targets come from the revision it is pinned to, read
  * through the agents module's revision reader, so a run fills what the conversation's own release
  * classifies, as its turns resolve what that release selects. Definitions are read live: they are
  * workspace-level and not revisioned. Each target carries what the conversation's whole ladder
- * holds, the way its turns resolve it.
+ * holds, the way its turns resolve it, a WhatsApp number's values included.
  */
 export class ClassifiedContextVariableReads implements ClassifiedVariableReader {
   constructor(
     private readonly db: Db,
-    private readonly revisions: AgentRevisionEnablementReader,
+    private readonly sources: ConversationReadSources,
   ) {}
 
   async readConversationTargets(input: { workspaceId: string; conversationId: string }): Promise<{ agentId: string; targets: ClassificationTarget[] } | null> {
-    const conversation = await readConversationClassification(this.db, this.revisions, input);
+    const conversation = await readConversationClassification(this.db, this.sources, input);
     if (!conversation) return null;
     const agentId = conversation.agentId ?? "";
     const variableIds = conversation.classifiedVariableIds;
@@ -34,6 +33,7 @@ export class ClassifiedContextVariableReads implements ClassifiedVariableReader 
       conversationId: conversation.conversationId,
       chatSessionId: conversation.chatSessionId,
       verifiedCustomerId: conversation.verifiedCustomerId,
+      channelPersonKey: conversation.channelPersonKey,
       agentId,
       workspaceId: input.workspaceId,
     });

@@ -14,6 +14,7 @@ const harness = async () => {
   const erasure = {
     eraseConversation: vi.fn<ConversationErasure["eraseConversation"]>(async () => receipt),
     eraseVisitor: vi.fn<ConversationErasure["eraseVisitor"]>(async () => receipt),
+    eraseChannelPersons: vi.fn<ConversationErasure["eraseChannelPersons"]>(async () => receipt),
   };
   const { app, dependencies } = createTestApp({ conversationErasure: erasure });
   const session = await issueTestSession(app, `history-erasure-${randomUUID()}@example.com`);

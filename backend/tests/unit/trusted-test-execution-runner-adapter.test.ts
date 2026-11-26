@@ -142,7 +142,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       agentId: "agent-1",
       accountId: "account-42",
       candidateRevision: revision,
-      conversationId: "private-side-1",
+      conversationId: "private-side-1", attemptId: "attempt-1",
       message: "continue",
       history: [{ turnId: "turn-0", attemptId: "attempt-0", role: "assistant", content: "Earlier", createdAt: new Date(0) }],
       continuation,
@@ -190,6 +190,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under
       // Test Chat's own retention, unlike eval replay, which must never request this.
       includeSlotValues: true,
+      // Its model calls land on the usage ledger under Test Chat's own surface, apart from live traffic.
+      usageAttribution: { surface: "test_execution", requestId: "attempt-1", conversationId: null, messageId: null },
       signal: abort.signal,
     }));
   });
@@ -208,7 +210,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     });
     const input = {
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "And on Sunday?", continuation, testValues: [],
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "And on Sunday?", continuation, testValues: [],
       executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
       history: [
         { turnId: "turn-1", attemptId: "attempt-1", role: "user" as const, content: "Open Saturday?", messageId: "user-message-1", createdAt: new Date(0) },
@@ -238,7 +240,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     });
     const input = {
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "What's on tomorrow?", history: [], continuation, testValues: [],
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "What's on tomorrow?", history: [], continuation, testValues: [],
       executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
     };
 
@@ -271,7 +273,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
     const { result } = await collect(adapter.stream({
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "Flats in Mitte?", history: [], continuation, testValues: [],
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "Flats in Mitte?", history: [], continuation, testValues: [],
       executionMode: "safe_test", skillEffects: "suppressed",
     }));
 
@@ -296,7 +298,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       liveAgentConfig: { find: async () => ({}) as InternalAgentConfig },
       revisions: { findRevision: async () => revision },
     });
-    const turn = { workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision, conversationId: "private-side-1", continuation, testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const };
+    const turn = { workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision, conversationId: "private-side-1", attemptId: "attempt-1", continuation, testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const };
 
     const { result } = await collect(adapter.stream({ ...turn, message: "Flats in Mitte?", history: [] }));
     expect(result.messageMetadata).toEqual(stored);
@@ -336,7 +338,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
   });
   const classifyingTurn = {
     workspaceId: "ws-1", agentId: "agent-1", accountId: "account-42", candidateRevision: classifiedRevision,
-    conversationId: "private-side-1", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "allowed" as const,
+    conversationId: "private-side-1", attemptId: "attempt-1", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "allowed" as const,
   };
 
   it("classifies a turn once its answer is out, keeps a turn that held a sensitive slot out of every run, and never starts after a failed replay", async () => {
@@ -409,7 +411,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     });
     const input = {
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "continue", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
     };
 
     await expect(collect(adapter.stream({ ...input, continuation: { version: 2 } }))).rejects.toThrow("test_execution_continuation_invalid");
@@ -432,7 +434,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
     await expect(collect(adapter.stream({
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], continuation: null, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "continue", history: [], continuation: null, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
     }))).rejects.toThrow("Agent revision is unavailable for test execution");
     expect(replay.stream).not.toHaveBeenCalled();
   });
@@ -459,7 +461,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
 
     await expect(collect(adapter.stream({
       workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], continuation: original, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
+      conversationId: "private-side-1", attemptId: "attempt-1", message: "continue", history: [], continuation: original, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
     }))).rejects.toThrow("provider unavailable");
     expect(original.routineState?.variables).toEqual({ cart: "gold" });
   });

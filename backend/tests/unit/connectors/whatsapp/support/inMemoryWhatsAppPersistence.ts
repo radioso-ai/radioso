@@ -8,9 +8,17 @@ import type {
 export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
   readonly contacts = new Map<string, WhatsAppContactRecord>();
   readonly messageLogs = new Map<string, WhatsAppMessageLogRecord>();
+  /** Each conversation's number, by conversation id, as `recordConversation` keeps it. */
+  readonly conversationNumbers = new Map<string, { workspaceId: string; waId: string }>();
 
   async findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null> {
     return this.contacts.get(`${workspaceId}:${waId}`) ?? null;
+  }
+
+  async recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void> {
+    if (!this.conversationNumbers.has(input.conversationId)) {
+      this.conversationNumbers.set(input.conversationId, { workspaceId: input.workspaceId, waId: input.waId });
+    }
   }
 
   async upsertContact(input: {
@@ -31,6 +39,7 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
       firstSeenAt: existing?.firstSeenAt ?? new Date(),
       lastMessageAt: input.lastMessageAt,
     };
+    await this.recordConversation(input);
     this.contacts.set(key, record);
     return record;
   }

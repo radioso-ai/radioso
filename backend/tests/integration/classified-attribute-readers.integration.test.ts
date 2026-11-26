@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
-import { AgentRevisionRuntimeRepository } from "../../src/db/repositories/agentRevisionRuntimeRepository.js";
+import { conversationReadSources } from "../../src/app/composition/conversationReadSources.js";
 import { ClassifiedContextVariableReads } from "../../src/db/repositories/classifiedContextVariableReads.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import {
@@ -76,7 +76,7 @@ describeIntegration("what reads a value the AI set (Postgres, #1884)", () => {
       [conversationId, workspaceId, agentId, revisionId],
     );
     const classification = new ConversationClassificationService({
-      targets: new ClassifiedContextVariableReads(database.kysely, new AgentRevisionRuntimeRepository(database.kysely)),
+      targets: new ClassifiedContextVariableReads(database.kysely, conversationReadSources(database.kysely)),
       excerpts: { readExcerpt: async () => ({ summary: null, messages: ["Warum wurde mir zweimal abgebucht?"], withheldCount: 0 }) },
       values: new ConversationValueWriterService({ repository }),
       inference: {

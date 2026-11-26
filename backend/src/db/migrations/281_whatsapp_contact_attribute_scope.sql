@@ -11,7 +11,7 @@
 -- Locks. The runner applies a file in one transaction, so the ACCESS EXCLUSIVE lock the ALTER takes
 -- is held until it commits, and every chat turn reads `context_variable_values`. The CHECK is
 -- swapped in NOT VALID, which binds new rows at once without scanning the old ones, so the lock is
--- held for milliseconds. 281 validates it after this commits, under a lock no read or write waits
+-- held for milliseconds. 282 validates it after this commits, under a lock no read or write waits
 -- for. Every existing row satisfies it: it only widens the set it replaces. The wait for the lock is
 -- bounded to three seconds, because reads queue behind a waiting ACCESS EXCLUSIVE; a deploy that hits
 -- the bound rolls back and a retry is safe.

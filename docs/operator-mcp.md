@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-11-24
+last_updated: 2026-11-26
 ---
 
 # Operator MCP OAuth Access
@@ -94,6 +94,22 @@ https://mcp.example.com/.well-known/oauth-protected-resource/operator/mcp
 ```
 
 Authorization-server metadata comes from the configured Radioso issuer at `/.well-known/oauth-authorization-server`. The resource URL is byte-for-byte significant; a trailing slash is a different audience and is rejected.
+
+## Sign in from a local client
+
+A client identifies itself with a `client_id` that is the HTTPS URL of its metadata document, and Radioso fetches that document from a public address. Outside production, Radioso also accepts a `client_id` on a loopback host over plain HTTP, so a client running on your machine can serve its own document:
+
+```text
+http://127.0.0.1:55103/client.json
+```
+
+The document has the same fields as any other: `client_id` (byte-for-byte the URL it is served from), `client_name`, `redirect_uris` on a loopback host, `response_types` of `["code"]`, `grant_types` of `["authorization_code"]`, and `token_endpoint_auth_method` of `none`. Radioso fetches it directly, follows no redirects, and checks it the way it checks a public document. Only `127.0.0.1`, `[::1]`, and `localhost` qualify; any other HTTP `client_id` is rejected.
+
+The mode follows `NODE_ENV`, the same setting that allows HTTP Operator MCP URLs. A backend started with `NODE_ENV=development` (the default) accepts loopback client ids; a backend with `NODE_ENV=test` or `NODE_ENV=production` rejects them and keeps fetching client metadata only from public HTTPS addresses. Set the `OPERATOR_MCP_*` values from [Deployment](#deployment) with a loopback resource and issuer URL, start the backend, and a client that sends the authorize request with its loopback `client_id` receives a redirect to the consent page.
+
+Run the backend on the same host as the client (`cd backend && pnpm run dev`), not in the `./run-dev.sh` Docker stack: inside that stack `127.0.0.1` is the container itself, so it cannot reach a client on your machine.
+
+A client that already publishes an HTTPS metadata document, such as Claude's connector, works unchanged on a development backend that can reach the internet. Radioso supports Client ID Metadata Documents and preregistered clients; it does not offer Dynamic Client Registration, so a client that can only register itself dynamically needs to be given a metadata document URL instead.
 
 ## Deployment
 

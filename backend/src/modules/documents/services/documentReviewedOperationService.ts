@@ -316,7 +316,7 @@ export class DocumentReviewedOperationService {
         : await this.documents.listSummaryPageByWorkspaceId(input.workspaceId, { limit: 200 });
     if (page.hasMore) throw badRequest("A reviewed reprocess may include at most 200 documents. Select a source or explicit document ids.");
     if (page.documents.length === 0) throw badRequest("No documents match this reviewed reprocess selector.");
-    const documents = page.documents.map((document) => ({ id: document.id, updatedAt: document.updatedAt.toISOString(), status: document.status }));
+    const documents = page.documents.map((document) => ({ id: document.id, title: document.title.slice(0, 300), updatedAt: document.updatedAt.toISOString(), status: document.status }));
     return this.parsePlan(documentReviewedReprocessPlanSchema, { operation: "reprocess", documents, fence: createHash("sha256").update(JSON.stringify(documents.map(({ id, updatedAt }) => ({ id, updatedAt })))).digest("base64url") });
   }
 

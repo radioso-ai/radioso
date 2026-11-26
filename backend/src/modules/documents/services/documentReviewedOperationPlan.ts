@@ -35,7 +35,7 @@ export const documentReviewedRemovalPlanSchema = z.object({
 
 export const documentReviewedReprocessPlanSchema = z.object({
   operation: z.literal("reprocess"),
-  documents: z.array(z.object({ id: z.string().uuid(), updatedAt: z.string().datetime(), status: z.string() }).strict()).min(1).max(200),
+  documents: z.array(z.object({ id: z.string().uuid(), title: z.string().max(300).optional(), updatedAt: z.string().datetime(), status: z.string() }).strict()).min(1).max(200),
   fence: z.string().min(1).max(100),
 }).strict();
 

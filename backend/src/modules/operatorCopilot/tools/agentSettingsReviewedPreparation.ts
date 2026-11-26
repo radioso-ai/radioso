@@ -48,7 +48,7 @@ export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsRe
     const payload = { kind: "fields" as const, patch: prepared.normalizedPatch, ...(input.rationale === undefined ? {} : { rationale: input.rationale }) };
     const versionToken = await deps.agentSettings.readFieldProposalVersion(context.workspaceId, input.agentId, { keys: prepared.expectedFields.map((field) => field.key) });
     await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-    const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_setting", targetRef: { agentId: input.agentId, expectedFields: prepared.expectedFields }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: prepared.effect });
+    const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_setting", targetRef: { agentId: input.agentId, expectedFields: prepared.expectedFields }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: prepared.effect, affectedAgents: { agents: [{ id: prepared.targetAgentId, name: prepared.agentName }] }, reach: prepared.changes.some((change) => change.reach), summary: input.rationale });
     return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
   } }),
 });

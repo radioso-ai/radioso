@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { REVIEWED_OPERATION_NOT_FOUND, presentReviewedOperationSnapshot, reviewedApprovalStateSchema } from "../reviewedOperation.js";
+import { REVIEWED_OPERATION_NOT_FOUND, presentReviewedOperationSnapshot, reviewedApprovalStateSchema, splitStoredReview } from "../reviewedOperation.js";
 
 const inputSchema = z.object({
   proposalId: z.string().uuid(),
@@ -90,7 +90,8 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         })) throw badRequest("This is a dashboard-reviewed proposal. Read it with proposal_detail.");
         throw notFound(REVIEWED_OPERATION_NOT_FOUND);
       }
-      const bounded = presentReviewedOperationSnapshot(outcome.proposal.reviewSnapshot);
+      const { review: storedReview } = splitStoredReview(outcome.proposal.reviewSnapshot);
+      const bounded = presentReviewedOperationSnapshot(storedReview);
       if (input.reviewDetail && !bounded) throw badRequest("Complete review detail is not available for this reviewed operation.");
       const full = input.reviewDetail && bounded ? JSON.stringify(bounded.full) : null;
       const reviewDetail = full === null ? undefined : {
@@ -105,7 +106,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         expiresAt: outcome.proposal.expiresAt?.toISOString() ?? null,
         currentVersionMatches: outcome.currentVersionMatches,
         appliedRef: outcome.proposal.appliedRef,
-        review: bounded?.visible ?? outcome.proposal.reviewSnapshot,
+        review: bounded?.visible ?? storedReview,
         ...(reviewDetail ? { reviewDetail } : {}),
         approval: outcome.proposal.confirmationRequirement === "signed_in_approval"
           ? { requirement: "signed_in_approval", state: outcome.proposal.approvedAt ? "approved" : "awaiting", approvedAt: outcome.proposal.approvedAt?.toISOString() ?? null }

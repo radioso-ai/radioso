@@ -794,7 +794,7 @@ describe("US3 copilot proposals", () => {
     repository.expireApplyClaim(proposal.id);
     const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
     const publish = vi.fn(async () => ({ publicationId: randomUUID(), revisionId: candidateRevisionId, publishedAt: new Date(), idempotentReplay: true }));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish, createCandidate: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn() } });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: { describeCandidatePublicationPreview: vi.fn(), state: vi.fn(), detail: vi.fn(), publish, createCandidate: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn() } });
     const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], proposalAdapters: [adapter],
     });

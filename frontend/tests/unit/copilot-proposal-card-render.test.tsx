@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { applyConfirmationKind, buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
+import { applyConfirmationKind, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
+import { buildCopilotProposalDiff } from '@/lib/copilot-proposal-diff'
 import { AGENT_DRAFT_SAVED_EVENT, AGENT_GREETING_CHANGED_EVENT } from '@/lib/agent-draft-save-port'
 import { copilotApi, type CopilotProposalApplyResult, type CopilotProposalDetail, type CopilotProposalSummary } from '@/lib/api-copilot'
 

@@ -4,6 +4,9 @@ import {
   awaitReviewedApproval,
   canonicalReviewedOperationDigest,
   reviewedApprovalOutstanding,
+  splitStoredReview,
+  withoutStoredPresentation,
+  withReviewedPresentation,
   type ReviewedApprovalPollState,
 } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 
@@ -139,5 +142,31 @@ describe("awaitReviewedApproval", () => {
 
     expect(result).toEqual({ outcome: "aborted", waitedMs: 1_000 });
     expect(checkApproval).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("stored review presentation", () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const presentation = { summary: "Rename the variable", affectedAgents: { agents: [{ id: a, name: "Support" }], truncated: true }, reach: false };
+
+  it("stores the declared presentation beside the review and splits it back out", () => {
+    const stored = withReviewedPresentation({ target: { agentId: a } }, presentation);
+    expect(splitStoredReview(stored)).toEqual({ review: { target: { agentId: a } }, presentation });
+  });
+
+  it("reads a review with no presentation as having none", () => {
+    expect(splitStoredReview({ counts: { create: 3 } })).toEqual({ review: { counts: { create: 3 } }, presentation: null });
+    expect(splitStoredReview(null)).toEqual({ review: null, presentation: null });
+  });
+
+  it("refuses a presentation that lists more agents than it can show", () => {
+    const agents = Array.from({ length: 26 }, (_, index) => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, name: `Agent ${index}` }));
+    expect(() => withReviewedPresentation({}, { affectedAgents: { agents, truncated: true } })).toThrow();
+  });
+
+  it("hides the presentation from a recovered proposal so each owner's strict schema still parses its review", async () => {
+    const stored = withReviewedPresentation({ target: { agentId: a } }, presentation);
+    const port = withoutStoredPresentation({ recoverOperatorMcpProposal: async () => ({ status: "recovered", proposal: { id: "p", reviewSnapshot: stored } }) });
+    await expect((port.recoverOperatorMcpProposal as (input?: unknown) => Promise<unknown>)(undefined)).resolves.toEqual({ status: "recovered", proposal: { id: "p", reviewSnapshot: { target: { agentId: a } } } });
   });
 });

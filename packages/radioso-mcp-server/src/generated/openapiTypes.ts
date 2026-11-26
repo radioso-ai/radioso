@@ -34026,6 +34026,16 @@ export interface operations {
                             expiresAt: string | null;
                             approvedAt: string | null;
                             clientName: string | null;
+                            summary: string | null;
+                            reach: boolean;
+                            affectedAgents: {
+                                agents: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    name: string;
+                                }[];
+                                truncated: boolean;
+                            };
                             review?: unknown;
                         } | null;
                     };

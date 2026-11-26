@@ -66158,6 +66158,46 @@
                             "null"
                           ]
                         },
+                        "summary": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reach": {
+                          "type": "boolean"
+                        },
+                        "affectedAgents": {
+                          "type": "object",
+                          "properties": {
+                            "agents": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ]
+                              }
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "agents",
+                            "truncated"
+                          ]
+                        },
                         "review": {}
                       },
                       "required": [
@@ -66167,7 +66207,10 @@
                         "reviewCode",
                         "expiresAt",
                         "approvedAt",
-                        "clientName"
+                        "clientName",
+                        "summary",
+                        "reach",
+                        "affectedAgents"
                       ]
                     }
                   },

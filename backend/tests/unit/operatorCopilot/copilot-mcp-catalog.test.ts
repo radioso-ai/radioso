@@ -182,6 +182,31 @@ describe("dashboard handoff subject", () => {
       dashboardUrl: `/oauth/operator-mcp/proposal/${proposalId}`,
     });
   });
+
+  const executionResult = async (output: Record<string, unknown>) => {
+    const descriptor = {
+      ...linkedDescriptor({ type: "proposal" }, { type: "agent", id: "agent-1" }),
+      createTool: () => ({
+        name: "execute_reviewed_proposal",
+        description: "Apply a prepared operation.",
+        inputSchema: z.object({ name: z.string() }),
+        outputSchema: z.object({ proposalId: z.string() }).passthrough(),
+        invoke: async () => output,
+      }),
+    } satisfies CopilotToolDescriptor<{ name: string }>;
+    const [tool] = enrichCopilotToolCatalog([descriptor], { resolveWorkspaceKey: async () => "acme" });
+    return tool.createTool(context(new Set(["workspace.agents.read"]), "mcp")).invoke({ name: "x" }, {} as never) as Promise<Record<string, unknown>>;
+  };
+
+  it("links an execution that still awaits approval to the approval page", async () => {
+    const proposalId = "44444444-4444-4444-8444-444444444444";
+    expect(await executionResult({ proposalId, status: "approval_required" })).toMatchObject({ dashboardUrl: `/oauth/operator-mcp/proposal/${proposalId}` });
+  });
+
+  it.each(["applied", "stale", "failed", "refused", "uncertain", "dismissed"])("leaves the approval page out of a %s result", async (status) => {
+    const result = await executionResult({ proposalId: "44444444-4444-4444-8444-444444444444", status });
+    expect(result).not.toHaveProperty("dashboardUrl");
+  });
 });
 
 describe("copilot dashboard links", () => {

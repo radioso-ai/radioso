@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink, Globe } from 'lucide-react'
 
-import { ProposalValue } from '@/components/dashboard/copilot-proposal-value'
+import { ProposalChangesTable } from '@/components/dashboard/copilot-proposal-changes'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,12 +26,12 @@ import {
   type CopilotProposalDetail,
   type CopilotProposalEvidenceCase,
   type CopilotProposalEvidenceSummary,
-  type CopilotProposalPreview,
   type CopilotProposalSummary,
   type CopilotProposalStatus,
 } from '@/lib/api-copilot'
 import { announceAgentDraftSaved, announceAgentGreetingChanged } from '@/lib/agent-draft-save-port'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { buildCopilotProposalDiff } from '@/lib/copilot-proposal-diff'
 import {
   createCopilotProposalCardState,
   failCopilotProposalApply,
@@ -59,63 +59,6 @@ const statusVariant = (status: CopilotProposalStatus) => {
 
 const statusBadgeClassName = (status: CopilotProposalStatus) =>
   status === 'failed' || status === 'stale' ? 'border-destructive/40 text-destructive' : undefined
-
-const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(
-  value && typeof value === 'object' && !Array.isArray(value),
-)
-
-interface CopilotProposalDiffRow {
-  path: string
-  current: unknown
-  proposed: unknown
-  kind: 'added' | 'changed' | 'removed'
-}
-
-const displayPath = (path: string) => {
-  if (path === '$') return 'Value'
-  if (path === '$.excludes') return 'Replaces'
-  if (path === '$.priority') return 'Priority'
-  return path.replace(/^\$\./, '')
-}
-
-const valuesEqual = (left: unknown, right: unknown) => {
-  if (Object.is(left, right)) return true
-  try {
-    return JSON.stringify(left) === JSON.stringify(right)
-  } catch {
-    return false
-  }
-}
-
-const appendDiff = (rows: CopilotProposalDiffRow[], path: string, current: unknown, proposed: unknown) => {
-  if (valuesEqual(current, proposed)) return
-  if ((current === null || current === undefined) && isRecord(proposed)) {
-    const keys = Object.keys(proposed).sort()
-    for (const key of keys) appendDiff(rows, `${path}.${key}`, undefined, proposed[key])
-    return
-  }
-  if (isRecord(current) && (proposed === null || proposed === undefined)) {
-    for (const key of Object.keys(current).sort()) appendDiff(rows, `${path}.${key}`, current[key], undefined)
-    return
-  }
-  if (isRecord(current) && isRecord(proposed)) {
-    const keys = [...new Set([...Object.keys(current), ...Object.keys(proposed)])].sort()
-    for (const key of keys) appendDiff(rows, `${path}.${key}`, current[key], proposed[key])
-    return
-  }
-  rows.push({
-    path,
-    current,
-    proposed,
-    kind: current === undefined ? 'added' : proposed === undefined ? 'removed' : 'changed',
-  })
-}
-
-export const buildCopilotProposalDiff = (preview: CopilotProposalPreview): CopilotProposalDiffRow[] => {
-  const rows: CopilotProposalDiffRow[] = []
-  appendDiff(rows, '$', preview.current, preview.proposed)
-  return rows
-}
 
 export const targetReference = (
   summary: CopilotProposalSummary,
@@ -388,18 +331,7 @@ export function CopilotProposalCard({
             {isLoadingDetail ? <p className="text-xs text-muted-foreground">Loading proposed changes…</p> : null}
             {detailError ? <p className="text-xs text-destructive" role="alert">{detailError}</p> : null}
             {detail && diff.length > 0 ? (
-              <div className="overflow-hidden rounded-md border border-border/70 text-xs" aria-label="Proposal changes">
-                <div className="grid grid-cols-[minmax(5rem,.7fr)_minmax(0,1fr)_minmax(0,1fr)] border-b border-border/70 bg-muted/30 px-3 py-2 font-medium">
-                  <span>Field</span><span>Current</span><span>Proposed</span>
-                </div>
-                {diff.map((row) => (
-                  <div className="grid grid-cols-[minmax(5rem,.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-border/50 px-3 py-2 last:border-b-0" key={row.path}>
-                    <span className="font-medium text-muted-foreground">{displayPath(row.path)}</span>
-                    <span className="break-words text-muted-foreground"><ProposalValue value={row.current} /></span>
-                    <span className="break-words"><ProposalValue value={row.proposed} /></span>
-                  </div>
-                ))}
-              </div>
+              <ProposalChangesTable rows={diff} />
             ) : detail && diff.length === 0 ? <p className="text-xs text-muted-foreground">The proposed value matches the current value.</p> : null}
           </CollapsibleContent>
         </Collapsible>

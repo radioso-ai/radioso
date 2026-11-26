@@ -1024,6 +1024,13 @@ describe("the agent setting adapter's channel boundary", () => {
     expect(applyFieldProposal).not.toHaveBeenCalled();
   });
 
+  it("previews a reviewed agent-settings change as the fenced current values against the patch, naming the agent", async () => {
+    const agentId = "00000000-0000-4000-8000-000000000001";
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get: async () => ({ name: "Support" }) } } as never);
+    const preview = await adapter.preview("workspace-1", { agentId, expectedFields: [{ key: "customInstruction", value: "Be brief." }] }, { kind: "fields", patch: { customInstruction: "Be brief and kind." } });
+    expect(preview).toEqual({ targetLabel: "Support settings", current: { customInstruction: "Be brief." }, proposed: { customInstruction: "Be brief and kind." } });
+  });
+
   it("passes the draft-time value to the agent owner instead of fencing the whole agent row", async () => {
     const applyFieldProposal = vi.fn(async () => ({ status: "applied" as const }));
     const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { applyFieldProposal } as never });

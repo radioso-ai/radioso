@@ -115,7 +115,7 @@ describe("proposal_detail", () => {
     const service = new OperatorCopilotService({ contributedProposals: noContributedCopilotProposals,
       repository,
       currentAuthorization: context.currentAuthorization,
-      proposalAdapters: [createAgentSettingCopilotProposalAdapter({ agentService: { readFieldProposalVersion: vi.fn(async () => "fields:current") } } as never)],
+      proposalAdapters: [createAgentSettingCopilotProposalAdapter({ agentService: { readFieldProposalVersion: vi.fn(async () => "fields:current"), get: vi.fn(async () => ({ name: "Support" })) } } as never)],
     } as never);
     // The shape prepare_agent_settings persists: a field fence instead of one setting key.
     const prepared = await repository.createProposal({
@@ -131,7 +131,7 @@ describe("proposal_detail", () => {
 
     expect(detail).toMatchObject({
       targetType: "agent_setting",
-      target: { agentId, settingKey: null, label: "Agent settings" },
+      target: { agentId, settingKey: null, label: "Support settings" },
       draftedChange: { voice },
     });
   });

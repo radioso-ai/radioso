@@ -33,6 +33,52 @@ export const presentReviewedOperationSnapshot = (value: unknown): { readonly vis
   return { visible, full: fullReview };
 };
 
+/**
+ * What an approval page needs beyond the owner's own review shape, declared by each preparation
+ * when it persists: the agents the change reaches, a one-line summary, and whether it changes who
+ * can reach an agent. It is stored beside the review (so the digest binds it) under one reserved
+ * key, and only the proposal detail route reads it; no consumer reads a producer's snapshot keys.
+ */
+const REVIEWED_PRESENTATION_KEY = "presentation";
+export const REVIEWED_AFFECTED_AGENTS_LIMIT = 25;
+const reviewedPresentationSchema = z.object({
+  summary: z.string().max(1_000).optional(),
+  affectedAgents: z.object({
+    agents: z.array(z.object({ id: z.string().uuid(), name: z.string().max(200) }).strict()).max(REVIEWED_AFFECTED_AGENTS_LIMIT),
+    /** True when more agents are affected than `agents` lists. */
+    truncated: z.boolean(),
+  }).strict(),
+  reach: z.boolean().optional(),
+}).strict();
+type ReviewedPresentation = z.infer<typeof reviewedPresentationSchema>;
+
+export const withReviewedPresentation = (review: unknown, presentation: ReviewedPresentation): Record<string, unknown> => ({
+  ...(review && typeof review === "object" && !Array.isArray(review) ? review as Record<string, unknown> : {}),
+  [REVIEWED_PRESENTATION_KEY]: reviewedPresentationSchema.parse(presentation),
+});
+
+/** Separates the owner's review from the presentation declared beside it; absent or invalid presentation reads as none. */
+export const splitStoredReview = (value: unknown): { readonly review: unknown; readonly presentation: ReviewedPresentation | null } => {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !(REVIEWED_PRESENTATION_KEY in value)) return { review: value, presentation: null };
+  const { [REVIEWED_PRESENTATION_KEY]: stored, ...review } = value as Record<string, unknown>;
+  const parsed = reviewedPresentationSchema.safeParse(stored);
+  return { review, presentation: parsed.success ? parsed.data : null };
+};
+
+/**
+ * Hides the presentation key from a recovered proposal so each owner's strict review schema keeps
+ * parsing exactly what it wrote.
+ */
+export const withoutStoredPresentation = <TPort extends { recoverOperatorMcpProposal(input: never): Promise<unknown> }>(port: TPort): TPort => ({
+  ...port,
+  recoverOperatorMcpProposal: async (input: never) => {
+    const result = await port.recoverOperatorMcpProposal(input) as { status: string; proposal?: { reviewSnapshot: unknown } };
+    return result.status === "recovered" && result.proposal
+      ? { ...result, proposal: { ...result.proposal, reviewSnapshot: splitStoredReview(result.proposal.reviewSnapshot).review } }
+      : result;
+  },
+});
+
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;
 

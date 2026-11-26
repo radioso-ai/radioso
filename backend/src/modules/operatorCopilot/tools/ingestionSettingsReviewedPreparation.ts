@@ -43,7 +43,7 @@ export const createIngestionSettingsReviewedPreparationTool = (deps: IngestionSe
     const payload = copilotIngestionSettingsPayloadSchema.parse({ name: "Ingestion settings", ...prepared.normalizedPatch, ...(rationale === undefined ? {} : { rationale }) });
     const versionToken = await deps.ingestionSettings.readFieldProposalVersion(context.workspaceId, prepared.expected);
     await requireCurrentCopilotPermissions(context, ["workspace.settings.manage"]);
-    const stored = await persistReviewedPreparation({ deps, context, targetType: "ingestion_settings", targetRef: { expectedFields: prepared.expected }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: ingestionSettingsReviewedEffect });
+    const stored = await persistReviewedPreparation({ deps, context, targetType: "ingestion_settings", targetRef: { expectedFields: prepared.expected }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: ingestionSettingsReviewedEffect, affectedAgents: { agents: [] }, summary: rationale });
     return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
   } }),
 });

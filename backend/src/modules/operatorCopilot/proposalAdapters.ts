@@ -55,14 +55,12 @@ import {
   type CopilotReviewedReceiptPort,
 } from "./contracts.js";
 import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
+import { previewReviewedAgentSettings, type AgentNamePort } from "./reviewedAgentSettingsPreview.js";
 export { createContextVariableCopilotProposalAdapter } from "./contextVariableProposalAdapter.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
 import { diagnosticsIntroducedBy, routineValidationRefusal } from "./routineValidationRefusal.js";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
-import {
-  recipientEmailChangeMetadata,
-  recipientEmailsFromDeliveryConfig,
-} from "../../shared/domain/recipientEmailAudit.js";
+import { recipientEmailChangeMetadata, recipientEmailsFromDeliveryConfig } from "../../shared/domain/recipientEmailAudit.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
 export interface AgentSkillMcpApplyPort {
@@ -319,7 +317,7 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
 
 /** Composition adapter: forwards agent-setting proposals to AgentService's preparation and apply ports. */
 export const createAgentSettingCopilotProposalAdapter = (deps: {
-  readonly agentService: AgentSettingsProposalPort;
+  readonly agentService: AgentSettingsProposalPort & AgentNamePort;
   readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
@@ -342,7 +340,7 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
     const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
     if (reviewed.success) {
       const payload = reviewedSettingsPayloadSchema.parse(rawPayload);
-      return { targetLabel: "Agent settings", current: null, proposed: payload.patch };
+      return previewReviewedAgentSettings(deps.agentService, workspaceId, reviewed.data, payload.patch);
     }
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);

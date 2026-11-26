@@ -19,7 +19,7 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
-import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOperation.js";
+import { presentReviewedOperationSnapshot, reviewCodeFor, splitStoredReview } from "./reviewedOperation.js";
 import type { CopilotEmptyStateService } from "./services/emptyStateService.js";
 import { workspaceSetupStatePermissions } from "./tools/workspaceSetupState.js";
 
@@ -123,6 +123,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       const client = result.proposal.reviewDigest
         ? await dependencies.operatorCopilotService.describeReviewedProposalClient({ workspaceId, operatorUserId: userId, proposal: result.proposal })
         : null;
+      const stored = splitStoredReview(result.proposal.reviewSnapshot);
       res.status(200).json({
         id: result.proposal.id,
         workspaceId,
@@ -145,7 +146,10 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
           expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
           approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
           clientName: client?.clientName ?? null,
-          review: presentReviewedOperationSnapshot(result.proposal.reviewSnapshot)?.visible ?? result.proposal.reviewSnapshot,
+          summary: stored.presentation?.summary ?? null,
+          reach: stored.presentation?.reach ?? false,
+          affectedAgents: stored.presentation?.affectedAgents ?? { agents: [], truncated: false },
+          review: presentReviewedOperationSnapshot(stored.review)?.visible ?? stored.review,
         } : null,
       });
     } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }

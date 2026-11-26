@@ -6,6 +6,7 @@ import { isOwnerRefusal } from "./proposalVersioning.js";
 
 export type AgentPublicationRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate" | "detail" | "describeCandidateRelease" | "describeCandidatePublicationReview" | "readCandidateReleaseChange" | "publish">;
 
+const PREVIEW_ROW_LIMIT = 40;
 const targetSchema = z.object({ agentId: z.string().uuid(), candidateRevisionId: z.string().uuid() }).strict();
 const payloadSchema = z.object({ expectedDraftGeneration: z.number().int().nonnegative(), expectedPublishedRevisionId: z.string().uuid().nullable() }).strict();
 
@@ -23,7 +24,11 @@ const currentVersionToken = async (revisions: AgentPublicationRevisionPort, work
 };
 
 /** Candidate preparation stays in the MCP tool; this adapter owns one standard apply path. */
-export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPublicationRevisionPort }): CopilotAgentPublicationProposalAdapter => ({
+export const createAgentPublicationProposalAdapter = (deps: {
+  revisions: AgentPublicationRevisionPort & Pick<AgentRevisionService, "describeCandidatePublicationPreview">;
+  /** Names the agent a publication preview is about. */
+  agents: { get(workspaceId: string, agentId: string): Promise<{ readonly name: string }> };
+}): CopilotAgentPublicationProposalAdapter => ({
   targetType: "agent_publication",
   proposalDetailTargetRef: (rawTargetRef) => {
     const targetRef = targetSchema.parse(rawTargetRef);
@@ -42,15 +47,30 @@ export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPu
     return currentVersionToken(deps.revisions, workspaceId, targetRef.agentId);
   },
 
-  async preview(workspaceId, rawTargetRef, rawPayload) {
+  /**
+   * The change a publication makes, as named things an operator recognises ("Directive: Refund tone"):
+   * each is a row with its live value as current and the candidate's as proposed. An item the
+   * candidate adds has no current value and one it removes has no proposed value. Fences and
+   * revision ids are the adapter's own bookkeeping and stay out of the preview.
+   */
+  async preview(workspaceId, rawTargetRef) {
     const targetRef = targetSchema.parse(rawTargetRef);
-    const payload = payloadSchema.parse(rawPayload);
-    const state = await deps.revisions.state(workspaceId, targetRef.agentId);
-    return {
-      targetLabel: "Agent publication",
-      current: { draftGeneration: state.draft.generation, publishedRevisionId: state.publishedRevision?.id ?? null },
-      proposed: { candidateRevisionId: targetRef.candidateRevisionId, ...payload },
-    };
+    const [agent, { rows, hidden }] = await Promise.all([
+      deps.agents.get(workspaceId, targetRef.agentId),
+      deps.revisions.describeCandidatePublicationPreview(workspaceId, targetRef.agentId, targetRef.candidateRevisionId, PREVIEW_ROW_LIMIT),
+    ]);
+    const current: Record<string, unknown> = {};
+    const proposed: Record<string, unknown> = {};
+    const seen = new Map<string, number>();
+    for (const row of rows) {
+      const occurrences = (seen.get(row.label) ?? 0) + 1;
+      seen.set(row.label, occurrences);
+      const key = occurrences === 1 ? row.label : `${row.label} (${occurrences})`;
+      if (row.before !== null) current[key] = row.before;
+      if (row.after !== null) proposed[key] = row.after;
+    }
+    if (hidden > 0) proposed["More changes"] = `and ${hidden} more not shown`;
+    return { targetLabel: `Publish ${agent.name}`, current, proposed };
   },
 
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, suppliedVersionToken, context?: CopilotProposalApplyContext) {

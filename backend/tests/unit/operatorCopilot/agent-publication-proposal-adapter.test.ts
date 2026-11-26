@@ -1,34 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createAgentPublicationProposalAdapter, type AgentPublicationRevisionPort } from "../../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import type { AgentRevisionService } from "../../../src/modules/agents/public.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 
 const target = { agentId: "00000000-0000-4000-8000-000000000001", candidateRevisionId: "00000000-0000-4000-8000-000000000002" };
 const payload = { expectedDraftGeneration: 4, expectedPublishedRevisionId: "00000000-0000-4000-8000-000000000003" };
 const state = { draft: { generation: 4, basePublishedRevisionId: payload.expectedPublishedRevisionId }, publishedRevision: { id: payload.expectedPublishedRevisionId } };
 const context = { surface: "mcp" as const, accountId: "account-1", executionInvocationId: "execution-1" };
-const revisionPort = (overrides: Partial<AgentPublicationRevisionPort>): AgentPublicationRevisionPort => ({
+const revisionPort = (overrides: Partial<AgentPublicationRevisionPort & Pick<AgentRevisionService, "describeCandidatePublicationPreview">>) => ({
+  describeCandidatePublicationPreview: vi.fn(),
   state: vi.fn(), createCandidate: vi.fn(), detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn(), ...overrides,
 });
 
 describe("agent publication reviewed proposal adapter", () => {
   it("validates the immutable candidate and derives its publication fence", async () => {
     const detail = vi.fn().mockResolvedValue({ id: target.candidateRevisionId });
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ detail }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ detail }) });
     await expect(adapter.validatePayload(target.agentId, target, payload)).resolves.toEqual({ targetRef: target, payload, versionToken: `4:${payload.expectedPublishedRevisionId}` });
     expect(detail).toHaveBeenCalledWith(target.agentId, target.agentId, target.candidateRevisionId);
   });
 
   it("publishes once using the execution receipt as the owner idempotency key", async () => {
     const publish = vi.fn().mockResolvedValue({ publicationId: "publication-1", revisionId: target.candidateRevisionId, publishedAt: new Date(), idempotentReplay: false });
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
     await expect(adapter.applyIfVersionMatches("workspace-1", target, payload, `4:${payload.expectedPublishedRevisionId}`, context)).resolves.toMatchObject({ outcome: "applied", appliedRef: { publicationId: "publication-1", revisionId: target.candidateRevisionId } });
     expect(publish).toHaveBeenCalledWith("workspace-1", target.agentId, "account-1", expect.objectContaining({ idempotencyKey: "execution-1" }));
   });
 
   it("lets the owner resolve a changed fence as a stale publication", async () => {
     const publish = vi.fn().mockRejectedValue({ statusCode: 409 });
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ state: vi.fn().mockResolvedValue({ ...state, draft: { ...state.draft, generation: 5 } }), publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ state: vi.fn().mockResolvedValue({ ...state, draft: { ...state.draft, generation: 5 } }), publish }) });
     await expect(adapter.applyIfVersionMatches("workspace-1", target, payload, `4:${payload.expectedPublishedRevisionId}`, context)).resolves.toEqual({ outcome: "stale" });
     expect(publish).toHaveBeenCalledOnce();
   });
@@ -36,7 +38,7 @@ describe("agent publication reviewed proposal adapter", () => {
   it("reconciles a lost response through the owner's execution idempotency record", async () => {
     const publishedAt = new Date();
     const publish = vi.fn().mockResolvedValue({ publicationId: "publication-1", revisionId: target.candidateRevisionId, publishedAt, idempotentReplay: true });
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ state: vi.fn().mockResolvedValue({ ...state, draft: { ...state.draft, generation: 5 } }), publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ state: vi.fn().mockResolvedValue({ ...state, draft: { ...state.draft, generation: 5 } }), publish }) });
 
     await expect(adapter.reconcileMcpInterruptedApply?.({ workspaceId: "workspace-1", accountId: "account-1", targetRef: target, payload, versionToken: `4:${payload.expectedPublishedRevisionId}`, executionInvocationId: "execution-1", previousAttemptStartedAt: new Date() }))
       .resolves.toEqual({ outcome: "applied", appliedRef: { publicationId: "publication-1", revisionId: target.candidateRevisionId, publishedAt } });
@@ -44,7 +46,7 @@ describe("agent publication reviewed proposal adapter", () => {
   });
 
   it("does not permit dashboard application of a reviewed publication", async () => {
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({}) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({}) });
     await expect(adapter.applyIfVersionMatches("workspace-1", target, payload, `4:${payload.expectedPublishedRevisionId}`, { surface: "dashboard", accountId: "account-1" })).resolves.toMatchObject({ outcome: "failed" });
   });
 
@@ -53,14 +55,14 @@ describe("agent publication reviewed proposal adapter", () => {
   // durably instead of leaving the operator retrying an owner refusal that will never change.
   it("settles a servability refusal as a durable failed publication, not an uncertain MCP apply", async () => {
     const publish = vi.fn().mockRejectedValue(new AppError(422, "revision_invalid", "The draft contains a routine that cannot be released."));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
     await expect(adapter.applyIfVersionMatches("workspace-1", target, payload, `4:${payload.expectedPublishedRevisionId}`, context))
       .resolves.toEqual({ outcome: "failed", reason: "The draft contains a routine that cannot be released." });
   });
 
   it("keeps an unclassifiable publish failure uncertain by rethrowing it on an MCP apply", async () => {
     const publish = vi.fn().mockRejectedValue(new Error("connection reset"));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ state: vi.fn().mockResolvedValue(state), publish }) });
     await expect(adapter.applyIfVersionMatches("workspace-1", target, payload, `4:${payload.expectedPublishedRevisionId}`, context)).rejects.toThrow("connection reset");
   });
 
@@ -70,15 +72,39 @@ describe("agent publication reviewed proposal adapter", () => {
   // refusal on reconcile therefore cannot prove not_applied; it must rethrow to uncertain.
   it("rethrows a servability refusal on reconcile instead of certifying an unproven not applied", async () => {
     const publish = vi.fn().mockRejectedValue(new AppError(422, "revision_invalid", "The draft contains a routine that cannot be released."));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ publish }) });
     await expect(adapter.reconcileMcpInterruptedApply?.({ workspaceId: "workspace-1", accountId: "account-1", targetRef: target, payload, versionToken: `4:${payload.expectedPublishedRevisionId}`, executionInvocationId: "execution-1", previousAttemptStartedAt: new Date() }))
       .rejects.toThrow("The draft contains a routine that cannot be released.");
   });
 
   it("rethrows an unclassifiable reconcile failure instead of reporting an unproven unknown effect", async () => {
     const publish = vi.fn().mockRejectedValue(new Error("connection reset"));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: revisionPort({ publish }) });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ publish }) });
     await expect(adapter.reconcileMcpInterruptedApply?.({ workspaceId: "workspace-1", accountId: "account-1", targetRef: target, payload, versionToken: `4:${payload.expectedPublishedRevisionId}`, executionInvocationId: "execution-1", previousAttemptStartedAt: new Date() }))
       .rejects.toThrow("connection reset");
+  });
+
+  it("previews what publishing changes under each item's name, not the fences, and counts what it hides", async () => {
+    const describeCandidatePublicationPreview = vi.fn().mockResolvedValue({
+      hidden: 3,
+      rows: [
+        { label: "Custom instruction", before: "Be brief.", after: "Be brief and kind." },
+        { label: "Directive: Refund tone", before: null, after: { when: "visitor asks about a refund", then: "Stay warm", enabled: true } },
+        { label: "Routine: Booking", before: { enabled: true, steps: 4 }, after: null },
+        { label: "Directive: Refund tone", before: { enabled: true }, after: { enabled: false } },
+      ],
+    });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: revisionPort({ describeCandidatePublicationPreview }) });
+    const preview = await adapter.preview("workspace-1", target, payload);
+    expect(describeCandidatePublicationPreview).toHaveBeenCalledWith("workspace-1", target.agentId, target.candidateRevisionId, 40);
+    expect(preview.targetLabel).toBe("Publish Support");
+    expect(preview.current).toEqual({ "Custom instruction": "Be brief.", "Routine: Booking": { enabled: true, steps: 4 }, "Directive: Refund tone (2)": { enabled: true } });
+    expect(preview.proposed).toEqual({
+      "Custom instruction": "Be brief and kind.",
+      "Directive: Refund tone": { when: "visitor asks about a refund", then: "Stay warm", enabled: true },
+      "Directive: Refund tone (2)": { enabled: false },
+      "More changes": "and 3 more not shown",
+    });
+    expect(JSON.stringify(preview)).not.toMatch(/draftGeneration|expectedPublishedRevisionId|candidateRevisionId|publishedRevisionId/);
   });
 });

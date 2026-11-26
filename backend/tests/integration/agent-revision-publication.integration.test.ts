@@ -263,7 +263,7 @@ describeDb("agent revision publication concurrency", () => {
     await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [recoveryAgentId, workspaceId, "recovery"]);
     await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,snapshot) VALUES ($1,$2,1,$3::jsonb)", [recoveryAgentId, workspaceId, snapshot]);
     const service = new AgentRevisionService(repository, () => randomUUID());
-    const adapter = createAgentPublicationProposalAdapter({ revisions: service });
+    const adapter = createAgentPublicationProposalAdapter({ agents: { get: async () => ({ name: "Support" }) }, revisions: service });
     const candidate = await service.createCandidate(workspaceId, recoveryAgentId, 1);
     const targetRef = { agentId: recoveryAgentId, candidateRevisionId: candidate.id };
     const payload = { expectedDraftGeneration: 1, expectedPublishedRevisionId: null };

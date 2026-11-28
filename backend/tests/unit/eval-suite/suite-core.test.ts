@@ -37,6 +37,7 @@ import {
 } from "../../fixtures/conversation-quality/index.js";
 import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
+import { refinementCases, refinementDocuments } from "../../fixtures/conversation-quality/refinementCases.js";
 import { propertyFlowRoutine } from "../../fixtures/conversation-quality/routineCardCases.js";
 import { replyBlockCases, replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
 import { sectionedPageCases, sectionedPageDocuments } from "../../fixtures/conversation-quality/sectionedPageCases.js";
@@ -1395,16 +1396,20 @@ describe("seed fixtures", () => {
 
   it("only references document and routine ids that exist in the fixtures, each case in the corpus it grounds against", () => {
     const sharedDocumentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
-    const replyBlockDocumentIds = new Set(replyBlockDocuments.map((doc) => doc.id));
-    const replyBlockCaseIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
-    const sectionedPageDocumentIds = new Set(sectionedPageDocuments.map((doc) => doc.id));
-    const sectionedPageCaseIds = new Set(sectionedPageCases.map((evalCase) => evalCase.id));
+    // Cases that run apart ground against their own corpus.
+    const ownCorpusFor = new Map<string, Set<string>>();
+    for (const [cases, documents] of [
+      [replyBlockCases, replyBlockDocuments],
+      [sectionedPageCases, sectionedPageDocuments],
+      [refinementCases, refinementDocuments],
+    ] as const) {
+      const documentIds = new Set(documents.map((doc) => doc.id));
+      for (const evalCase of cases) ownCorpusFor.set(evalCase.id, documentIds);
+    }
     // The routine-card cases run on their own agent, with its own routine.
     const routineIds = new Set([...conversationQualityRoutines.map((routine) => routine.id), propertyFlowRoutine.id]);
     for (const evalCase of conversationQualityCases) {
-      const documentIds = replyBlockCaseIds.has(evalCase.id)
-        ? replyBlockDocumentIds
-        : sectionedPageCaseIds.has(evalCase.id) ? sectionedPageDocumentIds : sharedDocumentIds;
+      const documentIds = ownCorpusFor.get(evalCase.id) ?? sharedDocumentIds;
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {
           expect(documentIds.has(assertion.documentId)).toBe(true);

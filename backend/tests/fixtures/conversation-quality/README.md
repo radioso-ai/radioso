@@ -15,6 +15,7 @@ repo-committed regression suite you run from the CLI.
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
 | `sectionedPageCases.ts` | the sectioned page case and its own corpus: an invented product's markdown pricing page with one heading per plan, and a help page that names the plans in passing (see [Sectioned page case](#sectioned-page-case)) |
+| `refinementCases.ts` | the narrowing follow-up cases and their own corpus: an invented product's help centre in English and Italian, with general pages about sensitive data and pages about building routines and their fields (see [Narrowing follow-up cases](#narrowing-follow-up-cases)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -188,6 +189,25 @@ The pages describe an invented product, and the shared corpus has a pricing page
 the case runs in a workspace beside the target named `Conversation-quality sectioned pages`,
 seeded with these two pages alone, on an agent that carries the seed directives
 (`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`).
+
+## Narrowing follow-up cases
+
+`refinement-narrows-previous-question-en` and `-it` (#1873) ask "How do you handle sensitive
+data?", give the transcript retention answer, then send "I mean in the routine" ("Intendo nella
+routine"). The follow-up names only where the question applies, with no pronoun, so the turn has
+to keep the earlier subject and add the routine. The routine fields page answers it: a consent
+step before a sensitive field, and erasure 14 days after the routine ends. The help centre also
+holds several general pages about sensitive data and a page on building a routine, so a rewrite
+that keeps only one half of the question finds a page that answers that half.
+
+Each case requires the turn to retrieve, the routine fields page among the first two retrieved
+chunks and cited, its consent word and 14-day figure in the answer, and no 90-day retention from
+the first answer. The corpus has fourteen pages, so the answer's context holds most of them; the
+top-two check is what tells a page found through the whole question from one found further down.
+
+The pages describe an invented product, and the shared corpus's security page answers "sensitive
+data" too, so the cases run in a workspace beside the target named `Conversation-quality
+narrowing follow-ups`, seeded with these pages alone.
 
 ## Slot-filling cases
 

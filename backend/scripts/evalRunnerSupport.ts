@@ -19,6 +19,7 @@ import {
 } from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
+import { refinementCases } from "../tests/fixtures/conversation-quality/refinementCases.js";
 import { replyBlockCases, replyBlockImages } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
 import { routineCardCases } from "../tests/fixtures/conversation-quality/routineCardCases.js";
 import { sectionedPageCases } from "../tests/fixtures/conversation-quality/sectionedPageCases.js";
@@ -289,7 +290,9 @@ export const runThenClose = async <T>(
  * invented-link checks assume no document has, and hiking books, which a mountain-course
  * question could otherwise retrieve. The sectioned page cases run in one of their own too: their
  * pages describe another product's plans, which every "which plans" question in the target would
- * otherwise read beside the target's own.
+ * otherwise read beside the target's own. So do the narrowing follow-up cases: each needs the broad
+ * page, the narrowed page, and the constraint's page alone, and the target's security page and
+ * seeded routines would answer their messages too.
  */
 export const partitionCasesByCorpus = (
   cases: readonly ConversationQualityCase[],
@@ -299,6 +302,7 @@ export const partitionCasesByCorpus = (
   toolCards: ConversationQualityCase[];
   routineCards: ConversationQualityCase[];
   sectionedPages: ConversationQualityCase[];
+  refinements: ConversationQualityCase[];
 } => {
   const replyBlockIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
   // The tool-card cases bind every turn of their agent to a search, so they need an agent of their own.
@@ -306,17 +310,20 @@ export const partitionCasesByCorpus = (
   // The routine-card cases need the search as a routine's tool step, with no directive claiming the turn.
   const routineCardIds = new Set(routineCardCases.map((evalCase) => evalCase.id));
   const sectionedPageIds = new Set(sectionedPageCases.map((evalCase) => evalCase.id));
+  const refinementIds = new Set(refinementCases.map((evalCase) => evalCase.id));
   const apart = (evalCase: ConversationQualityCase) =>
     replyBlockIds.has(evalCase.id)
     || toolCardIds.has(evalCase.id)
     || routineCardIds.has(evalCase.id)
-    || sectionedPageIds.has(evalCase.id);
+    || sectionedPageIds.has(evalCase.id)
+    || refinementIds.has(evalCase.id);
   return {
     shared: cases.filter((evalCase) => !apart(evalCase)),
     replyBlocks: cases.filter((evalCase) => replyBlockIds.has(evalCase.id)),
     toolCards: cases.filter((evalCase) => toolCardIds.has(evalCase.id)),
     routineCards: cases.filter((evalCase) => routineCardIds.has(evalCase.id)),
     sectionedPages: cases.filter((evalCase) => sectionedPageIds.has(evalCase.id)),
+    refinements: cases.filter((evalCase) => refinementIds.has(evalCase.id)),
   };
 };
 
@@ -331,6 +338,9 @@ export const ROUTINE_CARD_EVAL_WORKSPACE_NAME = "Conversation-quality routine ca
 
 /** The name of the workspace the sectioned page cases run in. */
 export const SECTIONED_PAGE_EVAL_WORKSPACE_NAME = "Conversation-quality sectioned pages";
+
+/** The name of the workspace the narrowing follow-up cases run in. */
+export const REFINEMENT_EVAL_WORKSPACE_NAME = "Conversation-quality narrowing follow-ups";
 
 /** The workspace reads and writes `ensureReplyBlockTarget` makes, narrowed so a test can hand it fakes. */
 interface ReplyBlockTargetPorts {

@@ -1,6 +1,7 @@
 import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { renderVisitorImageTurn } from "../../../src/modules/visitorImages/public.js";
 import { seedDirectiveConfigWith } from "./agent.js";
+import { refinementCases } from "./refinementCases.js";
 import { replyBlockCases } from "./replyBlockCases.js";
 import { routineCardCases } from "./routineCardCases.js";
 import { sectionedPageCases } from "./sectionedPageCases.js";
@@ -1431,4 +1432,5 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   ...toolCardCases,
   ...routineCardCases,
   ...sectionedPageCases,
+  ...refinementCases,
 ];

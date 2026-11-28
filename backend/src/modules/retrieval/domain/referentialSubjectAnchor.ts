@@ -77,3 +77,47 @@ export const anchorRetrievalToSubject = (input: {
     anchored: true,
   };
 };
+
+/** The lexical query with the subject's words beside the model's own, unless it already names them. */
+const joinSubjectToLexicalQuery = (lexicalQuery: string, subject: string): string =>
+  namesSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
+
+const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): RetrievalSubquery => {
+  const semanticQuery = anchorSemanticQuery(branch.semanticQuery, subject);
+  const lexicalQuery = joinSubjectToLexicalQuery(branch.lexicalQuery, subject);
+  if (lexicalQuery === branch.lexicalQuery) {
+    return { ...branch, semanticQuery };
+  }
+  // A derived lexical plan reads the query the model wrote; the joined query is searched as written.
+  const { lexicalPlan: _planOfTheModelQuery, ...unplanned } = branch;
+  return { ...unplanned, semanticQuery, lexicalQuery };
+};
+
+/**
+ * Keeps the earlier subject in a narrowing follow-up's searches. The turn asks the earlier
+ * question again with something added ("I mean in the routine" after a question about
+ * sensitive data), so its answer is where the subject meets the addition: every semantic
+ * query names the subject, and every lexical query holds it beside the model's own terms,
+ * where lexical search ranks a chunk holding both first. The subject never runs as a search
+ * of its own: that search is the earlier question's, and it finds the earlier answer again.
+ */
+export const anchorNarrowingToSubject = (input: {
+  subject: string;
+  semanticQuery: string;
+  lexicalQuery: string;
+  retrievalSubqueries?: RetrievalSubquery[];
+}): { semanticQuery: string; lexicalQuery: string; retrievalSubqueries?: RetrievalSubquery[]; anchored: boolean } => {
+  const semanticQuery = anchorSemanticQuery(input.semanticQuery, input.subject);
+  const lexicalQuery = joinSubjectToLexicalQuery(input.lexicalQuery, input.subject);
+  const retrievalSubqueries = input.retrievalSubqueries?.map((branch) => joinSubjectToBranch(branch, input.subject));
+  const branchAnchored = (retrievalSubqueries ?? []).some((branch, index) => {
+    const original = input.retrievalSubqueries?.[index];
+    return branch.semanticQuery !== original?.semanticQuery || branch.lexicalQuery !== original.lexicalQuery;
+  });
+  return {
+    semanticQuery,
+    lexicalQuery,
+    retrievalSubqueries,
+    anchored: semanticQuery !== input.semanticQuery || lexicalQuery !== input.lexicalQuery || branchAnchored,
+  };
+};

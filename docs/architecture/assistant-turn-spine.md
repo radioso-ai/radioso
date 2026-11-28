@@ -143,7 +143,10 @@ effective registrations `forTurn` activates through (the release's, the workbenc
 preview's, and the built-in ones) and narrows them with
 `startableRoutineRegistrations`, the eligibility and completed-routine filter the
 routine registry ranks after, given the turn and the routines the conversation's
-store has completed. The skills come from `runnableSkillDirectives`, which applies
+store has completed. A built-in routine whose name is an identifier carries a
+capability label for this list (`withCapabilityLabel`): the contact routine reads
+as "Contact a person" here, while activation ranks and offers it as
+`contact.request`. The skills come from `runnableSkillDirectives`, which applies
 the binding resolver's rules to the same skill availability the turn's selector
 resolves bindings against, kept to the directives the directive runtime grants
 (`grantedDirectives`, the required-capability check steering applies to every

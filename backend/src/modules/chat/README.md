@@ -1242,8 +1242,9 @@ imports from `services/`.
   direct composer (`readsCapabilities` on `DIRECT_REPLY_CONFIG`) reads it once, only
   on an identity turn. It holds whether retrieval is on, the routines the conversation
   could start by authored name and trigger (`ChatRoutineProvider.describeStartable`,
-  given the turn and the routines the assembly's store has completed), and the
-  condition of each directive whose binding the turn could run
+  given the turn and the routines the assembly's store has completed; a built-in named
+  by an identifier is listed by its `withCapabilityLabel` label, which ranking never
+  reads), and the condition of each directive whose binding the turn could run
   (`runnableSkillDirectives` over `ChatTurnSkillSelector.bindingAvailability`, kept to
   what `RouteScopedDirectiveRuntime.grantedDirectives` grants). Entries are capped in
   count and length. A failed

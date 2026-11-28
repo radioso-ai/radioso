@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { TurnContext } from "@radioso/conversation-contract";
-import type { RoutineRegistration } from "@radioso/conversation-defaults";
+import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
 
 import {
   ApplicationModuleCoordinator,
@@ -10,7 +10,10 @@ import {
 import { createContactRoutineApplicationModule } from "../../../src/app/composition/builtIn/contactRoutineModule.js";
 import { createPublishedRoutineRegistrationSource } from "../../../src/app/composition/routineDefinitionSource.js";
 import type { RoutineDefinitionRepository } from "../../../src/db/repositories/routineDefinitionRepository.js";
-import { contactRoutineDefinition } from "../../../src/modules/chat/services/routines/contactRoutine.js";
+import {
+  CONTACT_ROUTINE_CAPABILITY_LABEL,
+  contactRoutineDefinition,
+} from "../../../src/modules/chat/services/routines/contactRoutine.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
 import { createRoutineTurnProvider } from "../../../src/modules/routines/turnProvider.js";
 
@@ -97,19 +100,27 @@ describe("the routines a conversation could start, for a reply about what the ag
     await expect(startableNames({ turn: turn({ contactRequestsEnabled: true, hasContactDestination: false }) }))
       .resolves.toEqual([bookingDefinition.name]);
     await expect(startableNames({ turn: turn(contactOn) }))
-      .resolves.toEqual([contactRoutineDefinition.name, bookingDefinition.name]);
+      .resolves.toEqual([CONTACT_ROUTINE_CAPABILITY_LABEL, bookingDefinition.name]);
   });
 
-  it("names the built-in contact routine the way a visitor reads it, not by an identifier", () => {
-    expect(contactRoutineDefinition.name).not.toBe(contactRoutineDefinition.id);
-    expect(contactRoutineDefinition.name).toMatch(/\s/);
+  it("names the built-in contact routine to a visitor by a readable label, not by its name or id", () => {
+    expect(CONTACT_ROUTINE_CAPABILITY_LABEL).not.toBe(contactRoutineDefinition.name);
+    expect(CONTACT_ROUTINE_CAPABILITY_LABEL).not.toBe(contactRoutineDefinition.id);
+    expect(CONTACT_ROUTINE_CAPABILITY_LABEL).toMatch(/\s/);
+  });
+
+  it("ranks and offers the built-in contact routine under the title it has always had", async () => {
+    const prepared = await new RoutineRegistry(builtInRegistrations()).prepareCandidates(turn(contactOn));
+
+    expect(prepared.kind === "rank" ? prepared.candidates.map((candidate) => candidate.title) : prepared)
+      .toEqual(["contact.request"]);
   });
 
   it("leaves out a once-per-conversation routine that already completed, and keeps one that may start again", async () => {
     await expect(startableNames({
       turn: turn(contactOn),
       completedRoutineIds: [BOOKING_ROUTINE_ID, contactRoutineDefinition.id],
-    })).resolves.toEqual([contactRoutineDefinition.name]);
+    })).resolves.toEqual([CONTACT_ROUTINE_CAPABILITY_LABEL]);
   });
 
   it("fails instead of describing no routines when the agent's routines cannot be read", async () => {

@@ -303,6 +303,20 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     query: "Can it take actions, or is it just a chatbot?",
     assertions: [{ type: "turn_route", route: "retrieval" }],
   },
+  // #1872: after a turn about the product, a question about the assistant's own name is still
+  // about the assistant, so the pronoun rule does not pull it onto the product.
+  {
+    id: "routing-name-after-product-direct",
+    name: "Asked its name after a turn about the product, the agent answers directly",
+    tags: ["routing", "direct", "identity", "multiturn"],
+    agentConfigOverride: PRODUCT_NAMED_AGENT,
+    history: [
+      { role: "user", content: "Tell me about Radioso." },
+      { role: "assistant", content: "Radioso is a platform for building assistants that answer from a company's documents." },
+    ],
+    query: "What's your name?",
+    assertions: [{ type: "turn_route", route: "direct" }],
+  },
   // #1872: a request phrased as whether the agent can do it still starts the routine for it.
   {
     id: "capability-question-request-starts-routine",

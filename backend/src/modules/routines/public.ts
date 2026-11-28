@@ -30,7 +30,7 @@ export {
 } from "./domain.js";
 export { routineAdvisoriesWithMessages } from "./advisories.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate } from "./compiler.js";
-export { startableRoutineCapabilities, type RoutineCapability } from "./routineCapabilities.js";
+export { startableRoutineCapabilities, withCapabilityLabel, type RoutineCapability } from "./routineCapabilities.js";
 export { routineDraftChangeEffect } from "./reviewedChangeEffect.js";
 export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {

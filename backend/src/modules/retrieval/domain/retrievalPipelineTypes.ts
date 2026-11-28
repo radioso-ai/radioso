@@ -28,6 +28,9 @@ export type RewriteStatus = (typeof REWRITE_STATUS)[keyof typeof REWRITE_STATUS]
 export const REWRITE_TURN_KIND = {
   FRESH_SUBJECT: "fresh_subject",
   REFERENTIAL_FOLLOWUP: "referential_followup",
+  // Asks the previous question again with something added, naming only the addition
+  // ("I mean in the routine"): the earlier subject still holds.
+  NARROWING_FOLLOWUP: "narrowing_followup",
   REFERENTIAL_RELATION: "referential_relation",
   EXPLICIT_RECENTER: "explicit_recenter",
   COMPARATIVE: "comparative",
@@ -35,6 +38,9 @@ export const REWRITE_TURN_KIND = {
 } as const;
 
 export type RewriteTurnKind = (typeof REWRITE_TURN_KIND)[keyof typeof REWRITE_TURN_KIND];
+
+/** Every turn kind a rewrite can carry, the one value set a model's response schema offers. */
+export const REWRITE_TURN_KINDS = Object.values(REWRITE_TURN_KIND) as [RewriteTurnKind, ...RewriteTurnKind[]];
 
 export type ResponseLanguagePolicy = "match_user_question";
 

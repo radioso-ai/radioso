@@ -522,7 +522,8 @@ describe("query rewrite referential subject", () => {
     subject?: string;
     query?: string;
     unresolved?: boolean;
-    turnKind?: "referential_followup" | "referential_relation" | "explicit_recenter" | "comparative" | "fresh_subject";
+    turnKind?: "referential_followup" | "narrowing_followup" | "referential_relation" | "explicit_recenter" | "comparative" | "fresh_subject";
+    queryShape?: "general_grounding" | "definition_lookup";
     retrievalSubqueries?: ProposalSubquery[];
     history?: MessageRecord[];
   }) => {
@@ -534,7 +535,7 @@ describe("query rewrite referential subject", () => {
           lexicalQuery: proposal.lexicalQuery,
           responseLanguagePolicy: "match_user_question",
           turnKind: proposal.turnKind ?? "referential_followup",
-          queryShape: "general_grounding",
+          queryShape: proposal.queryShape ?? "general_grounding",
           proposedActiveSubject: proposal.subject ?? SUBJECT,
           relatedEntities: [],
           unresolved: proposal.unresolved ?? false,
@@ -657,6 +658,175 @@ describe("query rewrite referential subject", () => {
 
     expect(result.semanticQuery).toBe(`${SUBJECT}: Chi insegna l'evento`);
     expect(lexicalQueriesOf(result)).toEqual(["insegnante", SUBJECT]);
+  });
+
+  describe("a narrowing follow-up", () => {
+    // "How do you handle sensitive data?" then "I mean in the routine": the turn asks the earlier
+    // question again with a constraint, so its answer sits where the subject meets the constraint.
+    const narrowingHistory = [
+      message("How do you handle sensitive data?"),
+      message("Conversation transcripts are kept for 90 days and then deleted.", "assistant"),
+    ];
+    const rewriteNarrowing = (proposal: Omit<Parameters<typeof rewriteReferential>[0], "turnKind" | "history">) =>
+      rewriteReferential({
+        subject: "sensitive data",
+        query: "I mean in the routine",
+        history: narrowingHistory,
+        turnKind: "narrowing_followup",
+        ...proposal,
+      });
+
+    /** Every query the turn searches with, and the subject retrieval anchored them to. */
+    const searchedText = (result: Awaited<ReturnType<typeof rewriteReferential>>) =>
+      [
+        result.semanticQuery,
+        result.lexicalQuery,
+        ...(result.retrievalSubqueries ?? []).flatMap((subquery) => [subquery.semanticQuery, subquery.lexicalQuery]),
+        result.structuredResult?.anchoredSubject ?? "",
+      ].join(" | ");
+
+    it("joins the earlier subject to a search that names none of it, keeps the model's own search beside it, and never searches the subject alone", async () => {
+      const result = await rewriteNarrowing({
+        semanticQuery: "Consent rules for routine fields",
+        lexicalQuery: "routine",
+      });
+
+      expect(result.status).toBe("applied");
+      expect(result.semanticQuery).toBe("sensitive data: Consent rules for routine fields");
+      expect(result.lexicalQuery).toBe("routine sensitive data");
+      expect(result.retrievalSubqueries).toEqual([
+        expect.objectContaining({ semanticQuery: "sensitive data: Consent rules for routine fields", lexicalQuery: "routine sensitive data" }),
+        // A mislabelled turn still searches what the model wrote.
+        expect.objectContaining({ semanticQuery: "Consent rules for routine fields", lexicalQuery: "routine", reason: "model_query" }),
+      ]);
+      // A search for the subject alone would run the earlier question again and find its answer.
+      expect(lexicalQueriesOf(result)).not.toContain("sensitive data");
+      expect(result.structuredResult?.anchoredSubject).toBe("sensitive data");
+    });
+
+    it("joins the whole subject to a search that kept only part of it", async () => {
+      // "sensitive data" came back as "data": the half the model dropped is half the question.
+      const result = await rewriteNarrowing({
+        semanticQuery: "How data is handled in the routine",
+        lexicalQuery: "routine data",
+      });
+
+      expect(result.semanticQuery).toBe("sensitive data: How data is handled in the routine");
+      expect(result.lexicalQuery).toBe("routine data sensitive data");
+      expect(result.retrievalSubqueries).toContainEqual(
+        expect.objectContaining({ semanticQuery: "How data is handled in the routine", lexicalQuery: "routine data", reason: "model_query" }),
+      );
+      expect(result.structuredResult?.anchoredSubject).toBe("sensitive data");
+    });
+
+    it("anchors nothing when the follow-up names another subject in place of the earlier one", async () => {
+      // "How much is the Starter plan?" then "And the Pro plan?": a recenter on the Pro plan.
+      const result = await rewriteReferential({
+        turnKind: "explicit_recenter",
+        subject: "Pro plan",
+        query: "And the Pro plan?",
+        semanticQuery: "Pro plan price",
+        lexicalQuery: "Pro plan price",
+        history: [message("How much is the Starter plan?"), message("The Starter plan is free.", "assistant")],
+      });
+
+      expect(searchedText(result)).not.toMatch(/starter/iu);
+      expect(result.retrievalSubqueries).toBeUndefined();
+      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+    });
+
+    it("keeps a swapped place out of every search when the subject is the part both questions share", async () => {
+      // "How long does shipping to Germany take?" then "and to Austria?": the subject is shipping.
+      const result = await rewriteReferential({
+        turnKind: "narrowing_followup",
+        subject: "shipping",
+        query: "and to Austria?",
+        semanticQuery: "Shipping time to Austria",
+        lexicalQuery: "shipping Austria",
+        history: [message("How long does shipping to Germany take?"), message("Orders reach Germany in 2 working days.", "assistant")],
+      });
+
+      expect(searchedText(result)).not.toMatch(/germany/iu);
+      expect(result.semanticQuery).toBe("Shipping time to Austria");
+      expect(result.lexicalQuery).toBe("shipping Austria");
+      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+    });
+
+    it("still searches the model's own query when a swap is labelled a narrowing of the old subject", async () => {
+      // The label is wrong, so the join brings Starter back; the model's own query stays clean.
+      const result = await rewriteReferential({
+        turnKind: "narrowing_followup",
+        subject: "Starter plan",
+        query: "And the Pro plan?",
+        semanticQuery: "Pro plan price",
+        lexicalQuery: "Pro plan price",
+        history: [message("How much is the Starter plan?"), message("The Starter plan is free.", "assistant")],
+      });
+
+      expect(result.retrievalSubqueries).toContainEqual(
+        expect.objectContaining({ semanticQuery: "Pro plan price", lexicalQuery: "Pro plan price", reason: "model_query" }),
+      );
+    });
+
+    it("still searches what the model wrote when a fresh subject is labelled a narrowing", async () => {
+      // "What about pricing?" after the sensitive data question names a subject of its own.
+      const result = await rewriteNarrowing({
+        query: "What about pricing?",
+        semanticQuery: "Pricing plans",
+        lexicalQuery: "pricing",
+      });
+
+      expect(result.retrievalSubqueries).toContainEqual(
+        expect.objectContaining({ semanticQuery: "Pricing plans", lexicalQuery: "pricing" }),
+      );
+    });
+
+    it("leaves queries that already hold the earlier subject as the model wrote them", async () => {
+      const result = await rewriteNarrowing({
+        semanticQuery: "How sensitive data is handled in the routine",
+        lexicalQuery: "sensitive data routine",
+      });
+
+      expect(result.semanticQuery).toBe("How sensitive data is handled in the routine");
+      expect(result.lexicalQuery).toBe("sensitive data routine");
+      expect(result.retrievalSubqueries).toBeUndefined();
+      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+    });
+
+    it("joins the earlier subject to each model subquery that names none of it, and keeps the model's own query as a search", async () => {
+      const result = await rewriteNarrowing({
+        semanticQuery: "Sensitive data in routine steps and endings",
+        lexicalQuery: "routine",
+        retrievalSubqueries: [
+          { label: "Steps", semanticQuery: "Consent before a routine step", lexicalQuery: "routine step consent" },
+          { label: "Endings", semanticQuery: "Sensitive data in routine endings", lexicalQuery: "sensitive data routine ending" },
+        ],
+      });
+
+      expect(lexicalQueriesOf(result)).toEqual(["routine step consent sensitive data", "sensitive data routine ending", "routine"]);
+      expect(result.retrievalSubqueries?.map((subquery) => subquery.semanticQuery)).toEqual([
+        "sensitive data: Consent before a routine step",
+        "Sensitive data in routine endings",
+        "Sensitive data in routine steps and endings",
+      ]);
+      expect(result.retrievalSubqueries?.some((subquery) => subquery.reason === "referential_subject")).toBe(false);
+      expect(new Set(result.retrievalSubqueries?.map((subquery) => subquery.id)).size).toBe(3);
+    });
+
+    it("keeps the constraint in a one-fact lookup's lexical query", async () => {
+      const result = await rewriteReferential({
+        turnKind: "narrowing_followup",
+        queryShape: "definition_lookup",
+        subject: "plan Pro",
+        query: "con pago anual",
+        semanticQuery: "Precio del plan Pro con pago anual",
+        lexicalQuery: "plan Pro pago anual",
+        history: [message("¿Cuánto cuesta el plan Pro?"), message("El plan Pro cuesta 49 dólares al mes.", "assistant")],
+      });
+
+      expect(result.lexicalQuery).toBe("plan Pro pago anual");
+      expect(result.retrievalSubqueries).toBeUndefined();
+    });
   });
 
   it.each(["fresh_subject", "explicit_recenter", "comparative"] as const)(

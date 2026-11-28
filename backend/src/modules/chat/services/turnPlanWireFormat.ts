@@ -6,6 +6,7 @@
  */
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { JsonSchemaResponseFormat } from "../../../shared/infra/llm/providerTypes.js";
+import { REWRITE_TURN_KINDS } from "../../retrieval/public.js";
 import { PAGE_READ_INTENTS, type PageReadCapability } from "./pageRead/pageReadDecision.js";
 
 /** The conversational mechanics a planner-written quick reply may answer. */
@@ -51,14 +52,8 @@ export const QUERY_SHAPE_VALUES = [
   "general_grounding",
 ] as const;
 export const TEMPORAL_QUERY_MODE_VALUES = ["none", "listing", "topic_refinement"] as const;
-export const TURN_KIND_VALUES = [
-  "fresh_subject",
-  "referential_followup",
-  "referential_relation",
-  "explicit_recenter",
-  "comparative",
-  "ambiguous",
-] as const;
+// Retrieval reads the turn kind (`queryRewriteService.ts`), so its value set is retrieval's own.
+export const TURN_KIND_VALUES = REWRITE_TURN_KINDS;
 
 const confidenceJsonSchema = { type: "number", minimum: 0, maximum: 1 } as const;
 const quickReplyJsonSchema = {

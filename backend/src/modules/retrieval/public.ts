@@ -36,6 +36,7 @@ export type {
 export type {
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
+export { REWRITE_TURN_KINDS } from "./domain/retrievalPipelineTypes.js";
 export * from "./copilotPrimitiveRegistry.js";
 export { resolveAgentRetrievalScope } from "./domain/agentRetrievalScope.js";
 export type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";

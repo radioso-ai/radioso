@@ -77,3 +77,84 @@ export const anchorRetrievalToSubject = (input: {
     anchored: true,
   };
 };
+
+/** The lexical query with the subject's words beside the model's own, unless it already names every one. */
+const joinSubjectToLexicalQuery = (lexicalQuery: string, subject: string): string =>
+  namesSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
+
+const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): RetrievalSubquery => {
+  const semanticQuery = anchorSemanticQuery(branch.semanticQuery, subject);
+  const lexicalQuery = joinSubjectToLexicalQuery(branch.lexicalQuery, subject);
+  if (lexicalQuery === branch.lexicalQuery) {
+    return { ...branch, semanticQuery };
+  }
+  // A derived lexical plan reads the query the model wrote; the joined query is searched as written.
+  const { lexicalPlan: _planOfTheModelQuery, ...unplanned } = branch;
+  return { ...unplanned, semanticQuery, lexicalQuery };
+};
+
+/**
+ * Keeps the earlier subject in a narrowing follow-up's searches. The turn asks the earlier
+ * question again with something added ("I mean in the routine" after a question about
+ * sensitive data), so its answer is where the subject meets the addition. A query that lacks
+ * any word of the subject gets the whole subject joined: the semantic query names it, and the
+ * lexical query holds it beside the model's own terms, where lexical search ranks a chunk
+ * holding both first. A query that names every word is left as the model wrote it.
+ *
+ * Joining on any missing word restores a subject the model half dropped ("sensitive data" written
+ * as "data"), and a function word the query shares with the subject cannot switch the join off.
+ * The price is a follow-up that swaps part of the question: joined to the earlier subject whole,
+ * it would search the part the user replaced. The interpreter prevents that by the subject it
+ * proposes, not by this check: a swap of the subject is a recenter, which anchors nothing, and a
+ * swap of a place or option keeps only the part both questions share as the subject.
+ *
+ * The subject never runs as a search of its own: that search is the earlier question's, and it
+ * finds the earlier answer again. When a join changes a search, the model's own top-level query
+ * runs as one more search, so a mislabelled turn (a swap, or a subject of its own such as "What
+ * about pricing?") keeps one search for what it asks. When the model wrote two or more subqueries,
+ * their semantic queries already fill the per-turn semantic cap, so that search is lexical only.
+ */
+export const anchorNarrowingToSubject = (input: {
+  subject: string;
+  semanticQuery: string;
+  lexicalQuery: string;
+  retrievalSubqueries?: RetrievalSubquery[];
+  responseLanguagePolicy: ResponseLanguagePolicy;
+  labelFor: (text: string, position: number) => string;
+}): { semanticQuery: string; lexicalQuery: string; retrievalSubqueries?: RetrievalSubquery[]; anchored: boolean } => {
+  const modelBranches: RetrievalSubquery[] = input.retrievalSubqueries ?? [{
+    id: "subquery_1",
+    label: input.labelFor(input.lexicalQuery, 1),
+    semanticQuery: input.semanticQuery,
+    lexicalQuery: input.lexicalQuery,
+    responseLanguagePolicy: input.responseLanguagePolicy,
+  }];
+  const joinedBranches = modelBranches.map((branch) => joinSubjectToBranch(branch, input.subject));
+  const semanticQuery = anchorSemanticQuery(input.semanticQuery, input.subject);
+  const lexicalQuery = joinSubjectToLexicalQuery(input.lexicalQuery, input.subject);
+  const anchored = semanticQuery !== input.semanticQuery
+    || lexicalQuery !== input.lexicalQuery
+    || joinedBranches.some((branch, index) =>
+      branch.semanticQuery !== modelBranches[index].semanticQuery || branch.lexicalQuery !== modelBranches[index].lexicalQuery);
+  if (!anchored) {
+    return { semanticQuery, lexicalQuery, retrievalSubqueries: input.retrievalSubqueries, anchored };
+  }
+
+  return {
+    semanticQuery,
+    lexicalQuery,
+    retrievalSubqueries: [
+      ...joinedBranches,
+      {
+        // Model subquery ids can skip numbers, so this one is named rather than numbered.
+        id: "model_query",
+        label: input.labelFor(input.lexicalQuery, joinedBranches.length + 1),
+        semanticQuery: input.semanticQuery,
+        lexicalQuery: input.lexicalQuery,
+        reason: "model_query",
+        responseLanguagePolicy: input.responseLanguagePolicy,
+      },
+    ],
+    anchored,
+  };
+};

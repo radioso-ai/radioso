@@ -37,6 +37,7 @@ import {
 } from "../../fixtures/conversation-quality/index.js";
 import { BREATH_COURSE_DOC_ID, conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
+import { refinementCases, refinementDocuments } from "../../fixtures/conversation-quality/refinementCases.js";
 import { propertyFlowRoutine } from "../../fixtures/conversation-quality/routineCardCases.js";
 import { replyBlockCases, replyBlockDocuments } from "../../fixtures/conversation-quality/replyBlockCases.js";
 import { sectionedPageCases, sectionedPageDocuments } from "../../fixtures/conversation-quality/sectionedPageCases.js";
@@ -106,6 +107,38 @@ describe("trace assertions", () => {
     expect(ungraded.status).toBe("fail");
     expect(ungraded.reason).toContain("ungraded");
     expect(evaluateTraceAssertion(assertion, compose({ answerLength: 12 })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
+  });
+
+  // #1873: a follow-up that swaps part of the question must not carry the replaced part into a search.
+  it("reads turn_queries_exclude from every search the retrieval interpretation recorded", () => {
+    const searched = (outputs: Record<string, unknown>) =>
+      observed({
+        turnTrace: trace([{
+          id: "dispatch:retrieval",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: {},
+          subTrace: { namespace: "retrieval", version: 1, payload: { stages: [{ stageId: "interpretation", kind: "query_interpretation", outputs }] } },
+        }]),
+      });
+    const clean = {
+      semanticQuery: "Pro plan price",
+      lexicalQuery: "pro plan price",
+      retrievalSubqueries: [{ semanticQuery: "Pro plan price", lexicalQuery: "pro plan" }],
+      anchoredSubject: null,
+    };
+    const assertion = { type: "turn_queries_exclude", term: "Starter" } as const;
+
+    expect(evaluateTraceAssertion(assertion, searched(clean)).status).toBe("pass");
+    const inSubquery = evaluateTraceAssertion(assertion, searched({
+      ...clean,
+      retrievalSubqueries: [{ semanticQuery: "Pro plan price", lexicalQuery: "pro plan price starter plan" }],
+    }));
+    expect(inSubquery.status).toBe("fail");
+    expect(inSubquery.reason).toContain("pro plan price starter plan");
+    expect(evaluateTraceAssertion(assertion, searched({ ...clean, anchoredSubject: "Starter plan" })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed({ turnTrace: trace([]) })).status).toBe("fail");
     expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
   });
 
@@ -1395,16 +1428,20 @@ describe("seed fixtures", () => {
 
   it("only references document and routine ids that exist in the fixtures, each case in the corpus it grounds against", () => {
     const sharedDocumentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
-    const replyBlockDocumentIds = new Set(replyBlockDocuments.map((doc) => doc.id));
-    const replyBlockCaseIds = new Set(replyBlockCases.map((evalCase) => evalCase.id));
-    const sectionedPageDocumentIds = new Set(sectionedPageDocuments.map((doc) => doc.id));
-    const sectionedPageCaseIds = new Set(sectionedPageCases.map((evalCase) => evalCase.id));
+    // Cases that run apart ground against their own corpus.
+    const ownCorpusFor = new Map<string, Set<string>>();
+    for (const [cases, documents] of [
+      [replyBlockCases, replyBlockDocuments],
+      [sectionedPageCases, sectionedPageDocuments],
+      [refinementCases, refinementDocuments],
+    ] as const) {
+      const documentIds = new Set(documents.map((doc) => doc.id));
+      for (const evalCase of cases) ownCorpusFor.set(evalCase.id, documentIds);
+    }
     // The routine-card cases run on their own agent, with its own routine.
     const routineIds = new Set([...conversationQualityRoutines.map((routine) => routine.id), propertyFlowRoutine.id]);
     for (const evalCase of conversationQualityCases) {
-      const documentIds = replyBlockCaseIds.has(evalCase.id)
-        ? replyBlockDocumentIds
-        : sectionedPageCaseIds.has(evalCase.id) ? sectionedPageDocumentIds : sharedDocumentIds;
+      const documentIds = ownCorpusFor.get(evalCase.id) ?? sharedDocumentIds;
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {
           expect(documentIds.has(assertion.documentId)).toBe(true);

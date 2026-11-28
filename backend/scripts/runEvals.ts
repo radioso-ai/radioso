@@ -67,6 +67,7 @@ import { conversationQualityCases } from "../tests/fixtures/conversation-quality
 import { conversationQualityCorpus, type ConversationQualityDocument } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
 import { replyBlockDocuments } from "../tests/fixtures/conversation-quality/replyBlockCases.js";
+import { refinementDocuments } from "../tests/fixtures/conversation-quality/refinementCases.js";
 import { conversationQualityRoutines } from "../tests/fixtures/conversation-quality/routines.js";
 import { sectionedPageDocuments } from "../tests/fixtures/conversation-quality/sectionedPageCases.js";
 import { VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
@@ -87,6 +88,7 @@ import {
   seededRoutineSkillNames,
   seedReplyBlockImages,
   seedVoiceSettings,
+  REFINEMENT_EVAL_WORKSPACE_NAME,
   ROUTINE_CARD_EVAL_WORKSPACE_NAME,
   SECTIONED_PAGE_EVAL_WORKSPACE_NAME,
   TOOL_CARD_EVAL_WORKSPACE_NAME,
@@ -571,24 +573,34 @@ const runReplyBlockCases = async (
   });
 };
 
+/** A corpus some cases ground against in a workspace of their own, and the name a repeat run finds it by. */
+interface OwnCorpus {
+  workspaceName: string;
+  documents: ConversationQualityDocument[];
+  /** What the seeding log line calls the documents. */
+  label: string;
+}
+
 /**
- * Runs the sectioned page cases in their own workspace beside the target, seeded with their pricing
- * page and plan-change help page alone, on that workspace's agent, which carries the seed directives
- * as the target's agent does.
+ * Runs cases in their own workspace beside the target, seeded with their corpus alone, on that
+ * workspace's agent, which carries the seed directives as the target's agent does: the sectioned
+ * page cases on their pricing page and plan-change help page, the narrowing follow-up cases on
+ * their broad, narrowed, and constraint pages.
  */
-const runSectionedPageCases = async (
+const runOwnCorpusCases = async (
   deps: Deps,
   flags: Flags,
   cases: ConversationQualityCase[],
   judge: SuiteJudge | undefined,
+  corpus: OwnCorpus,
 ): Promise<SuiteResult> => {
   const target = await ensureReplyBlockTarget(
     { workspaces: deps.workspaceRepository, workspaceService: deps.workspaceService, agentService: deps.agentService },
     flags.workspaceId,
-    SECTIONED_PAGE_EVAL_WORKSPACE_NAME,
+    corpus.workspaceName,
   );
-  console.log(`Seeding the sectioned pages onto agent ${target.agentId} in workspace ${target.workspaceId}…`);
-  const documentIds = await ingestDocuments(deps, target.workspaceId, sectionedPageDocuments);
+  console.log(`Seeding the ${corpus.label} onto agent ${target.agentId} in workspace ${target.workspaceId}…`);
+  const documentIds = await ingestDocuments(deps, target.workspaceId, corpus.documents);
   await seedDirectives(deps, target.workspaceId, target.agentId);
   await waitForDocumentsReady(deps, target.workspaceId, documentIds);
 
@@ -691,7 +703,7 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
   if (flags.samples > 1) {
     console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
   }
-  const { shared, replyBlocks, toolCards, routineCards, sectionedPages } = partitionCasesByCorpus(run.cases);
+  const { shared, replyBlocks, toolCards, routineCards, sectionedPages, refinements } = partitionCasesByCorpus(run.cases);
   const parts: SuiteResult[] = [];
   if (shared.length > 0) {
     parts.push(await runSharedCases(deps, flags, { ...run, cases: shared }, suiteJudge?.judge));
@@ -706,7 +718,18 @@ const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Pr
     parts.push(await runRoutineCardCases(deps, flags, routineCards, suiteJudge?.judge));
   }
   if (sectionedPages.length > 0) {
-    parts.push(await runSectionedPageCases(deps, flags, sectionedPages, suiteJudge?.judge));
+    parts.push(await runOwnCorpusCases(deps, flags, sectionedPages, suiteJudge?.judge, {
+      workspaceName: SECTIONED_PAGE_EVAL_WORKSPACE_NAME,
+      documents: sectionedPageDocuments,
+      label: "sectioned pages",
+    }));
+  }
+  if (refinements.length > 0) {
+    parts.push(await runOwnCorpusCases(deps, flags, refinements, suiteJudge?.judge, {
+      workspaceName: REFINEMENT_EVAL_WORKSPACE_NAME,
+      documents: refinementDocuments,
+      label: "narrowing follow-up pages",
+    }));
   }
   const reports = parts.flatMap((part) => part.reports);
   const outcomes = parts.flatMap((part) => part.outcomes);

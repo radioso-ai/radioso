@@ -15,6 +15,7 @@ repo-committed regression suite you run from the CLI.
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
 | `sectionedPageCases.ts` | the sectioned page case and its own corpus: an invented product's markdown pricing page with one heading per plan, and a help page that names the plans in passing (see [Sectioned page case](#sectioned-page-case)) |
+| `refinementCases.ts` | the narrowing follow-up cases and their own corpus: an invented product's help centre in English, Italian, and German, with general pages about sensitive data, pages about building routines and their fields, two plan pages, two shipping pages, and two add-on pages per language (see [Narrowing follow-up cases](#narrowing-follow-up-cases)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -30,7 +31,7 @@ Two layers (see `src/modules/eval/suite/`):
   `routine_slots_unfilled`, `routine_slots_returned`, `routine_slots_not_returned`,
   `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
-  `turn_directive_committed`, `reply_block`, `no_reply_block`, `answer_excludes_image_url`, plus the product
+  `turn_directive_committed`, `turn_queries_exclude`, `reply_block`, `no_reply_block`, `answer_excludes_image_url`, plus the product
   `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
@@ -188,6 +189,46 @@ The pages describe an invented product, and the shared corpus has a pricing page
 the case runs in a workspace beside the target named `Conversation-quality sectioned pages`,
 seeded with these two pages alone, on an agent that carries the seed directives
 (`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`).
+
+## Narrowing follow-up cases
+
+`refinement-narrows-previous-question-en` and `-it` (#1873) ask "How do you handle sensitive
+data?", give the transcript retention answer, then send "I mean in the routine" ("Intendo nella
+routine"). The follow-up names only where the question applies, with no pronoun, so the turn has
+to keep the earlier subject and add the routine. The routine fields page answers it: a consent
+step before a sensitive field, and erasure 14 days after the routine ends. The help centre also
+holds several general pages about sensitive data and a page on building a routine, so a rewrite
+that keeps only one half of the question finds a page that answers that half.
+
+Each case requires the turn to retrieve, the routine fields page among the first two retrieved
+chunks and cited, its consent word and 14-day figure in the answer, and no 90-day retention from
+the first answer. The corpus is small, so the answer's context holds most of them; the
+top-two check is what tells a page found through the whole question from one found further down.
+
+Three cases hold the other side, where a follow-up must not keep the earlier question whole:
+
+- `refinement-swaps-plan-en`: "How much is the Starter plan?", then "And the Pro plan?". The
+  follow-up names another subject in place of the earlier one.
+- `refinement-swaps-place-de`: "Was kostet der Versand nach Deutschland?", then "Und nach
+  Österreich?". The country is replaced and the question kept.
+- `refinement-fresh-subject-after-sensitive-data-en`: the sensitive data exchange, then "What about
+  pricing?", a subject of its own.
+
+Each requires the page that answers the new question and its figure, and `turn_queries_exclude`
+for the replaced part or the earlier subject: no semantic or lexical query, subquery, or anchored
+subject the turn searched with may name it. A turn read as a narrowing that keeps the earlier
+question whole fails there, even when the answer happens to come out right.
+
+Two cases hold the opposite line, a follow-up that asks one attribute of the earlier subject:
+`refinement-attribute-of-earlier-subject-en` ("Tell me about the Voice add-on.", then "What about
+the price?") and `-it` ("Parlami del componente aggiuntivo Traduzione.", then "E il prezzo?"). The
+other add-on's page names its price with the request's own word, so a turn that drops the earlier
+subject finds it first. Each requires the earlier add-on's page cited, its price in the answer, and
+the other add-on's price absent.
+
+The pages describe an invented product, and the shared corpus's security page answers "sensitive
+data" too, so the cases run in a workspace beside the target named `Conversation-quality
+narrowing follow-ups`, seeded with these pages alone.
 
 ## Slot-filling cases
 

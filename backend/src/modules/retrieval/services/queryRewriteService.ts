@@ -10,6 +10,7 @@ import {
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
   ConversationContextWindow,
+  ResponseLanguagePolicy,
   RetrievalQueryShape,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
@@ -19,7 +20,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_STATUS, REWRITE_TURN_KIND, type TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
-import { anchorRetrievalToSubject } from "../domain/referentialSubjectAnchor.js";
+import { anchorNarrowingToSubject, anchorRetrievalToSubject } from "../domain/referentialSubjectAnchor.js";
 import { readRequestedDateRange, requestedDateRangeFields } from "../domain/temporal/requestedDateRange.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
@@ -42,12 +43,17 @@ export {
 
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
 const MAX_REWRITE_LENGTH = 300;
-// Turns that point back at a subject named earlier. A fresh subject or an explicit
-// recenter names its subject in the turn itself, a comparison has no single subject,
-// and an ambiguous turn has none resolved.
-const REFERENTIAL_TURN_KINDS: ReadonlySet<RewriteTurnKind> = new Set([
-  REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
-  REWRITE_TURN_KIND.REFERENTIAL_RELATION,
+// How retrieval keeps the subject a turn took from an earlier turn. A reference back ("the
+// event") has no searchable term of its own, so the subject runs as a search alongside the
+// model's. A narrowing follow-up asks the earlier question again with something added, so the
+// subject is joined to each of the model's searches and never searched alone. A fresh subject
+// or an explicit recenter names its subject in the turn itself, a comparison has no single
+// subject, and an ambiguous turn has none resolved.
+type SubjectAnchoring = "alongside" | "joined";
+const SUBJECT_ANCHORING: ReadonlyMap<RewriteTurnKind, SubjectAnchoring> = new Map([
+  [REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP, "alongside"],
+  [REWRITE_TURN_KIND.REFERENTIAL_RELATION, "alongside"],
+  [REWRITE_TURN_KIND.NARROWING_FOLLOWUP, "joined"],
 ]);
 const resolveFallbackUsageContext = (
   input: { workspaceContext?: LlmCapabilityResolveInput; usageContext?: ModelCallUsageContext },
@@ -144,26 +150,24 @@ export class QueryRewriteService {
             responseLanguagePolicy,
           })
         : undefined);
-    const resolvedLexicalQuery = this.selectResolvedSubjectLexicalQuery({
+    const modelLexicalQuery = this.selectResolvedSubjectLexicalQuery({
       queryShape: normalizedStructuredResult.queryShape,
+      turnKind: normalizedStructuredResult.turnKind,
       lexicalQuery,
       proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
     });
     // The no-context guards above already decided this turn stands alone.
-    const referentialSubject = hasConversationContext
-      ? this.referentialSubject(normalizedStructuredResult, input.proposal)
+    const earlierSubject = hasConversationContext
+      ? this.earlierSubject(normalizedStructuredResult, input.proposal)
       : undefined;
-    const anchoring = referentialSubject
-      ? anchorRetrievalToSubject({
-          subject: referentialSubject,
-          semanticQuery: selectedSemanticQuery,
-          lexicalQuery: resolvedLexicalQuery,
-          retrievalSubqueries: modelRetrievalSubqueries,
-          responseLanguagePolicy,
-          labelFor: (text, position) => this.normalizeRetrievalSubqueryLabel(text) ?? `Subquery ${position}`,
-        })
-      : { semanticQuery: selectedSemanticQuery, retrievalSubqueries: modelRetrievalSubqueries, anchored: false };
+    const anchoring = this.anchorEarlierSubject(earlierSubject, {
+      semanticQuery: selectedSemanticQuery,
+      lexicalQuery: modelLexicalQuery,
+      retrievalSubqueries: modelRetrievalSubqueries,
+      responseLanguagePolicy,
+    });
     const semanticQuery = anchoring.semanticQuery;
+    const resolvedLexicalQuery = anchoring.lexicalQuery;
     const compatibilityRewrite = semanticQuery;
     const retrievalSubqueries = anchoring.retrievalSubqueries;
     const applied =
@@ -189,7 +193,7 @@ export class QueryRewriteService {
       semanticQuery,
       lexicalQuery: resolvedLexicalQuery,
       retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
-      ...(anchoring.anchored && referentialSubject ? { anchoredSubject: referentialSubject } : {}),
+      ...(anchoring.anchored && earlierSubject ? { anchoredSubject: earlierSubject.subject } : {}),
     };
     const eligibility = this.eligibilityService.evaluate({
       originalQuery: input.query,
@@ -431,6 +435,7 @@ export class QueryRewriteService {
     switch (turnKind) {
       case REWRITE_TURN_KIND.FRESH_SUBJECT:
       case REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP:
+      case REWRITE_TURN_KIND.NARROWING_FOLLOWUP:
       case REWRITE_TURN_KIND.REFERENTIAL_RELATION:
       case REWRITE_TURN_KIND.EXPLICIT_RECENTER:
       case REWRITE_TURN_KIND.COMPARATIVE:
@@ -547,13 +552,16 @@ export class QueryRewriteService {
     ].slice(0, 8);
   }
 
+  // A one-fact lookup searches its subject alone, except on a narrowing follow-up, where the
+  // subject alone is the earlier question's search and the addition is what the turn asks.
   private selectResolvedSubjectLexicalQuery(input: {
     queryShape?: RetrievalQueryShape;
+    turnKind: RewriteTurnKind;
     lexicalQuery: string;
     proposedActiveSubject?: string;
   }): string {
     const subject = input.proposedActiveSubject?.trim();
-    if (!subject || input.queryShape !== "definition_lookup") {
+    if (!subject || input.queryShape !== "definition_lookup" || input.turnKind === REWRITE_TURN_KIND.NARROWING_FOLLOWUP) {
       return input.lexicalQuery;
     }
 
@@ -561,21 +569,46 @@ export class QueryRewriteService {
   }
 
   /**
-   * The subject a referential turn resolved to. A reference such as "the event" has no
-   * searchable term of its own, so retrieval needs the subject the interpreter resolved it
-   * to. It is read as free text from the proposal: the classifier label behind
-   * `proposedActiveSubject` rejects punctuation a course or product name can carry. An
-   * unresolved turn's subject is a guess and stays out.
+   * The subject a turn took from an earlier turn, and how retrieval keeps it
+   * (`SUBJECT_ANCHORING`). A reference such as "the event", or a narrowing follow-up such as
+   * "I mean in the routine", leaves the subject out of its own words, so retrieval needs the
+   * subject the interpreter resolved. It is read as free text from the proposal: the
+   * classifier label behind `proposedActiveSubject` rejects punctuation a course or product
+   * name can carry. An unresolved turn's subject is a guess and stays out.
    */
-  private referentialSubject(
+  private earlierSubject(
     result: StructuredRewriteResult,
     proposal?: QueryRewriteGatewayResultPort,
-  ): string | undefined {
-    if (!proposal || !("turnKind" in proposal) || !REFERENTIAL_TURN_KINDS.has(result.turnKind) || result.unresolved) {
+  ): { subject: string; anchoring: SubjectAnchoring } | undefined {
+    const anchoring = SUBJECT_ANCHORING.get(result.turnKind);
+    if (!proposal || !("turnKind" in proposal) || !anchoring || result.unresolved) {
       return undefined;
     }
     const subject = this.normalizeOptionalRewrite(proposal.proposedActiveSubject);
-    return subject && subject.length <= MAX_REWRITE_LENGTH ? subject : undefined;
+    return subject && subject.length <= MAX_REWRITE_LENGTH ? { subject, anchoring } : undefined;
+  }
+
+  private anchorEarlierSubject(
+    earlierSubject: { subject: string; anchoring: SubjectAnchoring } | undefined,
+    queries: {
+      semanticQuery: string;
+      lexicalQuery: string;
+      retrievalSubqueries?: RetrievalSubquery[];
+      responseLanguagePolicy: ResponseLanguagePolicy;
+    },
+  ): { semanticQuery: string; lexicalQuery: string; retrievalSubqueries?: RetrievalSubquery[]; anchored: boolean } {
+    const { responseLanguagePolicy, ...searches } = queries;
+    if (!earlierSubject) {
+      return { ...searches, anchored: false };
+    }
+    const labelFor = (text: string, position: number) => this.normalizeRetrievalSubqueryLabel(text) ?? `Subquery ${position}`;
+    if (earlierSubject.anchoring === "joined") {
+      return anchorNarrowingToSubject({ subject: earlierSubject.subject, ...searches, responseLanguagePolicy, labelFor });
+    }
+    return {
+      ...anchorRetrievalToSubject({ subject: earlierSubject.subject, ...searches, responseLanguagePolicy, labelFor }),
+      lexicalQuery: searches.lexicalQuery,
+    };
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {

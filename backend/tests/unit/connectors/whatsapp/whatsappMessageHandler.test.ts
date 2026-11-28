@@ -10,7 +10,7 @@ import {
 import { WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler, type WhatsAppInboundMessage } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
-import { photoReceiptOf } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
+import { photoReceiptOf, storedTurnOf } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 import { InMemoryWhatsAppPersistence } from "./support/inMemoryWhatsAppPersistence.js";
 
 /** What every WhatsApp turn declares it draws: cards still show only where the agent has them on. */
@@ -54,6 +54,7 @@ describe("WhatsAppMessageHandler", () => {
     setErrorStatus?: ConnectorStatePort["setErrorStatus"];
     retryBaseDelayMs?: number;
     maxRetryAttempts?: number;
+    heartbeatMs?: number;
     unsupportedMessageReply?: string;
   }) => {
     const persistence = input?.persistence ?? new InMemoryWhatsAppPersistence();
@@ -102,6 +103,7 @@ describe("WhatsAppMessageHandler", () => {
       debounceMs: 3000,
       retryBaseDelayMs: input?.retryBaseDelayMs,
       maxRetryAttempts: input?.maxRetryAttempts,
+      heartbeatMs: input?.heartbeatMs,
     });
 
     return { handler, persistence, chat, client, setErrorStatus };
@@ -187,7 +189,7 @@ describe("WhatsAppMessageHandler", () => {
   it("records the conversation's number as soon as the message is stored in it, even when the turn then fails", async () => {
     const chat = {
       answer: vi.fn<ConnectorChatPort["answer"]>(async (input) => {
-        await input.onMessageStored?.({ conversationId: "conversation-new" });
+        await input.onMessageStored?.({ conversationId: "conversation-new", messageId: "message-1" });
         throw new Error("model unavailable");
       }),
     };
@@ -202,6 +204,155 @@ describe("WhatsAppMessageHandler", () => {
 
     expect(persistence.conversationNumbers.get("conversation-new")).toEqual({ workspaceId: "workspace-1", waId: "15550100101" });
     expect(persistence.contacts.size).toBe(0);
+  });
+
+  it("answers the message an earlier attempt stored when the same messages are retried, and continues that conversation for the sender's next message", async () => {
+    const chat = {
+      answer: vi.fn<ConnectorChatPort["answer"]>()
+        .mockImplementationOnce(async (input) => {
+          await input.onMessageStored?.({ conversationId: "conversation-new", messageId: "message-1" });
+          throw new Error("model unavailable");
+        })
+        .mockImplementationOnce(async () => { throw new Error("model unavailable"); })
+        .mockResolvedValue({ conversationId: "conversation-new", answer: "Answer", outcome: "answered" }),
+    };
+    const { handler, persistence } = createHandler({ chat, maxRetryAttempts: 2, retryBaseDelayMs: 10 });
+    for (const wamid of ["wamid-in-1", "wamid-in-2"]) {
+      await persistence.createMessageLog({
+        wamid, direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+        messageType: "text", payload: { body: "Hello" }, status: "received",
+      });
+    }
+
+    await handler.handleInboundMessage(inbound({ wamid: "wamid-in-1", waId: "15550100101", textBody: "Hello" }));
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3010);
+    expect(chat.answer).toHaveBeenNthCalledWith(2, expect.objectContaining({ conversationId: "conversation-new", resumeMessageId: "message-1" }));
+
+    await handler.handleInboundMessage(inbound({ wamid: "wamid-in-2", waId: "15550100101", textBody: "Anyone there?" }));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(chat.answer).toHaveBeenNthCalledWith(3, expect.objectContaining({ conversationId: "conversation-new" }));
+    expect(chat.answer.mock.calls[2][0]).not.toHaveProperty("resumeMessageId");
+  });
+
+  describe("messages an earlier attempt stored", () => {
+    const stored = async (persistence: InMemoryWhatsAppPersistence, wamid: string, textBody: string, messageId?: string) => {
+      await persistence.createMessageLog({
+        wamid, direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+        messageType: "text", payload: { body: textBody }, status: "received",
+      });
+      if (messageId) {
+        await persistence.keepStoredTurn([wamid], { conversationId: "conversation-new", messageId });
+      }
+      return inbound({ wamid, waId: "15550100101", textBody });
+    };
+
+    it("are not stored again when they are batched with a newer message: the turn stores the newer text only, in their conversation", async () => {
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(async (input) => {
+          await input.onMessageStored?.({ conversationId: "conversation-new", messageId: "message-2" });
+          return { conversationId: "conversation-new", answer: "Answer", outcome: "answered" };
+        }),
+      };
+      const { handler, persistence } = createHandler({ chat });
+      const earlier = await stored(persistence, "wamid-in-1", "hello", "message-1");
+      const newer = await stored(persistence, "wamid-in-2", "hello?");
+
+      await handler.handleInboundMessage(earlier);
+      await handler.handleInboundMessage(newer);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-new", query: "hello?" }));
+      expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("resumeMessageId");
+      expect(storedTurnOf(persistence.messageLogs.get("wamid-in-2") ?? null)).toMatchObject({ messageId: "message-2", wamids: ["wamid-in-2"] });
+      expect(storedTurnOf(persistence.messageLogs.get("wamid-in-1") ?? null)).toMatchObject({ messageId: "message-1" });
+    });
+
+    it("are answered in place when every message of the batch was stored", async () => {
+      const chat = { answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-new", answer: "Answer", outcome: "answered" })) };
+      const { handler, persistence } = createHandler({ chat });
+      const earlier = await stored(persistence, "wamid-in-1", "hello", "message-1");
+      const newer = await stored(persistence, "wamid-in-2", "hello?", "message-2");
+
+      await handler.handleInboundMessage({ ...newer, timestamp: new Date(earlier.timestamp.getTime() + 1000) });
+      await handler.handleInboundMessage(earlier);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-new", resumeMessageId: "message-2" }));
+    });
+  });
+
+  describe("recovery lease", () => {
+    const LEASE_MS = 300_000;
+    const received = async (persistence: InMemoryWhatsAppPersistence, wamid: string) => {
+      await persistence.createMessageLog({
+        wamid, direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+        messageType: "text", payload: { body: "Hello" }, status: "received",
+      });
+      return inbound({ wamid, waId: "15550100101", textBody: "Hello" });
+    };
+
+    it("is held by a turn that runs longer than the lease, so a concurrent sweep does not claim it", async () => {
+      let finish: () => void = () => undefined;
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(() => new Promise((resolve) => {
+          finish = () => resolve({ conversationId: "conversation-new", answer: "Answer", outcome: "answered" });
+        })),
+      };
+      const { handler, persistence } = createHandler({ chat, heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+
+      const claimed: string[] = [];
+      for (let minute = 0; minute < 20; minute += 1) {
+        await vi.advanceTimersByTimeAsync(60_000);
+        claimed.push(...(await persistence.claimRecoverableInboundLogs(LEASE_MS)).map((log) => log.wamid));
+      }
+
+      expect(claimed).toEqual([]);
+      expect(handler.holds("wamid-in-1")).toBe(true);
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      await handler.shutdown();
+    });
+
+    it("stops being held once answered, and its heartbeat stops", async () => {
+      const { handler, persistence } = createHandler({ heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(handler.holds("wamid-in-1")).toBe(false);
+      await vi.advanceTimersByTimeAsync(LEASE_MS);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("is handed back on shutdown when it has not started, for the next instance to take at once", async () => {
+      const { handler, persistence } = createHandler({ heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+      await persistence.touchInboundLogs(["wamid-in-1"]);
+
+      await handler.shutdown();
+
+      expect((await persistence.claimRecoverableInboundLogs(LEASE_MS)).map((log) => log.wamid)).toEqual(["wamid-in-1"]);
+    });
+  });
+
+  it("starts a new conversation when the unanswered one has been quiet longer than the timeout", async () => {
+    const chat = {
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-b", answer: "Answer", outcome: "answered" })),
+    };
+    const { handler, persistence } = createHandler({ chat });
+    await persistence.recordConversation({ workspaceId: "workspace-1", waId: "15550100101", conversationId: "conversation-a" });
+    await persistence.createMessageLog({
+      wamid: "wamid-in-1", direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+      messageType: "text", payload: { body: "Hello" }, status: "received",
+    });
+
+    await handler.handleInboundMessage(inbound({
+      wamid: "wamid-in-1", waId: "15550100101", textBody: "Hello", timestamp: new Date(Date.now() + 48 * 60 * 60 * 1000),
+    }));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(chat.answer).toHaveBeenCalledWith(expect.not.objectContaining({ conversationId: "conversation-a" }));
   });
 
   it("reuses active conversations and rolls over when the timeout expires", async () => {
@@ -812,8 +963,8 @@ describe("WhatsAppMessageHandler", () => {
       const overPlan = () => new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
 
       it("treats an over-plan photo as it treats an over-plan text turn: a retryable failure with no reply", async () => {
-        const text = createHandler({ chat: { answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(overPlan()) }, client: sender(), unsupportedMessageReply: "Text only, please." });
-        const photo = createHandler({ chat: refusing(overPlan()), client: { ...sender(), downloadImage: downloads() }, unsupportedMessageReply: "Text only, please." });
+        const text = createHandler({ chat: { answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(overPlan()) }, client: sender(), unsupportedMessageReply: "Text only, please.", retryBaseDelayMs: 60_000 });
+        const photo = createHandler({ chat: refusing(overPlan()), client: { ...sender(), downloadImage: downloads() }, unsupportedMessageReply: "Text only, please.", retryBaseDelayMs: 60_000 });
 
         await send(text.persistence, text.handler, [inbound({ wamid: "wamid-text-over-plan", textBody: "Hello" })]);
         await send(photo.persistence, photo.handler, [photoMessage(1)]);

@@ -71,11 +71,11 @@ const channelPersonKeyFor = (
   return id ? { channelPersonKey: { kind: binding.personKeyKind, id } } : unused("unreadable");
 };
 
-/** Tells the connector which conversation its message was stored in, the moment the turn stores it. */
+/** Tells the connector which conversation and message its text was stored as, the moment the turn stores it. */
 const storedMessageListener = (
-  onMessageStored: ((stored: { conversationId: string }) => Promise<void>) | undefined,
+  onMessageStored: ((stored: { conversationId: string; messageId: string }) => Promise<void>) | undefined,
 ): { onUserMessageStored?: UserMessageStoredListener } =>
-  onMessageStored ? { onUserMessageStored: ({ conversationId }) => onMessageStored({ conversationId }) } : {};
+  onMessageStored ? { onUserMessageStored: ({ conversationId, messageId }) => onMessageStored({ conversationId, messageId }) } : {};
 
 /** A turn's reply as a connector receives it: the blocks only when the reply carries any. */
 const connectorAnswer = (reply: ChatDoorTurnReply & { conversationId: string }): ConnectorAnswer => ({
@@ -119,6 +119,11 @@ export const createConnectorChatPort = (
     const capabilities = clientContextCapabilities ? { clientContextCapabilities } : {};
     const person = channelPersonKeyFor(options, input.personKey);
     const stored = storedMessageListener(input.onMessageStored);
+    // A turn with photos or a pick stores its own message through its own door; resuming one here
+    // would be dropped, so the combination is refused instead.
+    if (input.resumeMessageId && (input.selection || (input.images?.length ?? 0) > 0)) {
+      throw badRequest("A turn with photos or a pick cannot resume a stored message");
+    }
 
     // A pick runs on the card the stored reply holds, through the same claim as the web chat's,
     // and is refused where the web chat's is: the card's words never run as typed text.
@@ -185,6 +190,7 @@ export const createConnectorChatPort = (
       stream: false,
       sourceChannel: input.sourceChannel,
       channelContext: input.channelContext,
+      ...(input.resumeMessageId ? { resumeUserMessageId: input.resumeMessageId } : {}),
       ...person,
       ...stored,
       ...capabilities,

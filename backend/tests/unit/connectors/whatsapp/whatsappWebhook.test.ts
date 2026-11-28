@@ -26,6 +26,10 @@ const createPersistence = () => {
         createdAt: new Date(),
       };
     }),
+    findMessageLogByWamid: vi.fn(async (wamid: string) => {
+      const record = logs.get(wamid);
+      return record ? { id: `row-of-${wamid}`, ...record, errorDetails: null, createdAt: new Date() } : null;
+    }),
     createInboundMessageLog: vi.fn(async (input: Parameters<WhatsAppPersistencePort["createInboundMessageLog"]>[0]) => {
       if (logs.has(input.wamid)) {
         return null;
@@ -305,6 +309,10 @@ describe("createWhatsAppWebhookRouter", () => {
   it("acks concurrent duplicate deliveries when the idempotent insert reports a conflict", async () => {
     const persistence = createPersistence();
     persistence.createInboundMessageLog.mockResolvedValueOnce(null);
+    persistence.findMessageLogByWamid.mockResolvedValueOnce({
+      id: "log-row-1", wamid: "wamid-race", direction: "inbound", workspaceId: "workspace-ignore", waId: "14155550000",
+      messageType: "text", payload: {}, status: "received", errorDetails: null, createdAt: new Date(),
+    });
     const handler = { handleInboundMessage: vi.fn(async () => {}) };
     const { app, logger } = setupApp({ persistence, handler });
     const payload = JSON.stringify({
@@ -322,7 +330,8 @@ describe("createWhatsAppWebhookRouter", () => {
     await Promise.resolve();
 
     expect(handler.handleInboundMessage).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ wamid: "wamid-race" }), "WhatsApp duplicate webhook skipped");
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ messageLogId: "log-row-1" }), "WhatsApp duplicate webhook skipped");
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain("wamid-race");
     expect(JSON.stringify(logger.info.mock.calls)).not.toContain(visitorPhone);
   });
 

@@ -13,7 +13,7 @@ import { readTap } from "./whatsappReplyTaps.js";
 interface WhatsAppWebhookRouterOptions {
   logger: ConnectorLogger;
   state: Pick<ConnectorStatePort, "getConfig">;
-  persistence: Pick<WhatsAppPersistencePort, "createInboundMessageLog">;
+  persistence: Pick<WhatsAppPersistencePort, "createInboundMessageLog" | "findMessageLogByWamid">;
   messageHandler: Pick<WhatsAppMessageHandler, "handleInboundMessage" | "handleFailedStatus">;
   /** Forgets what is kept under a number its sender left; without it, a number change is not acted on. */
   numberChanges?: Pick<WhatsAppNumberChanges, "forget">;
@@ -264,8 +264,9 @@ export const createWhatsAppWebhookRouter = ({
           payload: message.payload,
         });
         if (!inserted) {
-          // Named by the message id: the visitor's WhatsApp id is their phone number.
-          logger.info({ workspaceId, wamid: message.wamid }, "WhatsApp duplicate webhook skipped");
+          // Named by the log row: a WhatsApp message id encodes the sender's phone number.
+          const existing = await persistence.findMessageLogByWamid(message.wamid);
+          logger.info({ workspaceId, messageLogId: existing?.id }, "WhatsApp duplicate webhook skipped");
           continue;
         }
 

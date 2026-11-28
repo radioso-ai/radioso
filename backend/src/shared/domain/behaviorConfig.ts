@@ -375,6 +375,12 @@ export const RETRIEVAL_BEHAVIOR = {
     // all-terms hits and the trace records the pass as timed out. The pass is skipped
     // while requests wait for a pool connection, so the wait never eats the budget.
     lexicalSomeTermsTimeoutMs: 150,
+    // Wall-clock budget for the all-terms search, enforced the same way. It ranks every chunk
+    // holding the query's terms before keeping the best, so a word on most of a large
+    // workspace's chunks (a brand, a bare name like "Pro") costs in proportion to the
+    // workspace. Usual searches take tens of milliseconds; past the budget the lexical search
+    // fails, and the turn goes on with its semantic matches, with lexical recorded as degraded.
+    lexicalAllTermsTimeoutMs: 1000,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

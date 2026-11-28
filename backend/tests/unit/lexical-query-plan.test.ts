@@ -126,4 +126,33 @@ describe("lexical alternatives of model-written subqueries", () => {
 
     expect(expanded.map((branch) => branch.lexicalQuery)).toEqual(["Planet plan", "Planet", "Satellite plan", "Comet plan"]);
   });
+
+  it("folds a subquery's aliases into one search instead of dropping a later subquery when they outnumber the branches", () => {
+    const expanded = expandLexicalAlternatives([
+      subquery("a", "Kubernetes OR k8s"),
+      subquery("b", "Helm chart"),
+      subquery("c", "Ingress controller"),
+      subquery("d", "Service mesh"),
+    ], 4);
+
+    expect(expanded.map(({ id, semanticQuery, lexicalQuery }) => ({ id, semanticQuery, lexicalQuery }))).toEqual([
+      { id: "subquery_1", semanticQuery: "about Kubernetes OR k8s", lexicalQuery: "Kubernetes OR k8s" },
+      { id: "subquery_2", semanticQuery: "about Helm chart", lexicalQuery: "Helm chart" },
+      { id: "subquery_3", semanticQuery: "about Ingress controller", lexicalQuery: "Ingress controller" },
+      { id: "subquery_4", semanticQuery: "about Service mesh", lexicalQuery: "Service mesh" },
+    ]);
+    expect(expanded[0]?.lexicalPlan?.options.map((option) => option.lexicalQuery)).toEqual(["Kubernetes", "k8s"]);
+  });
+
+  it("drops relaxations before it folds, so no folded search holds a bare name beside its phrase", () => {
+    const expanded = expandLexicalAlternatives([
+      subquery("a", "Kubernetes OR k8s"),
+      subquery("b", "Planet plan OR Planet"),
+      subquery("c", "Helm chart"),
+      subquery("d", "Service mesh"),
+    ], 4);
+
+    expect(expanded.map((branch) => branch.lexicalQuery)).toEqual(["Kubernetes OR k8s", "Planet plan", "Helm chart", "Service mesh"]);
+    expect(expanded.flatMap((branch) => branch.lexicalPlan?.options ?? []).some((option) => option.relaxationOf)).toBe(false);
+  });
 });

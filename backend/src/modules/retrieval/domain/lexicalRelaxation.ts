@@ -2,15 +2,34 @@ import { lexicalOptionTerms, lexicalTermsOf } from "./lexicalQueryPlan.js";
 import type { LexicalSearchOption } from "./retrievalPipelineTypes.js";
 import { isSomeTermsLexicalMatch, type RetrievedChunk } from "./vectorSearch.js";
 
+// Where a heading's name ends and its tagline, price, or note begins: a dash, a colon, a bar, or an
+// opening bracket, in ASCII or full width. A hyphen ends it only with space on both sides, so a
+// hyphenated name stays whole.
+const HEADING_NAME_END = /\s-\s|[—–:：|｜(（[［]/u;
+const NUMBER_ONLY = /^\p{N}+$/u;
+
+/** The words a heading names its section by: those before its first separator, numbers left out. */
+const headingNameTerms = (heading: string): string[] =>
+  lexicalTermsOf(heading.split(HEADING_NAME_END, 1)[0] ?? "").filter((term) => !NUMBER_ONLY.test(term));
+
 /**
- * Whether one of a chunk's headings names the relaxed item: the heading holds every term of the
- * alternative and no word outside the phrase it relaxes. `### Planet` names the item of
- * `Planet plan OR Planet`; `### Gold sponsor` does not name the item of `Gold plan OR Gold`.
+ * Whether one of a chunk's headings names the relaxed item: the heading's name holds every term of
+ * the alternative and no word outside the phrase it relaxes. `### Planet`, `### Planet — €579/mo`
+ * and `### 3. Planet` name the item of `Planet plan OR Planet`; `### Gold sponsor` does not name
+ * the item of `Gold plan OR Gold`.
+ *
+ * Each heading is judged alone, never by the headings above it. A chunk holds only the headings
+ * inside its own window, so a parent heading is there for one chunk of a section and missing for
+ * the next. And whether a parent names a different kind of thing (`Sponsorship tiers` above
+ * `### Gold`, beside `Plans and pricing` above `### Planet`) is a question of meaning that word
+ * comparison cannot settle in every language without a vocabulary. A chunk without a heading
+ * (most PDF text, or a chunk that starts partway through a section) names nothing, so its hits
+ * are part matches.
  */
 const headingNamesItem = (headings: readonly string[], ownTerms: readonly string[], phraseTerms: ReadonlySet<string>): boolean =>
   headings.some((heading) => {
-    const headingTerms = new Set(lexicalTermsOf(heading));
-    return ownTerms.every((term) => headingTerms.has(term)) && [...headingTerms].every((term) => phraseTerms.has(term));
+    const nameTerms = headingNameTerms(heading);
+    return ownTerms.every((term) => nameTerms.includes(term)) && nameTerms.every((term) => phraseTerms.has(term));
   });
 
 /**

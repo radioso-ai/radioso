@@ -2252,8 +2252,9 @@ Primary internals:
   `chunk_embeddings` candidate search)
 - `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
   HNSW index rule, shared by the index DDL and the query's `ORDER BY`)
-- `backend/src/modules/retrieval/infra/lexicalSearch.ts` (all-terms search, then
-  the some-terms pass planned by `domain/lexicalSomeTermsMatch.ts`);
+- `backend/src/modules/retrieval/infra/lexicalSearch.ts` (all-terms search under
+  `lexicalAllTermsTimeoutMs`, then the some-terms pass planned by
+  `domain/lexicalSomeTermsMatch.ts`);
   `domain/lexicalQueryPlan.ts` splits a lexical query's top-level `OR` into
   alternatives and marks one whose terms are part of a sibling's as its
   relaxation, and `domain/lexicalRelaxation.ts` counts a relaxation's hits as

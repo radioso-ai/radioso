@@ -408,12 +408,14 @@ export const sectionedPageCases: ConversationQualityCase[] = [
     id: "retrieval-sectioned-page-missing-item",
     name: "A plan no page sells is not answered from a sponsorship tier that shares its name",
     description:
-      "No product here has a Gold plan; the Summit sponsorship page has a \"Gold sponsor\" tier at €4,000. Its section is headed with a word the question never used, so a search for the bare name holds it as a passage that names Gold in passing, never as a full match: lexical search adds no evidence the search for the phrase did not find.",
+      "No product here has a Gold plan; the Summit sponsorship page has a \"Gold sponsor\" tier at €4,000. The turn says the material has no Gold plan rather than quoting the sponsor tier's price as the plan's. The tier's section is headed with a word the question never used, so a search for the bare name holds it as a passage that names Gold in passing, never as a full match. Recorded failing: the answer quotes €4,000 as the Gold plan's price, a figure attributed to the wrong item (#1912).",
     tags: ["retrieval", "coverage", "sectioned-page"],
     query: "How much does the Gold plan cost?",
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "retrieval_lexical_full_matches_exclude_passage", documentId: SUMMIT_SPONSORSHIP_DOC_ID, passage: "Gold sponsors get a booth" },
+      { type: "turn_answer_coverage", coverage: "unanswered" },
+      { type: "answer_does_not_contain", pattern: "4,000", matchMode: "substring" },
     ],
   },
   {

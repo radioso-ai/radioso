@@ -207,15 +207,19 @@ section, takes the bare name out of its heading, or leaves fewer than three pass
 fails in CI.
 
 The search for the bare name finds every passage that holds the name, so it counts a passage as a
-full match only under a heading that names the item. Three counter-cases hold that line:
+full match only under a heading that names the item. Three counter-cases hold that line. They pass
+on origin/main too, so they guard against regressions; they do not show the rule at work:
 
 - `retrieval-sectioned-page-common-word-name` asks "What does the Lumenfold free plan include?"
   beside a support page that says "feel free" and "free parking". No lexical search may hold the
   support page's passage as a full match (`retrieval_lexical_full_matches_exclude_passage`), and
   the answer gives the free plan's limits.
 - `retrieval-sectioned-page-missing-item` asks for a Gold plan no product sells, beside a
-  sponsorship page with a `### Gold sponsor` tier. No lexical search may hold that tier's passage
-  as a full match.
+  sponsorship page with a `### Gold sponsor` tier at €4,000. No lexical search may hold that
+  tier's passage as a full match, and the turn answers that the material has no Gold plan
+  (`turn_answer_coverage: unanswered`, no "4,000" in the answer). The baseline records it failing:
+  the answer quotes €4,000 as the Gold plan's price and the turn records a grounded success, a
+  figure attributed to the wrong item (#1912). It tracks that defect without gating.
 - `retrieval-sectioned-page-ambiguous-item` asks "How much is the Pro plan?" where two products
   each head a plan `### Pro`. Both products' pages must reach retrieval.
 

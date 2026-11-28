@@ -121,32 +121,54 @@ export const buildLexicalAlternativeSubqueries = (input: {
  * Splits each subquery's top-level OR into one subquery per alternative, sharing its semantic query,
  * so every alternative runs as an all-terms search of its own rather than as the word "or". When
  * the alternatives outnumber `maxBranches`, relaxations give way first: every subquery's own search
- * is kept before any relaxation is.
+ * is kept before any relaxation is. If that is not enough, the latest subqueries' alternatives
+ * share one search each, which a chunk matches by holding any of them, so no subquery goes
+ * unsearched. A shared search never holds a relaxation: beside its phrase in one search, the bare
+ * name's passing mentions would count as full matches.
  */
 export const expandLexicalAlternatives = (subqueries: RetrievalSubquery[], maxBranches: number): RetrievalSubquery[] => {
-  const branches = subqueries.flatMap((subquery) => {
-    const alternatives = deriveLexicalOptions(subquery.lexicalQuery);
-    // Each alternative keeps the subquery's label: they search for the one thing it names.
-    return alternatives.length > 1
-      ? alternatives.map((alternative) => ({
-          ...subquery,
-          lexicalQuery: alternative.lexicalQuery,
-          lexicalPlan: { options: [alternative] },
-        }))
-      : [subquery];
-  });
-  let relaxationRoom = maxBranches - branches.filter((branch) => !isLexicalRelaxation(branch)).length;
-  const kept: RetrievalSubquery[] = [];
-  for (const branch of branches) {
-    if (isLexicalRelaxation(branch)) {
-      if (relaxationRoom <= 0) {
-        continue;
+  const searchCount = (alternatives: LexicalSearchOption[]): number => Math.max(1, alternatives.length);
+  const groups = subqueries.map((subquery) => ({ subquery, alternatives: deriveLexicalOptions(subquery.lexicalQuery) }));
+  let relaxationRoom = maxBranches - groups.reduce(
+    (count, group) => count + searchCount(group.alternatives.filter((alternative) => !alternative.relaxationOf)),
+    0,
+  );
+  const kept = groups.map((group) => ({
+    ...group,
+    shared: false,
+    alternatives: group.alternatives.filter((alternative) => {
+      if (!alternative.relaxationOf) {
+        return true;
       }
       relaxationRoom -= 1;
+      return relaxationRoom >= 0;
+    }),
+  }));
+  let branchCount = kept.reduce((count, group) => count + searchCount(group.alternatives), 0);
+  for (const group of [...kept].reverse()) {
+    if (branchCount <= maxBranches) {
+      break;
     }
-    kept.push(branch);
+    if (group.alternatives.length > 1) {
+      branchCount -= group.alternatives.length - 1;
+      group.shared = true;
+    }
   }
-  return kept.slice(0, maxBranches).map((branch, index) => ({ ...branch, id: `subquery_${index + 1}` }));
+  const branches = kept.flatMap(({ subquery, alternatives, shared }, index): RetrievalSubquery[] => {
+    if ((groups[index]?.alternatives.length ?? 0) <= 1) {
+      return [subquery];
+    }
+    if (shared) {
+      return [{ ...subquery, lexicalPlan: { options: alternatives.filter((alternative) => !alternative.relaxationOf) } }];
+    }
+    // Each alternative keeps the subquery's label: they search for the one thing it names.
+    return alternatives.map((alternative) => ({
+      ...subquery,
+      lexicalQuery: alternative.lexicalQuery,
+      lexicalPlan: { options: [alternative] },
+    }));
+  });
+  return branches.slice(0, maxBranches).map((branch, index) => ({ ...branch, id: `subquery_${index + 1}` }));
 };
 
 const splitTopLevelOr = (value: string): string[] => {

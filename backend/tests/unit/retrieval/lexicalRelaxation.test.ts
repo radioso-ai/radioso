@@ -65,6 +65,53 @@ describe("relaxed lexical hits", () => {
     expect(weighed[0]?.lexicalTermCoverage).toBe("all_terms");
   });
 
+  it.each([
+    "Planet — €579/mo",
+    "Planet–€579 a month",
+    "Planet: for growing teams",
+    "Planet (Most popular)",
+    "Planet | €579",
+    "Planet - for growing teams",
+    "3. Planet",
+    "Planet 2031",
+  ])("reads the name of the heading %j as the words before its first separator, numbers left out", (heading) => {
+    const weighed = weighRelaxedLexicalHits({ option: planet, hits: [hit("section", 0.4, 1)], headingsOf: () => [heading] });
+
+    expect(weighed[0]?.lexicalTermCoverage).toBe("all_terms");
+  });
+
+  it("reads a full-width separator as one", () => {
+    const weighed = weighRelaxedLexicalHits({
+      option: optionOf("行星 套餐 OR 行星", 1),
+      hits: [hit("section", 0.4, 1)],
+      headingsOf: () => ["行星（最受欢迎）"],
+    });
+
+    expect(weighed[0]?.lexicalTermCoverage).toBe("all_terms");
+  });
+
+  it("keeps a hyphenated name whole, so a longer name is not the item's", () => {
+    const weighed = weighRelaxedLexicalHits({ option: planet, hits: [hit("section", 0.4, 1)], headingsOf: () => ["Planet-Max"] });
+
+    expect(weighed[0]?.lexicalTermCoverage).toBe("some_terms");
+  });
+
+  it("judges each heading alone: a bare item heading names the item under any parent heading", () => {
+    const weighed = weighRelaxedLexicalHits({
+      option: optionOf("Gold plan OR Gold", 1),
+      hits: [hit("tier", 0.4, 1)],
+      headingsOf: () => ["Sponsorship tiers", "Gold"],
+    });
+
+    expect(weighed[0]?.lexicalTermCoverage).toBe("all_terms");
+  });
+
+  it("counts every hit of a chunk without headings as a part match", () => {
+    const weighed = weighRelaxedLexicalHits({ option: planet, hits: [hit("pdf-page", 0.4, 1)], headingsOf: () => [] });
+
+    expect(weighed[0]?.lexicalTermCoverage).toBe("some_terms");
+  });
+
   it("leaves the hits of an alternative that relaxes nothing as they are", () => {
     const hits = [hit("help", 0.3, 1)];
 

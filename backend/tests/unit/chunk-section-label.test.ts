@@ -34,6 +34,13 @@ describe("chunk section label", () => {
     expect(deriveChunkSection(content)).toBe("Satellite · Planet");
   });
 
+  it("lists each heading as written, so a reader can tell where its name ends, while the label normalizes it", () => {
+    const content = ["### Planet (Most popular)", "", "Planet costs €579 a month.", "", "### Comet - for teams"].join("\n");
+
+    expect(deriveChunkHeadings(content)).toEqual(["Planet (Most popular)", "Comet - for teams"]);
+    expect(deriveChunkSection(content)).toBe("Planet Most popular · Comet");
+  });
+
   it("keeps a one-section chunk's label as its heading", () => {
     expect(deriveChunkSection("## Planet\n\nPlanet costs €579 a month.")).toBe("Planet");
   });

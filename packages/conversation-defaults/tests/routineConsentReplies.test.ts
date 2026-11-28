@@ -78,6 +78,6 @@ describe("RoutineConsentUnclearAnswerer", () => {
     const { messages, systemPrompt, metadata } = request(gw);
     expect(messages).toEqual([{ role: "user", content: "can I change my mind later?" }]);
     expect(systemPrompt).toContain(wording.body);
-    expect(metadata).toEqual({ routineConsentUnclearAnswer: true, agentId: "agent_1" });
+    expect(metadata).toEqual({ routineConsentUnclearAnswer: true, visitorReply: true, agentId: "agent_1" });
   });
 });

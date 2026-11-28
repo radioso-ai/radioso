@@ -5,6 +5,7 @@ import type {
   PresentedAnswer,
 } from "../../chat/contracts/answerTypes.js";
 import {
+  AnswerLinkGuard,
   composeGroundedAnswerSystemPrompt,
   computeGroundingSummary,
   BlankChatAnswerError,
@@ -190,8 +191,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       : pipelineResult.prompt;
     let generated = "";
     let callError: unknown = null;
+    // The answer is read as a visitor reads it: an address the model was not sent is not in it.
+    const linkGuard = new AnswerLinkGuard();
     try {
-      generated = await this.chatGateway.answer({
+      generated = await this.chatGateway.answer(linkGuard.sendsAnswer({
         query: input.query,
         history: input.history,
         prompt: answerPrompt,
@@ -209,7 +212,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
           attemptKey: "answer",
         },
         generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
-      });
+      }));
     } catch (err) {
       callError = err;
     }
@@ -228,10 +231,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       contextCount: pipelineResult.contexts.length,
     });
     // A decline names no Result, as in chat, even when the body that declined cited one.
-    const presented = this.answerPresentation.present({
+    const presented = linkGuard.present(this.answerPresentation.present({
       answer: envelope.answer,
       citations: groundingSummary.verdict === "no_support" ? [] : toCitationEvidence(pipelineResult.contexts),
-    });
+    })).presented;
 
     return {
       chunks: pipelineResult.contexts.map((ctx, index) => ({

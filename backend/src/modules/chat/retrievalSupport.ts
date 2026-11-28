@@ -9,6 +9,6 @@ export {
   parseGroundedAnswerEnvelope,
 } from "./services/groundedAnswerEnvelope.js";
 export { computeGroundingSummary } from "./services/groundingAssertions.js";
+export { AnswerLinkGuard } from "./services/answerLinkGuard.js";
 export { BlankChatAnswerError } from "./services/chatAnswerErrors.js";
-export type { GroundingSummary, GroundingVerdict } from "./services/groundingAssertions.js";
 export type { ChatGateway } from "./contracts/chatGateway.js";

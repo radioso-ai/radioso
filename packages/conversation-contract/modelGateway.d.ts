@@ -5,6 +5,7 @@ import type { ConversationMessage } from "./index.js";
 export interface ConversationModelRequest {
   messages: ConversationMessage[];
   systemPrompt?: string;
+  /** `visitorReply: true` marks a completion the visitor reads as written, so a host can check it before it is shown. */
   metadata?: Record<string, unknown>;
   /**
    * Set by a caller that reads a blank completion itself: the host hands it back as an empty

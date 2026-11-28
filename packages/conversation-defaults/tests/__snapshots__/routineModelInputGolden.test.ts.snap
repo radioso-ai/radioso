@@ -26,6 +26,9 @@ Arrive by 4pm on the first day.
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -111,6 +114,9 @@ exports[`routine model input > renders 'a finish ending after a booking that …
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -206,6 +212,9 @@ exports[`routine model input > renders 'a finish ending after a lookup that r…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -304,6 +313,9 @@ exports[`routine model input > renders 'a finish ending after a search that f…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -388,6 +400,9 @@ exports[`routine model input > renders 'a hand-off ending with a message afte…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "Write one short message in Italian that preserves this meaning, except where the facts after it contradict it:
 Tell them a scout will check the shortlisted properties and get back to them.
 
@@ -420,6 +435,9 @@ exports[`routine model input > renders 'a re-ask past the limit with a slot s…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -514,6 +532,9 @@ exports[`routine model input > renders 'a re-ask past the limit with nothing …
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -607,6 +628,9 @@ exports[`routine model input > renders 'a re-ask with nothing listed as still…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -699,6 +723,9 @@ exports[`routine model input > renders 'a re-ask with slots still to ask for …
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -789,6 +816,9 @@ exports[`routine model input > renders 'a step reply on an unresolved request…
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -890,6 +920,9 @@ exports[`routine model input > renders 'a terminal step reply' 1`] = `
       "role": "user",
     },
   ],
+  "metadata": {
+    "visitorReply": true,
+  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 

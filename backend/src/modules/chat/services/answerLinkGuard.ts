@@ -53,7 +53,8 @@ export class AnswerLinkGuard {
     return input;
   }
 
-  private allow(texts: readonly string[]): void {
+  /** Records texts a model was sent by some other route, such as a planner's prompt. */
+  allow(texts: readonly string[]): void {
     this.sent.push(...texts);
     this.policy = givenLinkPolicy(this.sent);
   }

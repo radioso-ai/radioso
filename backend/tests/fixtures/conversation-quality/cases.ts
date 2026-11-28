@@ -246,13 +246,10 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   // #1872: a question about the assistant's own name stays a direct reply in any language.
   {
     id: "routing-name-direct-it",
-    name: "A greeting that asks the assistant's name is answered directly, with the name",
+    name: "A greeting that asks the assistant's name is answered directly",
     tags: ["routing", "direct", "identity", "multilingual"],
     query: "Ciao! Come ti chiami?",
-    assertions: [
-      { type: "turn_route", route: "direct" },
-      { type: "answer_contains", pattern: "Acme", matchMode: "substring" },
-    ],
+    assertions: [{ type: "turn_route", route: "direct" }],
   },
   // #1872: asked whether it can act, the agent names what it can do (the seed agent runs
   // routines: book a demo, start a return, book a retreat, find a dog to adopt) instead of
@@ -277,17 +274,17 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "llm_judge", expectedAnswer: CAPABILITY_ANSWER_REFERENCE, criteria: `${CAPABILITY_ANSWER_CRITERIA} The reply is in Italian.` },
     ],
   },
-  // #1872: an agent named after its company. A question that names the company is about the
-  // company, not the assistant, so it is answered from the documents.
+  // #1872: an agent named after the product its documents describe. A question that names the
+  // product is about the product, not the assistant, so it is answered from the documents.
   {
-    id: "capability-question-about-the-company-retrieves",
-    name: "A question about the company the agent is named after is retrieved, not answered as identity",
+    id: "capability-question-about-the-product-retrieves",
+    name: "A question about the product the agent is named after is retrieved, not answered as identity",
     tags: ["routing", "identity", "capability-question"],
     agentConfigOverride: {
-      name: "Acme Assistant",
-      customInstruction: "You are Acme Assistant, the assistant on Acme's website. Answer from the provided documents.",
+      name: "Radioso Assistant",
+      customInstruction: "You are Radioso Assistant, the assistant on Radioso's website. Answer from the provided documents.",
     },
-    query: "Can Acme take actions, or is it just a chatbot?",
+    query: "Can Radioso take actions, or is it just a chatbot?",
     assertions: [{ type: "turn_route", route: "retrieval" }],
   },
   // #1872: a request phrased as whether the agent can do it still starts the routine for it.

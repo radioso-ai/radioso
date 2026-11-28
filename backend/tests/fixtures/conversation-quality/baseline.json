@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-16T19:17:35.994Z",
+  "generatedAt": "2026-11-28T15:31:31.620Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -393,6 +393,31 @@
       "samples": 5
     },
     "retrieval-sectioned-page-later-section-figure": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "capability-question-about-the-product-retrieves": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "capability-question-names-what-the-agent-does": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "capability-question-names-what-the-agent-does-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "capability-question-request-starts-routine": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "routing-name-direct-it": {
       "status": "pass",
       "passRate": 1,
       "samples": 3

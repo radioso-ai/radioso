@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, routing, and the live, safe-test, and review execution modes."
-last_updated: 2026-11-18
+last_updated: 2026-11-28
 ---
 
 # Assistant Turn Spine
@@ -126,6 +126,23 @@ It does not receive response identity or answer instructions, and scope fields
 returned by a model are ignored. Retrieval evidence determines whether the
 assistant has support. Retrieval query rewrite runs only after a turn has been
 routed to retrieval.
+
+A question about the agent itself (its name, its role, or what it can do) is a
+direct turn marked `isIdentityQuestion`. A question about the product or company
+the agent represents is a retrieval turn even when the agent is named after it,
+and so is a request phrased as whether the agent can do something; routine
+ranking is independent of the route, so such a request still starts its routine.
+The direct reply to an identity question reads what the agent can do
+(`chat/services/agentCapabilities.ts`): whether the agent answers from documents,
+each routine the turn could start, by authored name and trigger, and each skill an
+enabled directive binds, with that directive's condition. The routines come from
+`ChatRoutineProvider.describeStartable`, which the routines module answers from the
+same effective registrations `forTurn` activates through (the release's, the
+workbench preview's, and the built-in ones), so the reply names exactly what the turn
+could start. Names and conditions are all it reads, so the reply can say what the
+agent does, and must deny none of it, without describing how a routine or skill
+runs. When the routines cannot be read, the reply gets no capability list and
+states no limit, and the turn logs `agent_capabilities_unavailable`.
 
 Response language is detected once per turn from the latest user message and
 recent history. Chat starts that detector as soon as the user message is

@@ -15,10 +15,13 @@ import type {
   SkillEffectPolicy,
   TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
-import type { RoutineConsentStore, RoutineConsentTurnFacts } from "../../routines/public.js";
+import type { RoutineCapability, RoutineConsentStore, RoutineConsentTurnFacts } from "../../routines/public.js";
 import type { ChatTurnPlanHandle } from "../services/turnPlanCoordinator.js";
 import type { RoutineInvocation } from "./routineInvocation.js";
 import type { ChatRoutineTurnReporter } from "./routineTurnState.js";
+
+/** A routine as a visitor hears it named: its authored name and trigger; the routines module owns its shape. */
+export type ChatRoutineCapability = RoutineCapability;
 
 /** The conversation as a routine's consents read it (#1544); the routines module owns its shape. */
 export type ChatRoutineConsentTurnFacts = RoutineConsentTurnFacts;
@@ -46,6 +49,16 @@ export interface ChatRoutineProvider {
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
   }): Promise<ChatRoutineTurnReporter | null>;
+  /**
+   * The routines `forTurn` would let this turn start, by authored name and trigger only, for a
+   * reply to a visitor who asks what the agent can do. A provider without it lists none.
+   */
+  describeStartable?(input: {
+    agentId: string;
+    agentRevisionId?: string;
+    workspaceId?: string;
+    previewRoutineIds?: string[];
+  }): Promise<readonly ChatRoutineCapability[]>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;

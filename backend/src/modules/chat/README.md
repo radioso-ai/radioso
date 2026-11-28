@@ -1197,6 +1197,19 @@ imports from `services/`.
   `tests/unit/turn-plan-coordinator.test.ts`,
   `tests/unit/chat-service-turn-planning.test.ts`, and the `quick-reply` cases in
   `tests/unit/eval-suite/suite-runner.test.ts`.
+- What the agent can do, for the direct reply to an identity question (#1872):
+  `services/agentCapabilities.ts` reads it when the turn's framing marks an identity
+  question (`createAgentCapabilitiesReader`, wired into the direct composer by
+  `chatTurnRuntime.ts`): whether retrieval is on, the routines the turn could start
+  by authored name and trigger (`ChatRoutineProvider.describeStartable`, which the
+  routines module answers from the registrations `forTurn` uses), and each skill an
+  enabled directive binds, with the directive's condition. A failed routine read logs
+  `agent_capabilities_unavailable` and leaves the list out, and the reply then states
+  no limit. `assistantReplyPromptBuilder.ts` renders the list
+  (`prompts/chat/agent-capabilities.md`) into `non-retrieval-answer.md`. The planner, router, and interpreter
+  prompts route a question about the product or company the agent represents, and a
+  request phrased as whether the agent can do something, to retrieval. Tests:
+  `tests/unit/chat/agentCapabilities.test.ts` and the `capability-question` eval cases.
 - Model-call governance for turns: `AssistantChatService` runs every turn in the
   turn lane of the composition-built `ModelCallGovernor`
   (`shared/infra/llm/modelCallGovernance.ts`), abandoned once the request's

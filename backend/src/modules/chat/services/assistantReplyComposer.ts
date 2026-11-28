@@ -10,6 +10,7 @@ import { presentReplyResponseFormat, readPresentReplyEnvelope } from "./replyBlo
 import type { ReplyPresentOffer } from "./replyBlocks/skillResultReplyBlocks.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 import { turnCarriesPhotos } from "./attachedPhotoRules.js";
+import type { AgentCapabilities, AgentCapabilitiesReader } from "./agentCapabilities.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -28,6 +29,8 @@ export interface AssistantReplyConfig {
   outcomeKind: string;
   /** The capability's prompt; the direct reply's prompt when absent. */
   buildPrompt?: AssistantReplyPromptBuilder;
+  /** What the agent can do, read only for a turn that asks about the assistant itself. */
+  capabilities?: AgentCapabilitiesReader;
 }
 
 /**
@@ -52,16 +55,35 @@ export class AssistantReplyComposer {
     private readonly config: AssistantReplyConfig,
   ) {}
 
+  /** The agent's capabilities when the turn asks about the assistant itself and this reply reads them. */
+  private async turnCapabilities(session: PreparedSession): Promise<AgentCapabilities | undefined> {
+    if (!this.config.capabilities || !session.turnFraming?.isIdentityQuestion) {
+      return undefined;
+    }
+    return (await this.config.capabilities(session)) ?? undefined;
+  }
+
   /** The reply prompt and generation options, with the offer's rules and schema when there is one. */
-  private request(session: PreparedSession, query: string, skillFindings: string | undefined, offer: ReplyPresentOffer | null | undefined) {
-    const prompt = this.buildPrompt(session, query, skillFindings);
+  private request(
+    session: PreparedSession,
+    query: string,
+    skillFindings: string | undefined,
+    offer: ReplyPresentOffer | null | undefined,
+    capabilities: AgentCapabilities | undefined,
+  ) {
+    const prompt = this.buildPrompt(session, query, skillFindings, capabilities);
     return offer
       ? { prompt: `${prompt}\n\n${offer.promptSection}`, generation: { responseFormat: presentReplyResponseFormat(offer.schemaExtension) } }
       : { prompt };
   }
 
   /** Builds the capability's reply prompt (the assistant's own voice, no retrieval). */
-  private buildPrompt(session: PreparedSession, query: string, skillFindings: string | undefined): string {
+  private buildPrompt(
+    session: PreparedSession,
+    query: string,
+    skillFindings: string | undefined,
+    capabilities: AgentCapabilities | undefined,
+  ): string {
     const buildPrompt = this.config.buildPrompt ?? buildAssistantReplyPrompt;
     return buildPrompt({
       route: session.turnRoute,
@@ -76,6 +98,7 @@ export class AssistantReplyComposer {
       steering: session.directiveSteering?.rules ?? [],
       pendingRoutineStep: session.routineYield?.pendingStep,
       photosAttached: turnCarriesPhotos(session.userMessage),
+      capabilities,
     }, skillFindings);
   }
 
@@ -99,12 +122,13 @@ export class AssistantReplyComposer {
     skillFindings?: string,
     offer?: ReplyPresentOffer | null,
   ): Promise<ChatPresentedAnswer | null> {
+    const capabilities = await this.turnCapabilities(session);
     let raw: string;
     try {
       raw = await this.chatGateway.answer({
         query,
         history: session.history,
-        ...this.request(session, query, skillFindings, offer),
+        ...this.request(session, query, skillFindings, offer, capabilities),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, this.config.outcomeKind),
       });
@@ -180,10 +204,11 @@ export class AssistantReplyComposer {
     let streamedAnswer = "";
     // With an offer the model writes the envelope; only its `answer` field reaches the visitor.
     const envelope = offer ? new StructuredAnswerFieldReader() : null;
+    const capabilities = await this.turnCapabilities(session);
     for await (const chunk of this.chatGateway.streamAnswer({
       query,
       history: session.history,
-      ...this.request(session, query, skillFindings, offer),
+      ...this.request(session, query, skillFindings, offer, capabilities),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}`),
       signal,

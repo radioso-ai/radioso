@@ -11,6 +11,8 @@ import type { TurnOutcomeRenderer, TurnSkill } from "./turnOutcome.js";
 import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
 import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
+import { createAgentCapabilitiesReader } from "./agentCapabilities.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import { SKILL_RESULT_REPLY_CONFIG, createSkillResultTurnRenderer } from "./skillResultTurnRenderer.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -36,6 +38,8 @@ export interface ChatTurnRuntimeDependencies {
   replyBlocks?: Pick<ReplyBlockTurnFactory, "forTurn">;
   /** Offers a skill's records the `present` head; without it, skill-result replies carry no reply blocks. */
   skillResultReplyBlocks?: Pick<SkillResultReplyBlocks, "offerFor">;
+  /** Names the routines a turn could start, for a direct reply about what the agent can do. */
+  routines?: Pick<ChatRoutineProvider, "describeStartable">;
 }
 
 /**
@@ -131,7 +135,7 @@ export const buildChatTurnRuntime = (
         deps.chatGateway,
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
-        DIRECT_REPLY_CONFIG,
+        { ...DIRECT_REPLY_CONFIG, capabilities: createAgentCapabilitiesReader(deps.routines, deps.logger) },
       ),
       {
         presenter: chatAnswerPresenter,

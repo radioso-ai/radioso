@@ -38,6 +38,7 @@ import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js"
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
+import { startableRoutineCapabilities, type RoutineCapability } from "./routineCapabilities.js";
 import { itemPickTelemetry } from "./itemPickTelemetry.js";
 import { selectorCompletionTelemetry } from "./selectorCompletionTelemetry.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
@@ -110,6 +111,8 @@ interface RoutineTurnProvider {
    * agent has no routine at all.
    */
   reporterFor(input: RoutineTurnScope & { routineInvocation?: RoutineInvocation }): Promise<RoutineTurnReporter | null>;
+  /** The routines `forTurn` would let this turn start, by name and trigger, for a reply about what the agent can do. */
+  describeStartable(input: RoutineTurnScope): Promise<RoutineCapability[]>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
@@ -328,6 +331,9 @@ export const createRoutineTurnProvider = (
     return createRoutineTurnReporter(routines, routineInvocation
       ? { invocation: { toolName: routineInvocation.toolName, outcome: () => null } }
       : {});
+  },
+  async describeStartable(scope) {
+    return startableRoutineCapabilities(await loadEffectiveRegistrations(dependencies, scope));
   },
   async forTurn({
     modelGateway,

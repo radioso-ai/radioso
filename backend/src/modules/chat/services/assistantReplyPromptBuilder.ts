@@ -6,6 +6,7 @@ import type { ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { attachedPhotoRules } from "./attachedPhotoRules.js";
+import { renderAgentCapabilities, type AgentCapabilities } from "./agentCapabilities.js";
 import type { TurnRouting } from "./turnRouter.js";
 import {
   renderPageContextCondition,
@@ -28,6 +29,8 @@ export interface AssistantReplyPromptInput {
   pendingRoutineStep?: RoutinePendingStep;
   /** The visitor's message carries photos, so the reply follows the rules for answering about one. */
   photosAttached?: boolean;
+  /** What the agent can do; the direct reply reads it only when the user asks about the assistant. */
+  capabilities?: AgentCapabilities;
 }
 
 /** The answer instructions, visitor context, summary, history, and question every reply prompt carries. */
@@ -69,6 +72,9 @@ export const buildAssistantReplyPrompt = (input: AssistantReplyPromptInput): str
     intent_topic: input.framing?.intentTopic || "not provided",
     in_scope_request: input.framing?.inScopeRequest || "none",
     outside_scope_request: input.framing?.outsideScopeRequest || "none",
+    capabilities_section: input.framing?.isIdentityQuestion && input.capabilities
+      ? `\n${renderAgentCapabilities(input.capabilities)}\n`
+      : "",
     ...turnSectionVariables(input),
   }), input);
 

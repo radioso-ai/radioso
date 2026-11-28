@@ -322,6 +322,8 @@ export class ChatBootstrapService implements AgentGreetingReader {
       const text = (await this.chatGateway.answer({
         query: "",
         history: [],
+        // The greeting is cached and shown to every visitor: it keeps to what it was given.
+        writesVisitorText: true,
         usageContext: {
           accountId: input.accountId ?? null,
           workspaceId,
@@ -501,6 +503,8 @@ const createBootstrapFingerprint = (input: {
       assistantDefaultLocale: input.assistantDefaultLocale,
       localeUsed: input.localeUsed,
       revisionId: input.revisionId ?? null,
+      // Greetings cached before they were checked against what the call was given are not reused.
+      addressGuard: 1,
     }))
     .digest("hex");
 

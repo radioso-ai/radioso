@@ -217,6 +217,7 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
       workspaceContext: this.turn.workspaceContext,
       usageContext: withCallOrdinal(baseUsageContext, this.callCount),
       ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
+      ...(input.writesVisitorText === true ? { writesVisitorText: true } : {}),
       ...(this.turn.signal ? { signal: this.turn.signal } : {}),
     };
   }

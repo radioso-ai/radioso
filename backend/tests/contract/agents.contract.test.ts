@@ -1484,7 +1484,7 @@ describe("agents contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/event-stream");
-    expect(response.body).toContain('data: {"text":"I am Balaram."}');
+    expect((parseSseData(response.body, "chunk") as Array<{ text: string }>).map((chunk) => chunk.text).join("")).toBe("I am Balaram.");
     expect(observedPrompt).toContain("Response identity name: Balaram");
     expect(observedPrompt).toContain("You are Balaram, the course guide.");
 

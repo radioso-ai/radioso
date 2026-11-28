@@ -106,6 +106,7 @@ export class RoutineConsentUnclearAnswerer {
         wordingVariables(input.wording),
       ),
       metadata: { routineConsentUnclearAnswer: true, agentId: input.turn.agent.id },
+      writesVisitorText: true,
     });
     return text.trim();
   }

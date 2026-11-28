@@ -115,4 +115,49 @@ describe("givenLinkPolicy", () => {
     expect(verdict([], "https://school.example")).toBe("not_given");
     expect(verdict([""], "mailto:info@school.example")).toBe("not_given");
   });
+  describe("phone numbers", () => {
+    it.each([
+      ["a country code added and the trunk 0 dropped", ["Call 030 1234567."], "tel:+49301234567"],
+      ["the same with another country", ["Ring 01 23 45 67 89 anytime."], "tel:+33123456789"],
+      ["a number written with a bracketed trunk 0", ["Call +49 (0)30 1234567."], "tel:+49301234567"],
+      ["an international number written nationally", ["Call +49 30 1234567."], "tel:0301234567"],
+      ["a number given with a 00 prefix", ["Call 0049 30 1234567."], "tel:+49301234567"],
+      ["a number written with dots and slashes", ["Call 030/123.45.67."], "tel:+49301234567"],
+      ["a French number written with dots", ["Appelez le 06.12.34.56.78."], "tel:+33612345678"],
+      ["a French number with a country code", ["Appelez le +33 6 12 34 56 78."], "tel:0612345678"],
+    ])("keeps %s", (_label, given, destination) => {
+      expect(verdict(given, destination)).toBe("keep");
+    });
+
+    it("still reads a date written beside a dotted number as a date", () => {
+      expect(verdict(["Le 06.12.34 à 10:30."], "tel:061234")).toBe("not_given");
+      expect(verdict(["Le 06.12.34 à 10:30, appelez le 06.12.34.56.78."], "tel:0612345678")).toBe("keep");
+    });
+
+    it("keeps a number given after a date and a time, with neither joined to it", () => {
+      const given = ["Workshop on 12.03.2026 at 10:30, call 030 1234567 to book."];
+
+      expect(verdict(given, "tel:+49301234567")).toBe("keep");
+      expect(verdict(given, "tel:0301234567")).toBe("keep");
+    });
+
+    it.each([
+      ["the digits of a date", "tel:12032026"],
+      ["the digits of a date and a time joined", "tel:120320261030"],
+      ["a country code in front of a 6-digit code", "tel:+49481516"],
+      ["a country code in front of the digits of a date", "tel:+4912032026"],
+      ["a number inside a longer run of given figures", "tel:301234"],
+    ])("unwraps %s", (_label, destination) => {
+      const given = ["Workshop on 12.03.2026 at 10:30, order 481516, call 030 1234567 to book."];
+
+      expect(verdict(given, destination)).toBe("not_given");
+    });
+
+    it("does not read digits across a long run of dates, prices, and ids as one number", () => {
+      const given = ["Open 9 10 11 2026 4567 12345 6789 and ids 1111 2222 3333 4444 5555."];
+
+      expect(verdict(given, "tel:112812")).toBe("not_given");
+      expect(verdict(given, "tel:11112222333344445555")).toBe("not_given");
+    });
+  });
 });

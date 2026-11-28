@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
+import { LinkGuardedChatGateway } from "../../src/modules/chat/services/linkGuardedChatGateway.js";
 import { RoutineChatModelGateway } from "../../src/modules/chat/services/routines/routineChatModelGateway.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type {
@@ -500,5 +501,51 @@ describe("RoutineChatModelGateway", () => {
         generation: CHAT_BEHAVIOR.intentRouting,
       });
     });
+  });
+});
+
+describe("RoutineChatModelGateway visitor replies", () => {
+  it("tells the host a request marked as writing visitor text is read as written, and no other", async () => {
+    const calls: ChatGatewayInput[] = [];
+    const chatGateway: Pick<ChatGateway, "answer"> = {
+      async answer(input) {
+        calls.push(input);
+        return "ok";
+      },
+    };
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+    await gateway.complete({ messages: [{ role: "user", content: "hi" }], writesVisitorText: true });
+    await gateway.complete({ messages: [{ role: "user", content: "hi" }], metadata: { routineActivation: true } });
+    await gateway.complete({ messages: [{ role: "user", content: "hi" }] });
+
+    expect(calls.map((call) => call.writesVisitorText)).toEqual([true, undefined, undefined]);
+  });
+
+  it("shows a routine step reply only the addresses its call was sent, whole and streamed", async () => {
+    const reply = "Enrol at [the page](https://school.example/enrol) or https://invented.example/now.";
+    const host: ChatGateway = {
+      answer: async () => reply,
+      streamAnswer: async function* () {
+        yield* reply.match(/.{1,4}/g) ?? [];
+      },
+    };
+    const gateway = new RoutineChatModelGateway(new LinkGuardedChatGateway(host, "visitor_reply"), turnContext);
+    const request = {
+      messages: [
+        { role: "assistant" as const, content: "Enrolment: https://school.example/enrol" },
+        { role: "user" as const, content: "How?" },
+      ],
+      writesVisitorText: true,
+    };
+
+    const whole = await gateway.complete(request);
+    const streamed: string[] = [];
+    for await (const delta of gateway.stream!(request)) {
+      streamed.push(delta);
+    }
+
+    expect(whole.text).toBe("Enrol at [the page](https://school.example/enrol) or .");
+    expect(streamed.join("")).toBe(whole.text);
   });
 });

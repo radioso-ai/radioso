@@ -1,5 +1,6 @@
 import { domainToUnicode } from "node:url";
 
+import { isGivenPhoneNumber, phoneCandidates } from "./givenPhoneNumbers.js";
 import type { LinkDestinationPolicy, LinkDestinationVerdict } from "./markdownLinkGuard.js";
 
 /** Why a link destination is not one of the given addresses. */
@@ -22,7 +23,6 @@ const HOST_CHAR = /[\p{L}\p{N}\-_.@]/u;
 const EMAIL_CHAR = /[\p{L}\p{N}._%+-]/u;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 const PERCENT_ENCODED_RUN = /(?:%[0-9a-f]{2})+/gi;
-const PHONE_RUN = /\+?\d(?:[\d \t\u00a0()./-]*\d)?/g;
 const MIN_PHONE_DIGITS = 6;
 
 const decodePercentRuns = (text: string): string =>
@@ -179,12 +179,8 @@ class GivenLinkTargets {
     if (digits.length < MIN_PHONE_DIGITS) {
       return unwrap("malformed");
     }
-    this.phoneDigits ??= [...this.text.matchAll(PHONE_RUN)]
-      .map((run) => run[0].replace(/\D/g, ""))
-      .filter((run) => run.length >= MIN_PHONE_DIGITS);
-    // The same number with or without its country code or trunk prefix.
-    const given = this.phoneDigits.some((run) => run.includes(digits) || digits.endsWith(run));
-    return given ? KEEP : unwrap("not_given");
+    this.phoneDigits ??= phoneCandidates(this.text);
+    return isGivenPhoneNumber(digits, this.phoneDigits) ? KEEP : unwrap("not_given");
   }
 }
 

@@ -1,4 +1,6 @@
-import type { ChatGateway } from "../contracts/chatGateway.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
+import { AnswerLinkGuard } from "./answerLinkGuard.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { isBlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
@@ -10,6 +12,7 @@ import { presentReplyResponseFormat, readPresentReplyEnvelope } from "./replyBlo
 import type { ReplyPresentOffer } from "./replyBlocks/skillResultReplyBlocks.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 import { turnCarriesPhotos } from "./attachedPhotoRules.js";
+import { RetrievalAnswerMetrics, type AnswerLinkPath } from "./retrievalAnswerMetrics.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -38,6 +41,10 @@ export interface AssistantReplyConfig {
  * prompt vary, via {@link AssistantReplyConfig}; generation, streaming, and the
  * blank fallback are identical, so there is one implementation, not one per voice.
  *
+ * Every reply it presents keeps to the addresses its model was sent: its own call's system
+ * prompt, prompt, and history, and a focused decline's prompt. An address nobody sent becomes
+ * plain text or is removed, in the whole reply and in the stream, as for a grounded answer.
+ *
  * A caller that offers the `present` head ({@link ReplyPresentOffer}) gets the reply as a
  * structured envelope with that field ahead of `answer`; the text streams from `answer` alone,
  * and the blocks are built from the envelope once it is whole. Without an offer, the request is
@@ -50,7 +57,16 @@ export class AssistantReplyComposer {
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
     private readonly fallbackReplyComposer: FallbackReplyComposer,
     private readonly config: AssistantReplyConfig,
-  ) {}
+    metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+  ) {
+    this.linkMetrics = new RetrievalAnswerMetrics(metrics);
+  }
+
+  private readonly linkMetrics: RetrievalAnswerMetrics;
+
+  private get linkPath(): AnswerLinkPath {
+    return this.config.outcomeKind === "skill_result" ? "skill_result" : "direct";
+  }
 
   /** The reply prompt and generation options, with the offer's rules and schema when there is one. */
   private request(session: PreparedSession, query: string, skillFindings: string | undefined, offer: ReplyPresentOffer | null | undefined) {
@@ -79,12 +95,15 @@ export class AssistantReplyComposer {
     }, skillFindings);
   }
 
-  private presentReply(answer: string): ChatPresentedAnswer {
-    return this.chatAnswerPresenter.presentNonRetrievalAnswer(answer, {
+  /** The reply as the visitor gets it: a link or address its model was not sent is gone from its text. */
+  private presentReply(answer: string, linkGuard: AnswerLinkGuard, stream: boolean): ChatPresentedAnswer {
+    const guarded = linkGuard.present(this.chatAnswerPresenter.presentNonRetrievalAnswer(answer, {
       skillName: this.config.skillName,
       outcome: this.config.outcomeKind,
       status: "completed",
-    });
+    }));
+    this.linkMetrics.unwrappedLinks(guarded.unwrapped, stream, this.linkPath);
+    return guarded.presented;
   }
 
   /**
@@ -98,16 +117,17 @@ export class AssistantReplyComposer {
     accountId: string | undefined,
     skillFindings?: string,
     offer?: ReplyPresentOffer | null,
+    linkGuard: AnswerLinkGuard = new AnswerLinkGuard(),
   ): Promise<ChatPresentedAnswer | null> {
     let raw: string;
     try {
-      raw = await this.chatGateway.answer({
+      raw = await this.chatGateway.answer(linkGuard.sendsAnswer<ChatGatewayInput>({
         query,
         history: session.history,
         ...this.request(session, query, skillFindings, offer),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, this.config.outcomeKind),
-      });
+      }));
     } catch (error) {
       if (isBlankChatAnswerError(error)) {
         return null;
@@ -118,7 +138,7 @@ export class AssistantReplyComposer {
     if (!answer) {
       return null;
     }
-    return this.withBlocks(this.presentReply(answer), offer, extras);
+    return this.withBlocks(this.presentReply(answer, linkGuard, false), offer, extras);
   }
 
   private withBlocks(
@@ -141,14 +161,15 @@ export class AssistantReplyComposer {
     skillFindings?: string,
     offer?: ReplyPresentOffer | null,
   ): Promise<ChatPresentedAnswer> {
-    const reply = await this.tryComposeAnswer(session, query, accountId, skillFindings, offer);
+    const linkGuard = new AnswerLinkGuard();
+    const reply = await this.tryComposeAnswer(session, query, accountId, skillFindings, offer, linkGuard);
     if (reply) {
       return reply;
     }
     // Graceful no-answer fallback. A blank reply is near-unreachable, but when it
     // happens we decline gracefully via the shared "couldn't answer" composer
     // rather than failing the turn.
-    const miss = await this.fallbackReplyComposer.composeNoContext({
+    const miss = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -157,8 +178,8 @@ export class AssistantReplyComposer {
       photosAttached: turnCarriesPhotos(session.userMessage),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
-    });
-    return this.presentReply(miss.text);
+    }));
+    return this.presentReply(miss.text, linkGuard, false);
   }
 
   /**
@@ -178,28 +199,40 @@ export class AssistantReplyComposer {
     offer?: ReplyPresentOffer | null,
   ): AsyncGenerator<string, TurnStreamResult> {
     let streamedAnswer = "";
+    let rawAnswer = "";
+    const linkGuard = new AnswerLinkGuard();
+    const links = linkGuard.stream();
     // With an offer the model writes the envelope; only its `answer` field reaches the visitor.
     const envelope = offer ? new StructuredAnswerFieldReader() : null;
-    for await (const chunk of this.chatGateway.streamAnswer({
+    for await (const chunk of this.chatGateway.streamAnswer(linkGuard.sendsAnswer<ChatGatewayInput>({
       query,
       history: session.history,
       ...this.request(session, query, skillFindings, offer),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}`),
       signal,
-    })) {
+    }))) {
       const text = envelope ? envelope.push(chunk) : chunk;
       if (!text) {
         continue;
       }
-      streamedAnswer += text;
-      yield text;
+      rawAnswer += text;
+      const released = links.push(text);
+      if (released) {
+        streamedAnswer += released;
+        yield released;
+      }
+    }
+    const heldTail = links.flush();
+    if (heldTail) {
+      streamedAnswer += heldTail;
+      yield heldTail;
     }
 
-    const { answer, extras } = envelope ? readPresentReplyEnvelope(envelope.raw) : { answer: streamedAnswer.trim(), extras: undefined };
+    const { answer, extras } = envelope ? readPresentReplyEnvelope(envelope.raw) : { answer: rawAnswer.trim(), extras: undefined };
     if (answer) {
       return {
-        finalPresentation: this.withBlocks(this.presentReply(answer), offer, extras),
+        finalPresentation: this.withBlocks(this.presentReply(answer, linkGuard, true), offer, extras),
         suggestions: { mode: "presentation" },
         hasStreamedAnswer: true,
         streamedAnswer,
@@ -209,7 +242,7 @@ export class AssistantReplyComposer {
 
     // Blank reply: return the settled fallback for committed replay. The provider
     // candidate was empty, so there is no live delta to expose.
-    const miss = await this.fallbackReplyComposer.composeNoContext({
+    const miss = await this.fallbackReplyComposer.composeNoContext(linkGuard.sendsDecline({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -219,9 +252,9 @@ export class AssistantReplyComposer {
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
       signal,
-    });
+    }));
     return {
-      finalPresentation: this.presentReply(miss.text),
+      finalPresentation: this.presentReply(miss.text, linkGuard, true),
       suggestions: { mode: "presentation" },
       hasStreamedAnswer: false,
       streamedAnswer,

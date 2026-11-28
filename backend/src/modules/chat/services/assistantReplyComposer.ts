@@ -10,7 +10,7 @@ import { presentReplyResponseFormat, readPresentReplyEnvelope } from "./replyBlo
 import type { ReplyPresentOffer } from "./replyBlocks/skillResultReplyBlocks.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 import { turnCarriesPhotos } from "./attachedPhotoRules.js";
-import type { AgentCapabilities, AgentCapabilitiesReader } from "./agentCapabilities.js";
+import type { AgentCapabilities } from "./agentCapabilities.js";
 
 /**
  * Writes one capability's reply prompt from the turn the composer reads and, for a reply
@@ -29,8 +29,8 @@ export interface AssistantReplyConfig {
   outcomeKind: string;
   /** The capability's prompt; the direct reply's prompt when absent. */
   buildPrompt?: AssistantReplyPromptBuilder;
-  /** What the agent can do, read only for a turn that asks about the assistant itself. */
-  capabilities?: AgentCapabilitiesReader;
+  /** Reads what the agent can do (`PreparedSession.agentCapabilities`) for a turn that asks about the assistant itself. */
+  readsCapabilities?: boolean;
 }
 
 /**
@@ -57,10 +57,10 @@ export class AssistantReplyComposer {
 
   /** The agent's capabilities when the turn asks about the assistant itself and this reply reads them. */
   private async turnCapabilities(session: PreparedSession): Promise<AgentCapabilities | undefined> {
-    if (!this.config.capabilities || !session.turnFraming?.isIdentityQuestion) {
+    if (!this.config.readsCapabilities || !session.turnFraming?.isIdentityQuestion) {
       return undefined;
     }
-    return (await this.config.capabilities(session)) ?? undefined;
+    return (await session.agentCapabilities?.read()) ?? undefined;
   }
 
   /** The reply prompt and generation options, with the offer's rules and schema when there is one. */

@@ -127,7 +127,7 @@ const setup = async (input: {
     conversationEngine: { resumeAwaitingDecision } as unknown as ConversationEngine,
     chatTurnLifecycle: { completeAssistantTurn } as never,
     conversationTurnRegistry: { start: () => lease },
-    routineProvider: { forTurn },
+    routineProvider: { describeStartable: async () => [], forTurn },
     ...(input.presentingSteps ? { presentingSteps: input.presentingSteps } : {}),
     suspendedRoutineReader: { loadSuspended: async () => null },
     detectResponseLanguage: async () => undefined,

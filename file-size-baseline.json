@@ -7,7 +7,7 @@
   "backend/src/modules/auth/services/authService.ts": 1413,
   "backend/src/modules/chat/services/chatHistoryService.ts": 1402,
   "backend/src/modules/chat/services/chatService.ts": 2150,
-  "backend/src/modules/chat/services/chatSessionPreparer.ts": 1265,
+  "backend/src/modules/chat/services/chatSessionPreparer.ts": 1254,
   "backend/src/modules/chat/services/chatTurnAssembly.ts": 1456,
   "backend/src/modules/chat/services/chatTurnLifecycle.ts": 1256,
   "backend/src/modules/documents/services/documentIngestionService.ts": 1083,

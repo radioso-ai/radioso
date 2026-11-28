@@ -79,8 +79,8 @@ take actions or only chat, in English and Italian, the agent names something its
 routines carry out (a demo, a return, a retreat, an adoption) instead of answering from its
 identity alone; `answer_contains` checks that deterministically, and an `llm_judge` checks that
 the reply denies none of it and claims nothing done. A question that names the company the agent
-is named after routes to retrieval, and asking whether the agent can book a demo starts the
-book-demo routine. Their neighbours carry the `identity` tag, so one filter selects them all:
+is named after routes to retrieval, and so does "can it take actions?" when the turn before asked
+about that company. Asking whether the agent can book a demo starts the book-demo routine. Their neighbours carry the `identity` tag, so one filter selects them all:
 
 ```bash
 pnpm run evals -- --tag identity --judge-tag capability-question

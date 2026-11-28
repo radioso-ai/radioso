@@ -1007,6 +1007,7 @@ describe("chat service fused turn planning", () => {
       const rankedActivationGateway = { complete: vi.fn(async () => ({ text: "{\"matches\":[]}" })) };
       const planner = plannerFactory({ completions: [], failWith: shed });
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async ({ turnPlan }) => ({
           activator: planAwareRoutineActivator({
             handle: turnPlan,
@@ -1053,6 +1054,7 @@ describe("chat service fused turn planning", () => {
         clear: async () => {},
       };
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async () => ({
           activator: { activate: async () => null },
           runner: {
@@ -1098,6 +1100,7 @@ describe("chat service fused turn planning", () => {
         clear: async () => {},
       };
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async () => ({
           activator: { activate: async () => null },
           runner: {
@@ -1142,6 +1145,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => null },
         runner: {
@@ -1194,6 +1198,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1273,6 +1278,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1357,6 +1363,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1657,6 +1664,7 @@ describe("chat service fused turn planning", () => {
       },
     }));
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: planAwareRoutineActivator({
           handle: turnPlan,
@@ -1710,6 +1718,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: { activate: vi.fn(async () => null) },
         runner: { resume: vi.fn() as never },
@@ -1769,6 +1778,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: { activate: vi.fn(async () => null) },
         runner: { resume },
@@ -1814,6 +1824,7 @@ describe("chat service fused turn planning", () => {
     };
     let receivedPreviewRoutineIds: string[] | undefined;
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ previewRoutineIds }) => {
         receivedPreviewRoutineIds = previewRoutineIds;
         // No activation — the draft under test does not claim this turn, so the
@@ -2364,6 +2375,7 @@ describe("chat service quick-reply lane", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => null },
         runner: {

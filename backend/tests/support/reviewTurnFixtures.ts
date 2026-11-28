@@ -155,6 +155,7 @@ export const reviewServiceHarness = async (options: ReviewServiceHarnessOptions 
     clear: vi.fn(async () => {}),
   };
   const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+    describeStartable: async () => [],
     forTurn: vi.fn(async () => null),
   };
   const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {

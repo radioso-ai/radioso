@@ -1,19 +1,31 @@
-import { isAgentRetrievalEnabled, type AgentRecord } from "../../agents/public.js";
+import type { ConversationRoutineStore } from "@radioso/conversation-contract";
+
+import { isAgentRetrievalEnabled, steeringDirectivesFromAuthored } from "../../agents/public.js";
 import type { ChatRoutineCapability, ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { PreparedSession } from "./chatSessionPreparer.js";
+import { buildChatTurnContext } from "./conversationContractMappers.js";
+import { runnableSkillDirectives, type DirectiveBindingAvailability } from "./directiveBindingResolution.js";
 
-/** A skill the agent uses on its own: its handle and the condition its directive applies it under. */
+/**
+ * At most this many routines and this many skills reach the reply, each entry cut to this
+ * many characters: the list is there to be described, and an operator's long trigger or
+ * condition text must not crowd the reply's prompt.
+ */
+const MAX_LISTED = 8;
+const MAX_ENTRY_CHARS = 160;
+
+/** A skill the agent uses on its own, as the condition its directive applies it under. */
 interface SkillCapability {
-  name: string;
-  usedWhen: string | null;
+  usedWhen: string;
 }
 
 /**
- * What the agent can do in a conversation, for the direct reply to a visitor who asks: whether it
- * answers from the workspace's documents, the routines this turn could start, and the skills its
- * directives use. Names and conditions only; how a routine or skill works never reaches the reply.
+ * What the agent can do in this conversation, for the direct reply to a visitor who asks:
+ * whether it answers from the workspace's documents, the routines the conversation could
+ * start, and the skills its directives run. Names and conditions only; how a routine or skill
+ * works never reaches the reply.
  */
 export interface AgentCapabilities {
   answersFromDocuments: boolean;
@@ -21,59 +33,101 @@ export interface AgentCapabilities {
   skills: readonly SkillCapability[];
 }
 
-type CapabilityAgent = Pick<AgentRecord, "retrievalEnabled" | "authoredDirectives" | "authoredAgentSkills">;
+/** A turn's capabilities, read on first ask and once; null when they cannot be read, so the reply states no limit. */
+export interface AgentCapabilitiesHandle {
+  read(): Promise<AgentCapabilities | null>;
+}
+
+/** The ports a turn runs its routines and directives through, which its capabilities are read from. */
+export interface AgentCapabilitySources {
+  routineProvider?: Pick<ChatRoutineProvider, "describeStartable">;
+  routineStore?: Pick<ConversationRoutineStore, "loadCompleted">;
+  capabilityPolicy?: Pick<CapabilityPolicy, "can">;
+  logger?: Pick<AppLogger, "warn">;
+}
+
+type CapabilitySession = Parameters<typeof buildChatTurnContext>[0] & {
+  conversation: { id: string; workspaceId: string; agentRevisionId?: string | null };
+  previewRoutineIds?: string[];
+};
+
+const clip = (text: string): string => {
+  const flat = text.trim().replace(/\s+/g, " ");
+  return flat.length <= MAX_ENTRY_CHARS ? flat : `${flat.slice(0, MAX_ENTRY_CHARS - 1).trimEnd()}…`;
+};
 
 /**
- * A skill is one of the agent's own capabilities when an enabled directive binds it; the
- * directive's condition is when the agent uses it. A release that recorded its skills drops a
- * bound skill it switched off; one that recorded none resolves bound skills live, so they stay.
+ * The routines the conversation could start. A turn runs routines only with both a provider
+ * and a store, so without them the agent has none; otherwise the provider applies each
+ * routine's eligibility and the store says which already completed.
  */
-const boundSkillCapabilities = (agent: CapabilityAgent): SkillCapability[] => {
-  const enabledSkillNames = agent.authoredAgentSkills
-    ? new Set(agent.authoredAgentSkills.filter((skill) => skill.enabled).map((skill) => skill.skillName))
-    : null;
-  return (agent.authoredDirectives ?? []).flatMap((directive) => {
-    const skillName = directive.enabled && directive.binding?.kind === "skill" ? directive.binding.skillName : null;
-    if (!skillName || (enabledSkillNames && !enabledSkillNames.has(skillName))) {
-      return [];
-    }
-    const usedWhen = directive.condition.kind === "contextual" ? directive.condition.description : directive.description;
-    return [{ name: skillName, usedWhen }];
+const startableRoutines = async (
+  sources: AgentCapabilitySources,
+  session: CapabilitySession,
+): Promise<readonly ChatRoutineCapability[]> => {
+  if (!sources.routineProvider || !sources.routineStore) {
+    return [];
+  }
+  const completed = (await sources.routineStore.loadCompleted?.({ sessionId: session.conversation.id })) ?? [];
+  return sources.routineProvider.describeStartable({
+    agentId: session.agent.id,
+    agentRevisionId: session.conversation.agentRevisionId ?? undefined,
+    workspaceId: session.conversation.workspaceId,
+    previewRoutineIds: session.previewRoutineIds,
+    turn: buildChatTurnContext(session),
+    completedRoutineIds: completed.map((state) => state.routineId),
   });
 };
 
-/** The agent's capabilities: its retrieval switch and directives from the release, and the routines a turn could start. */
-export const describeAgentCapabilities = (
-  agent: CapabilityAgent,
-  routines: readonly ChatRoutineCapability[],
-): AgentCapabilities => ({
-  answersFromDocuments: isAgentRetrievalEnabled(agent),
-  routines,
-  skills: boundSkillCapabilities(agent),
-});
-
-/** Reads a turn's capabilities; null when they cannot be read, so the reply states no limit. */
-export type AgentCapabilitiesReader = (session: PreparedSession) => Promise<AgentCapabilities | null>;
+/** Whether the capability policy grants every capability a directive requires; unverifiable without one. */
+const grantsAll = async (
+  policy: AgentCapabilitySources["capabilityPolicy"],
+  capabilities: readonly string[],
+  workspaceId: string,
+): Promise<boolean> => {
+  for (const capability of capabilities) {
+    if (!policy || !(await policy.can({ capability, workspaceId })).allowed) {
+      return false;
+    }
+  }
+  return true;
+};
 
 /**
- * The reader the direct reply consults on an identity question: the routines come from the same
- * routine provider the turn activates them through, scoped as `forTurn` is, so the reply names
- * exactly what this turn could start.
+ * The skills the agent's directives run, by the condition each applies under: only a binding
+ * this turn's skill selection could run (`runnableSkillDirectives`, over the same availability
+ * the selector resolves bindings against) on a directive whose required capabilities hold. A
+ * directive that applies on every turn has no condition a visitor could read, so it is left out.
  */
-export const createAgentCapabilitiesReader = (
-  routines: Pick<ChatRoutineProvider, "describeStartable"> | undefined,
-  logger?: Pick<AppLogger, "warn">,
-): AgentCapabilitiesReader => async (session) => {
+const skillCapabilities = async (
+  sources: AgentCapabilitySources,
+  session: CapabilitySession,
+  availability: DirectiveBindingAvailability,
+): Promise<SkillCapability[]> => {
+  const runnable = runnableSkillDirectives(steeringDirectivesFromAuthored(session.agent.authoredDirectives), availability);
+  const granted = await Promise.all(runnable.map((directive) =>
+    grantsAll(sources.capabilityPolicy, directive.requiredCapabilities ?? [], session.conversation.workspaceId)));
+  return runnable.flatMap((directive, index) =>
+    granted[index] && directive.condition.kind === "contextual" ? [{ usedWhen: directive.condition.description }] : []);
+};
+
+const readAgentCapabilities = async (
+  sources: AgentCapabilitySources,
+  session: CapabilitySession,
+  availability: DirectiveBindingAvailability,
+): Promise<AgentCapabilities | null> => {
   try {
-    const startable = await routines?.describeStartable?.({
-      agentId: session.agent.id,
-      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
-      workspaceId: session.conversation.workspaceId,
-      previewRoutineIds: session.previewRoutineIds,
-    });
-    return describeAgentCapabilities(session.agent, startable ?? []);
+    const [routines, skills] = await Promise.all([
+      startableRoutines(sources, session),
+      skillCapabilities(sources, session, availability),
+    ]);
+    return {
+      answersFromDocuments: isAgentRetrievalEnabled(session.agent),
+      routines: routines.slice(0, MAX_LISTED).map((routine) => ({ name: clip(routine.name), trigger: clip(routine.trigger) })),
+      skills: skills.slice(0, MAX_LISTED).map((skill) => ({ usedWhen: clip(skill.usedWhen) })),
+    };
   } catch (error) {
-    logger?.warn(
+    sources.logger?.warn(
       {
         event: "agent_capabilities_unavailable",
         workspaceId: session.conversation.workspaceId,
@@ -87,6 +141,20 @@ export const createAgentCapabilitiesReader = (
   }
 };
 
+/**
+ * The capabilities of the turn `session` runs, from the ports the turn itself runs through and
+ * the skill availability its selector resolves bindings against. Nothing is read until the
+ * direct reply to an identity question asks, and then only once.
+ */
+export const agentCapabilitiesHandle = (
+  sources: AgentCapabilitySources,
+  session: CapabilitySession,
+  availability: DirectiveBindingAvailability,
+): AgentCapabilitiesHandle => {
+  let reading: Promise<AgentCapabilities | null> | undefined;
+  return { read: () => (reading ??= readAgentCapabilities(sources, session, availability)) };
+};
+
 const listLines = <T>(items: readonly T[], line: (item: T) => string): string =>
   items.length > 0 ? items.map(line).join("\n") : "- none";
 
@@ -95,5 +163,5 @@ export const renderAgentCapabilities = (capabilities: AgentCapabilities): string
   renderPromptTemplate("chat/agent-capabilities.md", {
     answers_from_documents: capabilities.answersFromDocuments ? "yes" : "no",
     routine_lines: listLines(capabilities.routines, (routine) => `- ${routine.name}: ${routine.trigger}`),
-    skill_lines: listLines(capabilities.skills, (skill) => (skill.usedWhen ? `- ${skill.name}: ${skill.usedWhen}` : `- ${skill.name}`)),
+    skill_lines: listLines(capabilities.skills, (skill) => `- ${skill.usedWhen}`),
   });

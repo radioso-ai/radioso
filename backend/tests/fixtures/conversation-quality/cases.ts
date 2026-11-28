@@ -164,6 +164,12 @@ const CAPABILITY_ANSWER_REFERENCE =
   "Says the assistant can do more than chat and names some of what it can do for the visitor, such as booking a demo or starting a return.";
 const CAPABILITY_ANSWER_CRITERIA = `${DESCRIBED_REFERENCE_RUBRIC} The reply names at least one thing the assistant can carry out for the visitor (booking a demo, starting a return, booking a retreat, finding a dog to adopt, or reaching support). It does not say or imply that the assistant cannot take actions or can only chat, and it does not claim to have started or done anything.`;
 
+/** An agent named after the product it represents, so a question about the product shares the agent's name. */
+const PRODUCT_NAMED_AGENT = {
+  name: "Radioso Assistant",
+  customInstruction: "You are Radioso Assistant, the assistant on Radioso's website. Answer from the provided documents.",
+};
+
 /** The judge criterion for a quick-reply case whose reference describes the expected reply. */
 const quickReplyCriteria = (language: string): string =>
   `${DESCRIBED_REFERENCE_RUBRIC} The reply is one or two short sentences in ${language}. ${NO_FACTUAL_PROPOSITION_RUBRIC}`;
@@ -280,11 +286,21 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     id: "capability-question-about-the-product-retrieves",
     name: "A question about the product the agent is named after is retrieved, not answered as identity",
     tags: ["routing", "identity", "capability-question"],
-    agentConfigOverride: {
-      name: "Radioso Assistant",
-      customInstruction: "You are Radioso Assistant, the assistant on Radioso's website. Answer from the provided documents.",
-    },
+    agentConfigOverride: PRODUCT_NAMED_AGENT,
     query: "Can Radioso take actions, or is it just a chatbot?",
+    assertions: [{ type: "turn_route", route: "retrieval" }],
+  },
+  // #1872: "it" for the product named a turn earlier still asks about the product.
+  {
+    id: "capability-question-pronoun-for-the-product-retrieves",
+    name: "A pronoun for the product named earlier is retrieved, not answered as identity",
+    tags: ["routing", "identity", "capability-question", "multiturn"],
+    agentConfigOverride: PRODUCT_NAMED_AGENT,
+    history: [
+      { role: "user", content: "Tell me about Radioso." },
+      { role: "assistant", content: "Radioso is a platform for building assistants that answer from a company's documents." },
+    ],
+    query: "Can it take actions, or is it just a chatbot?",
     assertions: [{ type: "turn_route", route: "retrieval" }],
   },
   // #1872: a request phrased as whether the agent can do it still starts the routine for it.

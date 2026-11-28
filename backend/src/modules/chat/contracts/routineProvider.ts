@@ -8,6 +8,7 @@ import type {
   ConversationRoutineSlotCorrection,
   Routine,
   RoutineGroundedAnswerRenderer,
+  TurnContext,
 } from "@radioso/conversation-contract";
 
 import type {
@@ -50,14 +51,18 @@ export interface ChatRoutineProvider {
     routineInvocation?: RoutineInvocation;
   }): Promise<ChatRoutineTurnReporter | null>;
   /**
-   * The routines `forTurn` would let this turn start, by authored name and trigger only, for a
-   * reply to a visitor who asks what the agent can do. A provider without it lists none.
+   * The routines this conversation could start, by authored name and trigger only, for a reply
+   * to a visitor who asks what the agent can do: what `forTurn` activates through, narrowed by
+   * each routine's eligibility for `turn` and by the routines it already completed. Rejects when
+   * the routines cannot be read, so the caller never takes that for an agent with none.
    */
-  describeStartable?(input: {
+  describeStartable(input: {
     agentId: string;
     agentRevisionId?: string;
     workspaceId?: string;
     previewRoutineIds?: string[];
+    turn: TurnContext;
+    completedRoutineIds: readonly string[];
   }): Promise<readonly ChatRoutineCapability[]>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;

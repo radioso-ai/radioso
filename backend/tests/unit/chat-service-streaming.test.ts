@@ -1517,6 +1517,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({
         activator: { activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "contact.request" })) },
         runner: {
@@ -1811,6 +1812,7 @@ describe("chat service streaming", () => {
       }),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => null),
     };
     const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {
@@ -2262,6 +2264,7 @@ describe("chat service streaming", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
@@ -2354,6 +2357,7 @@ describe("chat service streaming", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ throwIfCancelled }) => {
         const dispatcher = new RoutineSkillExecutorDispatcher(
           new StaticRoutineSkillResolver([{
@@ -2466,6 +2470,7 @@ describe("chat service streaming", () => {
       },
     });
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({
         activator: { activate: vi.fn(async () => null) },
         runner: {} as never,
@@ -2559,6 +2564,7 @@ describe("chat service streaming", () => {
       hostEffects: { consentEvents: [{ kind: "asked", routineId: "refund-flow", consentKey: "health", reask: false, wording }] },
     });
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({ activator: { activate: vi.fn(async () => null) }, runner: {} as never })),
     };
     const service = makeChatService(
@@ -2690,6 +2696,7 @@ describe("chat service streaming", () => {
       {
         routineStore: undefined,
         routineProvider: {
+          describeStartable: async () => [],
           forTurn: vi.fn(async () => ({
             activator: { activate: vi.fn(async () => null) },
             runner: {} as never,
@@ -2796,6 +2803,7 @@ describe("chat service streaming", () => {
       {
         routineStore: undefined,
         routineProvider: {
+          describeStartable: async () => [],
           forTurn: vi.fn(async () => ({ activator: { activate: vi.fn(async () => null) }, runner: {} as never, reporter })),
         },
         suspendedRoutineReader: {
@@ -2860,6 +2868,7 @@ describe("chat service streaming", () => {
         {
           routineStore: undefined,
           routineProvider: {
+            describeStartable: async () => [],
             forTurn: vi.fn(async () => ({
               activator: { activate: vi.fn(async () => null) },
               runner: {} as never,
@@ -2977,6 +2986,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
@@ -3090,6 +3100,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
@@ -3172,6 +3183,7 @@ describe("chat service streaming", () => {
     // routine-activation clarification would otherwise substitute its own forced activator.
     const activate = vi.fn(async () => ({ kind: "activate" as const, routineId: "start_return", variables: { orderId: "A-1" } }));
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: vi.fn(async () => ({
         activator: { activate },
         runner: {
@@ -3273,6 +3285,7 @@ describe("chat service streaming", () => {
       clear: async () => { order.push("clear"); },
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
@@ -3355,6 +3368,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => null },
         ...(!input.directiveOnly ? { coverageActivator: {
@@ -3863,6 +3877,7 @@ describe("chat service streaming", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
@@ -3919,6 +3934,7 @@ describe("chat service streaming", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "yielding.routine" }) },
         runner: {
@@ -3997,6 +4013,7 @@ describe("chat service streaming", () => {
   it.each([false, true])("notifies operators of a completion with a notice on the %s path, and the agent keeps answering", async (stream) => {
     const humanOwned = new Set<string>();
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_booking" }) },
         runner: {
@@ -4099,6 +4116,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_support" }) },
         runner: {
@@ -4186,6 +4204,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_support" }) },
         runner: {
@@ -4266,6 +4285,7 @@ describe("chat service streaming", () => {
       clear: vi.fn(async () => {}),
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_support" }) },
         runner: {

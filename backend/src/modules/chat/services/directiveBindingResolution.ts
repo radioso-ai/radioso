@@ -5,6 +5,8 @@
  */
 export {
   resolveDirectiveBinding,
+  runnableSkillDirectives,
+  type DirectiveBindingAvailability,
   type DirectiveBindingOutcome,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,

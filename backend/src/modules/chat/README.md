@@ -1198,14 +1198,17 @@ imports from `services/`.
   `tests/unit/chat-service-turn-planning.test.ts`, and the `quick-reply` cases in
   `tests/unit/eval-suite/suite-runner.test.ts`.
 - What the agent can do, for the direct reply to an identity question (#1872):
-  `services/agentCapabilities.ts` reads it when the turn's framing marks an identity
-  question (`createAgentCapabilitiesReader`, wired into the direct composer by
-  `chatTurnRuntime.ts`): whether retrieval is on, the routines the turn could start
-  by authored name and trigger (`ChatRoutineProvider.describeStartable`, which the
-  routines module answers from the registrations `forTurn` uses), and each skill an
-  enabled directive binds, with the directive's condition. A failed routine read logs
-  `agent_capabilities_unavailable` and leaves the list out, and the reply then states
-  no limit. `assistantReplyPromptBuilder.ts` renders the list
+  `chatTurnAssembly.ts` sets `PreparedSession.agentCapabilities` where it selects the
+  turn's skills (`agentCapabilitiesHandle` in `services/agentCapabilities.ts`), and the
+  direct composer (`readsCapabilities` on `DIRECT_REPLY_CONFIG`) reads it once, only
+  on an identity turn. It holds whether retrieval is on, the routines the conversation
+  could start by authored name and trigger (`ChatRoutineProvider.describeStartable`,
+  given the turn and the routines the assembly's store has completed), and the
+  condition of each directive whose binding the turn could run
+  (`runnableSkillDirectives` over `ChatTurnSkillSelector.bindingAvailability`, with
+  required capabilities checked). Entries are capped in count and length. A failed
+  read logs `agent_capabilities_unavailable` and leaves the list out, and the reply
+  then states no limit. `assistantReplyPromptBuilder.ts` renders the list
   (`prompts/chat/agent-capabilities.md`) into `non-retrieval-answer.md`. The planner, router, and interpreter
   prompts route a question about the product or company the agent represents, and a
   request phrased as whether the agent can do something, to retrieval. Tests:

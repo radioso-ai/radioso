@@ -132,17 +132,25 @@ direct turn marked `isIdentityQuestion`. A question about the product or company
 the agent represents is a retrieval turn even when the agent is named after it,
 and so is a request phrased as whether the agent can do something; routine
 ranking is independent of the route, so such a request still starts its routine.
-The direct reply to an identity question reads what the agent can do
-(`chat/services/agentCapabilities.ts`): whether the agent answers from documents,
-each routine the turn could start, by authored name and trigger, and each skill an
-enabled directive binds, with that directive's condition. The routines come from
-`ChatRoutineProvider.describeStartable`, which the routines module answers from the
-same effective registrations `forTurn` activates through (the release's, the
-workbench preview's, and the built-in ones), so the reply names exactly what the turn
-could start. Names and conditions are all it reads, so the reply can say what the
-agent does, and must deny none of it, without describing how a routine or skill
-runs. When the routines cannot be read, the reply gets no capability list and
-states no limit, and the turn logs `agent_capabilities_unavailable`.
+The direct reply to an identity question reads what the agent can do through
+`PreparedSession.agentCapabilities` (`chat/services/agentCapabilities.ts`), a handle
+the turn assembly sets where it selects the turn's skills and that reads nothing
+until that reply asks. It holds whether the agent answers from documents, each
+routine the conversation could start, by authored name and trigger, and the
+condition of each directive whose skill binding the turn could run. The routines
+come from `ChatRoutineProvider.describeStartable`: the routines module takes the
+effective registrations `forTurn` activates through (the release's, the workbench
+preview's, and the built-in ones) and narrows them with
+`startableRoutineRegistrations`, the eligibility and completed-routine filter the
+routine registry ranks after, given the turn and the routines the conversation's
+store has completed. The skills come from `runnableSkillDirectives`, which applies
+the binding resolver's rules to the same skill availability the turn's selector
+resolves bindings against, and the capability policy checks each directive's
+required capabilities. A directive that applies on every turn carries no condition
+and stays out, and so does every skill name. At most eight routines and eight
+skills reach the reply, each cut to 160 characters, and the reply describes them
+without quoting. When the routines cannot be read, the reply gets no capability
+list and states no limit, and the turn logs `agent_capabilities_unavailable`.
 
 Response language is detected once per turn from the latest user message and
 recent history. Chat starts that detector as soon as the user message is

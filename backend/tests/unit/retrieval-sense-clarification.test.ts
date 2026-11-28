@@ -219,7 +219,7 @@ const makeService = (input: {
     retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
     routineStore: input.routineStore,
     routineProvider: input.routineStore
-      ? { async forTurn() {
+      ? { describeStartable: async () => [], async forTurn() {
           return {
             activator: { async activate() { return null; } },
             runner: { async resume() { return { yielded: true, response: { answer: "" }, nextState: null }; } },

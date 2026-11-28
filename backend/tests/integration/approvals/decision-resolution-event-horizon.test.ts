@@ -203,6 +203,7 @@ describeIntegration("resolving a decision while its resumed routine waits on the
       chatTurnLifecycle: new ChatTurnLifecycle(conversations, messages, audit, input.analytics, undefined, persistence),
       conversationTurnRegistry: new InMemoryConversationTurnRegistry(),
       routineProvider: {
+        describeStartable: async () => [],
         forTurn: async () => ({
           routines: [booking],
           activator: { activate: async () => null },

@@ -51,6 +51,8 @@ export {
 } from "./directiveMatchRanking.js";
 export {
   resolveDirectiveBinding,
+  runnableSkillDirectives,
+  type DirectiveBindingAvailability,
   type DirectiveBindingOutcome,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,

@@ -86,6 +86,7 @@ const collect = async <Result>(turn: AsyncGenerator<string, Result>): Promise<{ 
 // Stubs sufficient for the runner's routine wiring — the runner only forwards these to
 // the (faked) engine, which is what we assert against.
 const routineProviderStub = (): ChatRoutineProvider => ({
+  describeStartable: async () => [],
   async forTurn() {
     return { activator: {} as never, runner: {} as never };
   },
@@ -118,6 +119,7 @@ const bookingRoutine: Routine = {
   transitions: [{ from: "recap", to: "handoff", condition: "The request was read back.", guard: { kind: "default" } }],
 };
 const handoffRoutineProvider = (): ChatRoutineProvider => ({
+  describeStartable: async () => [],
   async forTurn({ modelGateway, responseLanguage }) {
     return {
       routines: [bookingRoutine],
@@ -566,7 +568,7 @@ describe("WorkbenchReplayRunner", () => {
         turnSkills: [answerSkill()],
         conversationEngine: new DefaultConversationEngine(),
         turnRouter: stubTurnRouter("retrieval"),
-        routineProvider: { async forTurn() { return { activator: { activate }, runner: {} as never }; } },
+        routineProvider: { describeStartable: async () => [], async forTurn() { return { activator: { activate }, runner: {} as never }; } },
         chatGateway: chatGatewayStub(),
         chatAnswerPresenter: presenterStub(),
       });
@@ -1535,7 +1537,7 @@ describe("WorkbenchReplayRunner", () => {
       turnSkills: [answerSkill()],
       conversationEngine: slotValuesFakeEngine(),
       turnRouter: stubTurnRouter("retrieval"),
-      routineProvider: { forTurn },
+      routineProvider: { describeStartable: async () => [], forTurn },
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
     });
@@ -1561,7 +1563,7 @@ describe("WorkbenchReplayRunner", () => {
       turnSkills: [answerSkill()],
       conversationEngine: slotValuesFakeEngine(),
       turnRouter: stubTurnRouter("retrieval"),
-      routineProvider: { forTurn },
+      routineProvider: { describeStartable: async () => [], forTurn },
       chatGateway: chatGatewayStub(),
       chatAnswerPresenter: presenterStub(),
     });
@@ -1635,6 +1637,7 @@ describe("WorkbenchReplayRunner", () => {
       conversationEngine: fakeEngine,
       turnRouter: stubTurnRouter("retrieval"),
       routineProvider: {
+        describeStartable: async () => [],
         async forTurn() {
           return { activator: {} as never, runner: {} as never, reporter };
         },
@@ -1718,6 +1721,7 @@ describe("WorkbenchReplayRunner", () => {
       conversationEngine: fakeEngine,
       turnRouter: stubTurnRouter("retrieval"),
       routineProvider: {
+        describeStartable: async () => [],
         async forTurn() {
           return { activator: {} as never, runner: {} as never, reporter };
         },
@@ -1786,6 +1790,7 @@ describe("WorkbenchReplayRunner", () => {
       activate: vi.fn(async () => null),
     };
     const routineProvider: ChatRoutineProvider = {
+      describeStartable: async () => [],
       async forTurn() {
         return { activator: { activate: async () => null }, runner: {} as never, coverageActivator };
       },
@@ -1839,6 +1844,7 @@ describe("WorkbenchReplayRunner", () => {
   it("threads a requested skillEffects override through session preparation into the routine turn provider", async () => {
     let seenSkillEffects: string | undefined;
     const routineProvider: ChatRoutineProvider = {
+      describeStartable: async () => [],
       async forTurn(input) {
         seenSkillEffects = input.skillEffects;
         return { activator: { activate: async () => null }, runner: {} as never };
@@ -1871,6 +1877,7 @@ describe("WorkbenchReplayRunner", () => {
   it("threads the requesting account into the routine turn provider so account-scoped skills can resolve it", async () => {
     let seenAccountId: string | undefined;
     const routineProvider: ChatRoutineProvider = {
+      describeStartable: async () => [],
       async forTurn(input) {
         seenAccountId = input.accountId;
         return { activator: { activate: async () => null }, runner: {} as never };
@@ -2770,6 +2777,7 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
       claim,
     };
     const routineProvider: ChatRoutineProvider = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner,
@@ -3003,6 +3011,7 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
     registry.register({ ...(skill.execution as { kind: "internal"; adapter: string }), executor });
     const routine = skillThenAnswerRoutine(skill.name);
     return {
+      describeStartable: async () => [],
       forTurn: async ({ modelGateway, groundedAnswerRenderer, skillEffects, conversationDurability }) => ({
         routines: [routine],
         activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },
@@ -3115,6 +3124,7 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
   };
 
   const coverageRoutineProvider = (reporter?: ChatRoutineTurnReporter): ChatRoutineProvider => ({
+    describeStartable: async () => [],
     async forTurn() {
       return {
         activator: { activate: async () => null },

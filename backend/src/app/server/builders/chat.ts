@@ -493,33 +493,6 @@ export const buildChatServices = (input: {
   const replyBlocks = createReplyBlocksComposition({
     env: input.env, evidenceImages: documentImages, metrics: input.metricsRegistry, logger: input.logger,
   });
-  // Approval resumes hold a main-pool connection for their decision transaction while an
-  // external skill is journaled. A separate, bounded pool prevents a max-one main pool (or
-  // saturated main pool) from self-deadlocking on that autonomous write.
-  const approvalResumeEffectJournalDatabase = new Database(input.env.DATABASE_URL, {
-    poolMax: 2,
-    idleTimeoutMs: input.env.DB_POOL_IDLE_TIMEOUT_MS,
-    connectionTimeoutMs: input.env.DB_POOL_CONNECTION_TIMEOUT_MS,
-    statementTimeoutMs: input.env.DB_STATEMENT_TIMEOUT_MS,
-    queryTimeoutMs: input.env.DB_QUERY_TIMEOUT_MS,
-    applicationName: `radioso-${input.env.NODE_ENV}-approval-effect-journal`,
-    logger: input.logger,
-  });
-  const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(approvalResumeEffectJournalDatabase.kysely);
-  // Routine machinery (spec 070 / #520): the published routine source and the routines module's turn provider.
-  const routineProvider = composeRoutineTurnProvider({
-    agentSkillRepository: input.agentSkillRepository,
-    composition: input.composition,
-    db: input.database.kysely,
-    clusteringEmbeddings: input.clusteringEmbeddings,
-    embeddingModelForWorkspace: async (workspaceId) =>
-      (await input.ingestionSettingsService.getForWorkspace(workspaceId)).embeddingModel,
-    logger: input.logger,
-    metricsRegistry: input.metricsRegistry,
-    routineDefinitionRepository: input.routineDefinitionRepository,
-    routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
-    approvalResumeEffectJournal,
-  });
   // Composition assembles the chat turn runtime once and injects it, so the host does not inline composer wiring.
   const chatTurnRuntime = buildChatTurnRuntime({
     chatGateway,
@@ -533,7 +506,6 @@ export const buildChatServices = (input: {
     quickReplyLaneEnabled,
     replyBlocks: replyBlocks.turnFactory,
     skillResultReplyBlocks: replyBlocks.skillResults,
-    routines: routineProvider,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives
@@ -624,6 +596,33 @@ export const buildChatServices = (input: {
     intervalMs: 5_000,
     logger: input.logger,
     run: reportActionOutboxQueueState,
+  });
+  // Approval resumes hold a main-pool connection for their decision transaction while an
+  // external skill is journaled. A separate, bounded pool prevents a max-one main pool (or
+  // saturated main pool) from self-deadlocking on that autonomous write.
+  const approvalResumeEffectJournalDatabase = new Database(input.env.DATABASE_URL, {
+    poolMax: 2,
+    idleTimeoutMs: input.env.DB_POOL_IDLE_TIMEOUT_MS,
+    connectionTimeoutMs: input.env.DB_POOL_CONNECTION_TIMEOUT_MS,
+    statementTimeoutMs: input.env.DB_STATEMENT_TIMEOUT_MS,
+    queryTimeoutMs: input.env.DB_QUERY_TIMEOUT_MS,
+    applicationName: `radioso-${input.env.NODE_ENV}-approval-effect-journal`,
+    logger: input.logger,
+  });
+  const approvalResumeEffectJournal = new ApprovalResumeEffectJournalRepository(approvalResumeEffectJournalDatabase.kysely);
+  // Routine machinery (spec 070 / #520): the published routine source and the routines module's turn provider.
+  const routineProvider = composeRoutineTurnProvider({
+    agentSkillRepository: input.agentSkillRepository,
+    composition: input.composition,
+    db: input.database.kysely,
+    clusteringEmbeddings: input.clusteringEmbeddings,
+    embeddingModelForWorkspace: async (workspaceId) =>
+      (await input.ingestionSettingsService.getForWorkspace(workspaceId)).embeddingModel,
+    logger: input.logger,
+    metricsRegistry: input.metricsRegistry,
+    routineDefinitionRepository: input.routineDefinitionRepository,
+    routineTriggerEmbeddingService: input.routineTriggerEmbeddingService,
+    approvalResumeEffectJournal,
   });
   const retrievalTurn = new RetrievalTurnController(
     input.retrievalPipeline,
@@ -743,6 +742,7 @@ export const buildChatServices = (input: {
     turnRouter,
     turnInterpreter,
     routineProvider,
+    capabilityPolicy: input.composition.capabilityPolicy,
     retrievalSenseDetector,
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
     recordClarificationDecision: clarificationDecisionRecorder,

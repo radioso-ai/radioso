@@ -2461,6 +2461,7 @@ export const createTestDependencies = (overrides: {
     return { publishedRegistrations, pinnedRegistrations };
   };
   const routineProvider: ChatRoutineProvider = {
+    describeStartable: async () => [],
     async reporterFor({ agentId, pinnedRoutineIds = [], routineInvocation }) {
       const { publishedRegistrations, pinnedRegistrations } = await loadTurnRoutineRegistrations(agentId, pinnedRoutineIds);
       const routinesById = new Map([...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations]

@@ -201,6 +201,7 @@ interface CoverageTakeoverEnding {
  * straight to the given ending — the same shape production's coverage activator/runner
  * ports present, pared to what these tests need to control. */
 const coverageTakeoverRoutineProvider = (ending: CoverageTakeoverEnding): NonNullable<ChatServiceOptions["routineProvider"]> => ({
+  describeStartable: async () => [],
   async forTurn() {
     return {
       activator: { activate: async () => null },

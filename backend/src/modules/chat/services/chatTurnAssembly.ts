@@ -51,6 +51,7 @@ import {
 import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import { agentCapabilitiesHandle, type AgentCapabilitySources } from "./agentCapabilities.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type {
   ChatConversationTurnInterpreter,
@@ -303,6 +304,7 @@ export interface ChatTurnAssemblyOptions {
   turnInterpreter?: ChatConversationTurnInterpreter;
   routineStore?: ConversationRoutineStore;
   routineProvider?: ChatRoutineProvider;
+  capabilityPolicy?: AgentCapabilitySources["capabilityPolicy"];
   clarifier?: ConversationClarifier;
   recordClarificationDecision?: (input: {
     surface: string;
@@ -1010,15 +1012,13 @@ export class ChatTurnAssembly {
           },
         }))
       : availableTurnSkills;
-    return {
-      turnSkills,
-      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, this.options.selectionStrategy, {
-        agentSkillStates: agentSkillRuntime?.skillStates,
-        logger: this.options.logger,
-        forceSkillName: input.forceSkillName,
-      }),
-      ...(agentSkillRuntime ? { agentSkillRuntime } : {}),
-    };
+    const turnSkillSelector = new ChatTurnSkillSelector(turnSkills, this.options.selectionStrategy, {
+      agentSkillStates: agentSkillRuntime?.skillStates,
+      logger: this.options.logger,
+      forceSkillName: input.forceSkillName,
+    });
+    session.agentCapabilities = agentCapabilitiesHandle(this.options, session, turnSkillSelector.bindingAvailability);
+    return { turnSkills, turnSkillSelector, ...(agentSkillRuntime ? { agentSkillRuntime } : {}) };
   }
 
   private buildEnginePreparationPorts(input: {

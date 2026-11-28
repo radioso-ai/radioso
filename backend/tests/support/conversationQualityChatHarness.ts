@@ -242,6 +242,7 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
     clear: vi.fn(async () => {}),
   };
   const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+    describeStartable: async () => [],
     forTurn: vi.fn(async () => null),
   };
   const service = new ChatService({

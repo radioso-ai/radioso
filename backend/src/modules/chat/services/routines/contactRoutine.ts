@@ -12,9 +12,6 @@ export const HANDOFF_NOTIFY_ACTION_TYPE = "handoff.notify";
  */
 export const COMPLETION_NOTIFY_ACTION_TYPE = "completion.notify";
 
-/** The routine id. */
-const CONTACT_ROUTINE_ID = "contact.request";
-
 /**
  * The explicit intent that activates the routine. These match the public chat UI's
  * "contact a human" affordance (`frontend/components/chat/public-chat-shell.tsx`), so
@@ -37,7 +34,8 @@ export const contactRoutineDefinition: RoutineDefinition = {
   id: "builtin_contact_request_v1",
   agentId: "builtin",
   lineageId: "builtin_contact_request",
-  name: CONTACT_ROUTINE_ID,
+  // The name a reply uses for the routine, as an authored routine's is (#1872).
+  name: "Contact a person",
   version: 1,
   enabled: true,
   activation: {

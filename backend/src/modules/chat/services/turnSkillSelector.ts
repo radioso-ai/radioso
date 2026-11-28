@@ -7,6 +7,7 @@ import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
 import type { AgentSkillInvocationMode } from "../../agentSkills/public.js";
 import {
   resolveDirectiveBinding,
+  type DirectiveBindingAvailability,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,
   type DirectiveBindingOutcome,
@@ -106,11 +107,18 @@ export class ChatTurnSkillSelector {
     private readonly options: ChatTurnSkillSelectorOptions = {},
   ) {}
 
+  /** The skills a directive binding can reach on this turn: what the selector resolves every binding against. */
+  get bindingAvailability(): DirectiveBindingAvailability {
+    return {
+      registeredTurnSkillNames: new Set(this.turnSkills.map((skill) => skill.definition.name)),
+      agentSkillStates: this.options.agentSkillStates,
+    };
+  }
+
   private resolveBinding(session: PreparedSession): DirectiveBindingResolution {
     const binding = resolveDirectiveBinding({
       matches: session.directiveSteering?.matches ?? [],
-      registeredTurnSkillNames: new Set(this.turnSkills.map((skill) => skill.definition.name)),
-      agentSkillStates: this.options.agentSkillStates,
+      ...this.bindingAvailability,
     });
     for (const skipped of binding.skipped) {
       this.options.logger?.warn(

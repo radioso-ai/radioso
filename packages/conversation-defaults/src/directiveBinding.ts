@@ -1,4 +1,4 @@
-import { addressesSurface, type DirectiveMatch } from "./domain.js";
+import { addressesSurface, type Directive, type DirectiveMatch } from "./domain.js";
 
 import { directiveMatchConfidence, directiveMatchPriority } from "./directiveMatchRanking.js";
 
@@ -38,10 +38,14 @@ export interface DirectiveBindingSkillState {
   capabilityDenied?: boolean;
 }
 
-export interface ResolveDirectiveBindingInput {
-  matches: readonly DirectiveMatch[];
+/** What a turn knows about the skills a directive binding can reach. */
+export interface DirectiveBindingAvailability {
   registeredTurnSkillNames: ReadonlySet<string>;
   agentSkillStates?: ReadonlyMap<string, DirectiveBindingSkillState>;
+}
+
+export interface ResolveDirectiveBindingInput extends DirectiveBindingAvailability {
+  matches: readonly DirectiveMatch[];
 }
 
 // Binding picks a single turn-claiming winner: authored priority dominates, matcher
@@ -81,6 +85,32 @@ const skipReason = (
   return null;
 };
 
+/** A binding the answer loop consumes as a staged tool, so it never claims the turn. */
+const isStagedBinding = (state: DirectiveBindingSkillState | undefined): boolean =>
+  Boolean(state?.enabled && state.stagingCapable && !state.turnCapable);
+
+/**
+ * The directives among `directives` whose skill binding runs on a turn their condition
+ * matches: each one addresses the answer, and binds a skill this turn either registers with
+ * no availability fact skipping it, as {@link resolveDirectiveBinding} requires of a winner,
+ * or stages into its answer loop without a capability denial. A host describing what its
+ * agent can do reads this, so it names only skills a matching turn would run.
+ */
+export const runnableSkillDirectives = (
+  directives: readonly Directive[],
+  availability: DirectiveBindingAvailability,
+): Directive[] =>
+  directives.filter((directive) => {
+    const binding = directive.binding;
+    if (binding?.kind !== "skill" || !addressesSurface(directive.surfaces, "answer")) {
+      return false;
+    }
+    const state = availability.agentSkillStates?.get(binding.skillName);
+    return isStagedBinding(state)
+      ? !state?.capabilityDenied
+      : skipReason(binding.skillName, availability.registeredTurnSkillNames, availability.agentSkillStates) === null;
+  });
+
 export const resolveDirectiveBinding = (input: ResolveDirectiveBindingInput): DirectiveBindingResolution => {
   const boundMatches = input.matches
     .filter((match) => {
@@ -94,8 +124,7 @@ export const resolveDirectiveBinding = (input: ResolveDirectiveBindingInput): Di
       if (!addressesSurface(match.directive.surfaces, "answer")) {
         return false;
       }
-      const state = input.agentSkillStates?.get(binding.skillName);
-      return !(state?.enabled && state.stagingCapable && !state.turnCapable);
+      return !isStagedBinding(input.agentSkillStates?.get(binding.skillName));
     })
     .sort(compareBoundMatches);
 

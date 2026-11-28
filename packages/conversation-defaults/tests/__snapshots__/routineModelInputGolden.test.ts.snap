@@ -92,6 +92,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -187,6 +188,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -285,6 +287,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -377,6 +380,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -401,6 +405,7 @@ Before you write, check what you were given to say against these facts:
 Keep everything else you were given to say. Guidance about tone or helpfulness never overrides these facts.
 
 Do not add links, contact details, recommendations, options, or follow-up questions.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -495,6 +500,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -588,6 +594,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -674,6 +681,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -765,6 +773,7 @@ Respond in Italian.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -871,6 +880,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -954,6 +964,7 @@ Respond in German.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 

@@ -626,6 +626,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     return {
       messages: turnMessages(input.turn, contextEvidence, this.contextEvidencePromptTemplate),
       systemPrompt,
+      writesVisitorText: true,
     };
   }
 
@@ -665,6 +666,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     const { text } = await this.modelGateway.complete({
       messages: handoffTerminalMessages(turn, responseLanguage),
       systemPrompt,
+      writesVisitorText: true,
     });
     return { answer: text.trim() };
   }

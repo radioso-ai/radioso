@@ -157,6 +157,7 @@ import { ChatAnswerSupport, recordClarificationDecision } from "../../../modules
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import { buildInfrastructure } from "./infra.js";
+import { LinkGuardedChatGateway } from "../../../modules/chat/services/linkGuardedChatGateway.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
 import { DocumentImageRepository } from "../../../modules/documents/composition.js";
 import { createReplyBlocksComposition } from "../../composition/replyBlocks.js";
@@ -225,7 +226,7 @@ export const buildChatServices = (input: {
   teammateLabels: TeammateLabelReaderPort;
   assistantChat?: ConstructorParameters<typeof AssistantChatService>[2];
 }) => {
-  const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const chatGateway = new LinkGuardedChatGateway(input.llmRegistry.createChatGateway(input.usageEventRecorder), "visitor_reply", input.metricsRegistry);
   // Retrieval-sense clarification is answer-first: once a candidate set survives
   // floor/suppression/clear-margin/loop-guard/priority checks, a no-clear-winner case
   // soft-picks the strongest sense and offers alternatives instead of blocking. The

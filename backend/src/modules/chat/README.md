@@ -635,7 +635,14 @@ imports from `services/`.
   the page-context answer, the focused decline, and a routine step that answers
   from documents through this composer. A link to any
   other address (a made-up site, `#`, a relative path, a page title, the website of
-  an email address's domain) becomes its text. Both entry points read the answer as
+  an email address's domain) becomes its text. An address a renderer links on its
+  own is removed outright, because showing an address nobody gave is misinformation
+  too: a bare `https://…` or `www.…`, an `<autolink>`, and a `[ref]: url`
+  definition (its `[name][ref]` uses stay literal text). The guard reads link text
+  that continues over a soft line break, destinations decoded as a renderer reads
+  them (backslash escapes, `&#43;`), and the `](destination)` that closes link text
+  longer than the 1,000 character bound, whose text stays and whose rejected
+  destination is dropped. Both entry points read the answer as
   the visitor does, citation markers already removed, so they apply one grammar to
   the same text and the joined stream equals the finished answer: the stream after
   the `CitationAnchorSanitizer` in `services/streamedAnswerText.ts`, where
@@ -649,21 +656,53 @@ imports from `services/`.
   (`givenLinkPolicy`), matching an address in the prompt text across scheme,
   `www.`, host case, trailing slash and punctuation, fragment, percent-encoding,
   and internationalised host forms, and keeping a home page or parent path of a
-  given address; `mailto:` and `tel:` count when the address is in the prompt. The
+  given address; `mailto:` and `tel:` count when the address is in the prompt.
+  `shared/text/givenPhoneNumbers.ts` reads phone numbers from the prompt as digit
+  groups, never joining a date or time to its neighbours, and matches a `tel:`
+  that adds or drops a country code (one to three digits, any country) or a trunk
+  `0`, only on a number long enough to have a national part. A held link, bare
+  address, or backtick resumes where the last chunk ended, so a stream is read
+  once, not once per token. The
   standalone retrieval answer (`modules/retrieval/services/retrievalAnswerService.ts`,
   behind `POST /api/v1/retrieval/answer` and its `mcp_grounded_answer` path)
   applies the same two helpers to its presented answer, against its call's system
   prompt, prompt, and history. Each unwrapped link counts
-  on `chat_answer_links_unwrapped_total{reason, stream}` (`fragment`, `relative`,
+  on `chat_answer_links_unwrapped_total{reason, stream, path}` (`fragment`, `relative`,
   `malformed`, `not_given`), or `retrieval_answer_links_unwrapped_total{reason,
   surface}` for the standalone answer, and a streamed turn's compose stage records
   `unwrappedLinkCount` as a trace metric; no address or answer text is recorded.
-  Direct answers, quick replies, skill-result answers, and routine replies that do
-  not answer from documents have their own composers and are not guarded. Tests:
+  Every other visitor answer runs the same two helpers at the place its text
+  leaves a model, against what that call was sent. `AssistantReplyComposer` guards
+  the direct reply, the reply written from a skill's result, and their declines,
+  whole and streamed, counted with `path` `direct` or `skill_result`. A quick
+  reply is not guarded: its planner wording is rejected when it holds an address
+  (`plannerQuickReplyTextRejection`), and its authored wording is the operator's
+  own text. Every other model text a visitor reads passes
+  `LinkGuardedChatGateway` (`services/linkGuardedChatGateway.ts`), which
+  composition puts around the chat gateway: a request that sets
+  `writesVisitorText` has its completion guarded, whole or streamed, against its
+  own input, counted with `path` `visitor_reply`; every other call, such as a
+  selector's JSON, passes through. The field is typed on
+  `ChatGatewayInput` and on the engine's `ConversationModelRequest`, and is set
+  by the routine step reply, the handoff message, the consent re-ask, the slot
+  correction replies, the clarifying question's lead-in, and the automatic
+  greeting (guarded before it is cached). A new producer of visitor text sets it.
+  Text an operator authored (a consent's wording shown as written) never passes
+  a model and is never guarded. The operator eval
+  runner (`modules/eval/services/retrievalPipelineEvalRunner.ts`) guards its
+  generated answer with `AnswerLinkGuard`, so an eval scores the answer a visitor
+  reads. `chat_answer_links_unwrapped_total` carries `reason`, `stream`, and
+  `path` (`grounded`, `direct`, `skill_result`, `visitor_reply`). A bare email
+  address is read as `mailto:` by GFM's rule (not inside a longer word or after a `/`, and not when its last label is only digits, so `react@19.0.0` stays text); a bare address is checked as far as its first
+  non-ASCII character when the whole run is rejected and that prefix does not end in `/` (only the address is then removed, not the prose glued to it); the last word of a chunk
+  is held until the next, as an `@` may follow it. Tests:
   `tests/unit/shared/markdownLinkGuard.test.ts`,
   `tests/unit/shared/givenLinkTargets.test.ts`,
   `tests/unit/chat/answerLinkGuard.test.ts` (with the stream-equals-answer
   property over random chunkings),
+  `tests/unit/chat/visitorAnswerLinkGuard.test.ts`,
+  `tests/unit/routine-chat-model-gateway.test.ts`,
+  `tests/unit/chat-bootstrap-service.test.ts`,
   `tests/unit/retrieval-answer-link-guard.test.ts`,
   `tests/unit/retrieval/retrievalAnswerLinks.test.ts`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one

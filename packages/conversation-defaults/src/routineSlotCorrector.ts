@@ -182,6 +182,7 @@ export class RoutineSlotCorrector implements ConversationRoutineSlotCorrection {
         routineSlotCorrectionInvalid: true,
         agentId: input.turn.agent.id,
       },
+      writesVisitorText: true,
     });
     return text.trim();
   }
@@ -202,6 +203,7 @@ export class RoutineSlotCorrector implements ConversationRoutineSlotCorrection {
         routineSlotCorrectionConfirm: true,
         agentId: input.turn.agent.id,
       },
+      writesVisitorText: true,
     });
     return text.trim();
   }

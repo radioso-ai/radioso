@@ -194,6 +194,7 @@ describe("RoutineSlotCorrector", () => {
     const corrector = new RoutineSlotCorrector([routine], gw);
     const answer = await corrector.confirm({ turn: turn("thanks"), routineId: "routine_intake", slotKey: "email", value: "new@example.com" });
     expect(answer).toBe("All set — your email is updated.");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].writesVisitorText).toBe(true);
   });
 
   it("produces an invalid-value re-ask carrying the slot type", async () => {
@@ -203,5 +204,6 @@ describe("RoutineSlotCorrector", () => {
     expect(answer).toBe("That doesn't look like a valid email — what should I use?");
     const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("email");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].writesVisitorText).toBe(true);
   });
 });

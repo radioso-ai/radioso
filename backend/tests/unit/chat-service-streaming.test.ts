@@ -5077,6 +5077,7 @@ describe("chat service streaming", () => {
       "status",
       "status",
       "chunk",
+      "chunk",
       "done",
     ]);
     expect(events.slice(0, 4)).toEqual([
@@ -5085,8 +5086,10 @@ describe("chat service streaming", () => {
       { type: "status", stage: "searching" },
       { type: "status", stage: "composing" },
     ]);
-    expect(events[4]).toEqual({ type: "chunk", text: "full answer" });
-    expect(events[5]).toEqual({
+    // The last word waits for the next chunk: an `@` after it would make it an email address.
+    expect(events[4]).toEqual({ type: "chunk", text: "full " });
+    expect(events[5]).toEqual({ type: "chunk", text: "answer" });
+    expect(events[6]).toEqual({
       type: "done",
       conversationId: expect.any(String),
       agentId: "workspace-1",
@@ -7642,6 +7645,7 @@ describe("chat service streaming", () => {
       "chunk",
       "chunk",
       "chunk",
+      "chunk",
       "done",
     ]);
     expect(events.slice(0, 4)).toEqual([
@@ -8056,6 +8060,7 @@ describe("chat service streaming", () => {
       "status",
       "status",
       "chunk",
+      "chunk",
       "done",
       "suggestions",
     ]);
@@ -8065,12 +8070,12 @@ describe("chat service streaming", () => {
       { type: "status", stage: "searching" },
       { type: "status", stage: "composing" },
     ]);
-    expect(events[5]).toMatchObject({
+    expect(events[6]).toMatchObject({
       type: "done",
       answer: "Nadia is a teacher and author.",
       suggestions: undefined,
     });
-    expect(events[6]).toMatchObject({
+    expect(events[7]).toMatchObject({
       type: "suggestions",
       suggestions: [
         {

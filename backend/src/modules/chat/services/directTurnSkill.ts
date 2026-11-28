@@ -84,6 +84,8 @@ export const createDirectTurnSkill = (
   composer: AssistantReplyComposer,
   quickReplyPorts: DirectTurnSkillQuickReplyPorts,
 ): TurnSkill => {
+  // A quick reply is never guarded: its planner wording is rejected when it holds an address
+  // (`plannerQuickReplyTextRejection`), and its authored wording is the operator's own text.
   const presentQuickReply = (outcome: TurnOutcome): ChatPresentedAnswer | null => {
     const replySource = plannerReplySourceOf(outcome.outcome.metadata);
     const answer = outcome.outcome.answer;

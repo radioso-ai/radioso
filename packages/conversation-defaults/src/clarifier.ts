@@ -50,7 +50,7 @@ Latest reply:
 Return only JSON:
 {"kind":"chosen","id":"<option id>"} or {"kind":"declined"} or {"kind":"unrelated"}`;
 
-export const DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer offered alternative interpretations.
+const DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer offered alternative interpretations.
 
 The options below are numbered in the same order they were offered to the user,
 so positional references resolve against that numbering. Judge by meaning in the

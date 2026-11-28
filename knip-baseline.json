@@ -128,7 +128,6 @@
   "exports|frontend/lib/embed-analytics.ts|websiteEmbedAnalyticsEventNames",
   "exports|frontend/lib/validation.ts|emailAddressSchema",
   "exports|packages/census/src/cluster.ts|RADIUS_PERCENTILE",
-  "exports|packages/conversation-defaults/src/clarifier.ts|DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT",
   "exports|packages/crawler/src/transport/url.ts|isUrlInScope",
   "exports|packages/crawler/src/transport/url.ts|normalizeBaseUrl",
   "exports|packages/crawler/src/transport/url.ts|normalizeCrawlPath",

@@ -69,7 +69,8 @@ describe("ConnectorChatPort contract", () => {
         channelContext?: ConversationChannelContext | null;
         images?: readonly ConnectorInboundImage[];
         onImagesStored?: (stored: readonly ConnectorStoredImage[]) => Promise<void>;
-        onMessageStored?: (stored: { conversationId: string }) => Promise<void>;
+        onMessageStored?: (stored: { conversationId: string; messageId: string }) => Promise<void>;
+        resumeMessageId?: string;
         replyBlocks?: ConnectorReplyBlocksCapability;
         selection?: ConnectorItemSelection;
         personKey?: ConnectorPersonKey;

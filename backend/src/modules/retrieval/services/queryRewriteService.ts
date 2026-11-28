@@ -621,15 +621,16 @@ export class QueryRewriteService {
   }
 
   private isFocusedLexicalQuery(originalQuery: string, candidateQuery: string): boolean {
-    const originalTerms = tokenizeRewriteTerms(originalQuery);
-    const candidateTerms = tokenizeRewriteTerms(candidateQuery);
+    // Each term counts once: a lexical alternative such as a named item's bare name repeats a
+    // term of the phrase beside it without widening the query.
+    const originalTerms = new Set(tokenizeRewriteTerms(originalQuery));
+    const candidateTerms = new Set(tokenizeRewriteTerms(candidateQuery));
 
-    if (candidateTerms.length === 0 || candidateTerms.length >= originalTerms.length) {
+    if (candidateTerms.size === 0 || candidateTerms.size >= originalTerms.size) {
       return false;
     }
 
-    const originalTermSet = new Set(originalTerms);
-    return candidateTerms.every((term) => originalTermSet.has(term));
+    return [...candidateTerms].every((term) => originalTerms.has(term));
   }
 
   private introducesExcessiveTermDrift(originalQuery: string, candidateQuery: string): boolean {

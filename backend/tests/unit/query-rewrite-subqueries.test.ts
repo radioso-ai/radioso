@@ -300,6 +300,39 @@ describe("query rewrite subqueries", () => {
     expect(result.lexicalQuery).toBe("who are these teachers?");
   });
 
+  it.each([
+    "How much does the Planet plan cost?",
+    "Planet plan price?",
+  ])("searches a named item's bare name beside its full phrase on a first turn: %s", async (query) => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Planet plan price",
+          semanticQuery: "Planet plan price",
+          lexicalQuery: "Planet plan OR Planet",
+          responseLanguagePolicy: "match_user_question",
+          queryShape: "definition_lookup",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "Planet plan",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.95,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query,
+      contextWindow: { selectedMessages: [], truncated: false, selectionReason: "no-history" },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual(["Planet plan", "Planet"]);
+  });
+
   it("does not split original user text containing OR when lexical rewrite falls back", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

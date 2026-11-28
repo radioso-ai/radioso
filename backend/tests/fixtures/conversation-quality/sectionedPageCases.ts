@@ -11,11 +11,19 @@ import type { ConversationQualityDocument } from "./corpus.js";
  * A help page on changing plans competes with it: it names Planet and every query word in passing
  * and states no price, so the answer's room is shared between two documents, as in a real workspace.
  *
- * The two pages run in a workspace of their own, seeded with them alone: they describe a product the
- * shared corpus's own pricing page does not sell, so every "which plans" case there would read both.
+ * The section that answers is headed with the plan's bare name and never says "plan", so a lexical
+ * search for the question's full phrase never finds it (#1912). An Italian product's pricing page and
+ * help page repeat that shape, so the case asking for "il piano Maestrale" holds it in a second
+ * language. Its plans carry names of their own, so neither language's search finds the other's
+ * sections.
+ *
+ * The four pages run in a workspace of their own, seeded with them alone: they describe products the
+ * shared corpus's own pricing page does not sell, so every "which plans" case there would read them.
  */
 export const SECTIONED_PLANS_DOC_ID = "22222222-2222-4222-8222-222222222218";
 const PLAN_CHANGE_HELP_DOC_ID = "22222222-2222-4222-8222-222222222219";
+export const SECTIONED_PLANS_IT_DOC_ID = "22222222-2222-4222-8222-222222222220";
+const PLAN_CHANGE_HELP_IT_DOC_ID = "22222222-2222-4222-8222-222222222221";
 
 export const sectionedPageDocuments: ConversationQualityDocument[] = [
   {
@@ -132,22 +140,148 @@ export const sectionedPageDocuments: ConversationQualityDocument[] = [
       "Questions about an invoice go to billing@lumenfold.example.",
     ].join("\n"),
   },
+  {
+    id: SECTIONED_PLANS_IT_DOC_ID,
+    title: "Piani e prezzi di Ventoluce",
+    content: [
+      "# Piani e prezzi di Ventoluce",
+      "",
+      "Generato dalla pagina dei prezzi su https://ventoluce.example/prezzi. Sono i dati commerciali",
+      "attuali di Ventoluce Cloud e dell'edizione open source.",
+      "",
+      "## I piani di Ventoluce Cloud",
+      "",
+      "Ventoluce Cloud ha un prezzo basato sulle conversazioni. Non ci sono costi per postazione né",
+      "costi per risoluzione. Ogni funzione del prodotto è disponibile in tutti i piani, compreso",
+      "quello gratuito. I prezzi indicati sono IVA esclusa.",
+      "",
+      "",
+      "### Brezza",
+      "",
+      "Brezza è gratuito. Comprende 50 conversazioni al mese e 10 MB di contenuti, fino a 300 documenti, con agenti e postazioni illimitati, tutti i canali (widget del sito, REST API, SDK TypeScript, Slack, MCP) e il supporto della community.",
+      "",
+      "Modelli: a carico nostro. Oltre il limite: si passa a Libeccio.",
+      "",
+      "### Libeccio",
+      "",
+      "Libeccio costa 139 € al mese, oppure 1.390 € all'anno (due mesi in omaggio). Comprende 1.000 conversazioni al mese e 20 MB di contenuti, fino a 5.000 documenti, con agenti e postazioni illimitati, tutti i canali (widget del sito, REST API, SDK TypeScript, Slack, MCP) e il supporto via email.",
+      "",
+      "Modelli: inclusi, nessuna chiave da configurare. Oltre il limite: 40 € per altre 300.",
+      "",
+      "### Maestrale",
+      "",
+      "Maestrale costa 469 € al mese, oppure 4.690 € all'anno (due mesi in omaggio). Comprende 5.000 conversazioni al mese e 100 MB di contenuti, fino a 20.000 documenti, con agenti e postazioni illimitati, tutti i canali (widget del sito, REST API, SDK TypeScript, Slack, MCP), il supporto prioritario e una revisione trimestrale.",
+      "",
+      "Modelli: le tue chiavi o le nostre. Oltre il limite: 40 € per altre 300.",
+      "",
+      "### Tramontana",
+      "",
+      "Tramontana è il livello sopra Maestrale, su accordo: più di 5.000 conversazioni al mese, con le tue chiavi o le nostre. Per Tramontana non c'è un acquisto self-service; scrivi a ciao@ventoluce.example.",
+      "",
+      "### Ricariche",
+      "",
+      "Sui piani a pagamento puoi acquistare 300 conversazioni in più per 40 €. Una tantum, senza abbonamento. Valgono 12 mesi. Le ricariche non sono disponibili sul piano gratuito; da lì il passo successivo è Libeccio.",
+      "",
+      "### Servizio gestito",
+      "",
+      "Configuriamo il tuo agente, lo mettiamo a punto e ogni mese rivediamo cosa hanno chiesto i tuoi visitatori. Il prezzo è su accordo, in aggiunta a qualsiasi livello, anche quello gratuito, e non ha un listino. È un servizio, non un livello del software: il software è lo stesso. Per attivarlo, scrivi a ciao@ventoluce.example.",
+      "",
+      "## Cosa conta come conversazione",
+      "",
+      "Una conversazione è una persona che parla con un agente, fino a 10 risposte dell'agente. Ricerca, chiamate agli strumenti e i passaggi interni di una routine non si contano a parte: una routine che fa sei passaggi interni per dare una risposta resta una risposta. Una conversazione che supera le 10 risposte conta come un'altra conversazione per ogni ulteriore blocco di 10.",
+      "",
+      "Anche il lavoro dell'operatore con l'agente conta sul limite mensile, in misura leggera:",
+      "",
+      "- Una conversazione con un cliente, fino a 10 risposte: 1",
+      "- Un messaggio all'assistente dell'operatore: 0,5",
+      "- Una prova in Workbench o nelle valutazioni: 0,5",
+      "- Un rapporto Audience Pulse su richiesta: 10",
+      "- Pubblicare routine, scansionare siti, indicizzare: 0",
+      "",
+      "Ogni voce compare nella vista dei consumi dello spazio di lavoro.",
+      "",
+      "## Quale modello risponde",
+      "",
+      "Con le chiavi di Ventoluce, ogni piano usa OpenAI GPT-5.4 mini per le risposte, con modelli più piccoli per i passaggi intorno (riscrittura della domanda, riordino, classificazione). Non ci sono moltiplicatori per modello né tabelle di crediti. Sul piano Maestrale il cliente può aggiungere le proprie chiavi e scegliere qualsiasi modello; il prezzo della piattaforma è lo stesso in entrambi i casi, e con le proprie chiavi il cliente paga direttamente il suo fornitore di modelli.",
+      "",
+      "## Archiviazione dei contenuti",
+      "",
+      "L'archiviazione conta il testo dei documenti e delle pagine date all'agente e quanti sono; ogni livello qui sopra indica entrambi i limiti, e ogni pagina di un sito scansionato è un documento. Gli embedding e l'indice di ricerca non contano. A uno dei due limiti, i nuovi caricamenti si fermano finché non si rimuovono contenuti o si passa a un livello superiore, e nulla di ciò che è già indicizzato viene cancellato.",
+      "",
+      "## Cosa succede al limite",
+      "",
+      "La dashboard avvisa all'80 per cento del limite mensile. Al limite, lo spazio di lavoro può passare a un livello superiore o, sui livelli a pagamento, acquistare una ricarica. Nulla viene addebitato senza che il cliente lo chieda, e non c'è una fattura per eccedenze a fine mese.",
+      "",
+      "## Come iniziare",
+      "",
+      "Crea uno spazio di lavoro su https://app.ventoluce.example. Il livello gratuito non richiede una carta. Per parlare con il team, scrivi a ciao@ventoluce.example.",
+    ].join("\n"),
+  },
+  {
+    id: PLAN_CHANGE_HELP_IT_DOC_ID,
+    title: "Cambiare il piano Ventoluce",
+    content: [
+      "# Cambiare il piano Ventoluce",
+      "",
+      "Puoi cambiare piano in qualsiasi momento da Impostazioni → Fatturazione. Il passaggio a un piano superiore, per esempio da Libeccio a Maestrale, ha effetto subito, e la differenza viene addebitata in proporzione per il resto del mese. Il passaggio a un piano inferiore ha effetto al rinnovo successivo, quindi uno spazio di lavoro sul piano Maestrale mantiene i limiti di Maestrale fino ad allora.",
+      "",
+      "Agenti, documenti, direttive e routine restano come sono quando il piano cambia. Se lo spazio di lavoro contiene più contenuti di quanti il nuovo piano ne consenta, nulla viene cancellato: i nuovi caricamenti aspettano finché i contenuti non rientrano o il piano non sale di nuovo.",
+      "",
+      "I piani annuali si rinnovano alla data in cui sono iniziati. Il passaggio dalla fatturazione mensile a quella annuale sullo stesso piano ha effetto al rinnovo successivo.",
+      "",
+      "Le domande su una fattura vanno a fatturazione@ventoluce.example.",
+    ].join("\n"),
+  },
 ];
+
+/** The opening of the section that answers each case's question; neither section names the kind of item. */
+export const PLANET_SECTION_PASSAGE = "Planet costs €579 a month";
+export const MAESTRALE_SECTION_PASSAGE = "Maestrale costa 469 € al mese";
+
+/** How far down a lexical search's hits the answering section must rank to count as found. */
+const TOP_LEXICAL_HITS = 3;
 
 export const sectionedPageCases: ConversationQualityCase[] = [
   {
     id: "retrieval-sectioned-page-later-section-figure",
     name: "A later section's price is quoted with its own name, not the section before it",
     description:
-      "The plans page gives each plan a heading and a section that opens with the plan's price; the plan asked about is the third. Its neighbour's price (149) sits one heading above it, so an answer quoting it as the Planet plan's price attaches a figure to the wrong name, and an answer that never reads the Planet section declines (#1876).",
-    tags: ["retrieval", "grounding"],
+      "The plans page gives each plan a heading and a section that opens with the plan's price; the plan asked about is the third. Its neighbour's price (149) sits one heading above it, so an answer quoting it as the Planet plan's price attaches a figure to the wrong name, and an answer that never reads the Planet section declines (#1876). The Planet section never says \"plan\", and three passages name Planet and \"plan\" in passing, so only a lexical search for the plan's bare name ranks the section among its first hits (#1912).",
+    tags: ["retrieval", "grounding", "sectioned-page"],
     query: "How much does the Planet plan cost?",
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "retrieval_includes_document", documentId: SECTIONED_PLANS_DOC_ID },
+      {
+        type: "retrieval_lexical_top_k_includes_passage",
+        documentId: SECTIONED_PLANS_DOC_ID,
+        passage: PLANET_SECTION_PASSAGE,
+        k: TOP_LEXICAL_HITS,
+      },
       { type: "answer_cites_document", documentId: SECTIONED_PLANS_DOC_ID },
       { type: "answer_contains", pattern: "579", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "149", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "retrieval-sectioned-page-later-section-figure-it",
+    name: "A later section's price is quoted with its own name, in Italian",
+    description:
+      "The Italian plans page repeats the shape: the plan asked about, Maestrale, is the third, its section never says \"piano\", and three passages name Maestrale and \"piano\" in passing. Only a lexical search for the plan's bare name ranks the section among its first hits (#1912), and an answer quoting the price one heading above (139) attaches it to the wrong name.",
+    tags: ["retrieval", "grounding", "sectioned-page"],
+    query: "Quanto costa il piano Maestrale?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: SECTIONED_PLANS_IT_DOC_ID },
+      {
+        type: "retrieval_lexical_top_k_includes_passage",
+        documentId: SECTIONED_PLANS_IT_DOC_ID,
+        passage: MAESTRALE_SECTION_PASSAGE,
+        k: TOP_LEXICAL_HITS,
+      },
+      { type: "answer_cites_document", documentId: SECTIONED_PLANS_IT_DOC_ID },
+      { type: "answer_contains", pattern: "469", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "139", matchMode: "substring" },
     ],
   },
 ];

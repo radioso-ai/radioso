@@ -1,6 +1,7 @@
 import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/types.js";
+import { judgeLexicalPassage, type LexicalPassageExpectation } from "./lexicalPassageAssertions.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 import { answerNamesImage, judgeNoPictures, judgeReplyBlock, type ReplyBlockExpectation } from "./replyBlockAssertions.js";
 
@@ -80,7 +81,9 @@ export type SuiteTraceAssertion =
   /** The reply carried no block, or one whose items show no picture: there was none to show. */
   | { type: "reply_block_without_pictures" }
   /** The answer text names no picture by address or handle: pictures belong in the block. */
-  | { type: "answer_excludes_image_url" };
+  | { type: "answer_excludes_image_url" }
+  /** A lexical search of the turn ranked the named document's passage holding `passage` within its first `k` hits. */
+  | ({ type: "retrieval_lexical_top_k_includes_passage" } & LexicalPassageExpectation);
 
 /**
  * Marks the voice expectations only the brain's speed decides as deterministic-only. "No bridge"
@@ -128,6 +131,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "no_reply_block",
   "reply_block_without_pictures",
   "answer_excludes_image_url",
+  "retrieval_lexical_top_k_includes_passage",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -611,6 +615,8 @@ export const evaluateTraceAssertion = (
       const named = answerNamesImage(output.answer, output.replyBlocks);
       return named ? fail(assertion, named) : pass(assertion, "The answer names no picture.");
     }
+    case "retrieval_lexical_top_k_includes_passage":
+      return { assertion, ...judgeLexicalPassage(assertion, output) };
     case "voice_bridge_emitted": {
       if (!output.voiceTurn) {
         return missingVoiceObservation(assertion);

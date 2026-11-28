@@ -14,7 +14,7 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
-| `sectionedPageCases.ts` | the sectioned page case and its own corpus: an invented product's markdown pricing page with one heading per plan, and a help page that names the plans in passing (see [Sectioned page case](#sectioned-page-case)) |
+| `sectionedPageCases.ts` | the sectioned page cases and their own corpus: two invented products' markdown pricing pages with one heading per plan, one in English and one in Italian, each with a help page that names the plans in passing (see [Sectioned page cases](#sectioned-page-cases)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -30,7 +30,8 @@ Two layers (see `src/modules/eval/suite/`):
   `routine_slots_unfilled`, `routine_slots_returned`, `routine_slots_not_returned`,
   `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
-  `turn_directive_committed`, `reply_block`, `no_reply_block`, `answer_excludes_image_url`, plus the product
+  `turn_directive_committed`, `reply_block`, `no_reply_block`, `answer_excludes_image_url`,
+  `retrieval_lexical_top_k_includes_passage`, plus the product
   `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
@@ -171,7 +172,7 @@ first chunk. `tests/unit/eval-suite/reply-block-cases.test.ts` drives each case 
 the chat pipeline with scripted replies, and shows that a case without the capability gets no
 `present` field and no block.
 
-## Sectioned page case
+## Sectioned page cases
 
 `retrieval-sectioned-page-later-section-figure` (#1876) asks "How much does the Planet plan
 cost?" over a markdown pricing page that gives each plan a heading and a section opening with the
@@ -184,10 +185,31 @@ Satellite's price under Planet's name. A second document, a help page on changin
 Planet and every query word in passing and states no price, so the two documents share the
 answer's room.
 
-The pages describe an invented product, and the shared corpus has a pricing page of its own, so
-the case runs in a workspace beside the target named `Conversation-quality sectioned pages`,
-seeded with these two pages alone, on an agent that carries the seed directives
-(`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`).
+The Planet section says "Planet" and never "plan", so a lexical search for `Planet plan` never
+finds it, and the three passing mentions fill that search's first hits (#1912). The case's
+`retrieval_lexical_top_k_includes_passage` assertion passes when one of the turn's lexical
+searches ranks the passage holding "Planet costs €579 a month" within its first 3 hits, which
+the search for the plan's bare name, `Planet`, does. The lexical stages of the retrieval trace
+name each hit by chunk id, so the runner reads the text of every passage of the document the
+assertion names (`passageTexts` on the observed output) through the chunk store.
+
+`retrieval-sectioned-page-later-section-figure-it` asks "Quanto costa il piano Maestrale?" over
+an Italian product's pricing page of the same shape: Maestrale is the third plan, its section
+says "Maestrale" and never "piano", and three passages, one on a help page, name Maestrale and
+"piano" in passing. It checks the same ranking, and that the answer quotes 469 and not
+Libeccio's 139. The two products' plans have names of their own, so neither language's search
+finds the other's sections. `tests/unit/eval-suite/sectioned-page-cases.test.ts` holds both
+pages to that shape with the real chunker, so an edit that puts the kind word into the answering
+section, or leaves fewer than three passing mentions, fails in CI.
+
+The pages describe invented products, and the shared corpus has a pricing page of its own, so
+the cases run in a workspace beside the target named `Conversation-quality sectioned pages`,
+seeded with these four pages alone, on an agent that carries the seed directives
+(`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`). Run only these cases with:
+
+```bash
+pnpm run evals -- --tag sectioned-page
+```
 
 ## Slot-filling cases
 

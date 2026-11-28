@@ -107,7 +107,11 @@ imports from `services/` or `infra/`.
 ## Common Change Paths
 
 - Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
-  `domain/lexicalQueryPlan.ts`, `domain/referentialSubjectAnchor.ts` (adds a
+  `domain/lexicalQueryPlan.ts` (splits a lexical query's top-level `OR` into
+  alternatives, each its own all-terms search; the default lexical instructions in
+  `prompts/retrieval/lexical-rewrite-instructions.md` use it to search a named
+  item's bare name beside its full phrase, `Planet plan OR Planet`),
+  `domain/referentialSubjectAnchor.ts` (adds a
   referential turn's resolved subject to the retrieval queries). Turn routing is supplied to the conversation
   engine by chat's interpretation adapter; retrieval rewrite should only reshape
   retrieval queries. Trigger analysis is a separate retrieval-only stage so it can

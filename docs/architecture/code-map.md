@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-11-21
+last_updated: 2026-11-28
 ---
 
 # Code Map
@@ -3583,8 +3583,15 @@ Primary paths:
 
 - `backend/src/modules/eval/suite/` — case schema, trace assertions (including
   the voice-only `voice_bridge_emitted`, `voice_turn_limit_reached`,
-  `voice_turn_outcome`, and `reply_block` and `answer_excludes_image_url` in
-  `replyBlockAssertions.ts`), scoring, baseline diff, sampling reducer, report
+  `voice_turn_outcome`, `reply_block` and `answer_excludes_image_url` in
+  `replyBlockAssertions.ts`, and `retrieval_lexical_top_k_includes_passage` in
+  `lexicalPassageAssertions.ts`, which reads the retrieval trace's lexical stages
+  and the passage texts the live runner reads through the chunk store), scoring,
+  baseline diff, sampling reducer, report
+- `backend/tests/fixtures/conversation-quality/sectionedPageCases.ts` — the
+  `sectioned-page` cases (#1876, #1912) and their English and Italian pricing and
+  help pages; `tests/unit/eval-suite/sectioned-page-cases.test.ts` holds the pages
+  to the shape the cases test
 - `backend/tests/fixtures/conversation-quality/replyBlockCases.ts` — the
   `reply-blocks` cases and their product and guest house pages; the live runner
   seeds their `document_images` rows after the corpus is processed

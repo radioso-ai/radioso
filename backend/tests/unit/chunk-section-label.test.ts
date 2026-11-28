@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
-import { deriveChunkSection, deriveDocumentSubject } from "../../src/modules/retrieval/services/subjectIdentityService.js";
+import {
+  deriveChunkHeadings,
+  deriveChunkSection,
+  deriveDocumentSubject,
+} from "../../src/modules/retrieval/services/subjectIdentityService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { sectionedPageDocuments } from "../fixtures/conversation-quality/sectionedPageCases.js";
@@ -19,6 +23,14 @@ describe("chunk section label", () => {
       "Planet costs €579 a month.",
     ].join("\n");
 
+    expect(deriveChunkSection(content)).toBe("Satellite · Planet");
+  });
+
+  it("lists every heading a chunk holds once, past the label's length cap too", () => {
+    const longHeading = "A heading long enough to take the section label past its cap of characters";
+    const content = ["### Satellite", "", "### Planet", "", `### ${longHeading}`, "", "### Planet"].join("\n");
+
+    expect(deriveChunkHeadings(content)).toEqual(["Satellite", "Planet", longHeading]);
     expect(deriveChunkSection(content)).toBe("Satellite · Planet");
   });
 

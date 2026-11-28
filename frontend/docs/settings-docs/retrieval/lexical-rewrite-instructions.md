@@ -28,9 +28,9 @@ It matters most when the documents use exact terms such as:
 
 They help the system include the words the corpus is likely to use, even if the user asked more casually.
 
-When there are several exact alternatives, describe in words the kinds of alternatives to search for. Each one the rewrite writes runs as its own lexical search.
+When there are several exact alternatives, ask for them as whole alternatives joined by `OR`, such as `"reset token" OR "magic link"`. `OR` between whole alternatives is the one search syntax the rewrite writes, and each alternative runs as its own lexical search.
 
-The default instructions use this for a question that names one item together with its kind. "How much does the Planet plan cost?" searches `Planet plan` and `Planet` separately, because a pricing page often heads the plan's section with its bare name and states the price there without the word "plan". Instructions you write here replace the default ones, so keep that rule in them when your pages are sectioned that way.
+The default instructions use this for a question that names one item together with its kind. For "How much does the Planet plan cost?" the model can write `Planet plan OR Planet`, because a pricing page often heads the plan's section with its bare name and states the price there without the word "plan". The name alone also matches passages that mention it in passing, so it counts as a full match only in a section whose heading names the item, and as a partial match of `Planet plan` anywhere else. Instructions you write here replace the default ones, so keep that rule in them when your pages are sectioned that way.
 
 ### Distinction From Semantic Rewrite
 

@@ -14,7 +14,7 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
-| `sectionedPageCases.ts` | the sectioned page cases and their own corpus: two invented products' markdown pricing pages with one heading per plan, one in English and one in Italian, each with a help page that names the plans in passing (see [Sectioned page cases](#sectioned-page-cases)) |
+| `sectionedPageCases.ts` | the sectioned page cases and their own corpus: invented products' markdown pricing pages with one heading per plan, in English and Italian, help pages that name the plans in passing, and the pages the counter-cases search past (see [Sectioned page cases](#sectioned-page-cases)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -31,7 +31,8 @@ Two layers (see `src/modules/eval/suite/`):
   `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
   `turn_directive_committed`, `reply_block`, `no_reply_block`, `answer_excludes_image_url`,
-  `retrieval_lexical_top_k_includes_passage`, plus the product
+  `retrieval_lexical_top_k_includes_passage`, `retrieval_lexical_full_matches_exclude_passage`,
+  `retrieval_answer_top_k_includes_passage`, plus the product
   `retrieval_*`, `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
@@ -188,9 +189,11 @@ answer's room.
 The Planet section says "Planet" and never "plan", so a lexical search for `Planet plan` never
 finds it, and the three passing mentions fill that search's first hits (#1912). The case's
 `retrieval_lexical_top_k_includes_passage` assertion passes when one of the turn's lexical
-searches ranks the passage holding "Planet costs €579 a month" within its first 3 hits, which
-the search for the plan's bare name, `Planet`, does. The lexical stages of the retrieval trace
-name each hit by chunk id, so the runner reads the text of every passage of the document the
+searches ranks the passage holding "Planet costs €579 a month" as a full match within its first
+3 hits, which the search for the plan's bare name, `Planet`, does. Its
+`retrieval_answer_top_k_includes_passage` assertion passes when that passage is among the first 3
+passages the answer reads. The lexical stages of the retrieval trace and the answer's passages
+name each passage by chunk id, so the runner reads the text of every passage of the document an
 assertion names (`passageTexts` on the observed output) through the chunk store.
 
 `retrieval-sectioned-page-later-section-figure-it` asks "Quanto costa il piano Maestrale?" over
@@ -200,11 +203,25 @@ says "Maestrale" and never "piano", and three passages, one on a help page, name
 Libeccio's 139. The two products' plans have names of their own, so neither language's search
 finds the other's sections. `tests/unit/eval-suite/sectioned-page-cases.test.ts` holds both
 pages to that shape with the real chunker, so an edit that puts the kind word into the answering
-section, or leaves fewer than three passing mentions, fails in CI.
+section, takes the bare name out of its heading, or leaves fewer than three passing mentions,
+fails in CI.
+
+The search for the bare name finds every passage that holds the name, so it counts a passage as a
+full match only under a heading that names the item. Three counter-cases hold that line:
+
+- `retrieval-sectioned-page-common-word-name` asks "What does the Lumenfold free plan include?"
+  beside a support page that says "feel free" and "free parking". No lexical search may hold the
+  support page's passage as a full match (`retrieval_lexical_full_matches_exclude_passage`), and
+  the answer gives the free plan's limits.
+- `retrieval-sectioned-page-missing-item` asks for a Gold plan no product sells, beside a
+  sponsorship page with a `### Gold sponsor` tier. No lexical search may hold that tier's passage
+  as a full match.
+- `retrieval-sectioned-page-ambiguous-item` asks "How much is the Pro plan?" where two products
+  each head a plan `### Pro`. Both products' pages must reach retrieval.
 
 The pages describe invented products, and the shared corpus has a pricing page of its own, so
 the cases run in a workspace beside the target named `Conversation-quality sectioned pages`,
-seeded with these four pages alone, on an agent that carries the seed directives
+seeded with these pages alone, on an agent that carries the seed directives
 (`partitionCasesByCorpus` in `scripts/evalRunnerSupport.ts`). Run only these cases with:
 
 ```bash

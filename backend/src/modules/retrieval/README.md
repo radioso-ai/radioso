@@ -107,8 +107,10 @@ imports from `services/` or `infra/`.
 ## Common Change Paths
 
 - Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
-  `domain/lexicalQueryPlan.ts` (splits a lexical query's top-level `OR` into
-  alternatives, each its own all-terms search; the default lexical instructions in
+  `domain/lexicalQueryPlan.ts` (splits the top-level `OR` of a lexical query, or
+  of a model-written subquery, into alternatives, each its own all-terms search,
+  and marks an alternative whose terms are part of a sibling's as its relaxation;
+  the default lexical instructions in
   `prompts/retrieval/lexical-rewrite-instructions.md` use it to search a named
   item's bare name beside its full phrase, `Planet plan OR Planet`),
   `domain/referentialSubjectAnchor.ts` (adds a
@@ -279,8 +281,14 @@ Every lexical hit carries `lexicalTermCoverage`: `all_terms` or `some_terms` (a 
 without the field holds every term). A some-terms row is `all_terms` only when the
 query was not cut, every term matched something, and the chunk holds each term by
 its own text; a chunk found through a join is `some_terms`. A some-terms hit's
-`similarity` is the share of term weight it holds. Consumers that read a lexical hit
-as "the chunk holds what was asked for" check the coverage:
+`similarity` is the share of term weight it holds. A relaxation's hits (`Planet`
+beside `Planet plan`) are `some_terms` of the phrase, scored by the share of its
+terms they hold, unless a heading of the chunk names the item: holds every term of
+the alternative and no word outside the phrase (`domain/lexicalRelaxation.ts`,
+applied per branch in `candidateRetrievalStage.ts`). A relaxation is no branch of
+its own for the sense clarification gate in `retrievalSenseClarification.ts`.
+Consumers that read a lexical hit as "the chunk holds what was asked for" check the
+coverage:
 
 - `fuseCandidateRanks` lets a some-terms hit contribute only as the secondary
   source, and `compareLexicalEvidence` ranks it after every all-terms hit. It lifts

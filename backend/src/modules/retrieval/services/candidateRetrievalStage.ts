@@ -15,7 +15,10 @@ import type {
   TemporalSimilarityQuery,
 } from "../domain/temporal/temporalCandidateRetrieval.js";
 import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
-import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievalSubquery, TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
+import { isLexicalRelaxation } from "../domain/lexicalQueryPlan.js";
+import { weighRelaxedLexicalHits } from "../domain/lexicalRelaxation.js";
+import { deriveChunkHeadings } from "./subjectIdentityService.js";
 import { dateRangeLookupDepth } from "../domain/answerCandidatePool.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import {
@@ -25,6 +28,14 @@ import {
   runTimeZone,
   type QueryInterpretationStageResult,
 } from "./retrievalPipelineStages.js";
+
+/** A relaxation's hits count as full evidence only under a heading that names the item. */
+const weighBranchLexicalHits = (subquery: RetrievalSubquery, hits: RetrievedChunk[]): RetrievedChunk[] => {
+  const option = subquery.lexicalPlan?.options[0];
+  return option && isLexicalRelaxation(subquery)
+    ? weighRelaxedLexicalHits({ option, hits, headingsOf: (hit) => deriveChunkHeadings(hit.content) })
+    : hits;
+};
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
   constructor(
@@ -185,7 +196,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           source: input.rewrittenQuery.retrievalEligible ? ("rewritten" as const) : ("original" as const),
           semanticSearched,
           semanticContexts: semanticSearch.contexts,
-          lexicalContexts: lexicalResult.matches,
+          lexicalContexts: weighBranchLexicalHits(subquery, lexicalResult.matches),
           lexicalSomeTermsPass: lexicalResult.someTermsPass,
           fallbackApplied: semanticSearch.fallbackApplied,
           semanticSearchStartedAtMs: semanticSearchTiming?.startedAtMs,

@@ -60,7 +60,36 @@ const deriveLexicalOptions = (
     }
   }
 
-  return alternatives;
+  return markRelaxations(alternatives);
+};
+
+/** Words of a text as lexical search compares them: runs of letters, marks, and digits in any script, lowercased. */
+export const lexicalTermsOf = (value: string): string[] => value.toLocaleLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+
+/** The distinct terms an alternative searches for, its phrases' words included. */
+export const lexicalOptionTerms = (option: LexicalSearchOption): string[] => [
+  ...new Set(lexicalTermsOf([...option.phrases, ...option.requiredTerms].join(" "))),
+];
+
+/**
+ * Marks each alternative whose terms are a strict part of a sibling's as a relaxation of the sibling
+ * with the fewest terms that holds them: `Planet` beside `Planet plan`.
+ */
+const markRelaxations = (options: LexicalSearchOption[]): LexicalSearchOption[] => {
+  const terms = options.map((option) => new Set(lexicalOptionTerms(option)));
+  return options.map((option, index) => {
+    const own = terms[index] ?? new Set<string>();
+    const [closest] = terms
+      .filter((sibling) => sibling.size > own.size && [...own].every((term) => sibling.has(term)))
+      .sort((left, right) => left.size - right.size);
+    return closest && own.size > 0 ? { ...option, relaxationOf: [...closest] } : option;
+  });
+};
+
+/** Whether a subquery searches a relaxation of a sibling subquery's alternative alone. */
+export const isLexicalRelaxation = (subquery: Pick<RetrievalSubquery, "lexicalPlan">): boolean => {
+  const options = subquery.lexicalPlan?.options ?? [];
+  return options.length === 1 && Boolean(options[0]?.relaxationOf);
 };
 
 export const buildLexicalAlternativeSubqueries = (input: {
@@ -86,6 +115,38 @@ export const buildLexicalAlternativeSubqueries = (input: {
     responseLanguagePolicy: input.responseLanguagePolicy,
     lexicalPlan: { options: [alternative] },
   }));
+};
+
+/**
+ * Splits each subquery's top-level OR into one subquery per alternative, sharing its semantic query,
+ * so every alternative runs as an all-terms search of its own rather than as the word "or". When
+ * the alternatives outnumber `maxBranches`, relaxations give way first: every subquery's own search
+ * is kept before any relaxation is.
+ */
+export const expandLexicalAlternatives = (subqueries: RetrievalSubquery[], maxBranches: number): RetrievalSubquery[] => {
+  const branches = subqueries.flatMap((subquery) => {
+    const alternatives = deriveLexicalOptions(subquery.lexicalQuery);
+    // Each alternative keeps the subquery's label: they search for the one thing it names.
+    return alternatives.length > 1
+      ? alternatives.map((alternative) => ({
+          ...subquery,
+          lexicalQuery: alternative.lexicalQuery,
+          lexicalPlan: { options: [alternative] },
+        }))
+      : [subquery];
+  });
+  let relaxationRoom = maxBranches - branches.filter((branch) => !isLexicalRelaxation(branch)).length;
+  const kept: RetrievalSubquery[] = [];
+  for (const branch of branches) {
+    if (isLexicalRelaxation(branch)) {
+      if (relaxationRoom <= 0) {
+        continue;
+      }
+      relaxationRoom -= 1;
+    }
+    kept.push(branch);
+  }
+  return kept.slice(0, maxBranches).map((branch, index) => ({ ...branch, id: `subquery_${index + 1}` }));
 };
 
 const splitTopLevelOr = (value: string): string[] => {

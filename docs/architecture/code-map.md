@@ -2238,7 +2238,11 @@ Primary internals:
 - `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
   HNSW index rule, shared by the index DDL and the query's `ORDER BY`)
 - `backend/src/modules/retrieval/infra/lexicalSearch.ts` (all-terms search, then
-  the some-terms pass planned by `domain/lexicalSomeTermsMatch.ts`)
+  the some-terms pass planned by `domain/lexicalSomeTermsMatch.ts`);
+  `domain/lexicalQueryPlan.ts` splits a lexical query's top-level `OR` into
+  alternatives and marks one whose terms are part of a sibling's as its
+  relaxation, and `domain/lexicalRelaxation.ts` counts a relaxation's hits as
+  part matches unless a heading of the chunk names the item
 - Chunking, run by the documents worker: `domain/chunking/` (the fixed-window
   strategy splits at sentence and word boundaries itself, in
   `textBoundaryWindows.ts`; recursive and semantic go through
@@ -3584,9 +3588,12 @@ Primary paths:
 - `backend/src/modules/eval/suite/` — case schema, trace assertions (including
   the voice-only `voice_bridge_emitted`, `voice_turn_limit_reached`,
   `voice_turn_outcome`, `reply_block` and `answer_excludes_image_url` in
-  `replyBlockAssertions.ts`, and `retrieval_lexical_top_k_includes_passage` in
-  `lexicalPassageAssertions.ts`, which reads the retrieval trace's lexical stages
-  and the passage texts the live runner reads through the chunk store), scoring,
+  `replyBlockAssertions.ts`, and the passage assertions
+  `retrieval_lexical_top_k_includes_passage`,
+  `retrieval_lexical_full_matches_exclude_passage` and
+  `retrieval_answer_top_k_includes_passage` in `passageAssertions.ts`, which read
+  the retrieval trace's lexical stages, the answer's passages, and the passage
+  texts the live runner reads through the chunk store), scoring,
   baseline diff, sampling reducer, report
 - `backend/tests/fixtures/conversation-quality/sectionedPageCases.ts` — the
   `sectioned-page` cases (#1876, #1912) and their English and Italian pricing and

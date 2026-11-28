@@ -17,13 +17,23 @@ import type { ConversationQualityDocument } from "./corpus.js";
  * language. Its plans carry names of their own, so neither language's search finds the other's
  * sections.
  *
- * The four pages run in a workspace of their own, seeded with them alone: they describe products the
+ * Searching the bare name beside the phrase must not turn every passage holding the name into
+ * evidence. Three counter-cases hold that line: a plan named by a common word ("free") beside a
+ * support page that uses the word in passing; a plan no page sells ("Gold") beside a sponsorship
+ * page whose tier shares its name; and a plan two products sell under one name ("Pro"), which asks
+ * which product is meant.
+ *
+ * The pages run in a workspace of their own, seeded with them alone: they describe products the
  * shared corpus's own pricing page does not sell, so every "which plans" case there would read them.
  */
 export const SECTIONED_PLANS_DOC_ID = "22222222-2222-4222-8222-222222222218";
 const PLAN_CHANGE_HELP_DOC_ID = "22222222-2222-4222-8222-222222222219";
 export const SECTIONED_PLANS_IT_DOC_ID = "22222222-2222-4222-8222-222222222220";
 const PLAN_CHANGE_HELP_IT_DOC_ID = "22222222-2222-4222-8222-222222222221";
+const SUPPORT_DOC_ID = "22222222-2222-4222-8222-222222222223";
+const SUMMIT_SPONSORSHIP_DOC_ID = "22222222-2222-4222-8222-222222222224";
+const QUILLMARK_PLANS_DOC_ID = "22222222-2222-4222-8222-222222222225";
+const HARBORLINE_PLANS_DOC_ID = "22222222-2222-4222-8222-222222222226";
 
 export const sectionedPageDocuments: ConversationQualityDocument[] = [
   {
@@ -232,6 +242,86 @@ export const sectionedPageDocuments: ConversationQualityDocument[] = [
       "Le domande su una fattura vanno a fatturazione@ventoluce.example.",
     ].join("\n"),
   },
+  {
+    id: SUPPORT_DOC_ID,
+    title: "Getting help with Lumenfold",
+    content: [
+      "# Getting help with Lumenfold",
+      "",
+      "## Writing to support",
+      "",
+      "Feel free to write to support@lumenfold.example with any question about your workspace. We answer within one working day, and feel free to attach screenshots.",
+      "",
+      "## Visiting the office",
+      "",
+      "Visitors to the Lumenfold office are welcome on weekdays. Free parking is available in the courtyard, and the coffee is free too.",
+      "",
+      "## The printed onboarding kit",
+      "",
+      "Every new workspace can order the printed onboarding kit, a short guide to setting up a first agent. The kit ships free of charge within the EU.",
+    ].join("\n"),
+  },
+  {
+    id: SUMMIT_SPONSORSHIP_DOC_ID,
+    title: "Lumenfold Summit 2031 sponsorship",
+    content: [
+      "# Lumenfold Summit 2031 sponsorship",
+      "",
+      "The Lumenfold Summit is a one-day conference for people who run customer agents. Sponsors support the day and meet its guests.",
+      "",
+      "### Gold sponsor",
+      "",
+      "Gold sponsors get a booth in the main hall, four passes, and their logo on the stage screen. A Gold sponsorship costs €4,000.",
+      "",
+      "### Silver sponsor",
+      "",
+      "Silver sponsors get a table in the hallway and two passes. A Silver sponsorship costs €1,500.",
+      "",
+      "To sponsor the Summit, write to summit@lumenfold.example.",
+    ].join("\n"),
+  },
+  {
+    id: QUILLMARK_PLANS_DOC_ID,
+    title: "Quillmark plans and pricing",
+    content: [
+      "# Quillmark plans and pricing",
+      "",
+      "Quillmark is a writing tool for documentation teams. Prices are per editor and exclude VAT.",
+      "",
+      "### Solo",
+      "",
+      "Solo costs €9 a month for one editor, with unlimited documents and a personal style guide.",
+      "",
+      "### Pro",
+      "",
+      "Pro costs €29 a month per editor. It adds version history, shared style guides, and review comments.",
+      "",
+      "### Studio",
+      "",
+      "Studio is priced by agreement for more than 50 editors. Write to sales@quillmark.example.",
+    ].join("\n"),
+  },
+  {
+    id: HARBORLINE_PLANS_DOC_ID,
+    title: "Harborline plans and pricing",
+    content: [
+      "# Harborline plans and pricing",
+      "",
+      "Harborline tracks deliveries for small shipping firms. Prices are per vehicle and exclude VAT.",
+      "",
+      "### Basic",
+      "",
+      "Basic costs €39 a month for up to 5 vehicles, with live positions and a daily delivery report.",
+      "",
+      "### Pro",
+      "",
+      "Pro costs €89 a month for up to 25 vehicles. It adds route planning, proof of delivery, and an API.",
+      "",
+      "### Fleet",
+      "",
+      "Fleet is priced by agreement for more than 25 vehicles. Write to sales@harborline.example.",
+    ].join("\n"),
+  },
 ];
 
 /** The opening of the section that answers each case's question; neither section names the kind of item. */
@@ -240,6 +330,8 @@ export const MAESTRALE_SECTION_PASSAGE = "Maestrale costa 469 € al mese";
 
 /** How far down a lexical search's hits the answering section must rank to count as found. */
 const TOP_LEXICAL_HITS = 3;
+/** How far down the passages the answer reads the answering section must come. */
+const TOP_ANSWER_PASSAGES = 3;
 
 export const sectionedPageCases: ConversationQualityCase[] = [
   {
@@ -257,6 +349,12 @@ export const sectionedPageCases: ConversationQualityCase[] = [
         documentId: SECTIONED_PLANS_DOC_ID,
         passage: PLANET_SECTION_PASSAGE,
         k: TOP_LEXICAL_HITS,
+      },
+      {
+        type: "retrieval_answer_top_k_includes_passage",
+        documentId: SECTIONED_PLANS_DOC_ID,
+        passage: PLANET_SECTION_PASSAGE,
+        k: TOP_ANSWER_PASSAGES,
       },
       { type: "answer_cites_document", documentId: SECTIONED_PLANS_DOC_ID },
       { type: "answer_contains", pattern: "579", matchMode: "substring" },
@@ -279,9 +377,56 @@ export const sectionedPageCases: ConversationQualityCase[] = [
         passage: MAESTRALE_SECTION_PASSAGE,
         k: TOP_LEXICAL_HITS,
       },
+      {
+        type: "retrieval_answer_top_k_includes_passage",
+        documentId: SECTIONED_PLANS_IT_DOC_ID,
+        passage: MAESTRALE_SECTION_PASSAGE,
+        k: TOP_ANSWER_PASSAGES,
+      },
       { type: "answer_cites_document", documentId: SECTIONED_PLANS_IT_DOC_ID },
       { type: "answer_contains", pattern: "469", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "139", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "retrieval-sectioned-page-common-word-name",
+    name: "A plan named by a common word is answered from its own section, not from passages that use the word",
+    description:
+      "The free plan's section says \"Comet is free\"; a support page says \"feel free\", \"free parking\" and \"ships free of charge\". A search for the bare word must not make those passages evidence: no lexical search holds the support page's passage as a full match, and the answer gives the free plan's limits (10 MB) from the pricing page and says nothing of parking or the onboarding kit.",
+    tags: ["retrieval", "grounding", "sectioned-page"],
+    query: "What does the Lumenfold free plan include?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_lexical_full_matches_exclude_passage", documentId: SUPPORT_DOC_ID, passage: "Feel free to write" },
+      { type: "answer_cites_document", documentId: SECTIONED_PLANS_DOC_ID },
+      { type: "answer_contains", pattern: "10 MB", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "parking", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "onboarding kit", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "retrieval-sectioned-page-missing-item",
+    name: "A plan no page sells is not answered from a sponsorship tier that shares its name",
+    description:
+      "No product here has a Gold plan; the Summit sponsorship page has a \"Gold sponsor\" tier at €4,000. Its section is headed with a word the question never used, so a search for the bare name holds it as a passage that names Gold in passing, never as a full match: lexical search adds no evidence the search for the phrase did not find.",
+    tags: ["retrieval", "coverage", "sectioned-page"],
+    query: "How much does the Gold plan cost?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_lexical_full_matches_exclude_passage", documentId: SUMMIT_SPONSORSHIP_DOC_ID, passage: "Gold sponsors get a booth" },
+    ],
+  },
+  {
+    id: "retrieval-sectioned-page-ambiguous-item",
+    name: "A plan two products sell under one name keeps both products in play",
+    description:
+      "Quillmark and Harborline each sell a plan headed \"Pro\" (€29 and €89 a month). The search for the bare name finds both sections as the item's own, and it searches the same item as the phrase beside it, so it is no second retrieval branch: the turn weighs the readings as it does for one search, and retrieval keeps both products' pages rather than settling on one.",
+    tags: ["retrieval", "clarification", "sectioned-page"],
+    query: "How much is the Pro plan?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: QUILLMARK_PLANS_DOC_ID },
+      { type: "retrieval_includes_document", documentId: HARBORLINE_PLANS_DOC_ID },
     ],
   },
 ];

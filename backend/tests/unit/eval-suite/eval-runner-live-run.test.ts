@@ -495,6 +495,9 @@ describe("live runner reply block corpus", () => {
     expect(sectionedPages.map((evalCase) => evalCase.id)).toEqual([
       "retrieval-sectioned-page-later-section-figure",
       "retrieval-sectioned-page-later-section-figure-it",
+      "retrieval-sectioned-page-common-word-name",
+      "retrieval-sectioned-page-missing-item",
+      "retrieval-sectioned-page-ambiguous-item",
     ]);
     expect(shared).toHaveLength(
       conversationQualityCases.length - replyBlocks.length - toolCards.length - routineCards.length - sectionedPages.length,

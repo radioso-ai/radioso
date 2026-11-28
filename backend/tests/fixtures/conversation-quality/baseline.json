@@ -401,6 +401,21 @@
       "status": "pass",
       "passRate": 1,
       "samples": 3
+    },
+    "retrieval-sectioned-page-common-word-name": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-missing-item": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-ambiguous-item": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     }
   }
 }

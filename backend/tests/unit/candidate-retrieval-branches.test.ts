@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { buildLexicalAlternativeSubqueries } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
 import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/domain/vectorAdapter.js";
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
 import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
@@ -895,6 +896,46 @@ describe("candidate retrieval branch timings", () => {
     expect(result.retrievalBranches[0]?.lexicalSomeTermsPass)
       .toEqual({ outcome: "skipped", reason: "lexical_unavailable", durationMs: 0 });
     expect(result.degradedRetrievalChannels).toContain("lexical");
+  });
+
+  it("counts a relaxation's hits as part matches unless a heading of the chunk names the item", async () => {
+    const lexicalAlternatives = buildLexicalAlternativeSubqueries({
+      semanticQuery: "Planet plan price",
+      lexicalQuery: "Planet plan OR Planet",
+      responseLanguagePolicy: "match_user_question",
+    }) ?? [];
+    const lexicalHit = (chunkId: string, content: string, lexicalRankScore: number) => ({
+      chunkId,
+      documentId: "pricing",
+      title: "Plans and pricing",
+      content,
+      similarity: 1,
+      lexicalRankScore,
+      lexicalTermCoverage: "all_terms" as const,
+    });
+    const stage = new CandidateRetrievalStageService(
+      { async embedQueries() { throw new Error("embedding provider down"); } },
+      { async search() { throw new Error("vector search must not run without an embedding"); } },
+      lexicalSearchStub({
+        async search(input) {
+          return input.query === "Planet"
+            ? [
+                lexicalHit("passing", "## Changing plans\n\nMove up to Planet from the billing page.", 0.3),
+                lexicalHit("section", "### Planet\n\nPlanet costs €579 a month.", 0.2),
+              ]
+            : [lexicalHit("passing", "## Changing plans\n\nMove up to the Planet plan from the billing page.", 0.3)];
+        },
+      }),
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute({ ...singleBranchStageInput(), activeRetrievalSubqueries: lexicalAlternatives });
+
+    expect(result.retrievalBranches.map((branch) =>
+      branch.lexicalContexts.map(({ chunkId, lexicalTermCoverage }) => `${chunkId}:${lexicalTermCoverage}`))).toEqual([
+      ["passing:all_terms"],
+      ["section:all_terms", "passing:some_terms"],
+    ]);
   });
 
   it("asks each lexical branch for some-terms matches and keeps what the pass did", async () => {

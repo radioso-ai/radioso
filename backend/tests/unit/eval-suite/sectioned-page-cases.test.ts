@@ -10,7 +10,11 @@ import {
 import type { WorkbenchReplayResult } from "../../../src/modules/chat/services/workbenchReplayRunner.js";
 import { FixedWindowChunkingStrategy } from "../../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { renderSearchText } from "../../../src/modules/retrieval/services/searchTextRenderer.js";
-import { deriveChunkSection, deriveDocumentSubject } from "../../../src/modules/retrieval/services/subjectIdentityService.js";
+import {
+  deriveChunkHeadings,
+  deriveChunkSection,
+  deriveDocumentSubject,
+} from "../../../src/modules/retrieval/services/subjectIdentityService.js";
 import { defaultIngestionSettings } from "../../../src/modules/settings/domain/ingestionSettings.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
 import { createWorkbenchReplayRunnerPort, type DocumentPassagePages } from "../../../scripts/evalRunnerAdapter.js";
@@ -26,7 +30,10 @@ const PAGE = "page-doc";
 const HELP = "help-doc";
 const PASSAGE = "Planet costs €579 a month";
 
-const lexicalStage = (query: string, chunks: Array<{ chunkId: string; documentId: string }>) => ({
+const lexicalStage = (
+  query: string,
+  chunks: Array<{ chunkId: string; documentId: string; lexicalTermCoverage?: "all_terms" | "some_terms" }>,
+) => ({
   stageId: `lexical_${query}`,
   kind: "lexical",
   status: "applied",
@@ -115,6 +122,15 @@ describe("retrieval_lexical_top_k_includes_passage", () => {
     expect(verdict.reason).toContain("4");
   });
 
+  it("does not count a part match as ranking the passage", () => {
+    const output = retrievalTurn(
+      [lexicalStage("Planet", [{ chunkId: "page-1", documentId: PAGE, lexicalTermCoverage: "some_terms" }])],
+      pageTexts,
+    );
+
+    expect(evaluateTraceAssertion(assertion, output).status).toBe("fail");
+  });
+
   it("counts only a hit of the named document, whatever another document's passage says", () => {
     const output = retrievalTurn(
       [lexicalStage("Planet", [{ chunkId: "copy-1", documentId: HELP }])],
@@ -139,6 +155,71 @@ describe("retrieval_lexical_top_k_includes_passage", () => {
     expect(() => parseConversationQualityCases([{ ...base, assertions: [{ ...assertion, k: 0 }] }])).toThrow();
     expect(() => parseConversationQualityCases([{ ...base, assertions: [{ ...assertion, passage: "" }] }])).toThrow();
     expect(parseConversationQualityCases([{ ...base, assertions: [assertion] }])).toHaveLength(1);
+  });
+});
+
+describe("retrieval_lexical_full_matches_exclude_passage", () => {
+  const exclusion = { type: "retrieval_lexical_full_matches_exclude_passage", documentId: HELP, passage: "Planet plan" } as const;
+
+  it("passes when every lexical search holds the passage only as a part match, or not at all", () => {
+    const output = retrievalTurn(
+      [
+        lexicalStage("Planet plan", [{ chunkId: "page-4", documentId: PAGE }]),
+        lexicalStage("Planet", [{ chunkId: "help-0", documentId: HELP, lexicalTermCoverage: "some_terms" }]),
+      ],
+      pageTexts,
+    );
+
+    expect(evaluateTraceAssertion(exclusion, output).status).toBe("pass");
+  });
+
+  it("fails when a lexical search holds the passage as a full match, naming the search", () => {
+    const output = retrievalTurn([lexicalStage("Planet", [{ chunkId: "help-0", documentId: HELP }])], pageTexts);
+
+    const verdict = evaluateTraceAssertion(exclusion, output);
+
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reason).toContain("\"Planet\"");
+  });
+
+  it("errors when the runner read no passages of the named document", () => {
+    const output = retrievalTurn([lexicalStage("Planet", [{ chunkId: "help-0", documentId: HELP }])]);
+
+    expect(evaluateTraceAssertion(exclusion, output).status).toBe("error");
+  });
+});
+
+describe("retrieval_answer_top_k_includes_passage", () => {
+  const answerAssertion = { type: "retrieval_answer_top_k_includes_passage", documentId: PAGE, passage: PASSAGE, k: 2 } as const;
+  const admitted = (chunkIds: string[]): ConversationQualityObservedOutput["retrievedChunks"] =>
+    chunkIds.map((chunkId, index) => ({
+      chunkId,
+      documentId: chunkId.startsWith("help") ? HELP : PAGE,
+      title: chunkId,
+      rank: index + 1,
+    }));
+
+  it("passes when the answer's passages hold the passage within their first k", () => {
+    const verdict = evaluateTraceAssertion(answerAssertion, {
+      retrievedChunks: admitted(["help-0", "page-1", "page-2"]),
+      passageTexts: pageTexts,
+    });
+
+    expect(verdict.status).toBe("pass");
+    expect(verdict.reason).toContain("2");
+  });
+
+  it("fails when the passage reaches the answer past its first k passages, or not at all", () => {
+    const late = { retrievedChunks: admitted(["help-0", "page-4", "page-1"]), passageTexts: pageTexts };
+    const absent = { retrievedChunks: admitted(["help-0", "page-4"]), passageTexts: pageTexts };
+
+    expect(evaluateTraceAssertion(answerAssertion, late).status).toBe("fail");
+    expect(evaluateTraceAssertion(answerAssertion, late).reason).toContain("3");
+    expect(evaluateTraceAssertion(answerAssertion, absent).status).toBe("fail");
+  });
+
+  it("errors when the runner read no passages of the named document", () => {
+    expect(evaluateTraceAssertion(answerAssertion, { retrievedChunks: admitted(["page-1"]) }).status).toBe("error");
   });
 });
 
@@ -199,6 +280,23 @@ describe("live runner passage texts", () => {
     expect(output.passageTexts).toEqual({ "page-0": "Intro", "page-1": pageTexts["page-1"], "page-2": pageTexts["page-2"] });
   });
 
+  it("reads the passages an answer passage assertion names", async () => {
+    const passages = pagedChunks();
+    const port = createWorkbenchReplayRunnerPort({ run: async () => replayResult }, {
+      workspaceId: "workspace",
+      agentId: "agent",
+      baselineAgentConfig: conversationQualityAgentConfig,
+      passages,
+    });
+
+    const output = await port.run({
+      ...passageCase,
+      assertions: [{ type: "retrieval_answer_top_k_includes_passage", documentId: PAGE, passage: PASSAGE, k: 3 }],
+    });
+
+    expect(Object.keys(output.passageTexts ?? {})).toEqual(["page-0", "page-1", "page-2"]);
+  });
+
   it("reads no passages for a case without a passage assertion", async () => {
     const passages = pagedChunks();
     const port = createWorkbenchReplayRunnerPort({ run: async () => replayResult }, {
@@ -250,7 +348,7 @@ describe("sectioned page fixtures", () => {
     { caseId: "retrieval-sectioned-page-later-section-figure-it", passage: MAESTRALE_SECTION_PASSAGE, name: "maestrale", kind: "piano" },
   ];
 
-  it.each(shapes)("$caseId: the answering section holds the bare name alone, and passing mentions hold both words", async (shape) => {
+  it.each(shapes)("$caseId: the answering section is headed with the bare name and holds it alone, and passing mentions hold both words", async (shape) => {
     const evalCase = sectionedPageCases.find((candidate) => candidate.id === shape.caseId);
     const passageAssertion = evalCase?.assertions.find((candidate) => candidate.type === "retrieval_lexical_top_k_includes_passage");
     expect(passageAssertion).toMatchObject({ passage: shape.passage });
@@ -260,6 +358,8 @@ describe("sectioned page fixtures", () => {
     expect(answering).toHaveLength(1);
     expect(answering[0]?.words.has(shape.name)).toBe(true);
     expect(answering[0]?.words.has(shape.kind)).toBe(false);
+    // The heading is what keeps the section full evidence of the bare-name search.
+    expect(deriveChunkHeadings(answering[0]?.content ?? "").map((heading) => heading.toLocaleLowerCase())).toContain(shape.name);
 
     const passingMentions = texts.filter((text) => text.words.has(shape.name) && text.words.has(shape.kind));
     expect(passingMentions.length).toBeGreaterThanOrEqual(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches);

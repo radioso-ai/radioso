@@ -1,7 +1,13 @@
 import type { RoutineRunTrace } from "@radioso/conversation-contract";
 
 import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/types.js";
-import { judgeLexicalPassage, type LexicalPassageExpectation } from "./lexicalPassageAssertions.js";
+import {
+  judgeAnswerPassage,
+  judgeLexicalFullMatchExclusion,
+  judgeLexicalPassage,
+  type PassageExclusion,
+  type PassageExpectation,
+} from "./passageAssertions.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 import { answerNamesImage, judgeNoPictures, judgeReplyBlock, type ReplyBlockExpectation } from "./replyBlockAssertions.js";
 
@@ -82,8 +88,12 @@ export type SuiteTraceAssertion =
   | { type: "reply_block_without_pictures" }
   /** The answer text names no picture by address or handle: pictures belong in the block. */
   | { type: "answer_excludes_image_url" }
-  /** A lexical search of the turn ranked the named document's passage holding `passage` within its first `k` hits. */
-  | ({ type: "retrieval_lexical_top_k_includes_passage" } & LexicalPassageExpectation);
+  /** A lexical search of the turn ranked the named document's passage holding `passage` as full evidence within its first `k` hits. */
+  | ({ type: "retrieval_lexical_top_k_includes_passage" } & PassageExpectation)
+  /** No lexical search of the turn held the named document's passage holding `passage` as a full match. */
+  | ({ type: "retrieval_lexical_full_matches_exclude_passage" } & PassageExclusion)
+  /** The named document's passage holding `passage` is among the first `k` passages the answer was written from. */
+  | ({ type: "retrieval_answer_top_k_includes_passage" } & PassageExpectation);
 
 /**
  * Marks the voice expectations only the brain's speed decides as deterministic-only. "No bridge"
@@ -132,6 +142,8 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "reply_block_without_pictures",
   "answer_excludes_image_url",
   "retrieval_lexical_top_k_includes_passage",
+  "retrieval_lexical_full_matches_exclude_passage",
+  "retrieval_answer_top_k_includes_passage",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -617,6 +629,10 @@ export const evaluateTraceAssertion = (
     }
     case "retrieval_lexical_top_k_includes_passage":
       return { assertion, ...judgeLexicalPassage(assertion, output) };
+    case "retrieval_lexical_full_matches_exclude_passage":
+      return { assertion, ...judgeLexicalFullMatchExclusion(assertion, output) };
+    case "retrieval_answer_top_k_includes_passage":
+      return { assertion, ...judgeAnswerPassage(assertion, output) };
     case "voice_bridge_emitted": {
       if (!output.voiceTurn) {
         return missingVoiceObservation(assertion);

@@ -87,6 +87,12 @@ export interface AssistantChatRequest {
   channelPersonKey?: ChannelPersonKey | null;
   /** Told the moment the turn stores the customer message, after the door's own listeners; set by a connector. */
   onUserMessageStored?: UserMessageStoredListener;
+  /**
+   * The customer message an earlier attempt of this turn stored and failed to answer, in
+   * `conversationId`; the turn answers it instead of storing the query again. Set only by a
+   * connector retrying a turn, never from a body.
+   */
+  resumeUserMessageId?: string;
   verifiedIdentity?: Record<string, unknown> | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;

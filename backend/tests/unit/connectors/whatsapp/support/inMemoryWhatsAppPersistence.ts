@@ -10,6 +10,7 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
   readonly messageLogs = new Map<string, WhatsAppMessageLogRecord>();
   /** Each conversation's number, by conversation id, as `recordConversation` keeps it. */
   readonly conversationNumbers = new Map<string, { workspaceId: string; waId: string }>();
+  private readonly conversationRecordedAt = new Map<string, Date>();
 
   async findContact(workspaceId: string, waId: string): Promise<WhatsAppContactRecord | null> {
     return this.contacts.get(`${workspaceId}:${waId}`) ?? null;
@@ -18,7 +19,15 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
   async recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void> {
     if (!this.conversationNumbers.has(input.conversationId)) {
       this.conversationNumbers.set(input.conversationId, { workspaceId: input.workspaceId, waId: input.waId });
+      this.conversationRecordedAt.set(input.conversationId, new Date());
     }
+  }
+
+  async findLatestRecordedConversation(workspaceId: string, waId: string): Promise<{ conversationId: string; createdAt: Date } | null> {
+    const recorded = [...this.conversationNumbers]
+      .filter(([, number]) => number.workspaceId === workspaceId && number.waId === waId)
+      .map(([conversationId]) => ({ conversationId, createdAt: this.conversationRecordedAt.get(conversationId) as Date }));
+    return recorded.at(-1) ?? null;
   }
 
   async upsertContact(input: {
@@ -153,6 +162,16 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
     const existing = this.messageLogs.get(wamid);
     if (existing?.direction === "inbound") {
       existing.payload = { ...existing.payload, radioso: { photoReceipt: receipt } };
+    }
+  }
+
+  async keepStoredTurn(wamids: readonly string[], turn: { conversationId: string; messageId: string }): Promise<void> {
+    for (const wamid of wamids) {
+      const existing = this.messageLogs.get(wamid);
+      if (existing?.direction === "inbound") {
+        const state = (existing.payload.radioso ?? {}) as Record<string, unknown>;
+        existing.payload = { ...existing.payload, radioso: { ...state, storedTurn: { ...turn, wamids: [...wamids] } } };
+      }
     }
   }
 

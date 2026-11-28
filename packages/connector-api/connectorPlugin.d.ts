@@ -217,7 +217,14 @@ export interface ConnectorChatPort {
      * turn.
      */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
-    onMessageStored?: (stored: { conversationId: string }) => Promise<void>;
+    onMessageStored?: (stored: { conversationId: string; messageId: string }) => Promise<void>;
+    /**
+     * The message `onMessageStored` reported for an earlier attempt of this same turn, which then
+     * failed, in `conversationId`. The turn answers that message instead of storing the text again,
+     * so a retry leaves one message. Applies to a text turn; a turn with photos or a pick stores its own.
+     */
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    resumeMessageId?: string;
     /** The reply blocks the channel draws; without it, a reply carries none. */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     replyBlocks?: ConnectorReplyBlocksCapability;

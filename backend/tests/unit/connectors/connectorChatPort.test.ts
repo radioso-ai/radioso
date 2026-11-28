@@ -394,7 +394,16 @@ describe("createConnectorChatPort", () => {
 
       await expect(connectorChat.answer({ workspaceId: "workspace-1", query: "Hi", onMessageStored })).rejects.toThrow("model unavailable");
 
-      expect(onMessageStored).toHaveBeenCalledWith({ conversationId: "conversation-1" });
+      expect(onMessageStored).toHaveBeenCalledWith({ conversationId: "conversation-1", messageId: "message-1" });
+    });
+
+    it("is answered, not stored again, when a retry names the message its earlier attempt stored", async () => {
+      const answer = vi.fn(async () => ({ conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" }));
+      const connectorChat = createConnectorChatPort({ answer } as unknown as ChatAnswerPort, unusedIngest);
+
+      await connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Hi", resumeMessageId: "message-1" });
+
+      expect(answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-1", resumeUserMessageId: "message-1" }));
     });
 
     it("is told on a photo turn and a pick too", async () => {
@@ -416,7 +425,7 @@ describe("createConnectorChatPort", () => {
       const toldTo = (call: unknown) => (call as { onUserMessageStored: (stored: { conversationId: string; messageId: string }) => Promise<void> }).onUserMessageStored;
       await toldTo(vi.mocked(imageTurns.answer).mock.calls[0][0])({ conversationId: "conversation-2", messageId: "message-2" });
       await toldTo(vi.mocked(picks.answer).mock.calls[0][0])({ conversationId: "conversation-1", messageId: "message-3" });
-      expect(onMessageStored.mock.calls).toEqual([[{ conversationId: "conversation-2" }], [{ conversationId: "conversation-1" }]]);
+      expect(onMessageStored.mock.calls).toEqual([[{ conversationId: "conversation-2", messageId: "message-2" }], [{ conversationId: "conversation-1", messageId: "message-3" }]]);
     });
   });
 

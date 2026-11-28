@@ -203,6 +203,8 @@ export interface ChatAnswerPort {
     channelPersonKey?: ChannelPersonKey | null;
     /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
     onUserMessageStored?: UserMessageStoredListener;
+    /** A customer message an earlier attempt of this turn stored and failed to answer; the turn answers it instead of storing another. */
+    resumeUserMessageId?: string;
     chatSessionId?: string | null;
     /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;

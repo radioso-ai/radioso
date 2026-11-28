@@ -1161,7 +1161,13 @@ port, bound in `app/composition/conversationReadSources.ts` to the WhatsApp
 plugin's `connector_whatsapp_conversations` lookup (migration 282), which answers
 only for a conversation whose source channel is WhatsApp. The plugin writes the row
 through `answer({ onMessageStored })`, as soon as the conversation's first message
-is stored and before any model call. The resolver service
+is stored and before any model call. The same callback keeps the stored message's
+id with the turn's inbound rows (`radioso.storedTurn` in `connector_whatsapp_message_log`),
+so a retry of a failed turn answers that message in its conversation
+(`answer({ resumeMessageId })` → `ChatAnswerInput.resumeUserMessageId`) instead of
+storing it again; the sender's next message after a failed first turn continues the
+newest recorded conversation the contact row does not yet point at
+(`whatsappMessageHandler.ts`, `continuingConversation`). The resolver service
 owns turn-time reads, caching, timeouts, and compatibility checks. It caches
 under the chat session, verified customer or channel person key, or under the
 conversation when the turn has none, never under the agent or workspace, and

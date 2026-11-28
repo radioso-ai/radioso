@@ -22,7 +22,7 @@ import {
 } from "../../services/connectorImageTurns.js";
 import { CONNECTOR_PICK_REFUSED_CODE } from "../../services/connectorChatPort.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
-import { PostgresWhatsAppPersistence, photoReceiptOf, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
+import { PostgresWhatsAppPersistence, photoReceiptOf, storedTurnOf, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
 import { WhatsAppReplyDelivery } from "./whatsappReplyDelivery.js";
 import { isCardTap, REPLY_CARDS_KEY, replyCardsOf, WhatsAppReplyTaps, type WhatsAppTap } from "./whatsappReplyTaps.js";
 
@@ -415,7 +415,7 @@ export class WhatsAppMessageHandler {
       };
     }
 
-    const { conversationId, latestTimestamp } = await this.continuingConversation(messages, config);
+    const { conversationId, resumeMessageId, latestTimestamp } = await this.continuingConversation(messages, config);
     const selection = this.pickOf(messages);
     if (selection && !conversationId) {
       throw new PickNotTakenError();
@@ -424,6 +424,8 @@ export class WhatsAppMessageHandler {
       workspaceId: first.workspaceId,
       waId: first.waId,
       conversationId,
+      resumeMessageId,
+      inboundWamids,
       query,
       photoMessages,
       config,
@@ -532,26 +534,55 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * The conversation a turn on these messages continues: the sender's latest, unless it has been
-   * quiet longer than the connector's timeout, which starts a new one.
+   * The conversation a turn on these messages continues, and the message to answer when an earlier
+   * attempt of this same turn already stored it. What the earlier attempt left in the database
+   * decides, not the contact row, which only moves once a turn has been answered:
+   *
+   * 1. The same messages were stored before: this is a retry, so it answers that stored message in
+   *    its conversation.
+   * 2. A conversation was started for the number that no turn has answered yet: this is the
+   *    sender's next message after a failed first turn, so it continues that conversation.
+   * 3. Otherwise the sender's latest answered conversation, unless it has been quiet longer than the
+   *    connector's timeout, which starts a new one.
    */
   private async continuingConversation(
     messages: WhatsAppInboundMessage[],
     config: Record<string, string>,
-  ): Promise<{ conversationId: string | undefined; latestTimestamp: Date }> {
+  ): Promise<{ conversationId: string | undefined; resumeMessageId?: string; latestTimestamp: Date }> {
     const [first] = messages;
     const latestTimestamp = [...messages]
       .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
       .at(-1)?.timestamp ?? first.timestamp;
+    const inboundWamids = this.inboundWamids(messages);
+
+    const stored = storedTurnOf(await this.persistence.findMessageLogByWamid(inboundWamids[0]), inboundWamids);
+    if (stored) {
+      this.options.logger.info(
+        { workspaceId: first.workspaceId, wamids: inboundWamids, conversationId: stored.conversationId },
+        "WhatsApp retry answers the message its earlier attempt stored",
+      );
+      return { conversationId: stored.conversationId, resumeMessageId: stored.messageId, latestTimestamp };
+    }
 
     const contact = await this.persistence.findContact(first.workspaceId, first.waId);
-    const timeoutHours = Number(config.conversation_timeout_hours ?? "24");
-    const timeoutMs = timeoutHours * 60 * 60 * 1000;
-    const canContinueConversation =
-      contact &&
-      latestTimestamp.getTime() - contact.lastMessageAt.getTime() <= timeoutMs;
-
-    return { conversationId: canContinueConversation ? contact.conversationId : undefined, latestTimestamp };
+    const recorded = await this.persistence.findLatestRecordedConversation(first.workspaceId, first.waId);
+    const unanswered = recorded && recorded.conversationId !== contact?.conversationId
+      && (!contact || recorded.createdAt.getTime() > contact.lastMessageAt.getTime())
+      ? recorded
+      : null;
+    const lastActiveAt = unanswered ? unanswered.createdAt : contact?.lastMessageAt;
+    const conversationId = unanswered?.conversationId ?? contact?.conversationId;
+    const timeoutMs = Number(config.conversation_timeout_hours ?? "24") * 60 * 60 * 1000;
+    if (!conversationId || !lastActiveAt || latestTimestamp.getTime() - lastActiveAt.getTime() > timeoutMs) {
+      return { conversationId: undefined, latestTimestamp };
+    }
+    if (unanswered) {
+      this.options.logger.info(
+        { workspaceId: first.workspaceId, wamids: inboundWamids, conversationId },
+        "WhatsApp message continues the conversation an unanswered earlier turn started",
+      );
+    }
+    return { conversationId, latestTimestamp };
   }
 
   /**
@@ -594,6 +625,9 @@ export class WhatsAppMessageHandler {
     workspaceId: string;
     waId: string;
     conversationId: string | undefined;
+    /** The message an earlier attempt of this turn stored, which the turn answers instead of storing the text again. */
+    resumeMessageId?: string;
+    inboundWamids: string[];
     query: string;
     photoMessages: WhatsAppInboundMessage[];
     config: Record<string, string>;
@@ -613,7 +647,11 @@ export class WhatsAppMessageHandler {
           sourceChannel: WHATSAPP_SOURCE_CHANNEL,
           // Meta attests the sender's number on a signed webhook: the person the host keeps WhatsApp values for.
           personKey: { id: input.waId },
-          onMessageStored: ({ conversationId }) => this.persistence.recordConversation({ workspaceId: input.workspaceId, waId: input.waId, conversationId }),
+          ...(input.resumeMessageId ? { resumeMessageId: input.resumeMessageId } : {}),
+          onMessageStored: async ({ conversationId, messageId }) => {
+            await this.persistence.recordConversation({ workspaceId: input.workspaceId, waId: input.waId, conversationId });
+            await this.persistence.keepStoredTurn(input.inboundWamids, { conversationId, messageId });
+          },
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
           ...(images.length > 0 ? { images, onImagesStored: (stored) => this.keepPhotoReceipts(stored) } : {}),

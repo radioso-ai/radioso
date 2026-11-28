@@ -43,6 +43,12 @@ export interface WhatsAppPersistencePort {
    * readers outside a turn and a data subject's finder reach it from its first turn, failed or not.
    */
   recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void>;
+  /**
+   * The newest conversation recorded for a number, replied to or not: the contact row only moves
+   * to a conversation once a turn in it succeeds, so a conversation whose turns all failed is
+   * found here and nowhere else.
+   */
+  findLatestRecordedConversation(workspaceId: string, waId: string): Promise<{ conversationId: string; createdAt: Date } | null>;
   upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -94,6 +100,12 @@ export interface WhatsAppPersistencePort {
    */
   savePhotoReceipt(wamid: string, receipt: string): Promise<void>;
   /**
+   * Keeps, with the inbound messages of a turn, the message the host stored for them, so a retry
+   * of the same messages answers it instead of storing and answering a second copy in a new
+   * conversation. A no-op for messages the log does not hold.
+   */
+  keepStoredTurn(wamids: readonly string[], turn: { conversationId: string; messageId: string }): Promise<void>;
+  /**
    * Marks a cards reply's outbound row as fallen back to its numbered list, once: true for the
    * call that marked it, false when it already was, or the log holds no such outbound row.
    */
@@ -119,6 +131,23 @@ export const photoReceiptOf = (log: WhatsAppMessageLogRecord | null): string | n
   }
   const receipt = (state as Record<string, unknown>)[PHOTO_RECEIPT_KEY];
   return typeof receipt === "string" && receipt.length > 0 ? receipt : null;
+};
+
+const STORED_TURN_KEY = "storedTurn";
+
+/** The conversation and message an earlier attempt stored for exactly these inbound messages, if any. */
+export const storedTurnOf = (
+  log: WhatsAppMessageLogRecord | null,
+  wamids: readonly string[],
+): { conversationId: string; messageId: string } | null => {
+  const state = log?.payload[RADIOSO_STATE_KEY];
+  const turn = state && typeof state === "object" ? (state as Record<string, unknown>)[STORED_TURN_KEY] : null;
+  if (!turn || typeof turn !== "object") {
+    return null;
+  }
+  const { conversationId, messageId, wamids: stored } = turn as Record<string, unknown>;
+  const sameMessages = Array.isArray(stored) && stored.length === wamids.length && wamids.every((wamid) => stored.includes(wamid));
+  return typeof conversationId === "string" && typeof messageId === "string" && sameMessages ? { conversationId, messageId } : null;
 };
 
 interface WhatsAppContactRow {
@@ -216,6 +245,18 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
       .onConflict((oc) => oc.column("conversation_id").doNothing())
       .execute();
+  }
+
+  async findLatestRecordedConversation(workspaceId: string, waId: string): Promise<{ conversationId: string; createdAt: Date } | null> {
+    const row = await this.db
+      .selectFrom("connector_whatsapp_conversations")
+      .select(["conversation_id", "created_at"])
+      .where("workspace_id", "=", workspaceId)
+      .where("wa_id", "=", waId)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row ? { conversationId: row.conversation_id, createdAt: new Date(row.created_at) } : null;
   }
 
   async upsertContact(input: {
@@ -406,6 +447,21 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
         COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${PHOTO_RECEIPT_KEY}::text, ${receipt}::text)
       )
       WHERE wamid = ${wamid} AND direction = 'inbound'
+    `.execute(this.db);
+  }
+
+  async keepStoredTurn(wamids: readonly string[], turn: { conversationId: string; messageId: string }): Promise<void> {
+    if (wamids.length === 0) {
+      return;
+    }
+    const kept = toJsonb({ ...turn, wamids: [...wamids] });
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${STORED_TURN_KEY}::text, ${kept})
+      )
+      WHERE wamid IN (${sql.join(wamids)}) AND direction = 'inbound'
     `.execute(this.db);
   }
 

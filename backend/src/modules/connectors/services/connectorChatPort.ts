@@ -71,11 +71,11 @@ const channelPersonKeyFor = (
   return id ? { channelPersonKey: { kind: binding.personKeyKind, id } } : unused("unreadable");
 };
 
-/** Tells the connector which conversation its message was stored in, the moment the turn stores it. */
+/** Tells the connector which conversation and message its text was stored as, the moment the turn stores it. */
 const storedMessageListener = (
-  onMessageStored: ((stored: { conversationId: string }) => Promise<void>) | undefined,
+  onMessageStored: ((stored: { conversationId: string; messageId: string }) => Promise<void>) | undefined,
 ): { onUserMessageStored?: UserMessageStoredListener } =>
-  onMessageStored ? { onUserMessageStored: ({ conversationId }) => onMessageStored({ conversationId }) } : {};
+  onMessageStored ? { onUserMessageStored: ({ conversationId, messageId }) => onMessageStored({ conversationId, messageId }) } : {};
 
 /** A turn's reply as a connector receives it: the blocks only when the reply carries any. */
 const connectorAnswer = (reply: ChatDoorTurnReply & { conversationId: string }): ConnectorAnswer => ({
@@ -185,6 +185,7 @@ export const createConnectorChatPort = (
       stream: false,
       sourceChannel: input.sourceChannel,
       channelContext: input.channelContext,
+      ...(input.resumeMessageId ? { resumeUserMessageId: input.resumeMessageId } : {}),
       ...person,
       ...stored,
       ...capabilities,

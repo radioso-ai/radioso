@@ -28,6 +28,9 @@ const UNREADABLE_NUMBER = "015550100102";
 /** Senders with no conversation yet: one whose first turn is answered, one whose first turn fails. */
 const FIRST_ANSWERED = "15550100103";
 const FIRST_FAILED = "15550100104";
+/** Senders whose first turn the model fails: one whose retry then succeeds, one who writes again instead. */
+const RETRIED_THEN_ANSWERED = "15550100105";
+const FAILED_THEN_ASKS_AGAIN = "15550100106";
 /** The digits every way of writing these numbers shares, with or without a prefix. */
 const DIGITS = ["5550100101", "5550100102", "5550100103", "5550100104", "5550100109"];
 const PHONE_NUMBER_ID = "phone-number-1";
@@ -51,9 +54,16 @@ class RecordingExporter implements SpanExporter {
 let beforeModelCall: (() => Promise<void>) | null = null;
 
 /** The model the booking runs on; asked about the bill, its provider fails with the sender's number in the message. */
+/** How many more times the model fails a question about a refund before it answers one. */
+let refundFailures = 0;
+
 const model: ChatGateway = {
   async answer(input) {
     await beforeModelCall?.();
+    if (input.query.includes("refund") && refundFailures > 0) {
+      refundFailures -= 1;
+      throw new Error("The provider refused the request");
+    }
     if (input.query.includes("bill")) throw new Error(`The provider refused the request for +${NUMBER}`);
     const prompt = input.systemPrompt ?? "";
     if (prompt.includes("wants to start any registered routine")) {
@@ -218,6 +228,43 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     const [recorded] = await conversationsOf(FIRST_FAILED);
     expect(recorded).toBeDefined();
     expect(await database.query("SELECT role FROM messages WHERE conversation_id = $1", [recorded.conversation_id])).toEqual([{ role: "user" }]);
+  });
+
+  const storedTurn = async (number: string) => {
+    const conversations = (await conversationsOf(number)).map((row) => row.conversation_id);
+    const messages = await database.query<{ role: string; content: string }>(
+      "SELECT role, content FROM messages WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at, id",
+      [conversations],
+    );
+    return { conversations, messages };
+  };
+
+  it("keeps one conversation and one stored message when a first message the model failed is redelivered, and answers it once when a retry succeeds", async () => {
+    refundFailures = 2;
+    const wamid = `wamid.${randomUUID()}`;
+    const redelivery = {
+      contacts: [{ wa_id: RETRIED_THEN_ANSWERED, profile: { name: "Ada Example" } }],
+      messages: [{ id: wamid, from: RETRIED_THEN_ANSWERED, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: "Can I get a refund?" } }],
+    };
+    await deliver(redelivery);
+    await deliver(redelivery);
+    await vi.waitFor(async () => expect(await statusOf(wamid)).toBe("replied"), { timeout: 15_000, interval: 25 });
+    await deliver(redelivery);
+
+    const { conversations, messages } = await storedTurn(RETRIED_THEN_ANSWERED);
+    expect(conversations).toHaveLength(1);
+    expect(messages.map((stored) => stored.role)).toEqual(["user", "assistant"]);
+    expect(sent.filter((reply) => reply.to === RETRIED_THEN_ANSWERED)).toHaveLength(1);
+  });
+
+  it("continues the conversation of a first message that failed when the sender writes again", async () => {
+    await message(FAILED_THEN_ASKS_AGAIN, "What is on my bill?", "failed");
+    await message(FAILED_THEN_ASKS_AGAIN, "Are you open on Sundays?");
+
+    const { conversations, messages } = await storedTurn(FAILED_THEN_ASKS_AGAIN);
+    expect(conversations).toHaveLength(1);
+    expect(messages.filter((stored) => stored.content === "What is on my bill?")).toHaveLength(1);
+    expect(messages.map((stored) => stored.role)).toEqual(["user", "user", "assistant"]);
   });
 
   it("shows its sender's number in no log line, metric, span, event, job or audit record, through a save, a failure and a number change", async () => {

@@ -14,6 +14,7 @@ import {
   RoutineConsentReplyReader,
   RoutineConsentUnclearAnswerer,
   RoutineRegistry,
+  startableRoutineRegistrations,
   RoutineNextStepSelector,
   RoutineReentryGate,
   RoutineSlotCorrector,
@@ -38,6 +39,7 @@ import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js"
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
+import { startableRoutineCapabilities, type RoutineCapability } from "./routineCapabilities.js";
 import { itemPickTelemetry } from "./itemPickTelemetry.js";
 import { selectorCompletionTelemetry } from "./selectorCompletionTelemetry.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
@@ -110,6 +112,13 @@ interface RoutineTurnProvider {
    * agent has no routine at all.
    */
   reporterFor(input: RoutineTurnScope & { routineInvocation?: RoutineInvocation }): Promise<RoutineTurnReporter | null>;
+  /**
+   * The routines this conversation could start, by name and trigger, for a reply about what the
+   * agent can do: the registrations `forTurn` activates through, narrowed by the same
+   * eligibility gates and completed-routine suppression the routine registry ranks after. It
+   * throws when the agent's routines cannot be read, so a caller never mistakes that for none.
+   */
+  describeStartable(input: RoutineTurnScope & { turn: TurnContext; completedRoutineIds: readonly string[] }): Promise<RoutineCapability[]>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
@@ -227,12 +236,14 @@ const authoredPinnedRoutineIds = (
 const loadEffectiveRegistrations = async (
   dependencies: Pick<RoutineTurnProviderDependencies, "capabilityPolicy" | "logger" | "publishedRoutineSource" | "routineRegistrations">,
   { agentId, agentRevisionId, workspaceId, pinnedRoutineIds = [], previewRoutineIds = [] }: RoutineTurnScope,
+  // Strict, an unreadable published or pinned set throws instead of reading as no routines.
+  { strict = false }: { strict?: boolean } = {},
 ): Promise<RoutineRegistration[]> => {
   let publishedRegistrations: RoutineRegistration[];
   try {
     publishedRegistrations = await dependencies.publishedRoutineSource.load({ agentId, workspaceId, agentRevisionId });
   } catch (error) {
-    if (agentRevisionId) throw error;
+    if (agentRevisionId || strict) throw error;
     dependencies.logger.warn(
       { agentId, err: error },
       "Published routine definitions failed to load; continuing without DB-backed routines",
@@ -269,7 +280,7 @@ const loadEffectiveRegistrations = async (
       routineIds: authoredPins,
     });
   } catch (error) {
-    if (agentRevisionId) throw error;
+    if (agentRevisionId || strict) throw error;
     dependencies.logger.warn(
       { agentId, routineIds: authoredPins, err: error },
       "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
@@ -328,6 +339,10 @@ export const createRoutineTurnProvider = (
     return createRoutineTurnReporter(routines, routineInvocation
       ? { invocation: { toolName: routineInvocation.toolName, outcome: () => null } }
       : {});
+  },
+  async describeStartable({ turn, completedRoutineIds, ...scope }) {
+    const registrations = await loadEffectiveRegistrations(dependencies, scope, { strict: true });
+    return startableRoutineCapabilities(startableRoutineRegistrations(registrations, turn, completedRoutineIds));
   },
   async forTurn({
     modelGateway,

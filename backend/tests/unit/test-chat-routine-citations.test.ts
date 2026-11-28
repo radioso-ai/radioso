@@ -68,6 +68,7 @@ const routineProvider = (): ChatRoutineProvider => {
     executor: new RetrievalAnswerSkillExecutor({ run: vi.fn(async () => hoursRetrieval) } as never),
   });
   return {
+    describeStartable: async () => [],
     forTurn: async ({ modelGateway }) => ({
       routines: [hoursRoutine],
       activator: { activate: async () => ({ kind: "activate" as const, routineId: hoursRoutine.id }) },

@@ -61,6 +61,8 @@ export interface RouteScopedDirectiveRuntime extends DirectiveSteeringPort {
     classifications?: DirectiveClassification[],
   ): Promise<DirectiveMatch[]>;
   resolveMatches(input: DirectiveSteerInput, matches: DirectiveMatch[]): Promise<DirectiveSteeringResult>;
+  /** The directives whose required capabilities hold for this input, by the check {@link resolveMatches} applies. */
+  grantedDirectives(input: DirectiveSteerInput, directives: readonly Directive[]): Promise<Directive[]>;
 }
 
 /** A gateway that returns precomputed classifications without any model call. */
@@ -267,6 +269,9 @@ export const createRouteScopedDirectiveSteering = (input: {
     ): Promise<DirectiveSteeringResult> {
       return serviceFor(steerInput).resolveMatches(steerInput, matches);
     },
+    grantedDirectives(steerInput: DirectiveSteerInput, directives: readonly Directive[]): Promise<Directive[]> {
+      return serviceFor(steerInput).grantedDirectives(steerInput, directives);
+    },
     async steer(steerInput: DirectiveSteerInput): Promise<DirectiveSteeringResult> {
       const route = routeFromInput(steerInput);
       const directives = [
@@ -299,5 +304,9 @@ export const noopRouteScopedDirectiveRuntime: RouteScopedDirectiveRuntime = {
   },
   async resolveMatches(): Promise<DirectiveSteeringResult> {
     return { rules: [], matches: [], omissions: [] };
+  },
+  // No directive applies on a turn without steering, so none is granted either.
+  async grantedDirectives(): Promise<Directive[]> {
+    return [];
   },
 };

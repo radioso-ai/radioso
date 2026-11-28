@@ -51,11 +51,11 @@ export {
 } from "./directiveMatchRanking.js";
 export {
   resolveDirectiveBinding,
+  runnableSkillDirectives,
+  type DirectiveBindingAvailability,
   type DirectiveBindingOutcome,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,
-  type DirectiveBindingSkipReason,
-  type ResolveDirectiveBindingInput,
   type SkippedDirectiveBinding,
 } from "./domain.js";
 export {

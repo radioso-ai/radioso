@@ -5,6 +5,7 @@ import {
   directiveMatchConfidence,
   directiveMatchPriority,
   resolveDirectiveBinding,
+  runnableSkillDirectives,
   type DirectiveMatch,
 } from "../src/index.js";
 
@@ -237,5 +238,32 @@ describe("resolveDirectiveBinding", () => {
     expect(result.skipped).toEqual([
       { directiveName: "skipped", skillName: "ghost", reason: "skill_not_registered" },
     ]);
+  });
+});
+
+describe("runnable skill directives", () => {
+  const directive = (name: string, skillName: string, overrides: Partial<DirectiveMatch["directive"]> = {}) =>
+    match({ name, skillName, directive: overrides }).directive;
+
+  it("keeps exactly the bindings the resolver would let run, plus a staged tool the answer loop runs", () => {
+    const runnable = runnableSkillDirectives([
+      directive("runs", "order_status"),
+      directive("ghost", "deleted_skill"),
+      directive("off", "paused_skill"),
+      directive("denied", "plan_denied_skill"),
+      directive("staged", "lookup_tool"),
+      directive("elsewhere", "order_status", { surfaces: ["suggested_questions"] }),
+      { name: "unbound", condition: { kind: "always" }, action: "Be brief." },
+    ], {
+      registeredTurnSkillNames: new Set(["order_status", "paused_skill", "plan_denied_skill"]),
+      agentSkillStates: new Map([
+        ["order_status", { enabled: true, turnCapable: true, stagingCapable: false }],
+        ["paused_skill", { enabled: false, turnCapable: true, stagingCapable: false }],
+        ["plan_denied_skill", { enabled: true, turnCapable: true, stagingCapable: false, capabilityDenied: true }],
+        ["lookup_tool", { enabled: true, turnCapable: false, stagingCapable: true }],
+      ]),
+    });
+
+    expect(runnable.map((entry) => entry.name)).toEqual(["runs", "staged"]);
   });
 });

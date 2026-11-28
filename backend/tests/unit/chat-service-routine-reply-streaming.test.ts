@@ -411,6 +411,7 @@ const claimingRoutine = (
     claim,
   };
   const routineProvider: ChatRoutineProvider = {
+    describeStartable: async () => [],
     forTurn: async () => ({
       ...(routines ? { routines } : {}),
       activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
@@ -516,6 +517,7 @@ const skillStepRoutineProvider = (
   const registry = new SkillExecutorRegistry();
   registry.register({ ...(skill.execution as { kind: "internal"; adapter: string }), executor });
   return {
+    describeStartable: async () => [],
     forTurn: async ({ modelGateway, groundedAnswerRenderer }) => ({
       routines: [routine],
       activator: { activate: async () => ({ kind: "activate" as const, routineId: routine.id }) },

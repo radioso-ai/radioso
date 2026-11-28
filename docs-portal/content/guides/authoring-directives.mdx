@@ -202,6 +202,13 @@ skill can't run or fails on a turn, the agent answers
 from its other sources without claiming the tool's results, and the turn's trace
 shows why.
 
+A bound skill is also part of what the agent says it can do. Asked what it can
+do, the agent describes the directive's condition in its own words, so a skill
+under “the visitor asks where their order is” comes across as being able to check
+an order. It counts only a skill the agent could run right then, under a directive
+with a condition, and it never shows the skill's name. Write the condition for
+the request a visitor would make, and keep internal notes out of it.
+
 ### Why can't I bind a Slack, email, webhook, or notify skill?
 
 Those skills act outside the conversation and settle with an action result, not

@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, routing, and the live, safe-test, and review execution modes."
-last_updated: 2026-11-18
+last_updated: 2026-11-28
 ---
 
 # Assistant Turn Spine
@@ -126,6 +126,35 @@ It does not receive response identity or answer instructions, and scope fields
 returned by a model are ignored. Retrieval evidence determines whether the
 assistant has support. Retrieval query rewrite runs only after a turn has been
 routed to retrieval.
+
+A question about the agent itself (its name, its role, or what it can do) is a
+direct turn marked `isIdentityQuestion`. A question about the product or company
+the agent represents is a retrieval turn even when the agent is named after it,
+and so is a request phrased as whether the agent can do something; routine
+ranking is independent of the route, so such a request still starts its routine.
+The direct reply to an identity question reads what the agent can do through
+`PreparedSession.agentCapabilities` (`chat/services/agentCapabilities.ts`), a handle
+the turn assembly sets where it selects the turn's skills and that reads nothing
+until that reply asks. It holds whether the agent answers from documents, each
+routine the conversation could start, by authored name and trigger, and the
+condition of each directive whose skill binding the turn could run. The routines
+come from `ChatRoutineProvider.describeStartable`: the routines module takes the
+effective registrations `forTurn` activates through (the release's, the workbench
+preview's, and the built-in ones) and narrows them with
+`startableRoutineRegistrations`, the eligibility and completed-routine filter the
+routine registry ranks after, given the turn and the routines the conversation's
+store has completed. A built-in routine whose name is an identifier carries a
+capability label for this list (`withCapabilityLabel`): the contact routine reads
+as "Contact a person" here, while activation ranks and offers it as
+`contact.request`. The skills come from `runnableSkillDirectives`, which applies
+the binding resolver's rules to the same skill availability the turn's selector
+resolves bindings against, kept to the directives the directive runtime grants
+(`grantedDirectives`, the required-capability check steering applies to every
+match). A directive that applies on every turn carries no condition
+and stays out, and so does every skill name. At most eight routines and eight
+skills reach the reply, each cut to 160 characters, and the reply describes them
+without quoting. When the routines cannot be read, the reply gets no capability
+list and states no limit, and the turn logs `agent_capabilities_unavailable`.
 
 Response language is detected once per turn from the latest user message and
 recent history. Chat starts that detector as soon as the user message is

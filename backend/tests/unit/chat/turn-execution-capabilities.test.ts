@@ -120,6 +120,7 @@ const directOnlyRetrievalTurn = (): ChatServiceOptions["retrievalTurn"] =>
   } as never);
 
 const contactRoutineProvider = (sessionId: string): NonNullable<ChatServiceOptions["routineProvider"]> => ({
+  describeStartable: async () => [],
   forTurn: vi.fn(async () => ({
     activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
     runner: {

@@ -1,6 +1,7 @@
 import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
+  CONTACT_ROUTINE_CAPABILITY_LABEL,
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
@@ -16,7 +17,7 @@ import {
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
-import { compileRoutineDefinition } from "../../../modules/routines/public.js";
+import { compileRoutineDefinition, withCapabilityLabel } from "../../../modules/routines/public.js";
 import { hasConfiguredContactDestination, type AgentRecord } from "../../../modules/agents/public.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
@@ -150,7 +151,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
   name: "Radioso Contact Routine",
   register(context) {
     context.registerRoutine({
-      routine: compileRoutineDefinition(contactRoutineDefinition),
+      routine: withCapabilityLabel(compileRoutineDefinition(contactRoutineDefinition), CONTACT_ROUTINE_CAPABILITY_LABEL),
       trigger: {
         description: contactRoutineDefinition.activation.triggerDescription,
         priority: contactRoutineDefinition.activation.priority,

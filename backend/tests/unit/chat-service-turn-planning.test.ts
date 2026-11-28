@@ -1007,6 +1007,7 @@ describe("chat service fused turn planning", () => {
       const rankedActivationGateway = { complete: vi.fn(async () => ({ text: "{\"matches\":[]}" })) };
       const planner = plannerFactory({ completions: [], failWith: shed });
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async ({ turnPlan }) => ({
           activator: planAwareRoutineActivator({
             handle: turnPlan,
@@ -1053,6 +1054,7 @@ describe("chat service fused turn planning", () => {
         clear: async () => {},
       };
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async () => ({
           activator: { activate: async () => null },
           runner: {
@@ -1098,6 +1100,7 @@ describe("chat service fused turn planning", () => {
         clear: async () => {},
       };
       const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+        describeStartable: async () => [],
         forTurn: async () => ({
           activator: { activate: async () => null },
           runner: {
@@ -1142,6 +1145,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => null },
         runner: {
@@ -1194,6 +1198,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1273,6 +1278,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1357,6 +1363,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         routines: [routine],
         activator: { activate: async () => null },
@@ -1657,6 +1664,7 @@ describe("chat service fused turn planning", () => {
       },
     }));
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: planAwareRoutineActivator({
           handle: turnPlan,
@@ -1710,6 +1718,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: { activate: vi.fn(async () => null) },
         runner: { resume: vi.fn() as never },
@@ -1769,6 +1778,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ turnPlan }) => ({
         activator: { activate: vi.fn(async () => null) },
         runner: { resume },
@@ -1814,6 +1824,7 @@ describe("chat service fused turn planning", () => {
     };
     let receivedPreviewRoutineIds: string[] | undefined;
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async ({ previewRoutineIds }) => {
         receivedPreviewRoutineIds = previewRoutineIds;
         // No activation — the draft under test does not claim this turn, so the
@@ -2289,6 +2300,57 @@ describe("chat service quick-reply lane", () => {
     expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
   });
 
+  // #1872: the capability list is set where the turn's skills are selected and read by the direct
+  // reply, so a ChatService turn must carry it from one to the other on both surfaces.
+  it.each(["answer", "streamAnswer"] as const)(
+    "gives %s's direct reply to an identity question the routines the conversation could start",
+    async (surface) => {
+      const answerRequests: string[] = [];
+      const reply = "I can book a room for you.";
+      const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15, quality: "actual" as const };
+      const chatGateway = new ModelChatGateway(new ModelInferencePipelineService({
+        metadata: { capability: "chat", provider: "openai", model: "gpt-answer" },
+        complete: vi.fn(async (request: unknown) => {
+          answerRequests.push(JSON.stringify(request));
+          return { text: reply, usage };
+        }),
+        stream: vi.fn((request: unknown) => {
+          answerRequests.push(JSON.stringify(request));
+          return {
+            textStream: (async function* () {
+              yield reply;
+            })(),
+            usage: Promise.resolve(usage),
+          };
+        }),
+      }));
+      const describeStartable = vi.fn(async () => [{ name: "Book a room", trigger: "The user wants to book a room." }]);
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({ route: "direct", isIdentityQuestion: true })] }),
+        pipeline: directPipeline("What can you do?"),
+        chatGateway,
+        staged: countingStagedPorts(),
+        routine: {
+          routineStore: { loadActive: async () => null, save: async () => {}, clear: async () => {} },
+          routineProvider: { describeStartable, forTurn: vi.fn(async () => null) },
+        },
+      });
+      const request = { workspaceId: "workspace-1", query: "What can you do?" };
+
+      if (surface === "answer") {
+        await service.answer({ ...request, stream: false });
+      } else {
+        for await (const _event of service.streamAnswer({ ...request, stream: true })) {
+          // drain
+        }
+      }
+
+      expect(describeStartable).toHaveBeenCalledTimes(1);
+      const answerPrompt = answerRequests.find((text) => text.includes("What You Can Do:"));
+      expect(answerPrompt).toContain("- Book a room: The user wants to book a room.");
+    },
+  );
+
   it("composes the reply when the planner's quick reply is malformed, still routing from the plan", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({
@@ -2364,6 +2426,7 @@ describe("chat service quick-reply lane", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      describeStartable: async () => [],
       forTurn: async () => ({
         activator: { activate: async () => null },
         runner: {

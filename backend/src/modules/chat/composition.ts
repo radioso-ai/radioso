@@ -79,6 +79,7 @@ export {
 } from "./services/actions/webhookSendActionHandler.js";
 export {
   contactRoutineDefinition,
+  CONTACT_ROUTINE_CAPABILITY_LABEL,
   CONTACT_SEND_ACTION_TYPE,
   HANDOFF_NOTIFY_ACTION_TYPE,
   COMPLETION_NOTIFY_ACTION_TYPE,

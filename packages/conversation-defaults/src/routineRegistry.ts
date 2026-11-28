@@ -216,6 +216,27 @@ const parseRankedMatches = (raw: string, knownIds: Set<string>): RankedRoutineMa
  * whose registration claims the turn. The engine never names a routine — routines are
  * data registered at composition, like skills.
  */
+/**
+ * The registrations a turn may start, before claims and ranking: each registration's own
+ * eligibility gate must admit the turn, and a routine that already completed this
+ * conversation (`suppressedRoutineIds`) stays out unless its authored reentry is `always`.
+ * `semantic` re-opens the completed *instance* through the reentry gate, which runs before
+ * activation, so it never re-enters here; a routine with no authored activation defaults to
+ * `once_per_conversation`. {@link RoutineRegistry.prepareCandidates} ranks only these, and a
+ * host describing what a conversation could start reads the same list.
+ */
+export const startableRoutineRegistrations = (
+  registrations: readonly RoutineRegistration[],
+  turn: TurnContext,
+  suppressedRoutineIds: readonly string[] = [],
+): RoutineRegistration[] => {
+  const suppressed = new Set(suppressedRoutineIds);
+  return registrations.filter((registration) =>
+    (!suppressed.has(registration.routine.id) || registration.routine.activation?.reentryMode === "always") &&
+    (registration.trigger.eligible?.({ turn }) ?? true)
+  );
+};
+
 export class RoutineRegistry {
   private readonly policy: ClarificationPolicy;
   private readonly promptTemplate: string;
@@ -249,17 +270,7 @@ export class RoutineRegistry {
     turn: TurnContext,
     options: { suppressedRoutineIds?: readonly string[] } = {},
   ): Promise<PreparedRoutineCandidates> {
-    // `suppressedRoutineIds` are the routines that already completed this
-    // conversation. Whether a completed routine actually stays suppressed is the
-    // routine's authored reentry policy: `always` reopens to re-activation, every other
-    // mode stays suppressed. `semantic` re-opens the completed *instance* through the
-    // reentry gate, which runs before activation, so it never re-enters here. A routine
-    // with no authored activation defaults to `once_per_conversation`.
-    const suppressed = new Set(options.suppressedRoutineIds ?? []);
-    const eligibleRegistrations = this.registrations.filter((registration) =>
-      (!suppressed.has(registration.routine.id) || registration.routine.activation?.reentryMode === "always") &&
-      (registration.trigger.eligible?.({ turn }) ?? true)
-    );
+    const eligibleRegistrations = startableRoutineRegistrations(this.registrations, turn, options.suppressedRoutineIds);
     if (eligibleRegistrations.length === 0) {
       return { kind: "none" };
     }

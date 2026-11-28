@@ -253,6 +253,7 @@ const routineStack = () => {
     },
   };
   const routineProvider: ChatRoutineProvider = {
+    describeStartable: async () => [],
     async forTurn({ modelGateway, routineInvocation, responseLanguage }) {
       const direct = routineInvocation
         ? createDirectInvocationTurnPorts({ registrations, routines, invocation: routineInvocation })

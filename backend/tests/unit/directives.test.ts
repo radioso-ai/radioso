@@ -146,6 +146,15 @@ describe("DirectiveSteeringService", () => {
     expect(result.omissions).toEqual([{ directiveName: "gated", reason: "capability_denied" }]);
   });
 
+  it("grants, before any match, exactly the directives steering would let apply on their capabilities", async () => {
+    const gated = directive({ name: "gated", action: "do gated", requiredCapabilities: ["assistant.chat"] });
+    const open = directive({ name: "open", action: "do open" });
+
+    await expect(build([], new Set(["assistant.chat"])).grantedDirectives({ workspaceId: "w1" }, [gated, open]))
+      .resolves.toEqual([open]);
+    await expect(build([]).grantedDirectives({ workspaceId: "w1" }, [gated, open])).resolves.toEqual([gated, open]);
+  });
+
   it("returns empty steering for an empty standing set (behavior-preserving default)", async () => {
     const result = await build([]).steer({ workspaceId: "w1" });
     expect(result).toEqual({ rules: [], matches: [], omissions: [], bounded: [] });

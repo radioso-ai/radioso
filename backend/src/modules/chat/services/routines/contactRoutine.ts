@@ -16,6 +16,12 @@ export const COMPLETION_NOTIFY_ACTION_TYPE = "completion.notify";
 const CONTACT_ROUTINE_ID = "contact.request";
 
 /**
+ * What the agent calls the routine to a visitor who asks what it can do. Routine activation keeps
+ * ranking and offering it as {@link CONTACT_ROUTINE_ID}.
+ */
+export const CONTACT_ROUTINE_CAPABILITY_LABEL = "Contact a person";
+
+/**
  * The explicit intent that activates the routine. These match the public chat UI's
  * "contact a human" affordance (`frontend/components/chat/public-chat-shell.tsx`), so
  * the existing button starts the routine — the routine consumes the existing signal

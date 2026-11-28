@@ -650,7 +650,9 @@ describe("grounded answer prompt contract", () => {
     // nor carries out an earlier reply's offer to: a bullet of its own and a note above the
     // history. Folded into one sentence on the action bullet, the reply to an accepted
     // offer still drafted the email in 3 of 5 samples (`offer-scope-*` eval cases).
-    expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(780);
+    // Widened in #1872: identity replies read What You Can Do, and state no limit without it;
+    // the rules for using it live in `chat/agent-capabilities.md`, rendered only on those turns.
+    expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(800);
     for (const file of ["chat/clarification-question.md", "chat/non-retrieval-answer.md", "chat/grounded-miss.md"]) {
       const template = loadPromptTemplate(file);
       expect(template).not.toMatch(/append a sourced assertion/i);

@@ -23,6 +23,7 @@ const DIRECT_TURN_SKILL = builtInAnswerSkills.direct;
 export const DIRECT_REPLY_CONFIG: AssistantReplyConfig = {
   skillName: DIRECT_TURN_SKILL,
   outcomeKind: DIRECT_OUTCOME_KIND,
+  readsCapabilities: true,
 };
 
 /** What the direct skill needs besides its composer to send a planner-written reply. */

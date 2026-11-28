@@ -88,6 +88,8 @@ import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCall
 import { resolveSkillEffectPolicy, type ConversationDurability, type SkillEffectPolicy, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
 import type { ChatAnswerCoverageAssessment, ChatAnswerCoverageInteractionTrace } from "../contracts/answerCoverage.js";
+import type { AgentCapabilitiesHandle } from "./agentCapabilities.js";
+import { withVisitorIdentity } from "./visitorIdentityVariable.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -132,6 +134,8 @@ export interface PreparedSession {
   routineStartMessageId?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
+  /** What the agent can do, read only by the direct reply to an identity question; set where the turn's skills are selected. */
+  agentCapabilities?: AgentCapabilitiesHandle;
   /** Ephemeral semantic assessment for this turn's admitted retrieval evidence. */
   answerCoverage?: AnswerCoverageAssessment;
   /** Authorized live projection of the same assessment shown by saved history. */
@@ -227,21 +231,6 @@ export interface PreparedSession {
   /** Trusted safe-test samples retained when the turn re-prepares retrieval/direct context. */
   preResolvedHostVariables?: readonly ResolvedVariableInput[];
 }
-
-/** The resolved host variables, with the verified identity a signed token supplied on this turn. */
-const withVisitorIdentity = (
-  resolved: ResolvedVariableInput[],
-  verifiedIdentity: Record<string, unknown> | null | undefined,
-): ResolvedVariableInput[] => verifiedIdentity
-  ? [...resolved, {
-      name: "visitor_identity",
-      description: "Verified visitor identity supplied by the host.",
-      value: verifiedIdentity,
-      surfacing: "on_reference",
-      sensitive: true,
-      trust: "verified",
-    }]
-  : resolved;
 
 export interface PrepareChatSessionInput {
   workspaceId: string;

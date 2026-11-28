@@ -44,6 +44,8 @@ export {
 } from "./directiveMatchRanking.js";
 export {
   resolveDirectiveBinding,
+  runnableSkillDirectives,
+  type DirectiveBindingAvailability,
   type DirectiveBindingOutcome,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,
@@ -120,6 +122,7 @@ export type {
 export {
   conversationRoutineActivatorFromCandidate,
   RoutineRegistry,
+  startableRoutineRegistrations,
   type PreparedRoutineCandidates,
   type RankableRoutineCandidates,
   type RankedRoutineMatch,

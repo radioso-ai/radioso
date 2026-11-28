@@ -9,6 +9,43 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.37.0] - 2026-11-28
+
+### Added
+
+- **attributes:** a WhatsApp number as an attribute's person, with data-subject requests by number ([#1910](https://github.com/radioso-ai/radioso/pull/1910))
+- **attributes:** yes/no, number and date attributes, and routine fields that save to an attribute ([#1904](https://github.com/radioso-ai/radioso/pull/1904))
+- **agents:** draft and apply an agent starter pack from a stated purpose ([#1881](https://github.com/radioso-ai/radioso/pull/1881))
+- **attributes:** teammates set and reset a conversation's attribute, and value changes become workspace events ([#1901](https://github.com/radioso-ai/radioso/pull/1901))
+
+### Fixed
+
+- **operator-mcp:** show the approval review as a readable proposal ([#1908](https://github.com/radioso-ai/radioso/pull/1908))
+- **retrieval:** fill the answer past the per-document cap and label chunks with every heading ([#1911](https://github.com/radioso-ai/radioso/pull/1911))
+- **operator-mcp:** accept loopback client ids in development and fix the acceptance entry ([#1905](https://github.com/radioso-ai/radioso/pull/1905))
+- **usage:** record Test Chat model calls on the usage ledger ([#1906](https://github.com/radioso-ai/radioso/pull/1906))
+- **webhooks:** refuse deleting a destination a published routine export still uses ([#1907](https://github.com/radioso-ai/radioso/pull/1907))
+- **ci:** publish the n8n tarball by path, not as a GitHub spec ([#1903](https://github.com/radioso-ai/radioso/pull/1903))
+- **ci:** build the n8n node before packing it ([#1902](https://github.com/radioso-ai/radioso/pull/1902))
+
+### Documentation
+
+- add the n8n node page ([#1870](https://github.com/radioso-ai/radioso/pull/1870))
+
+### Database migrations
+
+This release adds 7 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `277_agent_starter_pack_applies.sql`
+- `278_typed_attribute_values_and_slot_save_targets.sql`
+- `279_typed_attribute_values_and_slot_save_targets_validate.sql`
+- `280_webhook_destination_delete_checks_published_routine_exports.sql`
+- `281_whatsapp_contact_attribute_scope.sql`
+- `282_whatsapp_contact_attribute_scope_validate.sql`
+- `283_whatsapp_conversation_numbers.sql`
+
+[1.37.0]: https://github.com/radioso-ai/radioso/compare/v1.36.0...v1.37.0
+
 ## [1.36.0] - 2026-11-22
 
 ### Added

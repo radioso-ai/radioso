@@ -7,7 +7,7 @@ import type { GroundedAnswerEnvelope } from "./groundedAnswerEnvelope.js";
 import type { CommittedDeclineOutcome, GroundingSummary } from "./groundingAssertions.js";
 
 /** Which visitor-facing answer path an unwrapped address came from. */
-export type AnswerLinkPath = "grounded" | "direct" | "skill_result" | "routine";
+export type AnswerLinkPath = "grounded" | "direct" | "skill_result" | "visitor_reply";
 
 /**
  * The retrieval answer's content-free counters: how its grounding assertions came out, how
@@ -119,7 +119,8 @@ export class RetrievalAnswerMetrics {
 
   /**
    * One count per address a visitor-facing answer carried that its model was not given, by the
-   * kind of answer: `grounded`, `direct`, `skill_result`, or `routine`.
+   * kind of answer: `grounded`, `direct`, `skill_result`, or `visitor_reply` (any other model text
+   * a caller marks `writesVisitorText`: a routine step, a clarifying question, the greeting).
    */
   unwrappedLinks(reasons: readonly UnwrappedLinkReason[], stream: boolean, path: AnswerLinkPath = "grounded"): void {
     for (const reason of reasons) {

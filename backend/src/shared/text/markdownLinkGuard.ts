@@ -27,7 +27,7 @@
  * reading resumes where the last chunk ended, so reading a stream is linear in its length.
  */
 
-import { bareAddressEnd, readDefinitionDestination, readDestination } from "./markdownDestination.js";
+import { asciiAddressEnd, bareAddressEnd, readDefinitionDestination, readDestination } from "./markdownDestination.js";
 
 /** Whether an address stays, or why it is removed. */
 export type LinkDestinationVerdict<Reason extends string> =
@@ -110,7 +110,12 @@ const BARE_ADDRESS_START = /^(?:https?:\/\/|www\.)/i;
 // What more characters could still turn into a bare address start.
 const BARE_ADDRESS_PREFIX = /^(?:h(?:t(?:t(?:p(?:s)?(?::\/?)?)?)?)?|w(?:w(?:w)?)?)$/i;
 const BARE_ADDRESS_PREFIX_MAX = 8;
-const ALPHANUMERIC = /[\p{L}\p{N}]/u;
+const ASCII_LETTER = /[A-Za-z]/;
+const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
+// What a GFM email address is made of, local part and host alike.
+const EMAIL_CHAR = /[A-Za-z0-9._+-]/;
+const EMAIL_LOCAL_MAX = 64;
+const EMAIL_DOMAIN_MAX = 255;
 const WHITESPACE = /\s/;
 const AUTOLINK_URI = /^[a-z][a-z0-9+.-]{1,31}:\S*$/i;
 const AUTOLINK_EMAIL = /^[^\s@<>]+@[^\s@<>]+$/;
@@ -242,6 +247,10 @@ class LinkScanner<Reason extends string> {
     if (!complete && withinBound && FENCE_OPENING_PREFIX.test(line)) {
       return null;
     }
+    // A blank line ends the paragraph, and with it any link text abandoned at its bound.
+    if (complete && line.trim() === "") {
+      this.state.abandoned = 0;
+    }
     const opening = FENCE_OPENING.exec(line);
     // A backtick fence needs its whole line: a backtick later in it means no fence at all.
     if (opening && !complete && withinBound && opening[1][0] === "`" && !opening[2].includes("`")) {
@@ -270,16 +279,14 @@ class LinkScanner<Reason extends string> {
     switch (this.text[index]) {
       case "\n":
         this.state.atLineStart = true;
-        if (this.text[index + 1] === "\n") {
-          this.state.abandoned = 0;
-        }
         return this.emit(index, index + 1);
       case "\\": {
         const escaped = this.text[index + 1];
         if (escaped === undefined && !this.final) {
           return null;
         }
-        return this.emit(index, escaped === undefined || escaped === "\n" ? index + 1 : index + 2);
+        // A backslash only escapes ASCII punctuation; before anything else it is a literal character.
+        return this.emit(index, escaped !== undefined && ASCII_PUNCTUATION.test(escaped) ? index + 2 : index + 1);
       }
       case "`": {
         const close = this.codeSpanEnd(index);
@@ -297,45 +304,82 @@ class LinkScanner<Reason extends string> {
     }
   }
 
-  /** Ordinary text up to the next construct, a bare address among them. */
+  /** Ordinary text up to the next construct, a bare address or email among them. */
   private plain(index: number): number | null {
     const address = this.bareAddress(index);
     if (address !== undefined) {
       return address;
     }
+    const email = this.emailAddress(index);
+    if (email !== undefined) {
+      return email;
+    }
     NEXT_CONSTRUCT.lastIndex = index + 1;
     const special = NEXT_CONSTRUCT.exec(this.text)?.index ?? this.text.length;
-    return this.emit(index, this.nextAddressStart(index + 1, special));
+    return this.emit(index, this.nextAddressStart(index, special));
   }
 
   /**
-   * The end of the ordinary text that starts before `from`: the next place a bare address
-   * starts, else `limit`. At the end of a chunk, text that more characters could turn into an
-   * address start is left for the next one.
+   * The end of the ordinary text that starts at `index`: the next place an address starts,
+   * else `limit`. At the end of a chunk, text that more characters could turn into an address
+   * start (the start of `https://`, the word an `@` may follow) is left for the next one.
    */
-  private nextAddressStart(from: number, limit: number): number {
-    for (let cursor = from; cursor < limit; cursor += 1) {
-      if (startsAddressWord(this.text[cursor]) && this.startsAddress(cursor)) {
+  private nextAddressStart(index: number, limit: number): number {
+    for (let cursor = index + 1; cursor < limit; cursor += 1) {
+      const char = this.text[cursor];
+      if (startsAddressWord(char) && this.startsAddress(cursor)) {
         return cursor;
+      }
+      if (char === "@") {
+        const word = this.wordStart(cursor, index);
+        if (word > index) {
+          return word;
+        }
       }
     }
     if (!this.final && limit === this.text.length) {
-      for (let cursor = Math.max(from, limit - BARE_ADDRESS_PREFIX_MAX); cursor < limit; cursor += 1) {
-        if (startsAddressWord(this.text[cursor]) && this.partialAddressStart(cursor)) {
-          return cursor;
+      const word = this.wordStart(limit, index);
+      let stop = limit - word <= EMAIL_LOCAL_MAX ? word : limit;
+      for (let cursor = Math.max(index + 1, limit - BARE_ADDRESS_PREFIX_MAX); cursor < limit; cursor += 1) {
+        if (startsAddressWord(this.text[cursor]) && (this.partialAddressStart(cursor) || this.startsAddress(cursor))) {
+          stop = Math.min(stop, cursor);
+          break;
         }
       }
+      return stop > index ? stop : limit;
     }
     return limit;
   }
 
+  /** Where the run of characters an email's local part may hold, ending at `end`, starts; never before `floor`. */
+  private wordStart(end: number, floor: number): number {
+    let start = end;
+    while (start > floor && end - start <= EMAIL_LOCAL_MAX && EMAIL_CHAR.test(this.text[start - 1])) {
+      start -= 1;
+    }
+    return start;
+  }
+
+  /** Whether `https://` or `www.` starts at `index` where a renderer links it on its own. */
   private startsAddress(index: number): boolean {
     return BARE_ADDRESS_START.test(this.text.slice(index, index + BARE_ADDRESS_PREFIX_MAX))
-      && !ALPHANUMERIC.test(this.previousChar(index));
+      && this.addressMayStartAfter(this.text[index], this.previousChar(index));
   }
 
   private partialAddressStart(index: number): boolean {
-    return BARE_ADDRESS_PREFIX.test(this.text.slice(index)) && !ALPHANUMERIC.test(this.previousChar(index));
+    return BARE_ADDRESS_PREFIX.test(this.text.slice(index))
+      && this.addressMayStartAfter(this.text[index], this.previousChar(index));
+  }
+
+  /**
+   * GFM's autolink literal start: `http(s)://` follows anything but an ASCII letter; `www.`
+   * follows the start of text, whitespace, or one of `(*_[]~`.
+   */
+  private addressMayStartAfter(first: string, previous: string): boolean {
+    if (first === "h" || first === "H") {
+      return !ASCII_LETTER.test(previous);
+    }
+    return previous === "" || WHITESPACE.test(previous) || "(*_[]~".includes(previous);
   }
 
   /**
@@ -364,27 +408,82 @@ class LinkScanner<Reason extends string> {
       return this.hold("address", cursor);
     }
     const end = bareAddressEnd(this.text, index, cursor);
-    const address = this.text.slice(index, end);
-    const prefix = BARE_ADDRESS_START.exec(address)?.[0] ?? "";
-    if (address.length <= prefix.length) {
+    const prefix = BARE_ADDRESS_START.exec(this.text.slice(index, end))?.[0] ?? "";
+    if (end - index <= prefix.length) {
       return this.emit(index, index + prefix.length);
     }
-    return this.checked(index, end, address.toLowerCase().startsWith("www.") ? `http://${address}` : address);
+    // Prose in another script may follow the address without a space: if the whole run is
+    // rejected, the address up to its first non-ASCII character may still be a given one.
+    const asciiEnd = asciiAddressEnd(this.text, index, cursor);
+    const ends = asciiEnd !== null && asciiEnd - index > prefix.length && asciiEnd < end ? [end, asciiEnd] : [end];
+    return this.checked(index, ends, (stop) => {
+      const address = this.text.slice(index, stop);
+      return address.toLowerCase().startsWith("www.") ? `http://${address}` : address;
+    });
   }
 
-  /** Keeps the address at `[start, end)` as written, or removes it with the space that set it apart. */
-  private checked(start: number, end: number, destination: string): number | null {
-    const verdict = this.policy(destination);
-    if (verdict.kind === "keep") {
-      return this.emit(start, end);
+  /**
+   * An email address a renderer links on its own, `name@host.tld`: `undefined` when none starts
+   * at `index`, `null` while the text that ends it has not arrived. Read as `mailto:`.
+   */
+  private emailAddress(index: number): number | null | undefined {
+    if (!EMAIL_CHAR.test(this.text[index])) {
+      return undefined;
     }
+    let local = index;
+    while (local < this.text.length && local - index <= EMAIL_LOCAL_MAX && EMAIL_CHAR.test(this.text[local])) {
+      local += 1;
+    }
+    this.read(index, local);
+    if (local === this.text.length && !this.final && local - index <= EMAIL_LOCAL_MAX) {
+      return null;
+    }
+    if (this.text[local] !== "@" || local - index > EMAIL_LOCAL_MAX) {
+      return undefined;
+    }
+    let domain = local + 1;
+    while (domain < this.text.length && domain - local <= EMAIL_DOMAIN_MAX && EMAIL_CHAR.test(this.text[domain])) {
+      domain += 1;
+    }
+    this.read(local, domain);
+    if (domain === this.text.length && !this.final) {
+      return null;
+    }
+    let end = domain;
+    while (end > local + 1 && this.text[end - 1] === ".") {
+      end -= 1;
+    }
+    const host = this.text.slice(local + 1, end);
+    const labels = host.split(".");
+    if (labels.length < 2 || labels.some((label) => label === "") || /[-_]$/.test(host)) {
+      return undefined;
+    }
+    return this.checked(index, [end], () => `mailto:${this.text.slice(index, end)}`);
+  }
+
+  /**
+   * Keeps the address that starts at `start` and ends at the first of `ends` the policy keeps,
+   * or removes the whole of it, `ends[0]`, with the space that set it apart.
+   */
+  private checked(start: number, ends: readonly number[], destination: (end: number) => string): number | null {
+    let rejection: Extract<LinkDestinationVerdict<Reason>, { kind: "unwrap" }> | null = null;
+    for (const end of ends) {
+      const verdict = this.policy(destination(end));
+      if (verdict.kind === "keep") {
+        return this.emit(start, end);
+      }
+      rejection ??= verdict;
+    }
+    const end = ends[0];
     const before = this.previousChar(start);
     const setApart = before === "" || WHITESPACE.test(before);
     // Whether a space follows is not known until the next chunk arrives.
     if (setApart && end === this.text.length && !this.final) {
       return null;
     }
-    this.unwrapped.push(verdict.reason);
+    if (rejection) {
+      this.unwrapped.push(rejection.reason);
+    }
     return setApart && this.text[end] === " " ? end + 1 : end;
   }
 
@@ -410,9 +509,9 @@ class LinkScanner<Reason extends string> {
     }
     const inner = this.text.slice(index + 1, cursor);
     if (AUTOLINK_URI.test(inner)) {
-      return this.checked(index, cursor + 1, inner);
+      return this.checked(index, [cursor + 1], () => inner);
     }
-    return AUTOLINK_EMAIL.test(inner) ? this.checked(index, cursor + 1, `mailto:${inner}`) : this.emit(index, index + 1);
+    return AUTOLINK_EMAIL.test(inner) ? this.checked(index, [cursor + 1], () => `mailto:${inner}`) : this.emit(index, index + 1);
   }
 
   /**

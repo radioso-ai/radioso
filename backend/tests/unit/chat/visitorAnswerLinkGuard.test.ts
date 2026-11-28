@@ -123,18 +123,6 @@ describe("visitor answers that skip the retrieval composer keep to the addresses
     expect(streamed.chunks.join("")).toBe(given);
   });
 
-  it("guards the planner's quick reply as a direct reply", () => {
-    const { composer, metrics } = composerFor("direct", []);
-
-    const reply = composer.presentPlannedReply(session, "How do I enrol?", INVENTED);
-
-    expect(reply.answer).toBe(GUARDED);
-    expect(metrics.incrementCounter).toHaveBeenCalledWith(
-      "chat_answer_links_unwrapped_total",
-      expect.objectContaining({ labels: expect.objectContaining({ path: "direct" }) }),
-    );
-  });
-
   it("guards the decline composed for a blank reply", async () => {
     const { composer } = composerFor("direct", []);
 
@@ -145,26 +133,22 @@ describe("visitor answers that skip the retrieval composer keep to the addresses
 });
 
 describe("the direct skill's quick reply", () => {
-  it("keeps the planner's words to the addresses the direct reply prompt holds, rendered whole or committed", async () => {
-    const { composer } = composerFor("direct", []);
-    const skill = createDirectTurnSkill(composer, {});
+  it("shows an authored line's address as written", async () => {
+    const authored = "Bye, book anytime at https://studio.example/book or [here](https://studio.example/book).";
+    const skill = createDirectTurnSkill(composerFor("direct", []).composer, { presenter });
     const outcome = {
       kind: "direct",
       skillName: DIRECT_REPLY_CONFIG.skillName,
       outcome: {
         status: "completed",
-        answer: INVENTED,
-        metadata: plannerReplySourceMetadata("acknowledgement", "planner"),
+        answer: authored,
+        metadata: plannerReplySourceMetadata("farewell", "authored"),
       },
     } as unknown as TurnOutcome;
-    const context = { session, query: "How do I enrol?" };
 
-    const rendered = await skill.renderer.render(outcome, context);
-    const stream = skill.renderer.stream?.(outcome, context);
-    const settled = await stream?.next();
+    const rendered = await skill.renderer.render(outcome, { session, query: "Bye" });
 
-    expect(rendered.answer).toBe(GUARDED);
-    expect(settled?.done && settled.value.finalPresentation.answer).toBe(GUARDED);
+    expect(rendered.answer).toBe(authored);
   });
 });
 
@@ -196,21 +180,21 @@ describe("LinkGuardedChatGateway", () => {
   it("guards a completion the call says the visitor reads as written, against what the call sent", async () => {
     const { inner } = gatewayWith("Enrol at [the page](https://school.example/enrol) or https://invented.example/now.");
     const metrics = { incrementCounter: vi.fn() };
-    const gateway = new LinkGuardedChatGateway(inner, "routine", metrics);
+    const gateway = new LinkGuardedChatGateway(inner, "visitor_reply", metrics);
 
     const text = await gateway.answer(input({ writesVisitorText: true }));
 
     expect(text).toBe("Enrol at [the page](https://school.example/enrol) or .");
     expect(metrics.incrementCounter).toHaveBeenCalledWith(
       "chat_answer_links_unwrapped_total",
-      expect.objectContaining({ labels: { reason: "not_given", stream: "false", path: "routine" } }),
+      expect.objectContaining({ labels: { reason: "not_given", stream: "false", path: "visitor_reply" } }),
     );
   });
 
   it("guards a streamed completion without releasing any of an invented address", async () => {
     const reply = "Enrol at [the page](https://invented.example/enrol) or https://invented.example/now, thanks.";
     const { inner } = gatewayWith(reply, Array.from(reply.match(/.{1,3}/g) ?? []));
-    const gateway = new LinkGuardedChatGateway(inner, "routine");
+    const gateway = new LinkGuardedChatGateway(inner, "visitor_reply");
 
     const released: string[] = [];
     for await (const delta of gateway.streamAnswer(input({ writesVisitorText: true }))) {
@@ -224,7 +208,7 @@ describe("LinkGuardedChatGateway", () => {
   it("passes a completion nothing marked as visitor text through byte for byte", async () => {
     const json = "{\"next\":\"[x](https://invented.example)\\nhttps://invented.example\"}";
     const { inner } = gatewayWith(json);
-    const gateway = new LinkGuardedChatGateway(inner, "routine");
+    const gateway = new LinkGuardedChatGateway(inner, "visitor_reply");
 
     expect(await gateway.answer(input())).toBe(json);
     const streamed: string[] = [];
@@ -236,7 +220,7 @@ describe("LinkGuardedChatGateway", () => {
 
   it("fails a completion that was only an invented address as blank, so the caller retries it", async () => {
     const { inner } = gatewayWith("https://invented.example/now");
-    const gateway = new LinkGuardedChatGateway(inner, "routine");
+    const gateway = new LinkGuardedChatGateway(inner, "visitor_reply");
 
     await expect(gateway.answer(input({ writesVisitorText: true }))).rejects.toBeInstanceOf(BlankChatAnswerError);
   });

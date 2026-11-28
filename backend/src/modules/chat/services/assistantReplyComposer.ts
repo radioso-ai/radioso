@@ -107,18 +107,6 @@ export class AssistantReplyComposer {
   }
 
   /**
-   * Presents a reply the turn planner wrote, as a direct reply: the planner's own prompt is
-   * not at hand here, so the reply keeps to the addresses this capability's reply prompt for
-   * the turn holds.
-   */
-  presentPlannedReply(session: PreparedSession, query: string, answer: string): ChatPresentedAnswer {
-    const linkGuard = new AnswerLinkGuard();
-    const request = this.request(session, query, undefined, null);
-    linkGuard.allow([request.prompt, ...session.history.map((message) => message.content)]);
-    return this.presentReply(answer, linkGuard, false);
-  }
-
-  /**
    * Generates the reply in one shot (non-streaming), or `null` when blank.
    * `skillFindings` is the text a bound skill returned, for a capability whose prompt
    * writes the reply from it.

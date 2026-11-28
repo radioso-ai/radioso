@@ -673,27 +673,36 @@ imports from `services/`.
   `unwrappedLinkCount` as a trace metric; no address or answer text is recorded.
   Every other visitor answer runs the same two helpers at the place its text
   leaves a model, against what that call was sent. `AssistantReplyComposer` guards
-  the direct reply, the planner's quick reply (`presentPlannedReply`, against the
-  direct reply prompt), the reply written from a skill's result, and their
-  declines, whole and streamed, counted with `path` `direct` or `skill_result`.
-  A routine's model text passes `LinkGuardedChatGateway`
-  (`services/linkGuardedChatGateway.ts`), which composition puts around the chat
-  gateway: a call that sets `writesVisitorText` (a routine step reply, a handoff
-  message, a consent re-ask; `RoutineChatModelGateway` sets it from the request's
-  `visitorReply` metadata) has its completion guarded, whole or streamed, against
-  its own input, counted with `path` `routine`; every other call, such as a
-  selector's JSON, passes through. Text an operator authored (a consent's wording
-  shown as written) never passes a model and is never guarded. The operator eval
+  the direct reply, the reply written from a skill's result, and their declines,
+  whole and streamed, counted with `path` `direct` or `skill_result`. A quick
+  reply is not guarded: its planner wording is rejected when it holds an address
+  (`plannerQuickReplyTextRejection`), and its authored wording is the operator's
+  own text. Every other model text a visitor reads passes
+  `LinkGuardedChatGateway` (`services/linkGuardedChatGateway.ts`), which
+  composition puts around the chat gateway: a request that sets
+  `writesVisitorText` has its completion guarded, whole or streamed, against its
+  own input, counted with `path` `visitor_reply`; every other call, such as a
+  selector's JSON, passes through. The field is typed on
+  `ChatGatewayInput` and on the engine's `ConversationModelRequest`, and is set
+  by the routine step reply, the handoff message, the consent re-ask, the slot
+  correction replies, the clarifying question's lead-in, and the automatic
+  greeting (guarded before it is cached). A new producer of visitor text sets it.
+  Text an operator authored (a consent's wording shown as written) never passes
+  a model and is never guarded. The operator eval
   runner (`modules/eval/services/retrievalPipelineEvalRunner.ts`) guards its
   generated answer with `AnswerLinkGuard`, so an eval scores the answer a visitor
   reads. `chat_answer_links_unwrapped_total` carries `reason`, `stream`, and
-  `path` (`grounded`, `direct`, `skill_result`, `routine`). Tests:
+  `path` (`grounded`, `direct`, `skill_result`, `visitor_reply`). A bare email
+  address is read as `mailto:`; a bare address is checked as far as its first
+  non-ASCII character when the whole run is rejected; the last word of a chunk
+  is held until the next, as an `@` may follow it. Tests:
   `tests/unit/shared/markdownLinkGuard.test.ts`,
   `tests/unit/shared/givenLinkTargets.test.ts`,
   `tests/unit/chat/answerLinkGuard.test.ts` (with the stream-equals-answer
   property over random chunkings),
   `tests/unit/chat/visitorAnswerLinkGuard.test.ts`,
   `tests/unit/routine-chat-model-gateway.test.ts`,
+  `tests/unit/chat-bootstrap-service.test.ts`,
   `tests/unit/retrieval-answer-link-guard.test.ts`,
   `tests/unit/retrieval/retrievalAnswerLinks.test.ts`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one

@@ -529,7 +529,8 @@ describe("unsupported-answer delivery guard", () => {
       throw new Error("expected the first step to yield text, not settle");
     }
 
-    expect(first.value).toBe(pageAnswer.slice(0, 8));
+    // The word the chunk ends in waits for the next one: an `@` after it would make it an email address.
+    expect(first.value).toBe("The ");
 
     releaseRest();
     const chunks: string[] = [first.value];
@@ -1105,7 +1106,7 @@ describe("retrieval answer envelope v2", () => {
       throw new Error("expected the first step to yield text, not settle");
     }
 
-    expect(first.value).toBe(answer.slice(0, 8));
+    expect(first.value).toBe("The ");
 
     releaseRest();
     const chunks: string[] = [first.value];

@@ -135,6 +135,7 @@ export const buildChatTurnRuntime = (
         deps.metrics,
       ),
       {
+        presenter: chatAnswerPresenter,
         logger: deps.logger,
         metrics: deps.metrics,
         quickReplyLaneEnabled: deps.quickReplyLaneEnabled ?? true,

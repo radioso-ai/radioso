@@ -505,7 +505,7 @@ describe("RoutineChatModelGateway", () => {
 });
 
 describe("RoutineChatModelGateway visitor replies", () => {
-  it("tells the host a call marked as a visitor reply is read as written, and no other", async () => {
+  it("tells the host a request marked as writing visitor text is read as written, and no other", async () => {
     const calls: ChatGatewayInput[] = [];
     const chatGateway: Pick<ChatGateway, "answer"> = {
       async answer(input) {
@@ -515,7 +515,7 @@ describe("RoutineChatModelGateway visitor replies", () => {
     };
     const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
 
-    await gateway.complete({ messages: [{ role: "user", content: "hi" }], metadata: { visitorReply: true } });
+    await gateway.complete({ messages: [{ role: "user", content: "hi" }], writesVisitorText: true });
     await gateway.complete({ messages: [{ role: "user", content: "hi" }], metadata: { routineActivation: true } });
     await gateway.complete({ messages: [{ role: "user", content: "hi" }] });
 
@@ -530,13 +530,13 @@ describe("RoutineChatModelGateway visitor replies", () => {
         yield* reply.match(/.{1,4}/g) ?? [];
       },
     };
-    const gateway = new RoutineChatModelGateway(new LinkGuardedChatGateway(host, "routine"), turnContext);
+    const gateway = new RoutineChatModelGateway(new LinkGuardedChatGateway(host, "visitor_reply"), turnContext);
     const request = {
       messages: [
         { role: "assistant" as const, content: "Enrolment: https://school.example/enrol" },
         { role: "user" as const, content: "How?" },
       ],
-      metadata: { visitorReply: true },
+      writesVisitorText: true,
     };
 
     const whole = await gateway.complete(request);

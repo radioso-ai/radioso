@@ -91,19 +91,39 @@ const TRAILING_REFERENCE = /&[a-zA-Z0-9]+;$/;
 
 const countOf = (text: string, char: string): number => text.split(char).length - 1;
 
+// A closing, quoting, or sentence-ending mark outside ASCII: a typographic quote, a CJK full
+// stop or comma. ASCII marks are handled one by one, because many are valid in an address.
+const TRAILING_UNICODE_MARK = /(?=[^\x00-\x7f])[\p{Pe}\p{Pf}\p{Pi}\p{Po}]$/u;
+const NON_ASCII = /[^\x00-\x7f]/u;
+
 /**
- * Where a bare address that runs from `start` to `end` stops being the address, GFM's way:
- * trailing punctuation, an unbalanced closing parenthesis, and a trailing character
- * reference are not part of it.
+ * Where a run of text that a renderer reads as one address may really end earlier: at its first
+ * character outside ASCII, because an address written in ASCII is followed there by prose in
+ * another script. `null` when the run is ASCII throughout.
+ */
+export const asciiAddressEnd = (text: string, start: number, end: number): number | null => {
+  const offset = text.slice(start, end).search(NON_ASCII);
+  return offset > 0 ? bareAddressEnd(text, start, start + offset) : null;
+};
+
+/**
+ * Where a bare address that runs from `start` to `end` stops being the address: trailing
+ * punctuation (ASCII, or a typographic or CJK mark), an unbalanced closing parenthesis or
+ * bracket, a table cell's closing bar, and a trailing character reference are not part of it.
  */
 export const bareAddressEnd = (text: string, start: number, end: number): number => {
   let stop = end;
   while (stop > start) {
     const candidate = text.slice(start, stop);
     const last = candidate[candidate.length - 1];
-    if (TRAILING_PUNCTUATION.test(last)) {
+    const unicodeMark = TRAILING_UNICODE_MARK.exec(candidate);
+    if (unicodeMark) {
+      stop -= unicodeMark[0].length;
+    } else if (TRAILING_PUNCTUATION.test(last) || last === "|") {
       stop -= 1;
     } else if (last === ")" && countOf(candidate, ")") > countOf(candidate, "(")) {
+      stop -= 1;
+    } else if (last === "]" && countOf(candidate, "]") > countOf(candidate, "[")) {
       stop -= 1;
     } else if (last === ";" && TRAILING_REFERENCE.test(candidate)) {
       stop -= candidate.length - candidate.lastIndexOf("&");

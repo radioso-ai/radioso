@@ -273,6 +273,7 @@ export class DefaultClarifier implements ConversationClarifier {
         steeringForSurface(input.turn.steering ?? [], "answer"),
         this.steeringOptions,
       ),
+      writesVisitorText: true,
     });
     // The model authors only the localized lead-in; the options are appended in
     // code. This makes the failure mode where the model collapses the question to a

@@ -20,11 +20,12 @@ const MAX_GROUPS = 7;
 
 // A date or a time: digits that count something else. A number's own groups, such as
 // `123.45.67`, do not read as one: a day is 1 to 31 and a month 1 to 12. Replaced by a break
-// before reading numbers.
+// before reading numbers. A date that digits continue across a separator, such as `06.12.34`
+// inside `06.12.34.56.78`, is a number's own groups.
 const DAY = "(?:0?[1-9]|[12]\\d|3[01])";
 const MONTH = "(?:0?[1-9]|1[0-2])";
 const DATE_OR_TIME = new RegExp(
-  `(?<!\\d)(?:\\d{4}[./-]${MONTH}[./-]${DAY}|${DAY}[./-]${MONTH}[./-](?:\\d{4}|\\d{2})|\\d{1,2}:\\d{2}(?::\\d{2})?)(?!\\d)`,
+  `(?<!\\d)(?<!\\d[./-])(?:\\d{4}[./-]${MONTH}[./-]${DAY}|${DAY}[./-]${MONTH}[./-](?:\\d{4}|\\d{2})|\\d{1,2}:\\d{2}(?::\\d{2})?)(?!\\d)(?![./-]\\d)`,
   "g",
 );
 // Digit groups, each set apart from the next by at most two separator characters.

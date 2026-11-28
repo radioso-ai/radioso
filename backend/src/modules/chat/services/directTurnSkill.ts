@@ -5,7 +5,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { AssistantReplyComposer, AssistantReplyConfig } from "./assistantReplyComposer.js";
-import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   decideQuickReply,
@@ -27,6 +27,7 @@ export const DIRECT_REPLY_CONFIG: AssistantReplyConfig = {
 
 /** What the direct skill needs besides its composer to send a planner-written reply. */
 interface DirectTurnSkillQuickReplyPorts {
+  presenter: ChatAnswerPresenter;
   logger?: Pick<AppLogger, "debug">;
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   /** Composition's kill switch (default true): false, every direct turn is composed. */
@@ -82,14 +83,20 @@ export const createDirectTurnSkill = (
   composer: AssistantReplyComposer,
   quickReplyPorts: DirectTurnSkillQuickReplyPorts,
 ): TurnSkill => {
-  const presentQuickReply = (outcome: TurnOutcome, ctx: TurnRenderContext): ChatPresentedAnswer | null => {
+  // A quick reply is never guarded: its planner wording is rejected when it holds an address
+  // (`plannerQuickReplyTextRejection`), and its authored wording is the operator's own text.
+  const presentQuickReply = (outcome: TurnOutcome): ChatPresentedAnswer | null => {
     const replySource = plannerReplySourceOf(outcome.outcome.metadata);
     const answer = outcome.outcome.answer;
     if (!replySource || !answer) {
       return null;
     }
     return {
-      ...composer.presentPlannedReply(ctx.session, ctx.query, answer),
+      ...quickReplyPorts.presenter.presentNonRetrievalAnswer(answer, {
+        skillName: DIRECT_TURN_SKILL,
+        outcome: DIRECT_OUTCOME_KIND,
+        status: "completed",
+      }),
       metadata: plannerReplySourceMetadata(replySource.quickReplyKind, replySource.quickReplyWording),
     };
   };
@@ -109,10 +116,10 @@ export const createDirectTurnSkill = (
     renderer: {
       supports: (outcome) => outcome.kind === DIRECT_OUTCOME_KIND,
       render: async (outcome, ctx: TurnRenderContext) =>
-        presentQuickReply(outcome, ctx)
+        presentQuickReply(outcome)
           ?? composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
       async *stream(outcome, ctx: TurnRenderContext): AsyncGenerator<string, TurnStreamResult> {
-        const quickReply = presentQuickReply(outcome, ctx);
+        const quickReply = presentQuickReply(outcome);
         if (quickReply) {
           // Whole text, nothing streamed live: the host delivers it as committed chunks.
           return {

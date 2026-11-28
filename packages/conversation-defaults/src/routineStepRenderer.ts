@@ -52,12 +52,6 @@ export {
 // Implemented here; declared in the contract so a host can supply its own renderer.
 export type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-contract";
 
-/**
- * Marks a request whose completion the visitor reads as written, so the host can check what it
- * shows before it is shown, such as the addresses it links to. The engine reads no more into it.
- */
-const VISITOR_REPLY_METADATA = { visitorReply: true } as const;
-
 const turnMessages = (
   turn: TurnContext,
   contextEvidence: readonly string[],
@@ -632,7 +626,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     return {
       messages: turnMessages(input.turn, contextEvidence, this.contextEvidencePromptTemplate),
       systemPrompt,
-      metadata: VISITOR_REPLY_METADATA,
+      writesVisitorText: true,
     };
   }
 
@@ -672,7 +666,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     const { text } = await this.modelGateway.complete({
       messages: handoffTerminalMessages(turn, responseLanguage),
       systemPrompt,
-      metadata: VISITOR_REPLY_METADATA,
+      writesVisitorText: true,
     });
     return { answer: text.trim() };
   }

@@ -2394,8 +2394,8 @@ Primary internals:
   against the prompt text), and `shared/text/givenPhoneNumbers.ts` (phone
   numbers). `modules/retrieval/services/retrievalAnswerService.ts` applies them to
   the standalone retrieval answer, `assistantReplyComposer.ts` to direct and
-  skill-result replies, `services/linkGuardedChatGateway.ts` to routine step
-  replies, and the operator eval runner to its generated answer
+  skill-result replies, `services/linkGuardedChatGateway.ts` to every request marked
+  `writesVisitorText` (routine steps, clarifying questions, the greeting), and the operator eval runner to its generated answer
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/groundedAnswerHeadReader.ts` (parses the

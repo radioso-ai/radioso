@@ -123,8 +123,15 @@ describe("givenLinkPolicy", () => {
       ["an international number written nationally", ["Call +49 30 1234567."], "tel:0301234567"],
       ["a number given with a 00 prefix", ["Call 0049 30 1234567."], "tel:+49301234567"],
       ["a number written with dots and slashes", ["Call 030/123.45.67."], "tel:+49301234567"],
+      ["a French number written with dots", ["Appelez le 06.12.34.56.78."], "tel:+33612345678"],
+      ["a French number with a country code", ["Appelez le +33 6 12 34 56 78."], "tel:0612345678"],
     ])("keeps %s", (_label, given, destination) => {
       expect(verdict(given, destination)).toBe("keep");
+    });
+
+    it("still reads a date written beside a dotted number as a date", () => {
+      expect(verdict(["Le 06.12.34 à 10:30."], "tel:061234")).toBe("not_given");
+      expect(verdict(["Le 06.12.34 à 10:30, appelez le 06.12.34.56.78."], "tel:0612345678")).toBe("keep");
     });
 
     it("keeps a number given after a date and a time, with neither joined to it", () => {

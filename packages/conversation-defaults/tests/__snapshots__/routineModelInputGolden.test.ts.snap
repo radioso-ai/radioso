@@ -26,9 +26,6 @@ Arrive by 4pm on the first day.
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -95,6 +92,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -114,9 +112,6 @@ exports[`routine model input > renders 'a finish ending after a booking that …
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -193,6 +188,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -212,9 +208,6 @@ exports[`routine model input > renders 'a finish ending after a lookup that r…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -294,6 +287,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -313,9 +307,6 @@ exports[`routine model input > renders 'a finish ending after a search that f…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -389,6 +380,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -400,9 +392,6 @@ exports[`routine model input > renders 'a hand-off ending with a message afte…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "Write one short message in Italian that preserves this meaning, except where the facts after it contradict it:
 Tell them a scout will check the shortlisted properties and get back to them.
 
@@ -416,6 +405,7 @@ Before you write, check what you were given to say against these facts:
 Keep everything else you were given to say. Guidance about tone or helpfulness never overrides these facts.
 
 Do not add links, contact details, recommendations, options, or follow-up questions.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -435,9 +425,6 @@ exports[`routine model input > renders 'a re-ask past the limit with a slot s…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -513,6 +500,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -532,9 +520,6 @@ exports[`routine model input > renders 'a re-ask past the limit with nothing …
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -609,6 +594,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -628,9 +614,6 @@ exports[`routine model input > renders 'a re-ask with nothing listed as still…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -698,6 +681,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -723,9 +707,6 @@ exports[`routine model input > renders 'a re-ask with slots still to ask for …
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -792,6 +773,7 @@ Respond in Italian.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -816,9 +798,6 @@ exports[`routine model input > renders 'a step reply on an unresolved request…
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -901,6 +880,7 @@ language, not the language of these instructions.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 
@@ -920,9 +900,6 @@ exports[`routine model input > renders 'a terminal step reply' 1`] = `
       "role": "user",
     },
   ],
-  "metadata": {
-    "visitorReply": true,
-  },
   "systemPrompt": "You are the assistant, guiding the user through a guided flow one step at a
 time.
 
@@ -987,6 +964,7 @@ Respond in German.
 
 Write only the message to the user, in the language required above — no preamble, labels,
 or quotation marks.",
+  "writesVisitorText": true,
 }
 `;
 

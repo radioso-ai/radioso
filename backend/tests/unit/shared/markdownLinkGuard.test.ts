@@ -284,6 +284,67 @@ describe("guardMarkdownLinks: what a renderer reads as a link", () => {
   });
 });
 
+describe("guardMarkdownLinks: what surrounds an address", () => {
+  it.each([
+    ["German quotes", "Buchen Sie unter „https://given.example/book“."],
+    ["curly quotes", "Book at “https://given.example/book”."],
+    ["a CJK full stop", "詳しくは https://given.example/book。"],
+    ["a CJK comma and prose", "预订请访问 https://given.example/book，谢谢"],
+    ["prose in another script with no mark", "预订请访问 https://given.example/book谢谢"],
+    ["square brackets", "Site: [https://given.example/book]"],
+    ["a table cell", "|Site|https://given.example/book|"],
+    ["guillemets", "Réservez sur «https://given.example/book»."],
+  ])("keeps a given address inside %s", (_name, answer) => {
+    const { policy } = keepOnly("https://given.example/book");
+
+    expect(guardMarkdownLinks(answer, policy)).toEqual({ text: answer, unwrapped: [] });
+  });
+
+  it("removes an invented address in the same places, and nothing around it", () => {
+    const { policy } = keepOnly("https://given.example/book");
+
+    expect(guardMarkdownLinks("Buchen Sie unter „https://invented.example/x“.", policy).text)
+      .toBe("Buchen Sie unter „“.");
+    expect(guardMarkdownLinks("詳しくは https://invented.example/x。", policy).text).toBe("詳しくは 。");
+  });
+
+  it.each([
+    ["after CJK text", "詳しくはhttps://invented.example/book", "詳しくは"],
+    ["after Chinese text", "请访问https://invented.example/book", "请访问"],
+    ["after a backslash that escapes nothing", "\\https://invented.example", "\\"],
+    ["after a digit", "7https://invented.example/x", "7"],
+  ])("removes an invented address %s, where a renderer links it", (_name, answer, expected) => {
+    const { policy } = keepOnly();
+
+    expect(guardMarkdownLinks(answer, policy).text).toBe(expected);
+  });
+
+  it("leaves www. that follows a letter, and an https:// that follows an ASCII letter", () => {
+    const { policy, asked } = keepOnly();
+    const answer = "see xwww.invented.example and nothttps://invented.example";
+
+    expect(guardMarkdownLinks(answer, policy).text).toBe(answer);
+    expect(asked).toEqual([]);
+    expect(guardMarkdownLinks("(www.invented.example) *www.invented.example*", policy).text).toBe("() **");
+  });
+
+  it("removes an email address the policy rejects and keeps one it keeps, read as mailto", () => {
+    const { policy, asked } = keepOnly("mailto:info@given.example");
+
+    expect(guardMarkdownLinks("Write to info@invented.example now, or info@given.example.", policy).text)
+      .toBe("Write to now, or info@given.example.");
+    expect(asked).toEqual(["mailto:info@invented.example", "mailto:info@given.example"]);
+  });
+
+  it("leaves an @ that is not an email address", () => {
+    const { policy, asked } = keepOnly();
+    const answer = "Follow @school or write a@b, or user@host_ and @@x.y.";
+
+    expect(guardMarkdownLinks(answer, policy).text).toBe(answer);
+    expect(asked).toEqual([]);
+  });
+});
+
 const CORPUS = [
   "Join [Il respiro consapevole](#) in November[[1]].",
   "See [Plans and Pricing](Plans and Pricing), or [Our site](https://kept.example/).",
@@ -306,6 +367,12 @@ const CORPUS = [
   `[${"x".repeat(1500)}](https://invented.example/) then [${"y".repeat(1100)}](https://kept.example/) end`,
   "[a](\nhttps://invented.example \"T\") and [b](tel:&#43;4930) and [c](https://kept.example/a\\_b)",
   "wwww.invented.example and a-https://invented.example/x and (www.invented.example/a_(b)).",
+  "Buchen Sie unter „https://kept.example/“. Book at “https://kept.example/”. 詳しくは https://kept.example/。",
+  "预订请访问 https://kept.example/，谢谢 and https://invented.example/x，谢谢 and 詳しくはhttps://invented.example/y",
+  "Site: [https://kept.example/] and [https://invented.example/z] and |https://kept.example/|https://invented.example/|",
+  "Write to info@invented.example or info@kept.example. Also a@b and user@host_ and x@y.z. 7https://invented.example",
+  "\\https://invented.example and \\\\https://invented.example and xwww.invented.example and (www.invented.example)",
+  `[${"x".repeat(1100)}\n\nfoo](https://invented.example) then [${"y".repeat(1100)}\n \nbar](https://kept.example/)`,
 ];
 
 describe("MarkdownLinkGuardStream", () => {
@@ -328,7 +395,7 @@ describe("MarkdownLinkGuardStream", () => {
 
     const { released } = streamed(["Join [Il respiro", " consapevole](", "#", ") in November."], policy);
 
-    expect(released).toEqual(["Join ", "", "", "Il respiro consapevole in November.", ""]);
+    expect(released).toEqual(["Join ", "", "", "Il respiro consapevole in ", "November."]);
   });
 
   it("releases a bracket as soon as it cannot become a link", () => {
@@ -336,8 +403,8 @@ describe("MarkdownLinkGuardStream", () => {
     const stream = new MarkdownLinkGuardStream(policy);
 
     expect(stream.push("Index arr[0]")).toBe("Index arr");
-    expect(stream.push(" is first")).toBe("[0] is first");
-    expect(stream.flush()).toBe("");
+    expect(stream.push(" is first")).toBe("[0] is ");
+    expect(stream.flush()).toBe("first");
   });
 
   it("holds no more than its bound behind a backtick that never closes", () => {
@@ -376,7 +443,7 @@ describe("MarkdownLinkGuardStream", () => {
 
     const { released } = streamed(["Visit htt", "ps://inv", "ented.exam", "ple/x and more"], policy);
 
-    expect(released).toEqual(["Visit ", "", "", "and more", ""]);
+    expect(released).toEqual(["Visit ", "", "", "and ", "more"]);
   });
 
   it("releases text that only begins like an address as soon as it cannot become one", () => {
@@ -385,7 +452,9 @@ describe("MarkdownLinkGuardStream", () => {
 
     expect(stream.push("We went to w")).toBe("We went to ");
     expect(stream.push("here and h")).toBe("where and ");
-    expect(stream.push("ello")).toBe("hello");
+    // The last word waits: an `@` after it would make it the start of an email address.
+    expect(stream.push("ello")).toBe("");
+    expect(stream.flush()).toBe("hello");
   });
 
   describe("reading what it holds", () => {
@@ -397,19 +466,21 @@ describe("MarkdownLinkGuardStream", () => {
       return released + stream.flush();
     };
 
-    it.each([
-      ["a stray bracket", `Use [ then ${"z".repeat(30_000)}`],
-      ["a stray backtick", `Run \` then ${"z".repeat(30_000)}`],
-      ["an unclosed destination", `See [x](${"z".repeat(3_000)}`],
-      ["a long address", `See https://kept.example/${"z".repeat(3_000)}`],
-    ])("reads each character of %s a bounded number of times, token by token", (_name, text) => {
+    const scannedFor = (build: (size: number) => string, size: number): number => {
       const { policy } = keepOnly();
       const stream = new MarkdownLinkGuardStream(policy);
+      drip(build(size), 4, stream);
+      return stream.scannedCharacters;
+    };
 
-      const released = drip(text, 4, stream);
-
-      expect(released.length).toBeGreaterThan(0);
-      expect(stream.scannedCharacters).toBeLessThanOrEqual(text.length * 3);
+    it.each([
+      ["a stray bracket", (size: number) => `Use [ then ${"z".repeat(size)}`, 20_000],
+      ["a stray backtick", (size: number) => `Run \` then ${"z".repeat(size)}`, 20_000],
+      ["an unclosed destination", (size: number) => `See [x](${"z".repeat(size)}`, 1_500],
+      ["a long address", (size: number) => `See https://kept.example/${"z".repeat(size)}`, 1_500],
+    ])("reads %s in time linear in its length, token by token", (_name, build, size) => {
+      // Rereading the held text on every token would make doubling the text quadruple the reads.
+      expect(scannedFor(build, size * 2) / scannedFor(build, size)).toBeLessThan(2.3);
     });
 
     it("releases text held behind a stray bracket once the bound is passed, and the same text as a whole", () => {

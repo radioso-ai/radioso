@@ -239,6 +239,6 @@ describe("streamed and finished answer links", () => {
     const text = new StreamedAnswerText(guard.stream());
     const released = ["Ask about [Il sil", "enzio](https://exa", "mple.org/silence) today."].map((chunk) => text.push(chunk));
 
-    expect([...released, text.flush()]).toEqual(["Ask about ", "", "Il silenzio today.", ""]);
+    expect([...released, text.flush()]).toEqual(["Ask about ", "", "Il silenzio ", "today."]);
   });
 });

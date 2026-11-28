@@ -132,6 +132,7 @@ export const buildChatTurnRuntime = (
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
         DIRECT_REPLY_CONFIG,
+        deps.metrics,
       ),
       {
         presenter: chatAnswerPresenter,
@@ -148,6 +149,7 @@ export const buildChatTurnRuntime = (
       chatAnswerPresenter,
       deps.fallbackReplyComposer,
       SKILL_RESULT_REPLY_CONFIG,
+      deps.metrics,
     ),
     { logger: deps.logger, replyBlocks: deps.skillResultReplyBlocks },
   );

@@ -2406,13 +2406,16 @@ Primary internals:
   (`tests/fixtures/conversation-quality/routineCardCases.ts`, run on an agent of its
   own), and the live `tests/live/routine-present-pick.verify.test.ts`
 - `backend/src/modules/chat/services/answerLinkGuard.ts` and
-  `streamedAnswerText.ts` (#1751: a grounded answer's link to an address its
-  model was not sent becomes its text, streamed and finished alike), over the
-  pure `backend/src/shared/text/markdownLinkGuard.ts` (Markdown link syntax and
-  the streaming holdback) and `shared/text/givenLinkTargets.ts` (URL forms
-  matched against the prompt text), which
-  `modules/retrieval/services/retrievalAnswerService.ts` applies to the
-  standalone retrieval answer too
+  `streamedAnswerText.ts` (#1751, #1761: a visitor answer's link or bare address
+  its model was not sent becomes its text or is removed, streamed and finished
+  alike), over the pure `backend/src/shared/text/markdownLinkGuard.ts` (Markdown
+  link syntax, bare addresses, autolinks, reference definitions, and the
+  streaming holdback), `shared/text/givenLinkTargets.ts` (URL forms matched
+  against the prompt text), and `shared/text/givenPhoneNumbers.ts` (phone
+  numbers). `modules/retrieval/services/retrievalAnswerService.ts` applies them to
+  the standalone retrieval answer, `assistantReplyComposer.ts` to direct and
+  skill-result replies, `services/linkGuardedChatGateway.ts` to every request marked
+  `writesVisitorText` (routine steps, clarifying questions, the greeting), and the operator eval runner to its generated answer
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/groundedAnswerHeadReader.ts` (parses the
@@ -2479,7 +2482,7 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
-- `cd backend && pnpm exec vitest run tests/unit/shared/markdownLinkGuard.test.ts tests/unit/shared/givenLinkTargets.test.ts tests/unit/chat/answerLinkGuard.test.ts tests/unit/retrieval-answer-link-guard.test.ts tests/unit/retrieval/retrievalAnswerLinks.test.ts` (links to addresses the model was not given)
+- `cd backend && pnpm exec vitest run tests/unit/shared/markdownLinkGuard.test.ts tests/unit/shared/givenLinkTargets.test.ts tests/unit/chat/answerLinkGuard.test.ts tests/unit/chat/visitorAnswerLinkGuard.test.ts tests/unit/retrieval-answer-link-guard.test.ts tests/unit/retrieval/retrievalAnswerLinks.test.ts` (links to addresses the model was not given)
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat/agentTurnInput.test.ts tests/contract/mcp-converse.contract.test.ts tests/integration/routine-invocation.integration.test.ts` (tool catalog route and routine invocation turns on both doors)
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`

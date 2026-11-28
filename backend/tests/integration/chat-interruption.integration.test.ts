@@ -365,7 +365,9 @@ describe("chat interruption", () => {
     await expect(second).resolves.toMatchObject({ answer: "answer for second question" });
 
     expect(firstEvents).toEqual(expect.arrayContaining([
-      { type: "chunk", text: "complete first answer" },
+      // The last word waits for the end of the stream: an `@` after it would make it an email address.
+      { type: "chunk", text: "complete first " },
+      { type: "chunk", text: "answer" },
       expect.objectContaining({ type: "done", answer: "complete first answer" }),
     ]));
     const messages = await ctx.repositories.messageRepository.listByConversationId(workspaceId, conversation.id);

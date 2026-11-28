@@ -188,3 +188,43 @@ describe("RetrievalPipelineEvalRunner declines", () => {
     expect(captured.presentedCitationCount).toBe(1);
   });
 });
+
+// The operator reads the answer a visitor would: an address the model was not sent is not in it.
+describe("RetrievalPipelineEvalRunner answer links", () => {
+  const answerReply = (answer: string) => JSON.stringify({
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "refunds",
+    outcome: "answer",
+    answer,
+    v: 2,
+    claims: [],
+    suggestions: [],
+    grounding: "degraded",
+  });
+
+  it("removes an address the model was not sent from the answer and its segments", async () => {
+    const { runner } = buildRunner({
+      reply: answerReply("Read [the policy](https://invented.example/refunds) or https://invented.example/now."),
+    });
+
+    const result = await runner.answer({ workspaceId: "ws-1", runId: "run-1", query: "Refunds?", history: [] });
+
+    expect(result.answer).toBe("Read the policy or .");
+    expect(result.answerSegments?.map((segment) => segment.text).join("")).toBe(result.answer);
+  });
+
+  it("keeps an address the pipeline's prompt holds", async () => {
+    const pipeline = { run: async () => ({ ...pipelineResult(), prompt: "Source: https://shop.example/refunds" }) };
+    const runner = new RetrievalPipelineEvalRunner(
+      pipeline as unknown as ConstructorParameters<typeof RetrievalPipelineEvalRunner>[0],
+      { answer: async () => answerReply("Read [the policy](https://shop.example/refunds).") } as unknown as ChatGateway,
+      { resolve: async () => ({ provider: "openai", model: "gpt-5-mini" }) } as unknown as LlmCapabilityResolver,
+      { getDefaults: (workspaceId: string) => defaultRetrievalSettings(workspaceId) },
+      { present: ({ answer }) => ({ answer, citations: [], answerSegments: [{ text: answer }] }) },
+    );
+
+    const result = await runner.answer({ workspaceId: "ws-1", runId: "run-1", query: "Refunds?", history: [] });
+
+    expect(result.answer).toBe("Read [the policy](https://shop.example/refunds).");
+  });
+});

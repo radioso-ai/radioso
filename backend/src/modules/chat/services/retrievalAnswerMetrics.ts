@@ -6,6 +6,9 @@ import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import type { GroundedAnswerEnvelope } from "./groundedAnswerEnvelope.js";
 import type { CommittedDeclineOutcome, GroundingSummary } from "./groundingAssertions.js";
 
+/** Which visitor-facing answer path an unwrapped address came from. */
+export type AnswerLinkPath = "grounded" | "direct" | "skill_result" | "visitor_reply";
+
 /**
  * The retrieval answer's content-free counters: how its grounding assertions came out, how
  * its coverage head parsed and what the host decided, and every way a draft became a
@@ -114,12 +117,16 @@ export class RetrievalAnswerMetrics {
     });
   }
 
-  /** One count per link the answer carried to an address its model was not given. */
-  unwrappedLinks(reasons: readonly UnwrappedLinkReason[], stream: boolean): void {
+  /**
+   * One count per address a visitor-facing answer carried that its model was not given, by the
+   * kind of answer: `grounded`, `direct`, `skill_result`, or `visitor_reply` (any other model text
+   * a caller marks `writesVisitorText`: a routine step, a clarifying question, the greeting).
+   */
+  unwrappedLinks(reasons: readonly UnwrappedLinkReason[], stream: boolean, path: AnswerLinkPath = "grounded"): void {
     for (const reason of reasons) {
       this.metrics?.incrementCounter("chat_answer_links_unwrapped_total", {
-        help: "Answer links shown as plain text because the model was not given their address",
-        labels: { reason, stream: String(stream) },
+        help: "Answer addresses removed or shown as plain text because the model was not given them",
+        labels: { reason, stream: String(stream), path },
       });
     }
   }

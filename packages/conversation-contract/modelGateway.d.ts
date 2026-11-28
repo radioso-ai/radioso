@@ -7,6 +7,12 @@ export interface ConversationModelRequest {
   systemPrompt?: string;
   metadata?: Record<string, unknown>;
   /**
+   * The visitor reads the completion as written. A host can check what it shows, such as the
+   * addresses it links to, before it is shown. Set it on every request whose text reaches a
+   * visitor; a request that leaves it unset is read by the engine alone.
+   */
+  writesVisitorText?: boolean;
+  /**
    * Set by a caller that reads a blank completion itself: the host hands it back as an empty
    * completion with its stop reason. Unset, a host may retry a blank or fail the call.
    */

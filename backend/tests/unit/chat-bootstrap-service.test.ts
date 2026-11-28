@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { LinkGuardedChatGateway } from "../../src/modules/chat/services/linkGuardedChatGateway.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { AgentService, type AgentRevision } from "../../src/modules/agents/public.js";
 import { notFound } from "../../src/shared/domain/errors.js";
@@ -253,6 +254,44 @@ describe("chat bootstrap service", () => {
       bootstrapGreetingId: firstEmbedGreeting?.bootstrapGreetingId,
     });
     expect(chatGateway.answer).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches and shows a greeting without an address its call was not given", async () => {
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspace = await workspaceRepository.create("account-1", "Workspace");
+    await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
+      assistantName: "Marta",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "en",
+      proactiveGreetingEnabled: true,
+    });
+    const model = {
+      answer: vi.fn(async () => "Hi! Enrol at https://invented.example/now."),
+      streamAnswer: vi.fn(),
+    };
+    const service = new ChatBootstrapService(
+      workspaceRepository,
+      new InMemoryBootstrapGreetingCacheRepository(),
+      new LinkGuardedChatGateway(model, "visitor_reply"),
+      createAuditService(),
+      undefined,
+      createProductAnalyticsService(),
+      createAgentService(workspaceRepository),
+    );
+
+    const greeting = await service.startConversation({
+      workspaceId: workspace.id,
+      sourceChannel: "website_embed",
+      userExpectedLocale: "en",
+    });
+    const cached = await service.startConversation({
+      workspaceId: workspace.id,
+      sourceChannel: "website_embed",
+      userExpectedLocale: "en",
+    });
+
+    expect(greeting?.answer).toBe("Hi! Enrol at .");
+    expect(cached?.answer).toBe(greeting?.answer);
   });
 
   it("reserves usage under the free greeting kind even when a real source channel is provided", async () => {

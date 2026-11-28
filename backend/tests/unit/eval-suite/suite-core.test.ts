@@ -1080,7 +1080,7 @@ describe("invented links through the chat pipeline", () => {
     if (report?.status !== "pass") {
       throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
     }
-    expect(metrics).toMatch(/chat_answer_links_unwrapped_total\{reason="fragment",stream="false"\} 1\b/);
+    expect(metrics).toMatch(/chat_answer_links_unwrapped_total\{path="grounded",reason="fragment",stream="false"\} 1\b/);
   });
 
   it("fails a delivered answer that carries a link, unless the link is to an email address", () => {

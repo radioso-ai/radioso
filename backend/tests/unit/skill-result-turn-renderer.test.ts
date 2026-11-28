@@ -138,7 +138,9 @@ describe("skill result turn renderer", () => {
 
     const { chunks, result } = await drain(renderer.stream!(agentSkillOutcome(), ctx));
 
-    expect(chunks).toEqual([MODEL_REPLY.slice(0, 10), MODEL_REPLY.slice(10)]);
+    // The word a chunk ends in waits for the next one, so the reply arrives in more, smaller pieces.
+    expect(chunks.join("")).toBe(MODEL_REPLY);
+    expect(chunks.length).toBeGreaterThan(1);
     expect(calls[0]?.prompt).toContain(`<skill_findings>\n${TOOL_TEXT}\n</skill_findings>`);
     expect(calls[0]?.usageContext.attemptKey).toBe("stream_skill_result");
     expect(result).toMatchObject({

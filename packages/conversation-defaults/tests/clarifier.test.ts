@@ -44,6 +44,8 @@ describe("DefaultClarifier", () => {
 
     const question = await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
 
+    // The model's lead-in is text a visitor reads, so the host may check it before it is shown.
+    expect(vi.mocked(modelGateway.complete).mock.calls[0][0].writesVisitorText).toBe(true);
     expect(question).toBe([
       "¿Cuál de estas describe lo que buscas?",
       "",

@@ -114,7 +114,7 @@ describe("retrieval answer links", () => {
 
     expect(presented.answer).toBe(VISIBLE_ANSWER);
     expect(unwrappedLinkWrites()).toEqual([
-      { name: "chat_answer_links_unwrapped_total", labels: { reason: "fragment", stream: "false" } },
+      { name: "chat_answer_links_unwrapped_total", labels: { reason: "fragment", stream: "false", path: "grounded" } },
     ]);
   });
 
@@ -129,7 +129,7 @@ describe("retrieval answer links", () => {
     expect(result.finalPresentation.answer).toBe(VISIBLE_ANSWER);
     expect(result.traceMetrics).toMatchObject({ unwrappedLinkCount: 1 });
     expect(unwrappedLinkWrites()).toEqual([
-      { name: "chat_answer_links_unwrapped_total", labels: { reason: "fragment", stream: "true" } },
+      { name: "chat_answer_links_unwrapped_total", labels: { reason: "fragment", stream: "true", path: "grounded" } },
     ]);
   });
 

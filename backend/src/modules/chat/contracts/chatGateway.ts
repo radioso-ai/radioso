@@ -43,6 +43,12 @@ export interface ChatGatewayInput {
   generation?: ChatGatewayGenerationOptions;
   signal?: AbortSignal;
   completionRecord?: ChatGatewayCompletionRecord;
+  /**
+   * The visitor reads the completion as written, as plain text. A gateway that guards visitor
+   * text removes addresses nothing in this input holds. Unset for a completion something else
+   * reads first, such as a structured envelope.
+   */
+  writesVisitorText?: boolean;
 }
 
 export interface ChatGateway {

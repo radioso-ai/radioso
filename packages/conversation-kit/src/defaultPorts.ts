@@ -374,6 +374,7 @@ export const createModelBackedConversationComposer = (
         agentId: input.turn.agent.id,
         selectedSkills: input.decision.selected.map((selected) => selected.skillName),
       },
+      writesVisitorText: true,
     });
     return {
       answer: text,

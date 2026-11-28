@@ -1,5 +1,7 @@
 import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { notFound } from "../../../shared/domain/errors.js";
 import type { ReferenceTimeZone } from "../../../shared/domain/referenceTimeZone.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { UserMessageStoredListener } from "../types/assistantApi.js";
@@ -64,3 +66,26 @@ export const isMessageOf = (
   && message.workspaceId === workspaceId
   && message.conversationId === conversation.id
   && message.role === "user";
+
+/**
+ * The recorded message a retried turn answers, in the form the preparer reads, so the retry
+ * records no second copy; nothing for a turn that stores its own message. The history window is
+ * the one a live turn reads.
+ */
+export const resumedUserMessage = async (
+  preparer: { loadExistingUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<MessageRecord> },
+  input: { workspaceId: string; conversationId?: string; resumeUserMessageId?: string },
+): Promise<{ existingUserMessage?: ExistingUserMessage }> => {
+  if (!input.resumeUserMessageId) {
+    return {};
+  }
+  if (!input.conversationId) {
+    throw notFound("Message not found");
+  }
+  const message = await preparer.loadExistingUserMessage({
+    workspaceId: input.workspaceId,
+    conversationId: input.conversationId,
+    messageId: input.resumeUserMessageId,
+  });
+  return { existingUserMessage: { message, historyWindow: { maxMessages: RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages } } };
+};

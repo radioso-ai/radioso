@@ -2,12 +2,7 @@ import { normalizeProviderCredentialError } from "../../../shared/infra/llm/prov
 import { classifyLlmProviderFailure } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { routineActivationFailureFields, surfacedTurnFailure } from "./turnFailureReporting.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
-import {
-  createModelCallTraceCollector,
-  runAsyncIterableWithModelCallTrace,
-  runWithModelCallTrace,
-  type ModelCallTraceCollector,
-} from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import { createModelCallTraceCollector, runAsyncIterableWithModelCallTrace, runWithModelCallTrace, type ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type {
   ConversationEngine,
   ConversationClarificationStore,
@@ -43,6 +38,7 @@ import type { VisitorResolverPort } from "../../visitors/public.js";
 import type { ContextVariableResolutionReaderPort } from "../../context-variables/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
+import type { ResumableTurn } from "../contracts/index.js";
 import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
 import { countStreamPersistFailure, observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
@@ -64,6 +60,7 @@ import {
 } from "../../../shared/domain/usageLimitPolicy.js";
 import { chatAnswerUsageKind, chatTurnTraceAttributes } from "./chatTurnAttributes.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import { resumedUserMessage } from "./turnUserMessage.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import {
@@ -280,7 +277,7 @@ interface TurnCoordinationState {
   disconnectSignal?: AbortSignal;
 }
 
-interface ChatAnswerInput extends Pick<AssistantChatRequest, "channelPersonKey"> {
+interface ChatAnswerInput extends Pick<AssistantChatRequest, "channelPersonKey">, ResumableTurn {
   workspaceId: string;
   agentId?: string | null;
   accountId?: string;
@@ -951,13 +948,10 @@ export class ChatService {
   /** Internal composition seam for callers that need the persisted input/output pair. */
   async answerWithReceipt(input: ChatAnswerInput): Promise<ChatTurnReceipt> {
     return chatTurnReceipt(await this.runTurn(input, {
-      prepare: () => this.chatSessionPreparer.prepare({
+      prepare: async () => this.chatSessionPreparer.prepare({
         ...input,
-        pageReadCapability: pageReadCapabilityFromRequest(
-          input.clientContextCapabilities,
-          input.pageContext,
-        ),
-      }, { skipRetrieval: true }),
+        pageReadCapability: pageReadCapabilityFromRequest(input.clientContextCapabilities, input.pageContext),
+      }, { skipRetrieval: true, ...await resumedUserMessage(this.chatSessionPreparer, input) }),
       usageSurface: () => input.sourceChannel,
     }));
   }

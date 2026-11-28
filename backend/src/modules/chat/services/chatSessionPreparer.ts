@@ -335,9 +335,9 @@ interface PrepareChatSessionOptions {
    */
   preResolvedConversationSummary?: string;
   /**
-   * Internal-only, for a review turn: the turn answers this recorded customer message
-   * (from {@link ChatSessionPreparer.loadExistingUserMessage}) instead of recording one,
-   * and reads at most `historyWindow.maxMessages` messages from before it.
+   * Internal-only: a review turn, or the retry of a connector turn that stored its message and
+   * failed, answers this recorded customer message (from {@link ChatSessionPreparer.loadExistingUserMessage})
+   * instead of recording one, and reads at most `historyWindow.maxMessages` messages from before it.
    */
   existingUserMessage?: ExistingUserMessage;
 }

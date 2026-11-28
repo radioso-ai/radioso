@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
 
 import type {
   ChannelPersonDataEraser,
@@ -43,6 +43,12 @@ export interface WhatsAppPersistencePort {
    * readers outside a turn and a data subject's finder reach it from its first turn, failed or not.
    */
   recordConversation(input: { workspaceId: string; waId: string; conversationId: string }): Promise<void>;
+  /**
+   * The newest conversation recorded for a number, replied to or not: the contact row only moves
+   * to a conversation once a turn in it succeeds, so a conversation whose turns all failed is
+   * found here and nowhere else.
+   */
+  findLatestRecordedConversation(workspaceId: string, waId: string): Promise<{ conversationId: string; createdAt: Date } | null>;
   upsertContact(input: {
     workspaceId: string;
     waId: string;
@@ -94,6 +100,12 @@ export interface WhatsAppPersistencePort {
    */
   savePhotoReceipt(wamid: string, receipt: string): Promise<void>;
   /**
+   * Keeps, with the inbound messages of a turn, the message the host stored for them, so a retry
+   * of the same messages answers it instead of storing and answering a second copy in a new
+   * conversation. A no-op for messages the log does not hold.
+   */
+  keepStoredTurn(wamids: readonly string[], turn: { conversationId: string; messageId: string }): Promise<void>;
+  /**
    * Marks a cards reply's outbound row as fallen back to its numbered list, once: true for the
    * call that marked it, false when it already was, or the log holds no such outbound row.
    */
@@ -102,7 +114,17 @@ export interface WhatsAppPersistencePort {
   releaseCardsFallback(outboundWamid: string): Promise<void>;
   /** The newest reply the connector wrote to a number, whatever its status; null when it wrote none. */
   findLatestOutboundReply(input: { workspaceId: string; waId: string }): Promise<WhatsAppMessageLogRecord | null>;
-  listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]>;
+  /**
+   * Takes, for this caller alone, the inbound messages that were received and never answered and
+   * that no instance has touched for `leaseMs`: one atomic update marks them active again and
+   * returns them, so two instances recovering at once, or one recovering what another is still
+   * processing, never drive the same message.
+   */
+  claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]>;
+  /** Marks these unanswered inbound messages as being worked on now, so a recovering instance leaves them. */
+  touchInboundLogs(wamids: readonly string[]): Promise<void>;
+  /** Hands these unanswered inbound messages back, for a recovering instance to take at once. */
+  releaseInboundLogs(wamids: readonly string[]): Promise<void>;
   nextLocalOutboundWamid(): string;
 }
 
@@ -119,6 +141,29 @@ export const photoReceiptOf = (log: WhatsAppMessageLogRecord | null): string | n
   }
   const receipt = (state as Record<string, unknown>)[PHOTO_RECEIPT_KEY];
   return typeof receipt === "string" && receipt.length > 0 ? receipt : null;
+};
+
+const STORED_TURN_KEY = "storedTurn";
+
+const ACTIVE_AT_KEY = "activeAt";
+
+/** What an earlier attempt stored for this inbound message: the host's message, its conversation, and the turn's messages. */
+interface StoredTurn {
+  conversationId: string;
+  messageId: string;
+  wamids: readonly string[];
+}
+
+export const storedTurnOf = (log: WhatsAppMessageLogRecord | null): StoredTurn | null => {
+  const state = log?.payload[RADIOSO_STATE_KEY];
+  const turn = state && typeof state === "object" ? (state as Record<string, unknown>)[STORED_TURN_KEY] : null;
+  if (!turn || typeof turn !== "object") {
+    return null;
+  }
+  const { conversationId, messageId, wamids } = turn as Record<string, unknown>;
+  return typeof conversationId === "string" && typeof messageId === "string" && Array.isArray(wamids)
+    ? { conversationId, messageId, wamids: wamids.filter((wamid): wamid is string => typeof wamid === "string") }
+    : null;
 };
 
 interface WhatsAppContactRow {
@@ -190,6 +235,21 @@ const mapMessageLog = (row: WhatsAppMessageLogRow): WhatsAppMessageLogRecord => 
   createdAt: new Date(row.created_at),
 });
 
+const NOW_MS = sql`(extract(epoch FROM now()) * 1000)::bigint`;
+
+/**
+ * The row's payload with the time it was last worked on, kept beside what else Radioso learned
+ * about it. A message that nothing has touched for the recovery lease is one no instance is
+ * processing, so a recovering instance may claim it.
+ */
+const markedActive = (at: RawBuilder<unknown> = NOW_MS) => sql<never>`payload || jsonb_build_object(
+  ${RADIOSO_STATE_KEY}::text,
+  COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${ACTIVE_AT_KEY}::text, ${at})
+)`;
+
+/** The messages a recovering instance may still answer: Meta refuses a reply to one older than its 24 hour window. */
+const RECOVERABLE_WINDOW = sql`interval '24 hours'`;
+
 export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
   constructor(private readonly db: Db) {}
 
@@ -216,6 +276,18 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       .values({ conversation_id: input.conversationId, workspace_id: input.workspaceId, wa_id: input.waId })
       .onConflict((oc) => oc.column("conversation_id").doNothing())
       .execute();
+  }
+
+  async findLatestRecordedConversation(workspaceId: string, waId: string): Promise<{ conversationId: string; createdAt: Date } | null> {
+    const row = await this.db
+      .selectFrom("connector_whatsapp_conversations")
+      .select(["conversation_id", "created_at"])
+      .where("workspace_id", "=", workspaceId)
+      .where("wa_id", "=", waId)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row ? { conversationId: row.conversation_id, createdAt: new Date(row.created_at) } : null;
   }
 
   async upsertContact(input: {
@@ -390,7 +462,7 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
   ): Promise<void> {
     await this.db
       .updateTable("connector_whatsapp_message_log")
-      .set({ status, error_details: errorDetails ?? null })
+      .set({ status, error_details: errorDetails ?? null, payload: markedActive() })
       .where("wamid", "=", wamid)
       .execute();
   }
@@ -406,6 +478,21 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
         COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${PHOTO_RECEIPT_KEY}::text, ${receipt}::text)
       )
       WHERE wamid = ${wamid} AND direction = 'inbound'
+    `.execute(this.db);
+  }
+
+  async keepStoredTurn(wamids: readonly string[], turn: { conversationId: string; messageId: string }): Promise<void> {
+    if (wamids.length === 0) {
+      return;
+    }
+    const kept = toJsonb({ ...turn, wamids: [...wamids] });
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = payload || jsonb_build_object(
+        ${RADIOSO_STATE_KEY}::text,
+        COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${STORED_TURN_KEY}::text, ${kept})
+      )
+      WHERE wamid IN (${sql.join(wamids)}) AND direction = 'inbound'
     `.execute(this.db);
   }
 
@@ -453,12 +540,46 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     return row ? mapMessageLog(row as WhatsAppMessageLogRow) : null;
   }
 
-  async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {
+  async touchInboundLogs(wamids: readonly string[]): Promise<void> {
+    await this.markInbound(wamids, NOW_MS);
+  }
+
+  async releaseInboundLogs(wamids: readonly string[]): Promise<void> {
+    // Epoch zero is older than any lease, so the next recovery takes the row.
+    await this.markInbound(wamids, sql`0::bigint`);
+  }
+
+  private async markInbound(wamids: readonly string[], at: RawBuilder<unknown>): Promise<void> {
+    if (wamids.length === 0) {
+      return;
+    }
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = ${markedActive(at)}
+      WHERE direction = 'inbound'
+        AND status IN ('received', 'processing', 'retryable_failed')
+        AND wamid IN (${sql.join(wamids)})
+    `.execute(this.db);
+  }
+
+  async claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]> {
+    const claimed = await sql<{ wamid: string }>`
+      UPDATE connector_whatsapp_message_log
+      SET payload = ${markedActive()}
+      WHERE direction = 'inbound'
+        AND status IN ('received', 'processing', 'retryable_failed')
+        AND created_at > now() - ${RECOVERABLE_WINDOW}
+        AND COALESCE((payload -> ${RADIOSO_STATE_KEY}::text ->> ${ACTIVE_AT_KEY}::text)::bigint, (extract(epoch FROM created_at) * 1000)::bigint)
+          < ${NOW_MS} - ${Math.max(0, Math.trunc(leaseMs))}
+      RETURNING wamid
+    `.execute(this.db);
+    if (claimed.rows.length === 0) {
+      return [];
+    }
     const rows = await this.db
       .selectFrom("connector_whatsapp_message_log")
       .select(messageLogColumns)
-      .where("direction", "=", "inbound")
-      .where("status", "in", ["received", "processing", "retryable_failed"])
+      .where("wamid", "in", claimed.rows.map((row) => row.wamid))
       .orderBy("created_at", "asc")
       .execute();
 

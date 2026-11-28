@@ -269,34 +269,11 @@ describe("hybrid retrieval search", () => {
   });
 
   it("normalizes lexical ranks before they are merged with semantic similarity", async () => {
-    const search = new PgLexicalSearch({
-      async query() {
-        return [
-          {
-            chunk_id: "chunk-1",
-            document_id: "doc-1",
-            title: "Guide",
-            content: "Top lexical hit",
-            search_text: null,
-            chunk_index: 0,
-            start_offset: 0,
-            end_offset: 20,
-            rank: 4,
-          },
-          {
-            chunk_id: "chunk-2",
-            document_id: "doc-2",
-            title: "Guide",
-            content: "Weaker lexical hit",
-            search_text: null,
-            chunk_index: 1,
-            start_offset: 21,
-            end_offset: 40,
-            rank: 1,
-          },
-        ];
-      },
-    } as never);
+    const statements = recordStatements([[
+      lexicalRow("chunk-1", { document_id: "doc-1", title: "Guide", content: "Top lexical hit", search_text: null, rank: 4 }),
+      lexicalRow("chunk-2", { document_id: "doc-2", title: "Guide", content: "Weaker lexical hit", search_text: null, chunk_index: 1, rank: 1 }),
+    ]]);
+    const search = new PgLexicalSearch(statements.database);
 
     const { matches: results } = await search.search({
       workspaceId: "a1",
@@ -542,9 +519,10 @@ describe("hybrid retrieval search", () => {
 
     const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
-    expect(statements.transactions()).toBe(1);
-    expect(statements.timeoutSettings).toHaveLength(2);
-    const budgets = statements.timeoutSettings.map(({ params }) => Number.parseInt(String(params[0]), 10));
+    // One transaction for the all-terms search, under its own budget, and one for the pass.
+    expect(statements.transactions()).toBe(2);
+    expect(statements.timeoutSettings).toHaveLength(3);
+    const budgets = statements.timeoutSettings.slice(1).map(({ params }) => Number.parseInt(String(params[0]), 10));
     expect(budgets[0]).toBeLessThanOrEqual(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs);
     expect(budgets[0]).toBeGreaterThan(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs - 50);
     expect(budgets[1]).toBeLessThanOrEqual(budgets[0]);
@@ -554,6 +532,47 @@ describe("hybrid retrieval search", () => {
     expect(result.someTermsPass.outcome).toBe("ran");
     expect(result.someTermsPass.durationMs).toBeGreaterThanOrEqual(0);
     expect(result.matches.map((match) => match.chunkId)).toEqual(["partial"]);
+  });
+
+  it("runs the all-terms search under a time budget of its own, local to its transaction", async () => {
+    const statements = recordStatements([[lexicalRow("exact")]]);
+
+    await new PgLexicalSearch(statements.database).search({ workspaceId: "a1", query: "Pro", topK: 20, matchMode: "all_terms" });
+
+    expect(statements.transactions()).toBe(1);
+    expect(statements.timeoutSettings).toEqual([
+      { sql: expect.stringContaining(", true)") as string, params: [`${RETRIEVAL_BEHAVIOR.hybrid.lexicalAllTermsTimeoutMs}ms`] },
+    ]);
+  });
+
+  it("fails the search when the all-terms search runs out of time, and says so without the query's words", async () => {
+    const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
+    const statements = recordStatements([], { failOn: (_, index) => (index === 0 ? statementTimeout() : undefined) });
+    const search = new PgLexicalSearch(statements.database, {
+      allTermsTimeoutMs: 60,
+      logger: { warn: (fields, message) => warnings.push({ fields, message }) },
+    });
+
+    await expect(search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" }))
+      .rejects.toMatchObject({ code: "57014" });
+
+    expect(statements.timeoutSettings.map(({ params }) => params)).toEqual([["60ms"]]);
+    expect(warnings).toHaveLength(1);
+    expect(Object.keys(warnings[0].fields).sort()).toEqual(["durationMs", "timeoutMs", "workspaceId"]);
+    expect(warnings[0].fields).toMatchObject({ timeoutMs: 60 });
+    expect(JSON.stringify(warnings[0])).not.toContain("alfa");
+  });
+
+  it("logs nothing of its own when the all-terms search fails for another reason", async () => {
+    const warnings: unknown[] = [];
+    const statements = recordStatements([], {
+      failOn: (_, index) => (index === 0 ? Object.assign(new Error("connection reset"), { code: "08006" }) : undefined),
+    });
+
+    await expect(new PgLexicalSearch(statements.database, { logger: { warn: (fields) => warnings.push(fields) } })
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" }))
+      .rejects.toMatchObject({ code: "08006" });
+    expect(warnings).toEqual([]);
   });
 
   it("falls back to the all-terms hits when the some-terms search runs out of time", async () => {
@@ -602,7 +621,7 @@ describe("hybrid retrieval search", () => {
     const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
     expect(statements.calls).toHaveLength(1);
-    expect(statements.transactions()).toBe(0);
+    expect(statements.transactions()).toBe(1);
     expect(result.someTermsPass).toEqual({ outcome: "skipped", reason: "connections_busy", durationMs: 0 });
   });
 
@@ -619,7 +638,7 @@ describe("hybrid retrieval search", () => {
     await new PgLexicalSearch(statements.database, { someTermsTimeoutMs: 40 })
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
-    expect(Number.parseInt(String(statements.timeoutSettings[0]?.params[0]), 10)).toBeLessThanOrEqual(40);
+    expect(Number.parseInt(String(statements.timeoutSettings[1]?.params[0]), 10)).toBeLessThanOrEqual(40);
   });
 
   it("looks up every alternative in one statement that counts the chunks in scope, under the same scope", async () => {

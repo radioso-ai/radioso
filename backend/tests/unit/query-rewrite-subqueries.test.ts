@@ -300,6 +300,85 @@ describe("query rewrite subqueries", () => {
     expect(result.lexicalQuery).toBe("who are these teachers?");
   });
 
+  it.each([
+    { query: "How much does the Planet plan cost?", lexicalQuery: "Planet plan OR Planet", expected: ["Planet plan", "Planet"] },
+    { query: "Planet plan price?", lexicalQuery: "Planet plan OR Planet", expected: ["Planet plan", "Planet"] },
+    { query: "Planet plan?", lexicalQuery: "Planet plan OR Planet", expected: ["Planet plan", "Planet"] },
+    { query: "piano Maestrale?", lexicalQuery: "piano Maestrale OR Maestrale", expected: ["piano Maestrale", "Maestrale"] },
+    { query: "Сколько стоит тариф Планета?", lexicalQuery: "тариф Планета OR Планета", expected: ["тариф Планета", "Планета"] },
+    { query: "Πόσο κοστίζει το πακέτο Πλανήτης;", lexicalQuery: "πακέτο Πλανήτης OR Πλανήτης", expected: ["πακέτο Πλανήτης", "Πλανήτης"] },
+  ])("searches a named item's bare name beside its full phrase on a first turn: $query", async ({ query, lexicalQuery, expected }) => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Planet plan price",
+          semanticQuery: "Planet plan price",
+          lexicalQuery,
+          responseLanguagePolicy: "match_user_question",
+          queryShape: "definition_lookup",
+          turnKind: "fresh_subject",
+          proposedActiveSubject: "Planet plan",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.95,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query,
+      contextWindow: { selectedMessages: [], truncated: false, selectionReason: "no-history" },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.retrievalEligible).toBe(true);
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery)).toEqual(expected);
+  });
+
+  it("keeps the first-turn guard on a rewrite whose alternative searches words the question never used", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "Planet plan price",
+          semanticQuery: "Planet plan price",
+          lexicalQuery: "Planet plan OR Galaxy",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.95,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Planet plan?",
+      contextWindow: { selectedMessages: [], truncated: false, selectionReason: "no-history" },
+      enabled: true,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+    });
+
+    expect(result.lexicalQuery).toBe("Planet plan?");
+    expect(result.retrievalSubqueries).toBeUndefined();
+  });
+
+  it("searches each top-level alternative of a model-written subquery on its own", async () => {
+    const result = await rewriteComparison([
+      { label: "Planet", semanticQuery: "Planet plan price", lexicalQuery: "Planet plan OR Planet" },
+      { label: "Satellite", semanticQuery: "Satellite plan price", lexicalQuery: "Satellite plan" },
+    ], "compare the Planet and Satellite plans");
+
+    expect(result.retrievalSubqueries?.map(({ semanticQuery, lexicalQuery }) => [semanticQuery, lexicalQuery])).toEqual([
+      ["Planet plan price", "Planet plan"],
+      ["Planet plan price", "Planet"],
+      ["Satellite plan price", "Satellite plan"],
+    ]);
+    expect(result.retrievalSubqueries?.[1]?.lexicalPlan?.options[0]?.relaxationOf).toEqual(["planet", "plan"]);
+  });
+
   it("does not split original user text containing OR when lexical rewrite falls back", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

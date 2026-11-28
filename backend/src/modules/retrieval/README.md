@@ -107,7 +107,15 @@ imports from `services/` or `infra/`.
 ## Common Change Paths
 
 - Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
-  `domain/lexicalQueryPlan.ts`, `domain/referentialSubjectAnchor.ts` (adds a
+  `domain/lexicalQueryPlan.ts` (splits the top-level `OR` of a lexical query, or
+  of a model-written subquery, into alternatives, each its own all-terms search,
+  and marks an alternative whose terms are part of a sibling's as its relaxation;
+  past the 4-branch cap, relaxations go first, then a subquery's alternatives share
+  one multi-option search; the default lexical instructions in
+  `prompts/retrieval/lexical-rewrite-instructions.md` use it to search a named
+  item's bare name beside its full phrase, `Planet plan OR Planet`, the model
+  deciding whether the question names an item and which word is its name),
+  `domain/referentialSubjectAnchor.ts` (adds a
   referential turn's resolved subject to the retrieval queries). Turn routing is supplied to the conversation
   engine by chat's interpretation adapter; retrieval rewrite should only reshape
   retrieval queries. Trigger analysis is a separate retrieval-only stage so it can
@@ -271,12 +279,33 @@ reports the pass as `timed_out` or `failed`. The port returns
 `{ matches, someTermsPass }`: `skipped` with its reason, `ran`, `timed_out`, or
 `failed`, with its duration.
 
+The all-terms statement runs in a transaction of its own under
+`lexicalAllTermsTimeoutMs`, the same transaction-local `statement_timeout`. It
+ranks every chunk holding the terms before `LIMIT`, so a word on most of a large
+workspace's chunks costs in proportion to the workspace. On a timeout it logs a
+count-only warning and fails the search; `candidateRetrievalStage.ts` then records
+`lexical` in `degradedRetrievalChannels` and the turn goes on with its semantic
+matches.
+
 Every lexical hit carries `lexicalTermCoverage`: `all_terms` or `some_terms` (a hit
 without the field holds every term). A some-terms row is `all_terms` only when the
 query was not cut, every term matched something, and the chunk holds each term by
 its own text; a chunk found through a join is `some_terms`. A some-terms hit's
-`similarity` is the share of term weight it holds. Consumers that read a lexical hit
-as "the chunk holds what was asked for" check the coverage:
+`similarity` is the share of term weight it holds. A relaxation's hits (`Planet`
+beside `Planet plan`) are `some_terms` of the phrase, scored by the share of its
+terms they hold, unless a heading of the chunk names the item: the heading's words
+before its first separator (a dash, colon, bar, or opening bracket), numbers aside,
+hold every term of the alternative and no word outside the phrase
+(`domain/lexicalRelaxation.ts`, applied per branch in `candidateRetrievalStage.ts`
+with the chunk's headings as written, from `deriveChunkHeadings`). Each heading is
+judged alone: a fixed-window chunk holds only the headings inside its window, and
+telling whether a parent heading names another kind of thing takes meaning that
+word comparison lacks in every language. A chunk without a heading (most PDF text,
+a chunk starting partway through a section) holds part matches only. A relaxation
+is no branch of its own for the sense clarification gate in
+`retrievalSenseClarification.ts`.
+Consumers that read a lexical hit as "the chunk holds what was asked for" check the
+coverage:
 
 - `fuseCandidateRanks` lets a some-terms hit contribute only as the secondary
   source, and `compareLexicalEvidence` ranks it after every all-terms hit. It lifts

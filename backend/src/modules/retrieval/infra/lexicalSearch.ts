@@ -82,7 +82,7 @@ const CHUNK_SEARCH_VECTOR_SQL = "to_tsvector('simple', coalesce(c.search_text, '
 export class PgLexicalSearch implements LexicalSearchPort {
   constructor(
     private readonly database: Database,
-    private readonly options: { logger?: LexicalSearchLogger; someTermsTimeoutMs?: number } = {},
+    private readonly options: { logger?: LexicalSearchLogger; someTermsTimeoutMs?: number; allTermsTimeoutMs?: number } = {},
   ) {}
 
   async search(input: LexicalSearchInput): Promise<LexicalSearchResult> {
@@ -143,7 +143,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
     });
     params.push(input.topK);
 
-    const rows = await this.database.query<LexicalSearchRow>(
+    const rows = await this.runAllTermsWithinBudget<LexicalSearchRow>(input.workspaceId,
       `WITH searchable_chunks AS (
          SELECT c.id AS chunk_id,
                 c.document_id,
@@ -185,6 +185,30 @@ export class PgLexicalSearch implements LexicalSearchPort {
       similarity: normalizeLexicalRank(Number(row.rank), maxRank),
       lexicalTermCoverage: "all_terms" as const,
     }));
+  }
+
+  /**
+   * Runs the all-terms statement under a transaction-local statement_timeout, the bound on a
+   * term so common that ranking every chunk holding it outlasts the turn. Running out of time
+   * fails the search like any database error; the warning says which budget ran out.
+   */
+  private async runAllTermsWithinBudget<Row>(workspaceId: string, sql: string, params: unknown[]): Promise<Row[]> {
+    const timeoutMs = this.options.allTermsTimeoutMs ?? RETRIEVAL_BEHAVIOR.hybrid.lexicalAllTermsTimeoutMs;
+    const startedAt = performance.now();
+    try {
+      return await this.database.withTransaction(async (client) => {
+        await client.query("SELECT set_config('statement_timeout', $1, true)", [`${timeoutMs}ms`]);
+        return (await client.query(sql, params)).rows as Row[];
+      });
+    } catch (error) {
+      if (isStatementTimeout(error)) {
+        this.options.logger?.warn(
+          { workspaceId, timeoutMs, durationMs: Math.max(0, Math.round(performance.now() - startedAt)) },
+          "lexical all-terms search ran out of time; searched without lexical matches",
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -438,8 +462,9 @@ const sqlStateOf = (error: unknown): string | undefined =>
     : undefined;
 
 // 57014 is query_canceled: here, the transaction-local statement_timeout firing.
-const isSomeTermsTimeout = (error: unknown): boolean =>
-  error instanceof SomeTermsBudgetExceeded || sqlStateOf(error) === "57014";
+const isStatementTimeout = (error: unknown): boolean => sqlStateOf(error) === "57014";
+
+const isSomeTermsTimeout = (error: unknown): boolean => error instanceof SomeTermsBudgetExceeded || isStatementTimeout(error);
 
 const toRetrievedChunk = (row: LexicalSearchRow): Omit<RetrievedChunk, "similarity"> => ({
   chunkId: row.chunk_id,

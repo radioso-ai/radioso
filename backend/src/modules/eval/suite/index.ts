@@ -9,6 +9,7 @@ export {
   evaluateTraceAssertion,
   isDeterministicOnlyAssertion,
 } from "./traceAssertions.js";
+export { passageAssertionDocumentIds } from "./passageAssertions.js";
 export {
   scoreObservedOutput,
 } from "./scoring.js";

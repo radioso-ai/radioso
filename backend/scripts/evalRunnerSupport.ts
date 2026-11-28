@@ -288,7 +288,7 @@ export const runThenClose = async <T>(
  * target, which never holds those pages. The pages carry `Source:` addresses, which the
  * invented-link checks assume no document has, and hiking books, which a mountain-course
  * question could otherwise retrieve. The sectioned page cases run in one of their own too: their
- * pages describe another product's plans, which every "which plans" question in the target would
+ * pages describe other products' plans, which every "which plans" question in the target would
  * otherwise read beside the target's own.
  */
 export const partitionCasesByCorpus = (

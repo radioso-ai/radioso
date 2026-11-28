@@ -7,6 +7,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import { isLexicalRelaxation } from "../domain/lexicalQueryPlan.js";
 import type { RetrievalSubquery } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalPipelineResult } from "./retrievalPipelineService.js";
 import {
@@ -72,12 +73,10 @@ export const evaluateRetrievalSenseClarification = async (input: {
   // Multiple retrieval branches are an authored recall strategy, not evidence that
   // the visitor is unsure what they asked. Their results are intentionally flattened
   // into one answer context, so regrouping those documents as competing senses would
-  // expose an internal query plan as a confusing user-facing choice.
-  if (
-    !input.detector ||
-    input.suppressNewClarification ||
-    (input.retrievalSubqueries?.length ?? 0) > 1
-  ) {
+  // expose an internal query plan as a confusing user-facing choice. A relaxation searches
+  // the same item as the branch beside it, so it is no branch of its own here.
+  const branchCount = (input.retrievalSubqueries ?? []).filter((subquery) => !isLexicalRelaxation(subquery)).length;
+  if (!input.detector || input.suppressNewClarification || branchCount > 1) {
     return null;
   }
 

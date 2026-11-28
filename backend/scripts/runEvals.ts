@@ -490,6 +490,7 @@ const runSharedCases = async (
   const cases = remapIds(run.cases, documentIds, routineIds);
   const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: flags.workspaceId,
+    passages: deps.chunkRepository,
     agentId: flags.agentId,
     baselineAgentConfig,
   });
@@ -558,6 +559,7 @@ const runReplyBlockCases = async (
   }
   const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: target.workspaceId,
+    passages: deps.chunkRepository,
     agentId: target.agentId,
     // The reply-block cases test the cards an agent shows when its "Show cards in replies"
     // switch is on, like the tool-card and routine-card runners below.
@@ -573,8 +575,8 @@ const runReplyBlockCases = async (
 
 /**
  * Runs the sectioned page cases in their own workspace beside the target, seeded with their pricing
- * page and plan-change help page alone, on that workspace's agent, which carries the seed directives
- * as the target's agent does.
+ * pages and plan-change help pages alone, in English and Italian, on that workspace's agent, which
+ * carries the seed directives as the target's agent does.
  */
 const runSectionedPageCases = async (
   deps: Deps,
@@ -598,6 +600,7 @@ const runSectionedPageCases = async (
   }
   const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: target.workspaceId,
+    passages: deps.chunkRepository,
     agentId: target.agentId,
     baselineAgentConfig: projectInternalAgentConfig(agent),
   });
@@ -636,6 +639,7 @@ const runRoutineCardCases = async (
   }
   const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: target.workspaceId,
+    passages: deps.chunkRepository,
     agentId: target.agentId,
     baselineAgentConfig: { ...projectInternalAgentConfig(agent), replyCardsEnabled: true },
   });
@@ -666,6 +670,7 @@ const runToolCardCases = async (
   }
   const port = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
     workspaceId: target.workspaceId,
+    passages: deps.chunkRepository,
     agentId: target.agentId,
     // On so the tool-card cases can show cards, as the reply-block agent's fixture is; a case whose
     // client declares no reply blocks is offered none.

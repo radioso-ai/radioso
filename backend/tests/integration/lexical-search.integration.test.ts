@@ -218,6 +218,44 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
     }
   });
 
+  it("fails the search when the all-terms search runs out of time on real Postgres", async () => {
+    const slowDatabase = new Database(integrationDatabaseUrl, { poolMax: 1 });
+    const runInTransaction = slowDatabase.withTransaction.bind(slowDatabase);
+    // A sleep before the all-terms statement, under its transaction-local statement_timeout.
+    slowDatabase.withTransaction = (callback) => runInTransaction((client) => callback(new Proxy(client, {
+      get(target, property, receiver) {
+        if (property !== "query") {
+          return Reflect.get(target, property, receiver) as unknown;
+        }
+        return async (sql: string, params?: unknown[]) => {
+          if (!sql.startsWith("SELECT set_config")) {
+            await target.query("SELECT pg_sleep(2)");
+          }
+          return target.query(sql, params);
+        };
+      },
+    })));
+    try {
+      const [poolDefault] = await slowDatabase.query<{ statement_timeout: string }>("SHOW statement_timeout");
+      const warnings: Array<Record<string, unknown>> = [];
+      const slowSearch = new PgLexicalSearch(slowDatabase, {
+        allTermsTimeoutMs: 100,
+        logger: { warn: (fields) => warnings.push(fields) },
+      });
+      const startedAt = performance.now();
+
+      await expect(slowSearch.search({ workspaceId, query: "Festival delle arti gioiose", topK: 20, matchMode: "all_terms" }))
+        .rejects.toMatchObject({ code: "57014" });
+
+      expect(performance.now() - startedAt).toBeLessThan(1_000);
+      expect(warnings).toEqual([expect.objectContaining({ timeoutMs: 100 })]);
+      const [afterwards] = await slowDatabase.query<{ statement_timeout: string }>("SHOW statement_timeout");
+      expect(afterwards?.statement_timeout).toBe(poolDefault?.statement_timeout);
+    } finally {
+      await slowDatabase.close();
+    }
+  });
+
   it("finds the course page for an English question over an Italian corpus", async () => {
     const results = await searchFor("price overnight event Supercoscienti");
 
@@ -425,23 +463,27 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
   const searchRecordingPlans = async (
     options: { query?: string; lexicalPlan?: LexicalQueryPlan; topK?: number; analyze?: boolean } = {},
   ) => {
-    const plans: unknown[] = [];
+    const transactionPlans: unknown[][] = [];
     const recording = new Database(integrationDatabaseUrl, { poolMax: 1 });
     const runInTransaction = recording.withTransaction.bind(recording);
-    recording.withTransaction = (callback) => runInTransaction((client) => callback(new Proxy(client, {
-      get(target, property, receiver) {
-        if (property !== "query") {
-          return Reflect.get(target, property, receiver) as unknown;
-        }
-        return async (sql: string, params?: unknown[]) => {
-          if (!sql.startsWith("SELECT set_config")) {
-            const explained = await target.query(`EXPLAIN (${options.analyze ? "ANALYZE, " : ""}FORMAT JSON) ${sql}`, params);
-            plans.push((explained.rows[0] as Record<string, unknown>)["QUERY PLAN"]);
+    recording.withTransaction = (callback) => {
+      const plans: unknown[] = [];
+      transactionPlans.push(plans);
+      return runInTransaction((client) => callback(new Proxy(client, {
+        get(target, property, receiver) {
+          if (property !== "query") {
+            return Reflect.get(target, property, receiver) as unknown;
           }
-          return target.query(sql, params);
-        };
-      },
-    })));
+          return async (sql: string, params?: unknown[]) => {
+            if (!sql.startsWith("SELECT set_config")) {
+              const explained = await target.query(`EXPLAIN (${options.analyze ? "ANALYZE, " : ""}FORMAT JSON) ${sql}`, params);
+              plans.push((explained.rows[0] as Record<string, unknown>)["QUERY PLAN"]);
+            }
+            return target.query(sql, params);
+          };
+        },
+      })));
+    };
     try {
       const result = await new PgLexicalSearch(recording, { someTermsTimeoutMs: 10_000 }).search({
         workspaceId,
@@ -450,7 +492,8 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
         topK: options.topK ?? 20,
         matchMode: "all_or_some_terms",
       });
-      return { result, plans };
+      // The all-terms search runs first, in a transaction of its own; the pass runs in the next.
+      return { result, plans: transactionPlans.slice(1).flat() };
     } finally {
       await recording.close();
     }

@@ -36,4 +36,9 @@ export interface ConversationQualityObservedOutput extends EvalRunObservedOutput
   replyBlocks?: ReplyBlock[];
   reviewTurn?: ReviewTurnObservation;
   voiceTurn?: VoiceTurnObservation;
+  /**
+   * The text of each passage of the documents a passage assertion names, by chunk id. The trace
+   * names a passage by its id alone, so the runner reads these after the turn.
+   */
+  passageTexts?: Record<string, string>;
 }

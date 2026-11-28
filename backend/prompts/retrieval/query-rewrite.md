@@ -37,7 +37,7 @@ Do not broaden into extra subtopics the user didn't ask for.
 Do not include backend-specific query syntax.
 Use retrievalSubqueries when distinct entities, aliases, acronyms, or concrete options should stay separate.
 semanticQuery should capture answer intent and retrieval meaning.
-lexicalQuery should preserve exact surface forms that are likely to appear in source text.
+lexicalQuery should preserve exact surface forms that are likely to appear in source text. It may join whole alternatives with OR when the lexical rewrite guidance asks for them; that is the only query syntax it takes.
 When you resolve a concrete proposedActiveSubject, make the relevant lexicalQuery the subject itself, not the surrounding request/action wording.
 For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
 

@@ -1,4 +1,3 @@
-import type { EvalRunObservedOutput } from "../domain/types.js";
 import type { ConversationQualityCase } from "./caseSchema.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 
@@ -9,7 +8,7 @@ import type { ConversationQualityObservedOutput } from "./observedOutput.js";
  * this, so the scoring/reporting core never depends on chat internals.
  */
 export interface ConversationQualityRunnerPort {
-  run(evalCase: ConversationQualityCase): Promise<EvalRunObservedOutput>;
+  run(evalCase: ConversationQualityCase): Promise<ConversationQualityObservedOutput>;
   /**
    * Drives a `review` case: the case's query is recorded as the customer's message and
    * answered as a draft. Optional; a runner without it scores its review cases as errors,

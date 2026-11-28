@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ClarificationPolicy } from "@radioso/conversation-contract";
 
+import { buildLexicalAlternativeSubqueries } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
 import { evaluateRetrievalSenseClarification } from "../../src/modules/retrieval/services/retrievalSenseClarification.js";
 import type { RetrievalSenseClarificationCandidate } from "../../src/modules/retrieval/services/senseGroupingService.js";
 
@@ -60,5 +61,42 @@ describe("retrieval sense with the visitor's question suppressed", () => {
 
     expect(effect && "documentScope" in effect ? effect.documentScope : undefined).toEqual(["doc_online_yoga"]);
     expect(effect?.stage?.outputs).toMatchObject({ decision: "suppressed", reason: "page_capture", chosenCandidateId: "doc_online_yoga" });
+  });
+});
+
+describe("retrieval sense across lexical alternatives", () => {
+  const evaluateBranches = async (lexicalQuery: string) => {
+    const detect = vi.fn(async () => [sense("doc_pro_a", 0.8), sense("doc_pro_b", 0.79)]);
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect },
+      workspaceId: "ws_1",
+      rankedCandidates: [],
+      conversationId: "conv_1",
+      messageId: "msg_1",
+      originalQuery: "How much is the Pro plan?",
+      retrievalSubqueries: buildLexicalAlternativeSubqueries({
+        semanticQuery: "Pro plan price",
+        lexicalQuery,
+        responseLanguagePolicy: "match_user_question",
+      }),
+      policy: PRODUCTION_POLICY,
+      suppressAsk: false,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    });
+    return { effect, detected: detect.mock.calls.length > 0 };
+  };
+
+  it("still weighs which reading is meant when the second search only relaxes the first", async () => {
+    const { effect, detected } = await evaluateBranches("Pro plan OR Pro");
+
+    expect(detected).toBe(true);
+    expect(effect).not.toBeNull();
+  });
+
+  it("asks nothing when the alternatives are searches of their own", async () => {
+    const { effect, detected } = await evaluateBranches("Pro plan OR Starter plan");
+
+    expect(detected).toBe(false);
+    expect(effect).toBeNull();
   });
 });

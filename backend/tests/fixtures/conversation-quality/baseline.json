@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-16T19:17:35.994Z",
+  "generatedAt": "2026-11-28T15:18:34.325Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -393,6 +393,26 @@
       "samples": 5
     },
     "retrieval-sectioned-page-later-section-figure": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-later-section-figure-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-common-word-name": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-missing-item": {
+      "status": "fail",
+      "passRate": 0,
+      "samples": 3
+    },
+    "retrieval-sectioned-page-ambiguous-item": {
       "status": "pass",
       "passRate": 1,
       "samples": 3

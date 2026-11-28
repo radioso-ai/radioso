@@ -1092,10 +1092,12 @@ describe("chat retrieval domain", () => {
     expect(result.retrievalEligible).toBe(true);
     expect(result.semanticQuery).toBe("go ahead");
     expect(result.lexicalQuery).toBe("go ahead");
-    expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual([
-      "Valmora courses and retreats",
-      "Orin's teachings",
-      "meditation or spiritual practice",
+    // The third option's two alternatives each run as a search of their own, under its label.
+    expect(result.retrievalSubqueries?.map((subquery) => [subquery.label, subquery.lexicalQuery])).toEqual([
+      ["Valmora courses and retreats", "\"Valmora courses and retreats\""],
+      ["Orin's teachings", "\"Orin's teachings\""],
+      ["meditation or spiritual practice", "\"meditation\""],
+      ["meditation or spiritual practice", "\"spiritual practice\""],
     ]);
   });
 

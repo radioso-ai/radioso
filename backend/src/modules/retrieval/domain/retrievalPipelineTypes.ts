@@ -102,6 +102,12 @@ export interface LexicalSearchOption {
   phrases: string[];
   requiredTerms: string[];
   excludedTerms: string[];
+  /**
+   * Set on an alternative whose terms are a strict part of a sibling alternative's: the sibling's
+   * terms. Its hits hold only part of what the sibling searches for, so they count as part matches
+   * of it unless a heading of the chunk names the alternative (`lexicalRelaxation.ts`).
+   */
+  relaxationOf?: string[];
 }
 
 export interface LexicalQueryPlan {

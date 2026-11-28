@@ -133,6 +133,12 @@ const clientContextCapabilitiesSchema = z.object({
  * trace assertions). The TS `SuiteAssertion` union is authoritative for authoring; this
  * schema validates loaded/contributed data and catches drift in tests.
  */
+const passageExpectationShape = {
+  documentId: z.string().min(1),
+  passage: z.string().min(1),
+  k: z.number().int().positive(),
+};
+
 const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retrieval_includes_document"), documentId: z.string().min(1) }),
   z.object({ type: z.literal("retrieval_excludes_document"), documentId: z.string().min(1) }),
@@ -177,6 +183,13 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("no_reply_block") }),
   z.object({ type: z.literal("reply_block_without_pictures") }),
   z.object({ type: z.literal("answer_excludes_image_url") }),
+  z.object({ type: z.literal("retrieval_lexical_top_k_includes_passage"), ...passageExpectationShape }),
+  z.object({
+    type: z.literal("retrieval_lexical_full_matches_exclude_passage"),
+    documentId: passageExpectationShape.documentId,
+    passage: passageExpectationShape.passage,
+  }),
+  z.object({ type: z.literal("retrieval_answer_top_k_includes_passage"), ...passageExpectationShape }),
 ]);
 
 const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [

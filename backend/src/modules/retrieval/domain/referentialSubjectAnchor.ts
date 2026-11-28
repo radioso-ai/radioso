@@ -1,7 +1,5 @@
+import { lexicalTermsOf as tokensOf } from "./lexicalQueryPlan.js";
 import type { ResponseLanguagePolicy, RetrievalSubquery } from "./retrievalPipelineTypes.js";
-
-/** Letters, marks, and digits in any script; everything else separates tokens. */
-const tokensOf = (value: string): string[] => value.toLocaleLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
 
 /** Whether every token of the subject appears as a whole token of the query. */
 const namesSubject = (query: string, subject: string): boolean => {

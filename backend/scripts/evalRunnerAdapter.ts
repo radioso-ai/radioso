@@ -4,6 +4,7 @@ import type { ConversationRepositoryPort } from "../src/db/repositories/conversa
 import type { MessageRecord, MessageRepositoryPort } from "../src/db/repositories/messageRepository.js";
 import type { InternalAgentConfig } from "../src/modules/agents/public.js";
 import type { ChatAnswerPort, ChatReviewResult } from "../src/modules/chat/contracts/index.js";
+import type { ChunkRepositoryPort } from "../src/modules/documents/contracts/index.js";
 import { publishedDraftReply } from "../src/modules/chat/services/reviewDraft.js";
 import type {
   WorkbenchReplayInput,
@@ -12,6 +13,7 @@ import type {
 } from "../src/modules/chat/services/workbenchReplayRunner.js";
 import {
   conversationQualityCaseTurnText,
+  passageAssertionDocumentIds,
   type ConversationQualityCase,
   type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
@@ -43,7 +45,34 @@ export interface ReplayContext {
   agentId: string;
   accountId?: string | null;
   baselineAgentConfig: InternalAgentConfig;
+  /** Where a passage assertion's document texts are read from; a run without it reads none. */
+  passages?: DocumentPassagePages;
 }
+
+/** A document's passages, a page at a time, as the chunk store lists them. */
+export type DocumentPassagePages = Pick<ChunkRepositoryPort, "listPageForDocument">;
+
+const PASSAGE_PAGE_SIZE = 50;
+
+/** Every passage text of the named documents, by chunk id, for the case's passage assertions. */
+const readPassageTexts = async (
+  pages: DocumentPassagePages,
+  workspaceId: string,
+  documentIds: readonly string[],
+): Promise<Record<string, string>> => {
+  const texts: Record<string, string> = {};
+  for (const documentId of documentIds) {
+    let startChunkIndex: number | null = 0;
+    while (startChunkIndex !== null) {
+      const page = await pages.listPageForDocument({ documentId, workspaceId, startChunkIndex, limit: PASSAGE_PAGE_SIZE });
+      for (const chunk of page?.chunks ?? []) {
+        texts[chunk.id] = chunk.content;
+      }
+      startChunkIndex = page?.nextChunkIndex ?? null;
+    }
+  }
+  return texts;
+};
 
 /**
  * Turns a committed case into the runner's input: prior turns become replayed history
@@ -90,7 +119,12 @@ export const createWorkbenchReplayRunnerPort = (
 ): ConversationQualityRunnerPort => ({
   async run(evalCase) {
     const result = await runner.run(buildReplayInput(evalCase, context));
-    return observedOutputFromReplayResult(result);
+    const observed = observedOutputFromReplayResult(result);
+    const documentIds = passageAssertionDocumentIds(evalCase.assertions);
+    if (!context.passages || documentIds.length === 0) {
+      return observed;
+    }
+    return { ...observed, passageTexts: await readPassageTexts(context.passages, context.workspaceId, documentIds) };
   },
 });
 

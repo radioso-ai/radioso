@@ -18,7 +18,12 @@ import type {
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_STATUS, REWRITE_TURN_KIND, type TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
-import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
+import {
+  buildLexicalAlternativeSubqueries,
+  deriveLexicalAlternatives,
+  expandLexicalAlternatives,
+  lexicalTermsOf,
+} from "../domain/lexicalQueryPlan.js";
 import { anchorRetrievalToSubject } from "../domain/referentialSubjectAnchor.js";
 import { readRequestedDateRange, requestedDateRangeFields } from "../domain/temporal/requestedDateRange.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
@@ -42,6 +47,7 @@ export {
 
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
 const MAX_REWRITE_LENGTH = 300;
+const MAX_RETRIEVAL_SUBQUERIES = 4;
 // Turns that point back at a subject named earlier. A fresh subject or an explicit
 // recenter names its subject in the turn itself, a comparison has no single subject,
 // and an ambiguous turn has none resolved.
@@ -483,9 +489,9 @@ export class QueryRewriteService {
         };
       })
       .filter((subquery): subquery is NonNullable<typeof subquery> => subquery !== null)
-      .slice(0, 4);
+      .slice(0, MAX_RETRIEVAL_SUBQUERIES);
 
-    return normalized.length > 1 ? normalized : undefined;
+    return normalized.length > 1 ? expandLexicalAlternatives(normalized, MAX_RETRIEVAL_SUBQUERIES) : undefined;
   }
 
   private normalizeOptionalRewrite(rewrittenQuery?: string): string | undefined {
@@ -620,16 +626,17 @@ export class QueryRewriteService {
     return selected;
   }
 
+  /**
+   * Whether a first turn's lexical rewrite stays inside the question: every alternative searches
+   * only words the question holds, and at least one searches fewer of them. A named item's phrase
+   * can be the whole question ("Planet plan?"); its bare name beside it is the narrower search.
+   */
   private isFocusedLexicalQuery(originalQuery: string, candidateQuery: string): boolean {
-    const originalTerms = tokenizeRewriteTerms(originalQuery);
-    const candidateTerms = tokenizeRewriteTerms(candidateQuery);
-
-    if (candidateTerms.length === 0 || candidateTerms.length >= originalTerms.length) {
-      return false;
-    }
-
-    const originalTermSet = new Set(originalTerms);
-    return candidateTerms.every((term) => originalTermSet.has(term));
+    const questionTerms = new Set(focusTermsOf(originalQuery));
+    const alternatives = deriveLexicalAlternatives(candidateQuery).map((alternative) => new Set(focusTermsOf(alternative)));
+    const anchored = alternatives.every((terms) => [...terms].every((term) => questionTerms.has(term)));
+    const narrower = alternatives.some((terms) => terms.size > 0 && terms.size < questionTerms.size);
+    return anchored && narrower;
   }
 
   private introducesExcessiveTermDrift(originalQuery: string, candidateQuery: string): boolean {
@@ -643,6 +650,9 @@ export class QueryRewriteService {
     return candidateTerms.filter((term) => !originalTerms.has(term)).length;
   }
 }
+
+// The words lexical search compares, in any script; words under three characters do not count.
+const focusTermsOf = (value: string): string[] => lexicalTermsOf(value).filter((term) => term.length >= 3);
 
 const tokenizeRewriteTerms = (value: string): string[] =>
   value

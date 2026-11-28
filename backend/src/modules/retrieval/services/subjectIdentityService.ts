@@ -51,6 +51,29 @@ const SECTION_LABEL_SEPARATOR = " · ";
 // this length, so that view still reaches the chunk's own text.
 const SECTION_LABEL_MAX_CHARS = 80;
 
+/** Every heading a chunk holds, in order, each once, as written: its punctuation kept. */
+export const deriveChunkHeadings = (content: string): string[] => {
+  const headings: string[] = [];
+  for (const match of content.matchAll(/^#{1,6}[ \t]+(.+)$/gm)) {
+    const heading = normalizeWhitespace(match[1] ?? "");
+    if (heading && !headings.includes(heading)) {
+      headings.push(heading);
+    }
+  }
+  return headings;
+};
+
+const deriveChunkSubjects = (content: string): string[] => {
+  const subjects: string[] = [];
+  for (const heading of deriveChunkHeadings(content)) {
+    const subject = normalizeSubject(heading);
+    if (subject && !subjects.includes(subject)) {
+      subjects.push(subject);
+    }
+  }
+  return subjects;
+};
+
 /**
  * The section label of a chunk's search text: every heading the chunk holds, in order, so a chunk
  * that runs from one section into the next is found under each of them. A heading that would take
@@ -59,11 +82,7 @@ const SECTION_LABEL_MAX_CHARS = 80;
 export const deriveChunkSection = (content: string): string | null => {
   const headings: string[] = [];
   let labelLength = 0;
-  for (const match of content.matchAll(/^#{1,6}[ \t]+(.+)$/gm)) {
-    const heading = match[1] ? normalizeSubject(match[1]) : null;
-    if (!heading || headings.includes(heading)) {
-      continue;
-    }
+  for (const heading of deriveChunkSubjects(content)) {
     const nextLength = labelLength + (headings.length > 0 ? SECTION_LABEL_SEPARATOR.length : 0) + heading.length;
     if (headings.length > 0 && nextLength > SECTION_LABEL_MAX_CHARS) {
       break;

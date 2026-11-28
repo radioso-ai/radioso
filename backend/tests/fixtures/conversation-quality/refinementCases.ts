@@ -15,10 +15,12 @@ import type { ConversationQualityDocument } from "./corpus.js";
  *   routine answers it and says nothing about sensitive data;
  * - only the routine fields page states the figure each case asserts.
  *
- * Three more cases hold the other side: a follow-up that replaces part of the question instead of
+ * More cases hold the other sides. A follow-up that replaces part of the question instead of
  * adding to it ("And the Pro plan?" after the Starter plan, "Und nach Österreich?" after shipping
- * to Germany), and one that names a subject of its own ("What about pricing?"). None of their
- * searches may carry the replaced part or the earlier subject.
+ * to Germany), or names a topic of its own ("What about pricing?"), must not carry the replaced
+ * part or the earlier subject into any search. A follow-up that asks one attribute of the earlier
+ * subject ("What about the price?" after the Voice add-on, "E il prezzo?" after the Translation
+ * add-on) must keep that subject, or a page that names another add-on's price answers it.
  *
  * A corpus this small hands the answer most of its pages, so a rewrite that loses half the
  * question can still reach the routine fields page further down the evidence. The cases also
@@ -33,6 +35,8 @@ export const ROUTINE_FIELDS_DOC_ID = "22222222-2222-4222-8222-222222222220";
 export const ROUTINE_FIELDS_IT_DOC_ID = "22222222-2222-4222-8222-222222222221";
 export const PRO_PLAN_DOC_ID = "22222222-2222-4222-8222-222222222236";
 export const SHIPPING_TO_AUSTRIA_DOC_ID = "22222222-2222-4222-8222-222222222238";
+export const VOICE_ADD_ON_DOC_ID = "22222222-2222-4222-8222-222222222239";
+export const TRANSLATION_ADD_ON_IT_DOC_ID = "22222222-2222-4222-8222-222222222241";
 
 const page = (id: string, title: string, paragraphs: string[]): ConversationQualityDocument => ({
   id,
@@ -138,7 +142,36 @@ const replacementPages: ConversationQualityDocument[] = [
   ]),
 ];
 
-export const refinementDocuments: ConversationQualityDocument[] = [...englishPages, ...italianPages, ...replacementPages];
+/**
+ * Two add-ons per language, for a follow-up that asks one attribute of the earlier subject ("What
+ * about the price?"). The other add-on's page names its price with the request's own word, so a
+ * search for the attribute alone finds that page, not the earlier subject's.
+ */
+const attributePages: ConversationQualityDocument[] = [
+  page(VOICE_ADD_ON_DOC_ID, "Voice add-on", [
+    "The Voice add-on lets visitors call a phone number and talk to the agent.",
+    "It costs 12 euro a month per workspace.",
+  ]),
+  page("22222222-2222-4222-8222-222222222240", "WhatsApp add-on", [
+    "The WhatsApp add-on connects the agent to a WhatsApp Business number.",
+    "Price: the WhatsApp add-on costs 19 euro a month per workspace, and the price includes 1,000 conversations a month.",
+  ]),
+  page(TRANSLATION_ADD_ON_IT_DOC_ID, "Componente aggiuntivo Traduzione", [
+    "Il componente aggiuntivo Traduzione traduce le risposte dell'agente nella lingua del visitatore.",
+    "Costa 7,50 euro al mese per workspace.",
+  ]),
+  page("22222222-2222-4222-8222-222222222242", "Componente aggiuntivo Archivio", [
+    "Il componente aggiuntivo Archivio esporta le conversazioni in un file ogni settimana.",
+    "Prezzo: il prezzo del componente aggiuntivo Archivio è di 15 euro al mese per workspace.",
+  ]),
+];
+
+export const refinementDocuments: ConversationQualityDocument[] = [
+  ...englishPages,
+  ...italianPages,
+  ...replacementPages,
+  ...attributePages,
+];
 
 const sensitiveDataExchange: ConversationQualityCase["history"] = [
   { role: "user", content: "How do you handle sensitive data?" },
@@ -212,6 +245,42 @@ export const refinementCases: ConversationQualityCase[] = [
       { type: "answer_contains", pattern: "9,90", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "4,90", matchMode: "substring" },
       { type: "turn_queries_exclude", term: "Deutschland" },
+    ],
+  },
+  {
+    id: "refinement-attribute-of-earlier-subject-en",
+    name: "A follow-up that asks one attribute of the earlier subject keeps that subject",
+    description:
+      "The visitor asks about the Voice add-on, then writes \"What about the price?\". The price belongs to the Voice add-on, so the turn keeps it as the subject: the answer cites the Voice add-on page and its 12 euro, not the WhatsApp add-on page, which names its 19 euro price with the request's own word (#1873).",
+    tags: ["retrieval", "multiturn", "refinement"],
+    history: [
+      { role: "user", content: "Tell me about the Voice add-on." },
+      { role: "assistant", content: "The Voice add-on lets visitors call a phone number and talk to the agent." },
+    ],
+    query: "What about the price?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "answer_cites_document", documentId: VOICE_ADD_ON_DOC_ID },
+      { type: "answer_contains", pattern: "12", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "19", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "refinement-attribute-of-earlier-subject-it",
+    name: "An Italian follow-up that asks one attribute of the earlier subject keeps that subject",
+    description:
+      "The visitor asks about the Translation add-on, then writes \"E il prezzo?\" (and the price?). The answer cites the Translation add-on page and its 7,50 euro, not the Archive add-on page, which names its 15 euro price with the request's own word (#1873).",
+    tags: ["retrieval", "multiturn", "multilingual", "refinement"],
+    history: [
+      { role: "user", content: "Parlami del componente aggiuntivo Traduzione." },
+      { role: "assistant", content: "Il componente aggiuntivo Traduzione traduce le risposte dell'agente nella lingua del visitatore." },
+    ],
+    query: "E il prezzo?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "answer_cites_document", documentId: TRANSLATION_ADD_ON_IT_DOC_ID },
+      { type: "answer_contains", pattern: "7,50", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "15", matchMode: "substring" },
     ],
   },
   {

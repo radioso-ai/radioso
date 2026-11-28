@@ -15,7 +15,7 @@ repo-committed regression suite you run from the CLI.
 | `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `replyBlockCases.ts` | the `reply-blocks` cases and their own corpus: five bookshop product pages with covers, the bookshop's returns page with a picture, and a guest house page with photos in its text, and the images the runner seeds for them |
 | `sectionedPageCases.ts` | the sectioned page case and its own corpus: an invented product's markdown pricing page with one heading per plan, and a help page that names the plans in passing (see [Sectioned page case](#sectioned-page-case)) |
-| `refinementCases.ts` | the narrowing follow-up cases and their own corpus: an invented product's help centre in English, Italian, and German, with general pages about sensitive data, pages about building routines and their fields, two plan pages, and two shipping pages (see [Narrowing follow-up cases](#narrowing-follow-up-cases)) |
+| `refinementCases.ts` | the narrowing follow-up cases and their own corpus: an invented product's help centre in English, Italian, and German, with general pages about sensitive data, pages about building routines and their fields, two plan pages, two shipping pages, and two add-on pages per language (see [Narrowing follow-up cases](#narrowing-follow-up-cases)) |
 | `routines.ts` | 7 seed `RoutineDefinition`s: `contact-support`, whose ending notifies the team so its reply can promise follow-up (#1820), `book-demo`, `start-return`, `book-retreat`, `book-edition`, whose dates step references `{{context.page_context}}`, `kitchen-note`, whose confirm step reads a held note back, and `adoption-search`, whose finish after a retrieval step tells no one |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the seed agent (retrieval on, directives attached) every case runs against, except the `reply-blocks` cases, which run on the agent of a workspace of their own that carries the same directives (see [Reply block cases](#reply-block-cases)) |
@@ -218,6 +218,13 @@ Each requires the page that answers the new question and its figure, and `turn_q
 for the replaced part or the earlier subject: no semantic or lexical query, subquery, or anchored
 subject the turn searched with may name it. A turn read as a narrowing that keeps the earlier
 question whole fails there, even when the answer happens to come out right.
+
+Two cases hold the opposite line, a follow-up that asks one attribute of the earlier subject:
+`refinement-attribute-of-earlier-subject-en` ("Tell me about the Voice add-on.", then "What about
+the price?") and `-it` ("Parlami del componente aggiuntivo Traduzione.", then "E il prezzo?"). The
+other add-on's page names its price with the request's own word, so a turn that drops the earlier
+subject finds it first. Each requires the earlier add-on's page cited, its price in the answer, and
+the other add-on's price absent.
 
 The pages describe an invented product, and the shared corpus's security page answers "sensitive
 data" too, so the cases run in a workspace beside the target named `Conversation-quality

@@ -495,6 +495,8 @@ describe("live runner reply block corpus", () => {
     expect(routineCards.map((evalCase) => evalCase.id)).toEqual(["routine-property-flow"]);
     expect(sectionedPages.map((evalCase) => evalCase.id)).toEqual(["retrieval-sectioned-page-later-section-figure"]);
     expect(refinements.map((evalCase) => evalCase.id).sort()).toEqual([
+      "refinement-attribute-of-earlier-subject-en",
+      "refinement-attribute-of-earlier-subject-it",
       "refinement-fresh-subject-after-sensitive-data-en",
       "refinement-narrows-previous-question-en",
       "refinement-narrows-previous-question-it",

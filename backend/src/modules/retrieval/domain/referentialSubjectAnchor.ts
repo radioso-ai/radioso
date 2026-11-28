@@ -78,25 +78,12 @@ export const anchorRetrievalToSubject = (input: {
   };
 };
 
-/**
- * Whether the query names any word of the subject. A narrowing follow-up that swaps part of the
- * earlier question for another ("And the Pro plan?" after the Starter plan) keeps the rest of it,
- * so a query holding some of the subject's words already carries what the turn kept; joining the
- * whole subject would bring back the part the user replaced.
- */
-const mentionsSubject = (query: string, subject: string): boolean => {
-  const queryTokens = new Set(tokensOf(query));
-  return tokensOf(subject).some((token) => queryTokens.has(token));
-};
-
-const joinSubjectToSemanticQuery = (semanticQuery: string, subject: string): string =>
-  mentionsSubject(semanticQuery, subject) ? semanticQuery : `${subject}: ${semanticQuery}`;
-
+/** The lexical query with the subject's words beside the model's own, unless it already names every one. */
 const joinSubjectToLexicalQuery = (lexicalQuery: string, subject: string): string =>
-  mentionsSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
+  namesSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
 
 const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): RetrievalSubquery => {
-  const semanticQuery = joinSubjectToSemanticQuery(branch.semanticQuery, subject);
+  const semanticQuery = anchorSemanticQuery(branch.semanticQuery, subject);
   const lexicalQuery = joinSubjectToLexicalQuery(branch.lexicalQuery, subject);
   if (lexicalQuery === branch.lexicalQuery) {
     return { ...branch, semanticQuery };
@@ -109,15 +96,23 @@ const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): Retrie
 /**
  * Keeps the earlier subject in a narrowing follow-up's searches. The turn asks the earlier
  * question again with something added ("I mean in the routine" after a question about
- * sensitive data), so its answer is where the subject meets the addition. A query that names
- * none of the subject gets it joined: the semantic query names it, and the lexical query holds
- * it beside the model's own terms, where lexical search ranks a chunk holding both first. A
- * query that names any of it is left as the model wrote it.
+ * sensitive data), so its answer is where the subject meets the addition. A query that lacks
+ * any word of the subject gets the whole subject joined: the semantic query names it, and the
+ * lexical query holds it beside the model's own terms, where lexical search ranks a chunk
+ * holding both first. A query that names every word is left as the model wrote it.
+ *
+ * Joining on any missing word restores a subject the model half dropped ("sensitive data" written
+ * as "data"), and a function word the query shares with the subject cannot switch the join off.
+ * The price is a follow-up that swaps part of the question: joined to the earlier subject whole,
+ * it would search the part the user replaced. The interpreter prevents that by the subject it
+ * proposes, not by this check: a swap of the subject is a recenter, which anchors nothing, and a
+ * swap of a place or option keeps only the part both questions share as the subject.
  *
  * The subject never runs as a search of its own: that search is the earlier question's, and it
- * finds the earlier answer again. When a join changes a search, the model's own query still runs
- * as one more search, so a turn labelled a narrowing that names a subject of its own ("What
- * about pricing?") keeps a search for what it asks.
+ * finds the earlier answer again. When a join changes a search, the model's own top-level query
+ * runs as one more search, so a mislabelled turn (a swap, or a subject of its own such as "What
+ * about pricing?") keeps one search for what it asks. When the model wrote two or more subqueries,
+ * their semantic queries already fill the per-turn semantic cap, so that search is lexical only.
  */
 export const anchorNarrowingToSubject = (input: {
   subject: string;
@@ -135,7 +130,7 @@ export const anchorNarrowingToSubject = (input: {
     responseLanguagePolicy: input.responseLanguagePolicy,
   }];
   const joinedBranches = modelBranches.map((branch) => joinSubjectToBranch(branch, input.subject));
-  const semanticQuery = joinSubjectToSemanticQuery(input.semanticQuery, input.subject);
+  const semanticQuery = anchorSemanticQuery(input.semanticQuery, input.subject);
   const lexicalQuery = joinSubjectToLexicalQuery(input.lexicalQuery, input.subject);
   const anchored = semanticQuery !== input.semanticQuery
     || lexicalQuery !== input.lexicalQuery

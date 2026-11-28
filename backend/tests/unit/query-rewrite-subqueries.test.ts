@@ -704,20 +704,56 @@ describe("query rewrite referential subject", () => {
       expect(result.structuredResult?.anchoredSubject).toBe("sensitive data");
     });
 
-    it("leaves a search that names part of the earlier subject as the model wrote it", async () => {
+    it("joins the whole subject to a search that kept only part of it", async () => {
+      // "sensitive data" came back as "data": the half the model dropped is half the question.
       const result = await rewriteNarrowing({
         semanticQuery: "How data is handled in the routine",
         lexicalQuery: "routine data",
       });
 
-      expect(result.semanticQuery).toBe("How data is handled in the routine");
-      expect(result.lexicalQuery).toBe("routine data");
+      expect(result.semanticQuery).toBe("sensitive data: How data is handled in the routine");
+      expect(result.lexicalQuery).toBe("routine data sensitive data");
+      expect(result.retrievalSubqueries).toContainEqual(
+        expect.objectContaining({ semanticQuery: "How data is handled in the routine", lexicalQuery: "routine data", reason: "model_query" }),
+      );
+      expect(result.structuredResult?.anchoredSubject).toBe("sensitive data");
+    });
+
+    it("anchors nothing when the follow-up names another subject in place of the earlier one", async () => {
+      // "How much is the Starter plan?" then "And the Pro plan?": a recenter on the Pro plan.
+      const result = await rewriteReferential({
+        turnKind: "explicit_recenter",
+        subject: "Pro plan",
+        query: "And the Pro plan?",
+        semanticQuery: "Pro plan price",
+        lexicalQuery: "Pro plan price",
+        history: [message("How much is the Starter plan?"), message("The Starter plan is free.", "assistant")],
+      });
+
+      expect(searchedText(result)).not.toMatch(/starter/iu);
       expect(result.retrievalSubqueries).toBeUndefined();
       expect(result.structuredResult?.anchoredSubject).toBeUndefined();
     });
 
-    it("keeps the option the follow-up swapped out of every search when the turn names it in place of the earlier one", async () => {
-      // "How much is the Starter plan?" then "And the Pro plan?", labelled a narrowing that kept the earlier subject.
+    it("keeps a swapped place out of every search when the subject is the part both questions share", async () => {
+      // "How long does shipping to Germany take?" then "and to Austria?": the subject is shipping.
+      const result = await rewriteReferential({
+        turnKind: "narrowing_followup",
+        subject: "shipping",
+        query: "and to Austria?",
+        semanticQuery: "Shipping time to Austria",
+        lexicalQuery: "shipping Austria",
+        history: [message("How long does shipping to Germany take?"), message("Orders reach Germany in 2 working days.", "assistant")],
+      });
+
+      expect(searchedText(result)).not.toMatch(/germany/iu);
+      expect(result.semanticQuery).toBe("Shipping time to Austria");
+      expect(result.lexicalQuery).toBe("shipping Austria");
+      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+    });
+
+    it("still searches the model's own query when a swap is labelled a narrowing of the old subject", async () => {
+      // The label is wrong, so the join brings Starter back; the model's own query stays clean.
       const result = await rewriteReferential({
         turnKind: "narrowing_followup",
         subject: "Starter plan",
@@ -727,25 +763,9 @@ describe("query rewrite referential subject", () => {
         history: [message("How much is the Starter plan?"), message("The Starter plan is free.", "assistant")],
       });
 
-      expect(searchedText(result)).not.toMatch(/starter/iu);
-      expect(result.semanticQuery).toBe("Pro plan price");
-      expect(result.lexicalQuery).toBe("Pro plan price");
-      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
-    });
-
-    it("keeps the place the follow-up swapped out of every search", async () => {
-      // "How long does shipping to Germany take?" then "and to Austria?".
-      const result = await rewriteReferential({
-        turnKind: "narrowing_followup",
-        subject: "shipping to Germany",
-        query: "and to Austria?",
-        semanticQuery: "Shipping time to Austria",
-        lexicalQuery: "shipping Austria",
-        history: [message("How long does shipping to Germany take?"), message("Orders reach Germany in 2 working days.", "assistant")],
-      });
-
-      expect(searchedText(result)).not.toMatch(/germany/iu);
-      expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+      expect(result.retrievalSubqueries).toContainEqual(
+        expect.objectContaining({ semanticQuery: "Pro plan price", lexicalQuery: "Pro plan price", reason: "model_query" }),
+      );
     });
 
     it("still searches what the model wrote when a fresh subject is labelled a narrowing", async () => {

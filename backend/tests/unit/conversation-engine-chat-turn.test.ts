@@ -1531,6 +1531,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     };
     const matched: Array<{ turnContext: Record<string, unknown>; directives: string[] }> = [];
     const directiveRuntime: RouteScopedDirectiveRuntime = {
+      grantedDirectives: async () => [],
       directivesFor() {
         return [directive];
       },

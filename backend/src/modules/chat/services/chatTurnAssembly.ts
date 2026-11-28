@@ -51,7 +51,7 @@ import {
 import type { RoutinePresentingSteps } from "./routines/routinePresentingStepRenderer.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
-import { agentCapabilitiesHandle, type AgentCapabilitySources } from "./agentCapabilities.js";
+import { agentCapabilitiesHandle } from "./agentCapabilities.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type {
   ChatConversationTurnInterpreter,
@@ -304,7 +304,6 @@ export interface ChatTurnAssemblyOptions {
   turnInterpreter?: ChatConversationTurnInterpreter;
   routineStore?: ConversationRoutineStore;
   routineProvider?: ChatRoutineProvider;
-  capabilityPolicy?: AgentCapabilitySources["capabilityPolicy"];
   clarifier?: ConversationClarifier;
   recordClarificationDecision?: (input: {
     surface: string;

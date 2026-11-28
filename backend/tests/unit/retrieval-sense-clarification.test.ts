@@ -243,6 +243,7 @@ const retrievalSensePending = (originalQuery: string): PendingClarification => (
 });
 
 const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDirectiveRuntime => ({
+  grantedDirectives: async () => [],
   matcher: {
     async match() {
       return [];
@@ -455,6 +456,7 @@ describe("retrieval sense clarification", () => {
       ]),
     };
     const boundDirectiveRuntime: RouteScopedDirectiveRuntime = {
+      grantedDirectives: async () => [],
       matcher: {
         async match({ directives }) {
           return [{

@@ -1244,8 +1244,9 @@ imports from `services/`.
   could start by authored name and trigger (`ChatRoutineProvider.describeStartable`,
   given the turn and the routines the assembly's store has completed), and the
   condition of each directive whose binding the turn could run
-  (`runnableSkillDirectives` over `ChatTurnSkillSelector.bindingAvailability`, with
-  required capabilities checked). Entries are capped in count and length. A failed
+  (`runnableSkillDirectives` over `ChatTurnSkillSelector.bindingAvailability`, kept to
+  what `RouteScopedDirectiveRuntime.grantedDirectives` grants). Entries are capped in
+  count and length. A failed
   read logs `agent_capabilities_unavailable` and leaves the list out, and the reply
   then states no limit. `assistantReplyPromptBuilder.ts` renders the list
   (`prompts/chat/agent-capabilities.md`) into `non-retrieval-answer.md`. The planner, router, and interpreter

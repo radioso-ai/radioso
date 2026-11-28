@@ -136,6 +136,21 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
     return this.registry.list();
   }
 
+  /**
+   * The directives whose required capabilities the capability policy grants for this input:
+   * the same check {@link resolveMatches} applies to every match, for a caller that needs to
+   * know which directives could apply before any of them matched.
+   */
+  async grantedDirectives(input: DirectiveSteerInput, directives: readonly Directive[]): Promise<Directive[]> {
+    const granted: Directive[] = [];
+    for (const directive of directives) {
+      if (!(await this.firstDeniedCapability(directive.requiredCapabilities ?? [], input))) {
+        granted.push(directive);
+      }
+    }
+    return granted;
+  }
+
   async resolveMatches(
     input: DirectiveSteerInput,
     candidates: DirectiveMatch[],

@@ -2,11 +2,11 @@ import type { ConversationRoutineStore } from "@radioso/conversation-contract";
 
 import { isAgentRetrievalEnabled, steeringDirectivesFromAuthored } from "../../agents/public.js";
 import type { ChatRoutineCapability, ChatRoutineProvider } from "../contracts/routineProvider.js";
-import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { buildChatTurnContext } from "./conversationContractMappers.js";
 import { runnableSkillDirectives, type DirectiveBindingAvailability } from "./directiveBindingResolution.js";
+import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
 
 /**
  * At most this many routines and this many skills reach the reply, each entry cut to this
@@ -42,7 +42,7 @@ export interface AgentCapabilitiesHandle {
 export interface AgentCapabilitySources {
   routineProvider?: Pick<ChatRoutineProvider, "describeStartable">;
   routineStore?: Pick<ConversationRoutineStore, "loadCompleted">;
-  capabilityPolicy?: Pick<CapabilityPolicy, "can">;
+  directiveRuntime?: Pick<RouteScopedDirectiveRuntime, "grantedDirectives">;
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -79,25 +79,13 @@ const startableRoutines = async (
   });
 };
 
-/** Whether the capability policy grants every capability a directive requires; unverifiable without one. */
-const grantsAll = async (
-  policy: AgentCapabilitySources["capabilityPolicy"],
-  capabilities: readonly string[],
-  workspaceId: string,
-): Promise<boolean> => {
-  for (const capability of capabilities) {
-    if (!policy || !(await policy.can({ capability, workspaceId })).allowed) {
-      return false;
-    }
-  }
-  return true;
-};
-
 /**
  * The skills the agent's directives run, by the condition each applies under: only a binding
  * this turn's skill selection could run (`runnableSkillDirectives`, over the same availability
- * the selector resolves bindings against) on a directive whose required capabilities hold. A
- * directive that applies on every turn has no condition a visitor could read, so it is left out.
+ * the selector resolves bindings against) on a directive the directive runtime grants, by the
+ * required-capability check steering applies to every match. Without a runtime no directive
+ * applies, so none is listed. A directive that applies on every turn has no condition a visitor
+ * could read, so it is left out.
  */
 const skillCapabilities = async (
   sources: AgentCapabilitySources,
@@ -105,10 +93,11 @@ const skillCapabilities = async (
   availability: DirectiveBindingAvailability,
 ): Promise<SkillCapability[]> => {
   const runnable = runnableSkillDirectives(steeringDirectivesFromAuthored(session.agent.authoredDirectives), availability);
-  const granted = await Promise.all(runnable.map((directive) =>
-    grantsAll(sources.capabilityPolicy, directive.requiredCapabilities ?? [], session.conversation.workspaceId)));
-  return runnable.flatMap((directive, index) =>
-    granted[index] && directive.condition.kind === "contextual" ? [{ usedWhen: directive.condition.description }] : []);
+  const granted = runnable.length > 0 && sources.directiveRuntime
+    ? await sources.directiveRuntime.grantedDirectives({ workspaceId: session.conversation.workspaceId }, runnable)
+    : [];
+  return granted.flatMap((directive) =>
+    directive.condition.kind === "contextual" ? [{ usedWhen: directive.condition.description }] : []);
 };
 
 const readAgentCapabilities = async (

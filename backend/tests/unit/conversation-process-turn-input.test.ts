@@ -191,6 +191,7 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
     matchedTurnContexts,
     directiveInputs,
     runtime: {
+      grantedDirectives: async () => [],
       directivesFor(input) {
         directiveInputs.push(input);
         return [...directives, ...(input.additionalDirectives ?? [])];
@@ -411,6 +412,7 @@ describe("createChatProcessTurnInput", () => {
     session.directiveSteering = undefined;
     const directiveInputs: DirectiveSteerInput[] = [];
     const runtime: RouteScopedDirectiveRuntime = {
+      grantedDirectives: async () => [],
       matcher: {
         async match(): Promise<DirectiveMatch[]> {
           throw new Error("chat turn adapter should use matchCandidates");
@@ -498,6 +500,7 @@ describe("createChatProcessTurnInput", () => {
     const sessionRef = { current: session };
     const matchedDirectiveNames: string[][] = [];
     const runtime: RouteScopedDirectiveRuntime = {
+      grantedDirectives: async () => [],
       directivesFor(input) {
         const route = input.turnContext?.route;
         return [
@@ -591,6 +594,7 @@ describe("createChatProcessTurnInput", () => {
       resolveMatch = resolve;
     });
     const runtime: RouteScopedDirectiveRuntime = {
+      grantedDirectives: async () => [],
       directivesFor(input) {
         return input.turnContext?.route === "retrieval" ? [directive] : [];
       },

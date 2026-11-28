@@ -145,8 +145,9 @@ preview's, and the built-in ones) and narrows them with
 routine registry ranks after, given the turn and the routines the conversation's
 store has completed. The skills come from `runnableSkillDirectives`, which applies
 the binding resolver's rules to the same skill availability the turn's selector
-resolves bindings against, and the capability policy checks each directive's
-required capabilities. A directive that applies on every turn carries no condition
+resolves bindings against, kept to the directives the directive runtime grants
+(`grantedDirectives`, the required-capability check steering applies to every
+match). A directive that applies on every turn carries no condition
 and stays out, and so does every skill name. At most eight routines and eight
 skills reach the reply, each cut to 160 characters, and the reply describes them
 without quoting. When the routines cannot be read, the reply gets no capability

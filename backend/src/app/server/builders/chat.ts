@@ -743,7 +743,6 @@ export const buildChatServices = (input: {
     turnRouter,
     turnInterpreter,
     routineProvider,
-    capabilityPolicy: input.composition.capabilityPolicy,
     retrievalSenseDetector,
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
     recordClarificationDecision: clarificationDecisionRecorder,

@@ -82,7 +82,7 @@ const completedState = (routineId: string) => ({ routineId }) as RoutineState;
 const sourcesWith = (overrides: Partial<AgentCapabilitySources> = {}): AgentCapabilitySources => ({
   routineProvider: { describeStartable: vi.fn(async () => bookDemo) },
   routineStore: { loadCompleted: vi.fn(async () => [completedState("routine-done-1")]) },
-  capabilityPolicy: { can: vi.fn(async () => ({ allowed: true })) },
+  directiveRuntime: { grantedDirectives: vi.fn(async (_input, directives) => [...directives]) },
   logger: { warn: vi.fn() },
   ...overrides,
 });
@@ -177,14 +177,17 @@ describe("a direct reply to what the agent can do (#1872)", () => {
     await expect(read({ agent })).resolves.toMatchObject({ skills: [] });
   });
 
-  it("lists no skill whose directive needs a capability the policy denies, or that no policy can check", async () => {
-    const agent = agentWith({ authoredDirectives: [{ ...orderLookupDirective, requiredCapabilities: ["external_mcp.call"] }] });
+  it("lists no skill whose directive the directive runtime does not grant, and none without a runtime", async () => {
+    const grantedDirectives = vi.fn(async () => []);
 
-    await expect(read({ agent, sources: sourcesWith({ capabilityPolicy: { can: vi.fn(async () => ({ allowed: false })) } }) }))
+    await expect(read({ sources: sourcesWith({ directiveRuntime: { grantedDirectives } }) }))
       .resolves.toMatchObject({ skills: [] });
-    await expect(read({ agent, sources: sourcesWith({ capabilityPolicy: undefined }) }))
+    expect(grantedDirectives).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1" },
+      [expect.objectContaining({ name: orderLookupDirective.name })],
+    );
+    await expect(read({ sources: sourcesWith({ directiveRuntime: undefined }) }))
       .resolves.toMatchObject({ skills: [] });
-    await expect(read({ agent })).resolves.toMatchObject({ skills: [{ usedWhen: "the visitor asks where their order is" }] });
   });
 
   it("keeps the list short: eight entries a kind, each cut to a sentence's length", async () => {

@@ -15,6 +15,11 @@ import type { ConversationQualityDocument } from "./corpus.js";
  *   routine answers it and says nothing about sensitive data;
  * - only the routine fields page states the figure each case asserts.
  *
+ * Three more cases hold the other side: a follow-up that replaces part of the question instead of
+ * adding to it ("And the Pro plan?" after the Starter plan, "Und nach Österreich?" after shipping
+ * to Germany), and one that names a subject of its own ("What about pricing?"). None of their
+ * searches may carry the replaced part or the earlier subject.
+ *
  * A corpus this small hands the answer most of its pages, so a rewrite that loses half the
  * question can still reach the routine fields page further down the evidence. The cases also
  * require that page among the first two retrieved: in a help centre with more pages about
@@ -26,6 +31,8 @@ import type { ConversationQualityDocument } from "./corpus.js";
  */
 export const ROUTINE_FIELDS_DOC_ID = "22222222-2222-4222-8222-222222222220";
 export const ROUTINE_FIELDS_IT_DOC_ID = "22222222-2222-4222-8222-222222222221";
+export const PRO_PLAN_DOC_ID = "22222222-2222-4222-8222-222222222236";
+export const SHIPPING_TO_AUSTRIA_DOC_ID = "22222222-2222-4222-8222-222222222238";
 
 const page = (id: string, title: string, paragraphs: string[]): ConversationQualityDocument => ({
   id,
@@ -114,7 +121,33 @@ const italianPages: ConversationQualityDocument[] = [
   ]),
 ];
 
-export const refinementDocuments: ConversationQualityDocument[] = [...englishPages, ...italianPages];
+/** Plan pages and a German shipping pair, for follow-ups that replace part of the question instead of adding to it. */
+const replacementPages: ConversationQualityDocument[] = [
+  page("22222222-2222-4222-8222-222222222235", "Starter plan", [
+    "Quillfern Starter is free for one agent and up to 500 conversations a month.",
+  ]),
+  page(PRO_PLAN_DOC_ID, "Pro plan", [
+    "Quillfern Pro costs 39 euro a month per workspace, for up to five agents and 5,000 conversations a month.",
+  ]),
+  page("22222222-2222-4222-8222-222222222237", "Versand nach Deutschland", [
+    "Das Quillfern-Display ist ein Tischaufsteller mit QR-Code, der den Chat öffnet.",
+    "Innerhalb Deutschlands kommt das Display in 2 Werktagen an. Der Versand kostet 4,90 Euro.",
+  ]),
+  page(SHIPPING_TO_AUSTRIA_DOC_ID, "Versand nach Österreich", [
+    "Nach Österreich kommt das Quillfern-Display in 5 Werktagen an. Der Versand kostet 9,90 Euro.",
+  ]),
+];
+
+export const refinementDocuments: ConversationQualityDocument[] = [...englishPages, ...italianPages, ...replacementPages];
+
+const sensitiveDataExchange: ConversationQualityCase["history"] = [
+  { role: "user", content: "How do you handle sensitive data?" },
+  {
+    role: "assistant",
+    content:
+      "Conversation transcripts are kept for 90 days and then deleted automatically. You can ask for a visitor's data to be erased sooner by emailing privacy@quillfern.example; erasure requests are completed within 72 hours.",
+  },
+];
 
 export const refinementCases: ConversationQualityCase[] = [
   {
@@ -123,14 +156,7 @@ export const refinementCases: ConversationQualityCase[] = [
     description:
       "The visitor asks how sensitive data is handled, gets the retention answer, then writes \"I mean in the routine\". The narrowed question is sensitive data in routines: the routine fields page states the consent step and the 14-day erasure. Repeating the retention answer, answering about sensitive data in general, or answering about routines in general fails (#1873).",
     tags: ["retrieval", "multiturn", "refinement"],
-    history: [
-      { role: "user", content: "How do you handle sensitive data?" },
-      {
-        role: "assistant",
-        content:
-          "Conversation transcripts are kept for 90 days and then deleted automatically. You can ask for a visitor's data to be erased sooner by emailing privacy@quillfern.example; erasure requests are completed within 72 hours.",
-      },
-    ],
+    history: sensitiveDataExchange,
     query: "I mean in the routine",
     assertions: narrowedAnswerAssertions(ROUTINE_FIELDS_DOC_ID, "consent"),
   },
@@ -150,5 +176,57 @@ export const refinementCases: ConversationQualityCase[] = [
     ],
     query: "Intendo nella routine",
     assertions: narrowedAnswerAssertions(ROUTINE_FIELDS_IT_DOC_ID, "consenso"),
+  },
+  {
+    id: "refinement-swaps-plan-en",
+    name: "A follow-up that names another plan in place of the earlier one searches for that plan, not the earlier one",
+    description:
+      "The visitor asks what the Starter plan costs, then writes \"And the Pro plan?\". The follow-up replaces the subject, so no search may carry Starter forward, and the Pro plan page states 39 euro a month (#1873).",
+    tags: ["retrieval", "multiturn", "refinement"],
+    history: [
+      { role: "user", content: "How much is the Starter plan?" },
+      { role: "assistant", content: "The Starter plan is free, for one agent and up to 500 conversations a month." },
+    ],
+    query: "And the Pro plan?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: PRO_PLAN_DOC_ID },
+      { type: "answer_contains", pattern: "39", matchMode: "substring" },
+      { type: "turn_queries_exclude", term: "Starter" },
+    ],
+  },
+  {
+    id: "refinement-swaps-place-de",
+    name: "A German follow-up that names another country for the same question searches for that country, not the earlier one",
+    description:
+      "The visitor asks what shipping to Germany costs, then writes \"Und nach Österreich?\" (and to Austria?). The country is replaced and the question kept: no search may name Germany, and the Austria page's 9,90 euro answers it, not the German 4,90 (#1873).",
+    tags: ["retrieval", "multiturn", "multilingual", "refinement"],
+    history: [
+      { role: "user", content: "Was kostet der Versand nach Deutschland?" },
+      { role: "assistant", content: "Innerhalb Deutschlands kostet der Versand des Displays 4,90 Euro, und es kommt in 2 Werktagen an." },
+    ],
+    query: "Und nach Österreich?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: SHIPPING_TO_AUSTRIA_DOC_ID },
+      { type: "answer_contains", pattern: "9,90", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "4,90", matchMode: "substring" },
+      { type: "turn_queries_exclude", term: "Deutschland" },
+    ],
+  },
+  {
+    id: "refinement-fresh-subject-after-sensitive-data-en",
+    name: "A follow-up that names a subject of its own does not carry the earlier subject into its searches",
+    description:
+      "After the sensitive data exchange the visitor asks \"What about pricing?\". Pricing is a subject of its own, not a narrowing of the earlier question: no search may name sensitive data, and the plan pages answer it (#1873).",
+    tags: ["retrieval", "multiturn", "refinement"],
+    history: sensitiveDataExchange,
+    query: "What about pricing?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: PRO_PLAN_DOC_ID },
+      { type: "answer_contains", pattern: "39", matchMode: "substring" },
+      { type: "turn_queries_exclude", term: "sensitive" },
+    ],
   },
 ];

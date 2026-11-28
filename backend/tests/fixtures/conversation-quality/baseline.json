@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-16T19:17:35.994Z",
+  "generatedAt": "2026-11-28T16:39:21.102Z",
   "passThreshold": 1,
   "cases": {
     "directive-refund-empathy": {
@@ -400,12 +400,27 @@
     "refinement-narrows-previous-question-en": {
       "status": "pass",
       "passRate": 1,
-      "samples": 3
+      "samples": 5
     },
     "refinement-narrows-previous-question-it": {
       "status": "pass",
       "passRate": 1,
-      "samples": 3
+      "samples": 5
+    },
+    "refinement-fresh-subject-after-sensitive-data-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "refinement-swaps-place-de": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "refinement-swaps-plan-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

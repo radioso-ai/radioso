@@ -60,6 +60,12 @@ export type SuiteTraceAssertion =
    */
   | { type: "turn_directive_committed"; directive: string }
   /**
+   * No search the turn's retrieval ran names `term`, in any case: not its semantic or lexical
+   * query, not a subquery, and not the subject retrieval anchored them to. A follow-up that
+   * replaces part of the earlier question ("And the Pro plan?") must not search the part it replaced.
+   */
+  | { type: "turn_queries_exclude"; term: string }
+  /**
    * Whether the voice turn policy spoke a bridge line before the turn's own speech. A voice
    * assertion's `deterministicOnly` keeps it out of a live run's gate: see
    * {@link withDefinedVoiceScope} for the ones that carry it by definition.
@@ -121,6 +127,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_persists_no_reply",
   "turn_reply_source",
   "turn_directive_committed",
+  "turn_queries_exclude",
   "voice_bridge_emitted",
   "voice_turn_limit_reached",
   "voice_turn_outcome",
@@ -249,6 +256,51 @@ const observedDirectiveAdherence = (
     graded: entry !== undefined,
     ungraded: Array.isArray(ungraded) && ungraded.includes(directive),
   };
+};
+
+/** The fields of a retrieval leaf's interpretation stage this suite reads; the leaf is persisted JSON. */
+interface RetrievalInterpretationOutputs {
+  semanticQuery?: unknown;
+  lexicalQuery?: unknown;
+  lexicalEffectiveQuery?: unknown;
+  anchoredSubject?: unknown;
+  retrievalSubqueries?: unknown;
+}
+
+/**
+ * Every query the turn's retrieval searched with, and the subject it anchored them to, from the
+ * interpretation stage of each retrieval leaf. `undefined` when the turn recorded no retrieval
+ * interpretation, so a check on what it searched has nothing to read.
+ */
+const searchedQueries = (output: EvalRunObservedOutput): string[] | undefined => {
+  const interpretations = stages(output).flatMap((stage) => {
+    const sub = stage.subTrace;
+    if (!sub || sub.namespace !== "retrieval") {
+      return [];
+    }
+    const leafStages = (sub.payload as { stages?: unknown } | undefined)?.stages;
+    return Array.isArray(leafStages)
+      ? leafStages.filter((leafStage): leafStage is { kind: string; outputs?: RetrievalInterpretationOutputs } =>
+        typeof leafStage === "object" && leafStage !== null && (leafStage as { kind?: unknown }).kind === "query_interpretation")
+      : [];
+  });
+  if (interpretations.length === 0) {
+    return undefined;
+  }
+  return interpretations.flatMap((interpretation) => {
+    const outputs = interpretation.outputs ?? {};
+    const subqueries = Array.isArray(outputs.retrievalSubqueries) ? (outputs.retrievalSubqueries as unknown[]) : [];
+    return [
+      outputs.semanticQuery,
+      outputs.lexicalQuery,
+      outputs.lexicalEffectiveQuery,
+      outputs.anchoredSubject,
+      ...subqueries.flatMap((subquery) => {
+        const branch = subquery as { semanticQuery?: unknown; lexicalQuery?: unknown } | null;
+        return [branch?.semanticQuery, branch?.lexicalQuery];
+      }),
+    ].filter((query): query is string => typeof query === "string" && query.length > 0);
+  });
 };
 
 const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
@@ -383,6 +435,21 @@ export const evaluateTraceAssertion = (
           ? `Turn trace recorded no route; expected "${assertion.route}".`
           : `Turn was routed as ${routes.join(", ")}; expected "${assertion.route}".`,
       );
+    }
+    case "turn_queries_exclude": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const queries = searchedQueries(output);
+      if (!queries) {
+        return fail(assertion, "The turn recorded no retrieval search to check.");
+      }
+      const term = assertion.term.toLocaleLowerCase();
+      const naming = queries.filter((query) => query.toLocaleLowerCase().includes(term));
+      if (naming.length === 0) {
+        return pass(assertion, `No search named "${assertion.term}".`);
+      }
+      return fail(assertion, `Searched with "${assertion.term}": ${naming.map((query) => `"${query}"`).join(", ")}.`);
     }
     case "turn_uses_skill": {
       if (!output.turnTrace) {

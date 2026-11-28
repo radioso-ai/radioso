@@ -109,7 +109,7 @@ imports from `services/` or `infra/`.
 - Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
   `domain/lexicalQueryPlan.ts`, `domain/referentialSubjectAnchor.ts` (adds a
   referential turn's resolved subject to the retrieval queries, and joins a
-  narrowing follow-up's earlier subject to each of them). Turn routing is supplied to the conversation
+  narrowing follow-up's earlier subject to each query that names none of it). Turn routing is supplied to the conversation
   engine by chat's interpretation adapter; retrieval rewrite should only reshape
   retrieval queries. Trigger analysis is a separate retrieval-only stage so it can
   run alongside candidate retrieval after interpretation.

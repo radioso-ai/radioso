@@ -110,6 +110,38 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
   });
 
+  // #1873: a follow-up that swaps part of the question must not carry the replaced part into a search.
+  it("reads turn_queries_exclude from every search the retrieval interpretation recorded", () => {
+    const searched = (outputs: Record<string, unknown>) =>
+      observed({
+        turnTrace: trace([{
+          id: "dispatch:retrieval",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: {},
+          subTrace: { namespace: "retrieval", version: 1, payload: { stages: [{ stageId: "interpretation", kind: "query_interpretation", outputs }] } },
+        }]),
+      });
+    const clean = {
+      semanticQuery: "Pro plan price",
+      lexicalQuery: "pro plan price",
+      retrievalSubqueries: [{ semanticQuery: "Pro plan price", lexicalQuery: "pro plan" }],
+      anchoredSubject: null,
+    };
+    const assertion = { type: "turn_queries_exclude", term: "Starter" } as const;
+
+    expect(evaluateTraceAssertion(assertion, searched(clean)).status).toBe("pass");
+    const inSubquery = evaluateTraceAssertion(assertion, searched({
+      ...clean,
+      retrievalSubqueries: [{ semanticQuery: "Pro plan price", lexicalQuery: "pro plan price starter plan" }],
+    }));
+    expect(inSubquery.status).toBe("fail");
+    expect(inSubquery.reason).toContain("pro plan price starter plan");
+    expect(evaluateTraceAssertion(assertion, searched({ ...clean, anchoredSubject: "Starter plan" })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed({ turnTrace: trace([]) })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
+  });
+
   it("fails turn_reply_source when no answer was composed, and errors without a trace", () => {
     const routineReply = observed({
       turnTrace: trace([{ id: "routine:book-demo", kind: "routine", status: "applied", outputs: {} }]),

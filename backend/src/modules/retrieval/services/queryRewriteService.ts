@@ -601,16 +601,12 @@ export class QueryRewriteService {
     if (!earlierSubject) {
       return { ...searches, anchored: false };
     }
+    const labelFor = (text: string, position: number) => this.normalizeRetrievalSubqueryLabel(text) ?? `Subquery ${position}`;
     if (earlierSubject.anchoring === "joined") {
-      return anchorNarrowingToSubject({ subject: earlierSubject.subject, ...searches });
+      return anchorNarrowingToSubject({ subject: earlierSubject.subject, ...searches, responseLanguagePolicy, labelFor });
     }
     return {
-      ...anchorRetrievalToSubject({
-        subject: earlierSubject.subject,
-        ...searches,
-        responseLanguagePolicy,
-        labelFor: (text, position) => this.normalizeRetrievalSubqueryLabel(text) ?? `Subquery ${position}`,
-      }),
+      ...anchorRetrievalToSubject({ subject: earlierSubject.subject, ...searches, responseLanguagePolicy, labelFor }),
       lexicalQuery: searches.lexicalQuery,
     };
   }

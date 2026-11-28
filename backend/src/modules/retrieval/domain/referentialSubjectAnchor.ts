@@ -78,12 +78,25 @@ export const anchorRetrievalToSubject = (input: {
   };
 };
 
-/** The lexical query with the subject's words beside the model's own, unless it already names them. */
+/**
+ * Whether the query names any word of the subject. A narrowing follow-up that swaps part of the
+ * earlier question for another ("And the Pro plan?" after the Starter plan) keeps the rest of it,
+ * so a query holding some of the subject's words already carries what the turn kept; joining the
+ * whole subject would bring back the part the user replaced.
+ */
+const mentionsSubject = (query: string, subject: string): boolean => {
+  const queryTokens = new Set(tokensOf(query));
+  return tokensOf(subject).some((token) => queryTokens.has(token));
+};
+
+const joinSubjectToSemanticQuery = (semanticQuery: string, subject: string): string =>
+  mentionsSubject(semanticQuery, subject) ? semanticQuery : `${subject}: ${semanticQuery}`;
+
 const joinSubjectToLexicalQuery = (lexicalQuery: string, subject: string): string =>
-  namesSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
+  mentionsSubject(lexicalQuery, subject) ? lexicalQuery : `${lexicalQuery} ${subject}`;
 
 const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): RetrievalSubquery => {
-  const semanticQuery = anchorSemanticQuery(branch.semanticQuery, subject);
+  const semanticQuery = joinSubjectToSemanticQuery(branch.semanticQuery, subject);
   const lexicalQuery = joinSubjectToLexicalQuery(branch.lexicalQuery, subject);
   if (lexicalQuery === branch.lexicalQuery) {
     return { ...branch, semanticQuery };
@@ -96,28 +109,57 @@ const joinSubjectToBranch = (branch: RetrievalSubquery, subject: string): Retrie
 /**
  * Keeps the earlier subject in a narrowing follow-up's searches. The turn asks the earlier
  * question again with something added ("I mean in the routine" after a question about
- * sensitive data), so its answer is where the subject meets the addition: every semantic
- * query names the subject, and every lexical query holds it beside the model's own terms,
- * where lexical search ranks a chunk holding both first. The subject never runs as a search
- * of its own: that search is the earlier question's, and it finds the earlier answer again.
+ * sensitive data), so its answer is where the subject meets the addition. A query that names
+ * none of the subject gets it joined: the semantic query names it, and the lexical query holds
+ * it beside the model's own terms, where lexical search ranks a chunk holding both first. A
+ * query that names any of it is left as the model wrote it.
+ *
+ * The subject never runs as a search of its own: that search is the earlier question's, and it
+ * finds the earlier answer again. When a join changes a search, the model's own query still runs
+ * as one more search, so a turn labelled a narrowing that names a subject of its own ("What
+ * about pricing?") keeps a search for what it asks.
  */
 export const anchorNarrowingToSubject = (input: {
   subject: string;
   semanticQuery: string;
   lexicalQuery: string;
   retrievalSubqueries?: RetrievalSubquery[];
+  responseLanguagePolicy: ResponseLanguagePolicy;
+  labelFor: (text: string, position: number) => string;
 }): { semanticQuery: string; lexicalQuery: string; retrievalSubqueries?: RetrievalSubquery[]; anchored: boolean } => {
-  const semanticQuery = anchorSemanticQuery(input.semanticQuery, input.subject);
+  const modelBranches: RetrievalSubquery[] = input.retrievalSubqueries ?? [{
+    id: "subquery_1",
+    label: input.labelFor(input.lexicalQuery, 1),
+    semanticQuery: input.semanticQuery,
+    lexicalQuery: input.lexicalQuery,
+    responseLanguagePolicy: input.responseLanguagePolicy,
+  }];
+  const joinedBranches = modelBranches.map((branch) => joinSubjectToBranch(branch, input.subject));
+  const semanticQuery = joinSubjectToSemanticQuery(input.semanticQuery, input.subject);
   const lexicalQuery = joinSubjectToLexicalQuery(input.lexicalQuery, input.subject);
-  const retrievalSubqueries = input.retrievalSubqueries?.map((branch) => joinSubjectToBranch(branch, input.subject));
-  const branchAnchored = (retrievalSubqueries ?? []).some((branch, index) => {
-    const original = input.retrievalSubqueries?.[index];
-    return branch.semanticQuery !== original?.semanticQuery || branch.lexicalQuery !== original.lexicalQuery;
-  });
+  const anchored = semanticQuery !== input.semanticQuery
+    || lexicalQuery !== input.lexicalQuery
+    || joinedBranches.some((branch, index) =>
+      branch.semanticQuery !== modelBranches[index].semanticQuery || branch.lexicalQuery !== modelBranches[index].lexicalQuery);
+  if (!anchored) {
+    return { semanticQuery, lexicalQuery, retrievalSubqueries: input.retrievalSubqueries, anchored };
+  }
+
   return {
     semanticQuery,
     lexicalQuery,
-    retrievalSubqueries,
-    anchored: semanticQuery !== input.semanticQuery || lexicalQuery !== input.lexicalQuery || branchAnchored,
+    retrievalSubqueries: [
+      ...joinedBranches,
+      {
+        // Model subquery ids can skip numbers, so this one is named rather than numbered.
+        id: "model_query",
+        label: input.labelFor(input.lexicalQuery, joinedBranches.length + 1),
+        semanticQuery: input.semanticQuery,
+        lexicalQuery: input.lexicalQuery,
+        reason: "model_query",
+        responseLanguagePolicy: input.responseLanguagePolicy,
+      },
+    ],
+    anchored,
   };
 };

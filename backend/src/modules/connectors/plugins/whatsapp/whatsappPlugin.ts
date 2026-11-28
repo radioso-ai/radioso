@@ -9,6 +9,7 @@ import type {
 
 import type { ChannelPersonDataEraser } from "../../../../shared/domain/conversationDataErasure.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
+import { errorClassOf } from "../../../../shared/observability/errorClass.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
@@ -39,6 +40,8 @@ interface WhatsAppPluginOptions {
   sleep?: (ms: number) => Promise<void>;
   debounceMs?: number;
   cleanupIntervalMs?: number;
+  /** How long an unanswered inbound message must sit untouched before a recovering instance takes it. */
+  recoveryLeaseMs?: number;
 }
 
 /** The WhatsApp connector's id: its database key and URL segment, and what composition binds its number key to. */
@@ -50,22 +53,27 @@ export class WhatsAppPlugin implements ConnectorPlugin {
   readonly description = "Connect a workspace to WhatsApp Business so incoming messages flow through chat.";
 
   private static readonly DEFAULT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  /** Longer than any one turn, so an instance still working on a message is never recovered from. */
+  private static readonly DEFAULT_RECOVERY_LEASE_MS = 5 * 60 * 1000;
   private static readonly MESSAGE_LOG_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
   private readonly fetchImpl?: typeof fetch;
   private readonly sleep?: (ms: number) => Promise<void>;
   private readonly debounceMs?: number;
   private readonly cleanupIntervalMs: number;
+  private readonly recoveryLeaseMs: number;
   private readonly personValues?: (db: Db) => ChannelPersonDataEraser;
   private initialized = false;
   private messageHandler?: WhatsAppMessageHandler;
   private cleanupTimer?: NodeJS.Timeout;
+  private recoveryTimer?: NodeJS.Timeout;
 
   constructor(options: WhatsAppPluginOptions = {}) {
     this.fetchImpl = options.fetch;
     this.sleep = options.sleep;
     this.debounceMs = options.debounceMs;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? WhatsAppPlugin.DEFAULT_CLEANUP_INTERVAL_MS;
+    this.recoveryLeaseMs = options.recoveryLeaseMs ?? WhatsAppPlugin.DEFAULT_RECOVERY_LEASE_MS;
     this.personValues = options.personValues;
   }
 
@@ -145,7 +153,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     });
     const db = connectorKyselyDb(context.db);
     const persistence = new PostgresWhatsAppPersistence(db);
-    this.messageHandler = new WhatsAppMessageHandler({
+    const messageHandler = new WhatsAppMessageHandler({
       db: context.db,
       logger: context.logger,
       chat: context.chat,
@@ -155,6 +163,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       metrics,
       debounceMs: this.debounceMs,
     });
+    this.messageHandler = messageHandler;
 
     context.http.mount(
       "/:workspaceId/webhook",
@@ -162,16 +171,22 @@ export class WhatsAppPlugin implements ConnectorPlugin {
         logger: context.logger,
         state: context.state,
         persistence,
-        messageHandler: this.messageHandler,
+        messageHandler,
         ...(this.personValues ? { numberChanges: new WhatsAppNumberChanges({ personValues: this.personValues(db), metrics }) } : {}),
       }),
     );
 
     await this.cleanupExpiredMessageLogs(context.db, context.logger);
-    await this.recoverPendingInboundMessages(persistence, this.messageHandler, context.logger);
+    await this.recoverPendingInboundMessages(persistence, messageHandler, context.logger);
     this.cleanupTimer = setInterval(() => {
       void this.cleanupExpiredMessageLogs(context.db, context.logger);
     }, this.cleanupIntervalMs);
+    // A message another instance stopped working on becomes claimable once its lease runs out.
+    this.recoveryTimer = setInterval(() => {
+      void this.recoverPendingInboundMessages(persistence, messageHandler, context.logger).catch((error) => {
+        context.logger.error({ connectorId: this.id, errorClass: errorClassOf(error) }, "WhatsApp recovery sweep failed");
+      });
+    }, Math.max(1000, this.recoveryLeaseMs));
 
     this.initialized = true;
   }
@@ -180,6 +195,10 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
+    }
+    if (this.recoveryTimer) {
+      clearInterval(this.recoveryTimer);
+      this.recoveryTimer = undefined;
     }
     await this.messageHandler?.shutdown();
     this.messageHandler = undefined;
@@ -225,12 +244,15 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     messageHandler: WhatsAppMessageHandler,
     logger: ConnectorLogger,
   ): Promise<void> {
-    const pendingLogs = await persistence.listRecoverableInboundLogs();
+    const pendingLogs = await persistence.claimRecoverableInboundLogs(this.recoveryLeaseMs);
+    if (pendingLogs.length > 0) {
+      logger.info({ connectorId: this.id, messageLogIds: pendingLogs.map((log) => log.id) }, "WhatsApp recovery claimed unanswered inbound messages");
+    }
     for (const log of pendingLogs) {
       const message = findInboundMessageInPayload(log.workspaceId, log.payload, log.wamid);
       if (!message) {
         await persistence.updateMessageLogStatus(log.wamid, "failed", "Unable to recover inbound payload after restart");
-        logger.warn({ connectorId: this.id, wamid: log.wamid }, "WhatsApp recovery skipped malformed inbound payload");
+        logger.warn({ connectorId: this.id, messageLogId: log.id }, "WhatsApp recovery skipped malformed inbound payload");
         continue;
       }
 

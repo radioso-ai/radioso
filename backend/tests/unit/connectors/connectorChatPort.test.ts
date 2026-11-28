@@ -406,6 +406,18 @@ describe("createConnectorChatPort", () => {
       expect(answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-1", resumeUserMessageId: "message-1" }));
     });
 
+    it("is refused a resume for a turn with photos or a pick, which store their own message", async () => {
+      const answer = vi.fn();
+      const connectorChat = createConnectorChatPort({ answer } as unknown as ChatAnswerPort, unusedIngest);
+
+      await expect(connectorChat.answer({ workspaceId: "workspace-1", conversationId: "conversation-1", query: "Hi", resumeMessageId: "message-1", images: [{ key: "wamid-1", bytes: new Uint8Array([1]) }] })).rejects.toMatchObject({ statusCode: 400 });
+      await expect(connectorChat.answer({
+        workspaceId: "workspace-1", conversationId: "conversation-1", query: "Casa Blu", resumeMessageId: "message-1",
+        selection: { messageId: "11111111-1111-4111-8111-111111111111", blockId: "b1", itemKey: "/results/0" },
+      })).rejects.toMatchObject({ statusCode: 400 });
+      expect(answer).not.toHaveBeenCalled();
+    });
+
     it("is told on a photo turn and a pick too", async () => {
       const reply = { conversationId: "conversation-1", answer: "Hello again.", skillOutcome: "grounded" };
       const imageTurns: ConnectorImageTurns = { imageAllowance: vi.fn(async () => ({ maxImages: 3 })), answer: vi.fn(async () => reply) };

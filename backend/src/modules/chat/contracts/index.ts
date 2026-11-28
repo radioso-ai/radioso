@@ -183,9 +183,19 @@ export interface ChatDoorPickTurnPort {
   }): Promise<ChatDoorTurnReply | null>;
 }
 
+/** A turn that can answer a message an earlier attempt of it stored, instead of storing the text again. */
+export interface ResumableTurn {
+  /**
+   * The customer message an earlier attempt of this turn stored and failed to answer, in
+   * `conversationId`. Set only by a connector retrying a turn, never from a request body; a
+   * message that is not a customer message of that conversation is not found.
+   */
+  resumeUserMessageId?: string;
+}
+
 /** The chat turns a connector host runs: a live answer, and a review turn that returns a draft. */
 export interface ChatAnswerPort {
-  answer(input: {
+  answer(input: ResumableTurn & {
     workspaceId: string;
     agentId?: string | null;
     accountId?: string;
@@ -203,8 +213,6 @@ export interface ChatAnswerPort {
     channelPersonKey?: ChannelPersonKey | null;
     /** Told the moment the turn stores the customer message, before the rest of the turn runs. */
     onUserMessageStored?: UserMessageStoredListener;
-    /** A customer message an earlier attempt of this turn stored and failed to answer; the turn answers it instead of storing another. */
-    resumeUserMessageId?: string;
     chatSessionId?: string | null;
     /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;

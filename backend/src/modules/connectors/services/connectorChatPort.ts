@@ -119,6 +119,11 @@ export const createConnectorChatPort = (
     const capabilities = clientContextCapabilities ? { clientContextCapabilities } : {};
     const person = channelPersonKeyFor(options, input.personKey);
     const stored = storedMessageListener(input.onMessageStored);
+    // A turn with photos or a pick stores its own message through its own door; resuming one here
+    // would be dropped, so the combination is refused instead.
+    if (input.resumeMessageId && (input.selection || (input.images?.length ?? 0) > 0)) {
+      throw badRequest("A turn with photos or a pick cannot resume a stored message");
+    }
 
     // A pick runs on the card the stored reply holds, through the same claim as the web chat's,
     // and is refused where the web chat's is: the card's words never run as typed text.

@@ -174,19 +174,29 @@ describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
     expect(delivered?.wamid).toBe(outboundWamid);
   });
 
-  it("updates a message log status and lists recoverable inbound logs", async () => {
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  /** Makes a message look untouched for an hour, as one an instance stopped working on does. */
+  const stale = (wamid: string) => database.query(
+    "UPDATE connector_whatsapp_message_log SET created_at = now() - interval '1 hour', payload = payload #- '{radioso,activeAt}' WHERE wamid = $1",
+    [wamid],
+  );
+
+  it("hands an unanswered inbound message to one recovering instance, and not while another instance is working on it", async () => {
     const wamid = `wamid-${randomUUID()}`;
     await persistence.createInboundMessageLog({ wamid, workspaceId, waId, messageType: "text", payload: {} });
 
     await persistence.updateMessageLogStatus(wamid, "processing");
     expect((await persistence.findMessageLogByWamid(wamid))?.status).toBe("processing");
+    expect((await persistence.claimRecoverableInboundLogs(60_000)).some((log) => log.wamid === wamid)).toBe(false);
 
-    const recoverable = await persistence.listRecoverableInboundLogs();
-    expect(recoverable.some((log) => log.wamid === wamid)).toBe(true);
+    await stale(wamid);
+    const claims = await Promise.all([persistence.claimRecoverableInboundLogs(60_000), persistence.claimRecoverableInboundLogs(60_000)]);
+    expect(claims.flat().filter((log) => log.wamid === wamid)).toHaveLength(1);
+    expect((await persistence.claimRecoverableInboundLogs(60_000)).some((log) => log.wamid === wamid)).toBe(false);
 
     await persistence.updateMessageLogStatus(wamid, "replied");
-    const afterReply = await persistence.listRecoverableInboundLogs();
-    expect(afterReply.some((log) => log.wamid === wamid)).toBe(false);
+    await stale(wamid);
+    expect((await persistence.claimRecoverableInboundLogs(60_000)).some((log) => log.wamid === wamid)).toBe(false);
   });
 
   it("keeps a photo receipt with its inbound message, beside the webhook body, and reads it back after recovery", async () => {
@@ -201,7 +211,8 @@ describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
     const log = await persistence.findMessageLogByWamid(wamid);
     expect(photoReceiptOf(log)).toBe("receipt-2");
     expect(log?.payload).toMatchObject(body);
-    const recovered = (await persistence.listRecoverableInboundLogs()).find((candidate) => candidate.wamid === wamid);
+    await pause(30);
+    const recovered = (await persistence.claimRecoverableInboundLogs(10)).find((candidate) => candidate.wamid === wamid);
     expect(photoReceiptOf(recovered ?? null)).toBe("receipt-2");
   });
 

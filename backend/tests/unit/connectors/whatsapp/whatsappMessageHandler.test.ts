@@ -10,7 +10,7 @@ import {
 import { WhatsAppClientError } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import type { WhatsAppClient } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappClient.js";
 import { WhatsAppMessageHandler, type WhatsAppInboundMessage } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappMessageHandler.js";
-import { photoReceiptOf } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
+import { photoReceiptOf, storedTurnOf } from "../../../../src/modules/connectors/plugins/whatsapp/whatsappPersistence.js";
 import { InMemoryWhatsAppPersistence } from "./support/inMemoryWhatsAppPersistence.js";
 
 /** What every WhatsApp turn declares it draws: cards still show only where the agent has them on. */
@@ -231,6 +231,54 @@ describe("WhatsAppMessageHandler", () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(chat.answer).toHaveBeenNthCalledWith(3, expect.objectContaining({ conversationId: "conversation-new" }));
     expect(chat.answer.mock.calls[2][0]).not.toHaveProperty("resumeMessageId");
+  });
+
+  describe("messages an earlier attempt stored", () => {
+    const stored = async (persistence: InMemoryWhatsAppPersistence, wamid: string, textBody: string, messageId?: string) => {
+      await persistence.createMessageLog({
+        wamid, direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+        messageType: "text", payload: { body: textBody }, status: "received",
+      });
+      if (messageId) {
+        await persistence.keepStoredTurn([wamid], { conversationId: "conversation-new", messageId });
+      }
+      return inbound({ wamid, waId: "15550100101", textBody });
+    };
+
+    it("are not stored again when they are batched with a newer message: the turn stores the newer text only, in their conversation", async () => {
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(async (input) => {
+          await input.onMessageStored?.({ conversationId: "conversation-new", messageId: "message-2" });
+          return { conversationId: "conversation-new", answer: "Answer", outcome: "answered" };
+        }),
+      };
+      const { handler, persistence } = createHandler({ chat });
+      const earlier = await stored(persistence, "wamid-in-1", "hello", "message-1");
+      const newer = await stored(persistence, "wamid-in-2", "hello?");
+
+      await handler.handleInboundMessage(earlier);
+      await handler.handleInboundMessage(newer);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(chat.answer).toHaveBeenCalledTimes(1);
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-new", query: "hello?" }));
+      expect(chat.answer.mock.calls[0][0]).not.toHaveProperty("resumeMessageId");
+      expect(storedTurnOf(persistence.messageLogs.get("wamid-in-2") ?? null)).toMatchObject({ messageId: "message-2", wamids: ["wamid-in-2"] });
+      expect(storedTurnOf(persistence.messageLogs.get("wamid-in-1") ?? null)).toMatchObject({ messageId: "message-1" });
+    });
+
+    it("are answered in place when every message of the batch was stored", async () => {
+      const chat = { answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-new", answer: "Answer", outcome: "answered" })) };
+      const { handler, persistence } = createHandler({ chat });
+      const earlier = await stored(persistence, "wamid-in-1", "hello", "message-1");
+      const newer = await stored(persistence, "wamid-in-2", "hello?", "message-2");
+
+      await handler.handleInboundMessage({ ...newer, timestamp: new Date(earlier.timestamp.getTime() + 1000) });
+      await handler.handleInboundMessage(earlier);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-new", resumeMessageId: "message-2" }));
+    });
   });
 
   it("starts a new conversation when the unanswered one has been quiet longer than the timeout", async () => {
@@ -860,8 +908,8 @@ describe("WhatsAppMessageHandler", () => {
       const overPlan = () => new AppError(429, "usage_limit_exceeded", "Usage limit exceeded");
 
       it("treats an over-plan photo as it treats an over-plan text turn: a retryable failure with no reply", async () => {
-        const text = createHandler({ chat: { answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(overPlan()) }, client: sender(), unsupportedMessageReply: "Text only, please." });
-        const photo = createHandler({ chat: refusing(overPlan()), client: { ...sender(), downloadImage: downloads() }, unsupportedMessageReply: "Text only, please." });
+        const text = createHandler({ chat: { answer: vi.fn<ConnectorChatPort["answer"]>().mockRejectedValue(overPlan()) }, client: sender(), unsupportedMessageReply: "Text only, please.", retryBaseDelayMs: 60_000 });
+        const photo = createHandler({ chat: refusing(overPlan()), client: { ...sender(), downloadImage: downloads() }, unsupportedMessageReply: "Text only, please.", retryBaseDelayMs: 60_000 });
 
         await send(text.persistence, text.handler, [inbound({ wamid: "wamid-text-over-plan", textBody: "Hello" })]);
         await send(photo.persistence, photo.handler, [photoMessage(1)]);

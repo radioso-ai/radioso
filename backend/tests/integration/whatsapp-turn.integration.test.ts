@@ -31,8 +31,11 @@ const FIRST_FAILED = "15550100104";
 /** Senders whose first turn the model fails: one whose retry then succeeds, one who writes again instead. */
 const RETRIED_THEN_ANSWERED = "15550100105";
 const FAILED_THEN_ASKS_AGAIN = "15550100106";
+const WRITES_WHILE_RETRYING = "15550100107";
+const RESTARTED_BETWEEN_ATTEMPTS = "15550100108";
+const TIMED_OUT_THEN_FAILED = "15550100110";
 /** The digits every way of writing these numbers shares, with or without a prefix. */
-const DIGITS = ["5550100101", "5550100102", "5550100103", "5550100104", "5550100109"];
+const DIGITS = ["5550100101", "5550100102", "5550100103", "5550100104", "5550100105", "5550100106", "5550100107", "5550100108", "5550100109", "5550100110"];
 const PHONE_NUMBER_ID = "phone-number-1";
 const APP_SECRET = "app-secret-example";
 const ROUTINE_ID = "routine-class-observed";
@@ -121,6 +124,11 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
   });
   const app = express();
   let workspaceId: string;
+  let chatService: unknown;
+  /** The conversation timeout the connector is configured with, in hours; a test sets a few seconds' worth. */
+  let timeoutHours: string | undefined;
+  /** Every message id a test delivered: Meta's encode the sender's number, so none may reach an output. */
+  const deliveredWamids: string[] = [];
 
   beforeAll(async () => {
     await runAllTestMigrations(database);
@@ -134,6 +142,7 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     });
     const conversation = await harness.startConversation({ definition: booking, backgroundJobs: true });
     workspaceId = conversation.workspaceId;
+    chatService = conversation.chat;
     const [variable] = await database.query<{ id: string }>(
       `INSERT INTO context_variables (workspace_id, name, value_type, trust_tier, sensitivity, default_surfacing)
        VALUES ($1, 'visitor_name', 'string', 'unverified', 'normal', 'on_reference') RETURNING id`,
@@ -151,19 +160,34 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     app.use(createHttpLogger(logger));
     app.use(createHttpTracingMiddleware());
     app.use(captureRequestBody);
-    await plugin.initialize({
+    await startPlugin(plugin, app);
+  });
+
+  /** Brings a connector up on `target`, as the host does on a boot. */
+  const startPlugin = async (instance: WhatsAppPlugin, target: express.Express) => {
+    await instance.initialize({
       db: database,
       logger,
       chat: composeConnectorChatPort(
-        { chatService: conversation.chat, metricsRegistry: harness.metrics } as unknown as Parameters<typeof composeConnectorChatPort>[0],
-        plugin.id,
+        { chatService, metricsRegistry: harness.metrics } as unknown as Parameters<typeof composeConnectorChatPort>[0],
+        instance.id,
       ),
-      state: { getConfig: async () => ({ enabled: true, config: { phone_number_id: PHONE_NUMBER_ID, access_token: "access-token-example", app_secret: APP_SECRET } }) },
-      http: { mount: (path: string, router: express.Router) => void app.use(path, router) },
+      state: { getConfig: async () => ({ enabled: true, config: { phone_number_id: PHONE_NUMBER_ID, access_token: "access-token-example", app_secret: APP_SECRET, ...(timeoutHours ? { conversation_timeout_hours: timeoutHours } : {}) } }) },
+      http: { mount: (path: string, router: express.Router) => void target.use(path, router) },
       publicHttp: { fetch: graph },
       metricsRegistry: harness.metrics,
     } as unknown as ConnectorContext);
+  };
+
+  const newPlugin = (options: { recoveryLeaseMs?: number } = {}) => new WhatsAppPlugin({
+    fetch: graph as unknown as typeof fetch,
+    sleep: async () => undefined,
+    debounceMs: 0,
+    personValues: (db) => new ContextVariableValueEraser(db),
+    ...options,
   });
+
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   afterAll(async () => {
     await plugin.shutdown();
@@ -172,12 +196,12 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     await database.close().catch(() => undefined);
   });
 
-  const deliver = async (value: Record<string, unknown>) => {
+  const deliver = async (value: Record<string, unknown>, target: express.Express = app) => {
     const body = JSON.stringify({
       object: "whatsapp_business_account",
       entry: [{ id: "waba-1", changes: [{ field: "messages", value: { metadata: { phone_number_id: PHONE_NUMBER_ID }, ...value } }] }],
     });
-    await request(app)
+    await request(target)
       .post(`/${workspaceId}/webhook`)
       .set("content-type", "application/json")
       .set("X-Hub-Signature-256", `sha256=${createHmac("sha256", APP_SECRET).update(body).digest("hex")}`)
@@ -190,13 +214,22 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     [workspaceId, wamid],
   ))[0]?.status;
 
+  /** A message id shaped like Meta's, which carries the sender's number base64-encoded. */
+  const wamidFor = (from: string) => {
+    const wamid = `wamid.${Buffer.from(`\u0018\u000b${from}\u0015\u0002\u0000\u0012\u0018\u0014${randomUUID()}`).toString("base64").replace(/=+$/u, "")}`;
+    deliveredWamids.push(wamid);
+    return wamid;
+  };
+
+  const inboundBody = (from: string, wamid: string, text: string) => ({
+    contacts: [{ wa_id: from, profile: { name: "Ada Example" } }],
+    messages: [{ id: wamid, from, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: text } }],
+  });
+
   /** Delivers `text` from `from` and waits until the channel has dealt with it. */
   const message = async (from: string, text: string, until: string = "replied") => {
-    const wamid = `wamid.${randomUUID()}`;
-    await deliver({
-      contacts: [{ wa_id: from, profile: { name: "Ada Example" } }],
-      messages: [{ id: wamid, from, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: text } }],
-    });
+    const wamid = wamidFor(from);
+    await deliver(inboundBody(from, wamid, text));
     await vi.waitFor(async () => expect(await statusOf(wamid)).toBe(until), { timeout: 15_000, interval: 25 });
     return wamid;
   };
@@ -230,41 +263,119 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     expect(await database.query("SELECT role FROM messages WHERE conversation_id = $1", [recorded.conversation_id])).toEqual([{ role: "user" }]);
   });
 
-  const storedTurn = async (number: string) => {
-    const conversations = (await conversationsOf(number)).map((row) => row.conversation_id);
-    const messages = await database.query<{ role: string; content: string }>(
-      "SELECT role, content FROM messages WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at, id",
-      [conversations],
+  /** What the workspace holds for its WhatsApp channel, read from the host's own tables and not the connector's records. */
+  const channelCounts = async (text: string) => {
+    const [conversations] = await database.query<{ count: string }>(
+      "SELECT count(*) FROM conversations WHERE workspace_id = $1 AND source_channel = 'whatsapp'",
+      [workspaceId],
     );
-    return { conversations, messages };
+    const [stored] = await database.query<{ count: string }>(
+      `SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+        WHERE c.workspace_id = $1 AND c.source_channel = 'whatsapp' AND m.role = 'user' AND m.content = $2`,
+      [workspaceId, text],
+    );
+    return { conversations: Number(conversations.count), stored: Number(stored.count) };
   };
 
-  it("keeps one conversation and one stored message when a first message the model failed is redelivered, and answers it once when a retry succeeds", async () => {
-    refundFailures = 2;
-    const wamid = `wamid.${randomUUID()}`;
-    const redelivery = {
-      contacts: [{ wa_id: RETRIED_THEN_ANSWERED, profile: { name: "Ada Example" } }],
-      messages: [{ id: wamid, from: RETRIED_THEN_ANSWERED, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: "Can I get a refund?" } }],
-    };
-    await deliver(redelivery);
-    await deliver(redelivery);
-    await vi.waitFor(async () => expect(await statusOf(wamid)).toBe("replied"), { timeout: 15_000, interval: 25 });
-    await deliver(redelivery);
+  /** The conversations that hold a stored message with this text, and the roles in each, oldest first. */
+  const conversationsHolding = async (text: string) => {
+    const rows = await database.query<{ conversation_id: string; role: string }>(
+      `SELECT m.conversation_id, m.role FROM messages m WHERE m.conversation_id IN (
+         SELECT m2.conversation_id FROM messages m2 JOIN conversations c ON c.id = m2.conversation_id
+          WHERE c.workspace_id = $1 AND c.source_channel = 'whatsapp' AND m2.content = $2)
+        ORDER BY m.created_at, m.id`,
+      [workspaceId, text],
+    );
+    return [...new Set(rows.map((row) => row.conversation_id))].map((id) => ({ id, roles: rows.filter((row) => row.conversation_id === id).map((row) => row.role) }));
+  };
 
-    const { conversations, messages } = await storedTurn(RETRIED_THEN_ANSWERED);
-    expect(conversations).toHaveLength(1);
-    expect(messages.map((stored) => stored.role)).toEqual(["user", "assistant"]);
+  it("answers a first message once, in one conversation, when the connector's retry succeeds after the model failed it twice; Meta's redeliveries are dropped", async () => {
+    refundFailures = 2;
+    const before = await channelCounts("Can I get a refund?");
+    const wamid = wamidFor(RETRIED_THEN_ANSWERED);
+    const delivery = inboundBody(RETRIED_THEN_ANSWERED, wamid, "Can I get a refund?");
+    await deliver(delivery);
+    await deliver(delivery);
+    await vi.waitFor(async () => expect(await statusOf(wamid)).toBe("replied"), { timeout: 15_000, interval: 25 });
+    await deliver(delivery);
+
+    const after = await channelCounts("Can I get a refund?");
+    expect(after.conversations - before.conversations).toBe(1);
+    expect(after.stored).toBe(1);
+    expect((await conversationsHolding("Can I get a refund?")).map((held) => held.roles)).toEqual([["user", "assistant"]]);
     expect(sent.filter((reply) => reply.to === RETRIED_THEN_ANSWERED)).toHaveLength(1);
   });
 
-  it("continues the conversation of a first message that failed when the sender writes again", async () => {
-    await message(FAILED_THEN_ASKS_AGAIN, "What is on my bill?", "failed");
-    await message(FAILED_THEN_ASKS_AGAIN, "Are you open on Sundays?");
+  it("continues the conversation of a first message that failed when the sender writes again, storing the failed message once", async () => {
+    const before = await channelCounts("What is on my invoice? bill");
+    await message(FAILED_THEN_ASKS_AGAIN, "What is on my invoice? bill", "failed");
+    await message(FAILED_THEN_ASKS_AGAIN, "Are you open on Mondays?");
 
-    const { conversations, messages } = await storedTurn(FAILED_THEN_ASKS_AGAIN);
-    expect(conversations).toHaveLength(1);
-    expect(messages.filter((stored) => stored.content === "What is on my bill?")).toHaveLength(1);
-    expect(messages.map((stored) => stored.role)).toEqual(["user", "user", "assistant"]);
+    const after = await channelCounts("What is on my invoice? bill");
+    expect(after.conversations - before.conversations).toBe(1);
+    expect(after.stored).toBe(1);
+    expect((await conversationsHolding("What is on my invoice? bill")).map((held) => held.roles)).toEqual([["user", "user", "assistant"]]);
+  });
+
+  it("answers the failed message in place, with the sender's newer message already answered in its conversation, when its retry runs", async () => {
+    refundFailures = 1;
+    const before = await channelCounts("Can I get a refund for the class?");
+    const failed = wamidFor(WRITES_WHILE_RETRYING);
+    await deliver(inboundBody(WRITES_WHILE_RETRYING, failed, "Can I get a refund for the class?"));
+    await vi.waitFor(async () => expect(await statusOf(failed)).toBe("retryable_failed"), { timeout: 15_000, interval: 5 });
+    await message(WRITES_WHILE_RETRYING, "Are you open on Tuesdays?");
+    await vi.waitFor(async () => expect(await statusOf(failed)).toBe("replied"), { timeout: 15_000, interval: 25 });
+
+    const after = await channelCounts("Can I get a refund for the class?");
+    expect(after.conversations - before.conversations).toBe(1);
+    expect(after.stored).toBe(1);
+    expect((await conversationsHolding("Are you open on Tuesdays?")).map((held) => held.id)).toEqual((await conversationsHolding("Can I get a refund for the class?")).map((held) => held.id));
+    expect(sent.filter((reply) => reply.to === WRITES_WHILE_RETRYING)).toHaveLength(2);
+  });
+
+  it("answers a stored first message once, in its conversation, when the connector restarts between the failed attempt and the retry", async () => {
+    refundFailures = 1;
+    const text = "Can I get a refund for my pass?";
+    const before = await channelCounts(text);
+    const crashedApp = express();
+    crashedApp.use(captureRequestBody);
+    const crashed = newPlugin();
+    await startPlugin(crashed, crashedApp);
+    const wamid = wamidFor(RESTARTED_BETWEEN_ATTEMPTS);
+    await deliver(inboundBody(RESTARTED_BETWEEN_ATTEMPTS, wamid, text), crashedApp);
+    await vi.waitFor(async () => expect(await statusOf(wamid)).toBe("retryable_failed"), { timeout: 15_000, interval: 5 });
+    await crashed.shutdown();
+
+    // The message waits out the recovery lease, then the restarted connector claims it.
+    await pause(2_100);
+    const restarted = newPlugin({ recoveryLeaseMs: 2_000 });
+    await startPlugin(restarted, express());
+    await vi.waitFor(async () => expect(await statusOf(wamid)).toBe("replied"), { timeout: 15_000, interval: 25 });
+    await restarted.shutdown();
+
+    const after = await channelCounts(text);
+    expect(after.conversations - before.conversations).toBe(1);
+    expect(after.stored).toBe(1);
+    expect(sent.filter((reply) => reply.to === RESTARTED_BETWEEN_ATTEMPTS)).toHaveLength(1);
+  });
+
+  it("continues the conversation a first message failed in when the sender, answered in an earlier one past the timeout, writes again", async () => {
+    timeoutHours = "0.0015";
+    try {
+      await message(TIMED_OUT_THEN_FAILED, "Are you open on Wednesdays?");
+      await pause(5_600);
+      await message(TIMED_OUT_THEN_FAILED, "What is on my receipt? bill", "failed");
+      await message(TIMED_OUT_THEN_FAILED, "Do you have parking?");
+    } finally {
+      timeoutHours = undefined;
+    }
+
+    const first = await conversationsHolding("Are you open on Wednesdays?");
+    const failed = await conversationsHolding("What is on my receipt? bill");
+    expect(first).toHaveLength(1);
+    expect(failed).toEqual([{ id: expect.any(String), roles: ["user", "user", "assistant"] }]);
+    expect(failed[0].id).not.toBe(first[0].id);
+    expect((await conversationsHolding("Do you have parking?")).map((held) => held.id)).toEqual([failed[0].id]);
   });
 
   it("shows its sender's number in no log line, metric, span, event, job or audit record, through a save, a failure and a number change", async () => {
@@ -301,6 +412,7 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     for (const record of [observed.workspaceEvents, observed.backgroundJobs, observed.auditEvents]) expect(record).not.toBe("[]");
     for (const [channel, output] of Object.entries(observed)) {
       for (const digits of DIGITS) expect(output.includes(digits), `the number in ${channel}`).toBe(false);
+      for (const wamid of deliveredWamids) expect(output.includes(wamid), `a message id, which encodes the number, in ${channel}`).toBe(false);
     }
   });
 });

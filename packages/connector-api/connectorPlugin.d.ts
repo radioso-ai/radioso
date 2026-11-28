@@ -221,7 +221,7 @@ export interface ConnectorChatPort {
     /**
      * The message `onMessageStored` reported for an earlier attempt of this same turn, which then
      * failed, in `conversationId`. The turn answers that message instead of storing the text again,
-     * so a retry leaves one message. Applies to a text turn; a turn with photos or a pick stores its own.
+     * so a retry leaves one message. Only a text turn can resume: a turn with `images` or a `selection` is refused with a 400.
      */
     // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
     resumeMessageId?: string;

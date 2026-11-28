@@ -152,10 +152,19 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
     }
   }
 
-  async listRecoverableInboundLogs(): Promise<WhatsAppMessageLogRecord[]> {
-    return [...this.messageLogs.values()].filter(
-      (record) => record.direction === "inbound" && ["received", "processing", "retryable_failed"].includes(record.status),
+  private readonly activeAt = new Map<string, number>();
+
+  async claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]> {
+    const now = Date.now();
+    const claimed = [...this.messageLogs.values()].filter(
+      (record) => record.direction === "inbound"
+        && ["received", "processing", "retryable_failed"].includes(record.status)
+        && (this.activeAt.get(record.wamid) ?? record.createdAt.getTime()) < now - leaseMs,
     );
+    for (const record of claimed) {
+      this.activeAt.set(record.wamid, now);
+    }
+    return claimed;
   }
 
   async savePhotoReceipt(wamid: string, receipt: string): Promise<void> {

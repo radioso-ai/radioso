@@ -72,6 +72,18 @@ interface PendingBatch {
   messages: WhatsAppInboundMessage[];
 }
 
+/** The conversation a turn continues, and what an earlier attempt already stored in it. */
+interface ConversationResolution {
+  conversationId: string | undefined;
+  /** The messages whose text an earlier attempt stored in `conversationId`. */
+  storedWamids: ReadonlySet<string>;
+  /** The host's message for the latest-sent of those, which a turn with nothing left to store answers. */
+  latestStoredMessageId?: string;
+  latestTimestamp: Date;
+  messageLogIds: string[];
+  continued: "stored_turn" | "unanswered_conversation" | null;
+}
+
 interface PreparedWhatsAppReply {
   outboundWamid: string;
   responseText: string;
@@ -196,13 +208,17 @@ export class WhatsAppMessageHandler {
         return;
       }
       this.pending.delete(key);
-      void this.flushBatch(batch.messages).catch((error) => {
-        this.options.logger.error(
-          { err: error },
-          "WhatsApp batch processing failed",
-        );
-      });
+      this.runBatch(batch.messages);
     }, this.debounceMs);
+  }
+
+  private runBatch(messages: WhatsAppInboundMessage[]): void {
+    void this.flushBatch(messages).catch((error) => {
+      this.options.logger.error(
+        { err: error },
+        "WhatsApp batch processing failed",
+      );
+    });
   }
 
   private async flushBatch(batch: WhatsAppInboundMessage[]): Promise<void> {
@@ -415,18 +431,24 @@ export class WhatsAppMessageHandler {
       };
     }
 
-    const { conversationId, resumeMessageId, latestTimestamp } = await this.continuingConversation(messages, config);
+    const resolved = await this.continuingConversation(messages, config);
+    const { conversationId, latestTimestamp } = resolved;
     const selection = this.pickOf(messages);
     if (selection && !conversationId) {
       throw new PickNotTakenError();
     }
+    // Only a text turn answers a stored message in place; a turn with photos or a pick stores its own.
+    const textTurn = photoMessages.length === 0 && !selection;
+    const unstored = textTurn ? messages.filter((message) => !resolved.storedWamids.has(message.wamid)) : messages;
+    const resumeMessageId = textTurn && unstored.length === 0 ? resolved.latestStoredMessageId : undefined;
+    this.logContinuation(first.workspaceId, resolved, resumeMessageId);
     const response = await this.answerOnChat({
       workspaceId: first.workspaceId,
       waId: first.waId,
       conversationId,
       resumeMessageId,
-      inboundWamids,
-      query,
+      storedForWamids: this.inboundWamids(unstored),
+      query: textTurn && unstored.length > 0 && unstored.length < messages.length ? this.buildTextQuery(unstored) : query,
       photoMessages,
       config,
       ...(selection ? { selection } : {}),
@@ -534,12 +556,12 @@ export class WhatsAppMessageHandler {
   }
 
   /**
-   * The conversation a turn on these messages continues, and the message to answer when an earlier
-   * attempt of this same turn already stored it. What the earlier attempt left in the database
-   * decides, not the contact row, which only moves once a turn has been answered:
+   * The conversation a turn on these messages continues. What earlier attempts left in the
+   * database decides, not the contact row, which only moves once a turn has been answered:
    *
-   * 1. The same messages were stored before: this is a retry, so it answers that stored message in
-   *    its conversation.
+   * 1. Some of the messages were stored by an earlier attempt: the turn continues that
+   *    conversation, and `storedWamids` names the messages whose text it already holds, so the
+   *    turn stores only the rest. When none is left, the turn answers the latest stored message.
    * 2. A conversation was started for the number that no turn has answered yet: this is the
    *    sender's next message after a failed first turn, so it continues that conversation.
    * 3. Otherwise the sender's latest answered conversation, unless it has been quiet longer than the
@@ -548,20 +570,27 @@ export class WhatsAppMessageHandler {
   private async continuingConversation(
     messages: WhatsAppInboundMessage[],
     config: Record<string, string>,
-  ): Promise<{ conversationId: string | undefined; resumeMessageId?: string; latestTimestamp: Date }> {
+  ): Promise<ConversationResolution> {
     const [first] = messages;
-    const latestTimestamp = [...messages]
-      .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
-      .at(-1)?.timestamp ?? first.timestamp;
-    const inboundWamids = this.inboundWamids(messages);
+    const ordered = this.inSentOrder(messages);
+    const latestTimestamp = ordered.at(-1)?.timestamp ?? first.timestamp;
+    const logs = await Promise.all(ordered.map((message) => this.persistence.findMessageLogByWamid(message.wamid)));
+    const messageLogIds = logs.flatMap((log) => (log ? [log.id] : []));
+    const storedTurns = ordered.flatMap((message, index) => {
+      const turn = storedTurnOf(logs[index]);
+      return turn ? [{ wamid: message.wamid, turn }] : [];
+    });
 
-    const stored = storedTurnOf(await this.persistence.findMessageLogByWamid(inboundWamids[0]), inboundWamids);
-    if (stored) {
-      this.options.logger.info(
-        { workspaceId: first.workspaceId, wamids: inboundWamids, conversationId: stored.conversationId },
-        "WhatsApp retry answers the message its earlier attempt stored",
-      );
-      return { conversationId: stored.conversationId, resumeMessageId: stored.messageId, latestTimestamp };
+    const latestStored = storedTurns.at(-1);
+    if (latestStored) {
+      return {
+        conversationId: latestStored.turn.conversationId,
+        storedWamids: new Set(storedTurns.map((stored) => stored.wamid)),
+        latestStoredMessageId: latestStored.turn.messageId,
+        latestTimestamp,
+        messageLogIds,
+        continued: "stored_turn",
+      };
     }
 
     const contact = await this.persistence.findContact(first.workspaceId, first.waId);
@@ -573,16 +602,27 @@ export class WhatsAppMessageHandler {
     const lastActiveAt = unanswered ? unanswered.createdAt : contact?.lastMessageAt;
     const conversationId = unanswered?.conversationId ?? contact?.conversationId;
     const timeoutMs = Number(config.conversation_timeout_hours ?? "24") * 60 * 60 * 1000;
-    if (!conversationId || !lastActiveAt || latestTimestamp.getTime() - lastActiveAt.getTime() > timeoutMs) {
-      return { conversationId: undefined, latestTimestamp };
+    const quiet = !conversationId || !lastActiveAt || latestTimestamp.getTime() - lastActiveAt.getTime() > timeoutMs;
+    return {
+      conversationId: quiet ? undefined : conversationId,
+      storedWamids: new Set(),
+      latestTimestamp,
+      messageLogIds,
+      continued: !quiet && unanswered ? "unanswered_conversation" : null,
+    };
+  }
+
+  /** A retry or a continued conversation, by message-log row ids: a WhatsApp message id encodes the sender's number. */
+  private logContinuation(workspaceId: string, resolved: ConversationResolution, resumeMessageId: string | undefined): void {
+    if (!resolved.continued) {
+      return;
     }
-    if (unanswered) {
-      this.options.logger.info(
-        { workspaceId: first.workspaceId, wamids: inboundWamids, conversationId },
-        "WhatsApp message continues the conversation an unanswered earlier turn started",
-      );
-    }
-    return { conversationId, latestTimestamp };
+    this.options.logger.info(
+      { workspaceId, messageLogIds: resolved.messageLogIds, conversationId: resolved.conversationId, resumed: resumeMessageId !== undefined },
+      resolved.continued === "stored_turn"
+        ? "WhatsApp retry continues the conversation its earlier attempt stored the message in"
+        : "WhatsApp message continues the conversation an unanswered earlier turn started",
+    );
   }
 
   /**
@@ -627,7 +667,8 @@ export class WhatsAppMessageHandler {
     conversationId: string | undefined;
     /** The message an earlier attempt of this turn stored, which the turn answers instead of storing the text again. */
     resumeMessageId?: string;
-    inboundWamids: string[];
+    /** The inbound messages whose text this turn stores, so a retry finds the stored message by them. */
+    storedForWamids: string[];
     query: string;
     photoMessages: WhatsAppInboundMessage[];
     config: Record<string, string>;
@@ -650,7 +691,7 @@ export class WhatsAppMessageHandler {
           ...(input.resumeMessageId ? { resumeMessageId: input.resumeMessageId } : {}),
           onMessageStored: async ({ conversationId, messageId }) => {
             await this.persistence.recordConversation({ workspaceId: input.workspaceId, waId: input.waId, conversationId });
-            await this.persistence.keepStoredTurn(input.inboundWamids, { conversationId, messageId });
+            await this.persistence.keepStoredTurn(input.storedForWamids, { conversationId, messageId });
           },
           replyBlocks: WHATSAPP_REPLY_BLOCKS,
           ...(input.selection ? { selection: input.selection } : {}),
@@ -793,9 +834,9 @@ export class WhatsAppMessageHandler {
     const delayMs = this.retryBaseDelayMs * 2 ** Math.max(0, highestAttempt - 1);
     const timer = setTimeout(() => {
       this.retryTimers.delete(timer);
-      for (const message of messages) {
-        void this.handleInboundMessage(message);
-      }
+      // The group that failed runs again as it was, not re-batched with what the sender wrote since:
+      // its stored messages stay the ones it answers.
+      this.runBatch(messages);
     }, delayMs);
     this.retryTimers.add(timer);
   }

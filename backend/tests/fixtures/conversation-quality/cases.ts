@@ -159,6 +159,11 @@ const NO_FACTUAL_PROPOSITION_RUBRIC =
 const DESCRIBED_REFERENCE_RUBRIC =
   "The reference describes the expected reply rather than quoting it: judge whether the observed reply fits that description, not whether it repeats its words or includes its optional parts.";
 
+/** What a reply to "can you act or are you only a chatbot" should do, described rather than quoted. */
+const CAPABILITY_ANSWER_REFERENCE =
+  "Says the assistant can do more than chat and names some of what it can do for the visitor, such as booking a demo or starting a return.";
+const CAPABILITY_ANSWER_CRITERIA = `${DESCRIBED_REFERENCE_RUBRIC} The reply names at least one thing the assistant can carry out for the visitor (booking a demo, starting a return, booking a retreat, finding a dog to adopt, or reaching support). It does not say or imply that the assistant cannot take actions or can only chat, and it does not claim to have started or done anything.`;
+
 /** The judge criterion for a quick-reply case whose reference describes the expected reply. */
 const quickReplyCriteria = (language: string): string =>
   `${DESCRIBED_REFERENCE_RUBRIC} The reply is one or two short sentences in ${language}. ${NO_FACTUAL_PROPOSITION_RUBRIC}`;
@@ -234,9 +239,64 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   {
     id: "routing-identity-direct",
     name: "An identity question is answered directly",
-    tags: ["routing", "direct"],
+    tags: ["routing", "direct", "identity"],
     query: "who are you?",
     assertions: [{ type: "turn_route", route: "direct" }],
+  },
+  // #1872: a question about the assistant's own name stays a direct reply in any language.
+  {
+    id: "routing-name-direct-it",
+    name: "A greeting that asks the assistant's name is answered directly, with the name",
+    tags: ["routing", "direct", "identity", "multilingual"],
+    query: "Ciao! Come ti chiami?",
+    assertions: [
+      { type: "turn_route", route: "direct" },
+      { type: "answer_contains", pattern: "Acme", matchMode: "substring" },
+    ],
+  },
+  // #1872: asked whether it can act, the agent names what it can do (the seed agent runs
+  // routines: book a demo, start a return, book a retreat, find a dog to adopt) instead of
+  // answering from its identity alone and denying it can take actions.
+  {
+    id: "capability-question-names-what-the-agent-does",
+    name: "Asked whether it can take actions, the agent names what it can do",
+    tags: ["routing", "identity", "capability-question"],
+    query: "Can it take actions, or is it just a chatbot?",
+    assertions: [
+      { type: "answer_contains", pattern: String.raw`\b(demos?|returns?|retreats?|adopt\w*)\b`, matchMode: "regex" },
+      { type: "llm_judge", expectedAnswer: CAPABILITY_ANSWER_REFERENCE, criteria: CAPABILITY_ANSWER_CRITERIA },
+    ],
+  },
+  {
+    id: "capability-question-names-what-the-agent-does-it",
+    name: "Asked in Italian whether it can take actions, the agent names what it can do",
+    tags: ["routing", "identity", "capability-question", "multilingual"],
+    query: "Può fare delle azioni per me o è solo un chatbot?",
+    assertions: [
+      { type: "answer_contains", pattern: String.raw`\b(demo|res[oi]|ritir[oi]|adott\w*|adozion\w*)\b`, matchMode: "regex" },
+      { type: "llm_judge", expectedAnswer: CAPABILITY_ANSWER_REFERENCE, criteria: `${CAPABILITY_ANSWER_CRITERIA} The reply is in Italian.` },
+    ],
+  },
+  // #1872: an agent named after its company. A question that names the company is about the
+  // company, not the assistant, so it is answered from the documents.
+  {
+    id: "capability-question-about-the-company-retrieves",
+    name: "A question about the company the agent is named after is retrieved, not answered as identity",
+    tags: ["routing", "identity", "capability-question"],
+    agentConfigOverride: {
+      name: "Acme Assistant",
+      customInstruction: "You are Acme Assistant, the assistant on Acme's website. Answer from the provided documents.",
+    },
+    query: "Can Acme take actions, or is it just a chatbot?",
+    assertions: [{ type: "turn_route", route: "retrieval" }],
+  },
+  // #1872: a request phrased as whether the agent can do it still starts the routine for it.
+  {
+    id: "capability-question-request-starts-routine",
+    name: "Asking whether the agent can book a demo starts the book-demo routine",
+    tags: ["routine", "identity", "capability-question"],
+    query: "Can you book a demo for me?",
+    assertions: [{ type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID }],
   },
   {
     id: "retrieval-refund-window",

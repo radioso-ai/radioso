@@ -345,6 +345,47 @@ describe("guardMarkdownLinks: what surrounds an address", () => {
   });
 });
 
+describe("guardMarkdownLinks: a path in another script, and GFM's email rule", () => {
+  it.each([
+    ["Latin letters with a diacritic", "https://studio.example/über-uns"],
+    ["Cyrillic", "https://studio.example/цены"],
+    ["Japanese with a file name", "https://studio.example/パンフレット.pdf"],
+    ["a path below a given parent", "https://studio.example/docs/料金表"],
+  ])("removes an invented path that continues in %s", (_name, address) => {
+    const { policy } = keepOnly("https://studio.example/", "https://studio.example/docs/");
+
+    expect(guardMarkdownLinks(`See ${address} now`, policy).text).toBe("See now");
+  });
+
+  it("removes only the address when prose is glued to an invented one", () => {
+    const { policy } = keepOnly();
+
+    expect(guardMarkdownLinks("詳しくは https://invented.example/bookをご覧ください。", policy).text)
+      .toBe("詳しくは をご覧ください。");
+  });
+
+  it.each([
+    ["a package version", "Install react@19.0.0 first"],
+    ["a scoped package version", "npm install @radioso/typescript-sdk@1.4.2"],
+    ["an address after a path", "See path/info@invented.example for it"],
+    ["a version with a letter suffix after a slash", "Run pkg/tool@2.1.0 once"],
+  ])("leaves %s", (_name, answer) => {
+    const { policy, asked } = keepOnly();
+
+    expect(guardMarkdownLinks(answer, policy).text).toBe(answer);
+    expect(asked).toEqual([]);
+  });
+
+  it("reads an email address with a long local part the way a renderer does", () => {
+    const address = `${"a".repeat(90)}@given.example`;
+    const { policy, asked } = keepOnly(`mailto:${address}`);
+    const answer = `Write to ${address} today`;
+
+    expect(guardMarkdownLinks(answer, policy).text).toBe(answer);
+    expect(asked).toEqual([`mailto:${address}`]);
+  });
+});
+
 const CORPUS = [
   "Join [Il respiro consapevole](#) in November[[1]].",
   "See [Plans and Pricing](Plans and Pricing), or [Our site](https://kept.example/).",
@@ -373,6 +414,10 @@ const CORPUS = [
   "Write to info@invented.example or info@kept.example. Also a@b and user@host_ and x@y.z. 7https://invented.example",
   "\\https://invented.example and \\\\https://invented.example and xwww.invented.example and (www.invented.example)",
   `[${"x".repeat(1100)}\n\nfoo](https://invented.example) then [${"y".repeat(1100)}\n \nbar](https://kept.example/)`,
+  "Install react@19.0.0 first, then npm install @radioso/typescript-sdk@1.4.2 and see path/info@invented.example or info@invented.example.",
+  `Write to ${"a".repeat(90)}@kept.example or ${"b".repeat(90)}@invented.example today`,
+  "詳しくは https://invented.example/bookをご覧ください。 and https://kept.example/über-uns and https://kept.example/料金表 ok",
+  "See https://invented.example/цены and https://invented.example/パンフレット.pdf and https://kept.example/docs/料金表",
 ];
 
 describe("MarkdownLinkGuardStream", () => {

@@ -114,8 +114,9 @@ const ASCII_LETTER = /[A-Za-z]/;
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
 // What a GFM email address is made of, local part and host alike.
 const EMAIL_CHAR = /[A-Za-z0-9._+-]/;
-const EMAIL_LOCAL_MAX = 64;
-const EMAIL_DOMAIN_MAX = 255;
+// GFM caps no part of an email address; these only bound how much text a stream holds back.
+const EMAIL_LOCAL_MAX = 1000;
+const EMAIL_DOMAIN_MAX = 1000;
 const WHITESPACE = /\s/;
 const AUTOLINK_URI = /^[a-z][a-z0-9+.-]{1,31}:\S*$/i;
 const AUTOLINK_EMAIL = /^[^\s@<>]+@[^\s@<>]+$/;
@@ -332,7 +333,7 @@ class LinkScanner<Reason extends string> {
       }
       if (char === "@") {
         const word = this.wordStart(cursor, index);
-        if (word > index) {
+        if (word > index && this.text[word - 1] !== "/") {
           return word;
         }
       }
@@ -414,8 +415,8 @@ class LinkScanner<Reason extends string> {
     }
     // Prose in another script may follow the address without a space: if the whole run is
     // rejected, the address up to its first non-ASCII character may still be a given one.
-    const asciiEnd = asciiAddressEnd(this.text, index, cursor);
-    const ends = asciiEnd !== null && asciiEnd - index > prefix.length && asciiEnd < end ? [end, asciiEnd] : [end];
+    const asciiEnd = asciiAddressEnd(this.text, index, end);
+    const ends = asciiEnd !== null && asciiEnd - index > prefix.length ? [end, asciiEnd] : [end];
     return this.checked(index, ends, (stop) => {
       const address = this.text.slice(index, stop);
       return address.toLowerCase().startsWith("www.") ? `http://${address}` : address;
@@ -428,6 +429,11 @@ class LinkScanner<Reason extends string> {
    */
   private emailAddress(index: number): number | null | undefined {
     if (!EMAIL_CHAR.test(this.text[index])) {
+      return undefined;
+    }
+    // An address starts where GFM starts it: not inside a longer word, and not after a `/`.
+    const before = this.previousChar(index);
+    if (before === "/" || EMAIL_CHAR.test(before)) {
       return undefined;
     }
     let local = index;
@@ -455,7 +461,8 @@ class LinkScanner<Reason extends string> {
     }
     const host = this.text.slice(local + 1, end);
     const labels = host.split(".");
-    if (labels.length < 2 || labels.some((label) => label === "") || /[-_]$/.test(host)) {
+    // A version such as `19.0.0` is not a host: GFM links no address whose last label is only digits.
+    if (labels.length < 2 || labels.some((label) => label === "") || /[-_]$/.test(host) || /^\d+$/.test(labels[labels.length - 1])) {
       return undefined;
     }
     return this.checked(index, [end], () => `mailto:${this.text.slice(index, end)}`);
@@ -463,7 +470,8 @@ class LinkScanner<Reason extends string> {
 
   /**
    * Keeps the address that starts at `start` and ends at the first of `ends` the policy keeps,
-   * or removes the whole of it, `ends[0]`, with the space that set it apart.
+   * or removes it, up to the last of `ends`, with the space that set it apart: the prose glued
+   * to an address that is only the address's tail is left in place.
    */
   private checked(start: number, ends: readonly number[], destination: (end: number) => string): number | null {
     let rejection: Extract<LinkDestinationVerdict<Reason>, { kind: "unwrap" }> | null = null;
@@ -474,7 +482,7 @@ class LinkScanner<Reason extends string> {
       }
       rejection ??= verdict;
     }
-    const end = ends[0];
+    const end = ends[ends.length - 1];
     const before = this.previousChar(start);
     const setApart = before === "" || WHITESPACE.test(before);
     // Whether a space follows is not known until the next chunk arrives.

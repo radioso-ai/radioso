@@ -503,6 +503,8 @@ const createBootstrapFingerprint = (input: {
       assistantDefaultLocale: input.assistantDefaultLocale,
       localeUsed: input.localeUsed,
       revisionId: input.revisionId ?? null,
+      // Greetings cached before they were checked against what the call was given are not reused.
+      addressGuard: 1,
     }))
     .digest("hex");
 

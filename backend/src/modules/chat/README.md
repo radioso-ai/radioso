@@ -693,8 +693,8 @@ imports from `services/`.
   generated answer with `AnswerLinkGuard`, so an eval scores the answer a visitor
   reads. `chat_answer_links_unwrapped_total` carries `reason`, `stream`, and
   `path` (`grounded`, `direct`, `skill_result`, `visitor_reply`). A bare email
-  address is read as `mailto:`; a bare address is checked as far as its first
-  non-ASCII character when the whole run is rejected; the last word of a chunk
+  address is read as `mailto:` by GFM's rule (not inside a longer word or after a `/`, and not when its last label is only digits, so `react@19.0.0` stays text); a bare address is checked as far as its first
+  non-ASCII character when the whole run is rejected and that prefix does not end in `/` (only the address is then removed, not the prose glued to it); the last word of a chunk
   is held until the next, as an `@` may follow it. Tests:
   `tests/unit/shared/markdownLinkGuard.test.ts`,
   `tests/unit/shared/givenLinkTargets.test.ts`,

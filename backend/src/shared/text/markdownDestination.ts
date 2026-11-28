@@ -96,14 +96,26 @@ const countOf = (text: string, char: string): number => text.split(char).length 
 const TRAILING_UNICODE_MARK = /(?=[^\x00-\x7f])[\p{Pe}\p{Pf}\p{Pi}\p{Po}]$/u;
 const NON_ASCII = /[^\x00-\x7f]/u;
 
+// Characters that, after the first non-ASCII one, make the rest a path, a file name, or a
+// query: still part of the address, not prose glued to it.
+const ADDRESS_STRUCTURE = /[/.?#=]/;
+
 /**
  * Where a run of text that a renderer reads as one address may really end earlier: at its first
  * character outside ASCII, because an address written in ASCII is followed there by prose in
- * another script. `null` when the run is ASCII throughout.
+ * another script. `null` when the run is ASCII throughout, when the ASCII part ends in `/` (a
+ * path continues there, in any script), or when the rest holds an address's own structure.
  */
 export const asciiAddressEnd = (text: string, start: number, end: number): number | null => {
   const offset = text.slice(start, end).search(NON_ASCII);
-  return offset > 0 ? bareAddressEnd(text, start, start + offset) : null;
+  if (offset <= 0) {
+    return null;
+  }
+  const prefixEnd = bareAddressEnd(text, start, start + offset);
+  if (prefixEnd <= start || text[prefixEnd - 1] === "/" || ADDRESS_STRUCTURE.test(text.slice(start + offset, end))) {
+    return null;
+  }
+  return prefixEnd;
 };
 
 /**

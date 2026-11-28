@@ -1170,9 +1170,13 @@ batch that mixes stored and new messages stores only the new text; the sender's 
 message after a failed first turn continues the newest recorded conversation the
 contact row does not yet point at (`whatsappMessageHandler.ts`,
 `continuingConversation`). A failed turn retries as the group it was, not re-batched.
-Restart and periodic recovery claim unanswered inbound rows with one atomic update
+Restart and periodic recovery (every half lease) claim unanswered inbound rows
+received within the last 24 hours (Meta's reply window) with one atomic update
 (`claimRecoverableInboundLogs`): a row untouched for the recovery lease (5 minutes,
-tracked as `radioso.activeAt` in the row's payload) is taken by one instance. The resolver service
+tracked as `radioso.activeAt` in the row's payload) is taken by one instance. The
+handler marks every message it holds (batching, running, waiting for a retry) each third
+of the lease, so a long turn is not taken, and on shutdown hands back the ones not yet
+started so the next instance answers them at once. The resolver service
 owns turn-time reads, caching, timeouts, and compatibility checks. It caches
 under the chat session, verified customer or channel person key, or under the
 conversation when the turn has none, never under the agent or workspace, and

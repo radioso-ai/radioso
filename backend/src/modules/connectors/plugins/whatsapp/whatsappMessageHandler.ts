@@ -37,6 +37,8 @@ interface WhatsAppMessageHandlerOptions {
   debounceMs?: number;
   retryBaseDelayMs?: number;
   maxRetryAttempts?: number;
+  /** How often the messages this handler holds are marked as being worked on; a third of the recovery lease. */
+  heartbeatMs?: number;
 }
 
 /**
@@ -135,6 +137,7 @@ const sameCard = (left: ConnectorItemSelection, right: ConnectorItemSelection): 
 
 const DEFAULT_RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_ATTEMPTS = 3;
+const DEFAULT_HEARTBEAT_MS = 100_000;
 
 export class WhatsAppMessageHandler {
   private readonly persistence: WhatsAppPersistencePort;
@@ -143,7 +146,12 @@ export class WhatsAppMessageHandler {
   private readonly maxRetryAttempts: number;
   private readonly pending = new Map<string, PendingBatch>();
   private readonly retryAttempts = new Map<string, number>();
-  private readonly retryTimers = new Set<NodeJS.Timeout>();
+  /** The retry timers, with the group each runs again. */
+  private readonly retryTimers = new Map<NodeJS.Timeout, WhatsAppInboundMessage[]>();
+  /** The messages of the batches running now. */
+  private readonly inFlight = new Set<string>();
+  private readonly heartbeatMs: number;
+  private heartbeat: NodeJS.Timeout | undefined;
   private readonly delivery: WhatsAppReplyDelivery;
   private readonly taps: WhatsAppReplyTaps;
 
@@ -152,6 +160,7 @@ export class WhatsAppMessageHandler {
     this.debounceMs = options.debounceMs ?? 3000;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.maxRetryAttempts = options.maxRetryAttempts ?? DEFAULT_MAX_RETRY_ATTEMPTS;
+    this.heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.delivery = new WhatsAppReplyDelivery({
       client: options.client,
       persistence: this.persistence,
@@ -176,6 +185,7 @@ export class WhatsAppMessageHandler {
 
   async handleInboundMessage(message: WhatsAppInboundMessage): Promise<void> {
     const key = `${message.workspaceId}:${message.waId}`;
+    this.keepHeartbeat();
     const existing = this.pending.get(key);
     if (existing) {
       clearTimeout(existing.timer);
@@ -190,13 +200,64 @@ export class WhatsAppMessageHandler {
     });
   }
 
+  /** Whether this handler still has the message: batching, running, or waiting for its retry. */
+  holds(wamid: string): boolean {
+    return this.heldWamids().has(wamid);
+  }
+
+  private heldWamids(): Set<string> {
+    const held = new Set(this.inFlight);
+    for (const batch of this.pending.values()) {
+      batch.messages.forEach((message) => held.add(message.wamid));
+    }
+    for (const messages of this.retryTimers.values()) {
+      messages.forEach((message) => held.add(message.wamid));
+    }
+    return held;
+  }
+
+  /**
+   * Marks the held messages as being worked on, every `heartbeatMs`, for as long as any is held, so
+   * a turn that takes longer than the recovery lease is not taken by a recovering instance.
+   */
+  private keepHeartbeat(): void {
+    if (this.heartbeat) {
+      return;
+    }
+    this.heartbeat = setInterval(() => {
+      const held = [...this.heldWamids()];
+      if (held.length === 0) {
+        this.stopHeartbeat();
+        return;
+      }
+      this.persistence.touchInboundLogs(held).catch((error) => {
+        this.options.logger.warn({ errorClass: errorClassOf(error) }, "WhatsApp messages could not be marked as being worked on");
+      });
+    }, this.heartbeatMs);
+    this.heartbeat.unref();
+  }
+
+  private stopHeartbeat(): void {
+    clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
+  }
+
+  /**
+   * Stops the timers and hands back the messages that have not started, so the next instance
+   * answers them at once. A turn already running keeps its lease: it may still finish.
+   */
   async shutdown(): Promise<void> {
+    this.stopHeartbeat();
+    const notStarted = [...this.heldWamids()].filter((wamid) => !this.inFlight.has(wamid));
     for (const batch of this.pending.values()) {
       clearTimeout(batch.timer);
     }
-    for (const timer of this.retryTimers) {
+    for (const timer of this.retryTimers.keys()) {
       clearTimeout(timer);
     }
+    await this.persistence.releaseInboundLogs(notStarted).catch((error) => {
+      this.options.logger.warn({ errorClass: errorClassOf(error) }, "WhatsApp messages could not be handed back on shutdown");
+    });
     this.pending.clear();
     this.retryTimers.clear();
   }
@@ -213,12 +274,16 @@ export class WhatsAppMessageHandler {
   }
 
   private runBatch(messages: WhatsAppInboundMessage[]): void {
-    void this.flushBatch(messages).catch((error) => {
-      this.options.logger.error(
-        { err: error },
-        "WhatsApp batch processing failed",
-      );
-    });
+    messages.forEach((message) => this.inFlight.add(message.wamid));
+    this.keepHeartbeat();
+    void this.flushBatch(messages)
+      .catch((error) => {
+        this.options.logger.error(
+          { err: error },
+          "WhatsApp batch processing failed",
+        );
+      })
+      .finally(() => messages.forEach((message) => this.inFlight.delete(message.wamid)));
   }
 
   private async flushBatch(batch: WhatsAppInboundMessage[]): Promise<void> {
@@ -755,7 +820,7 @@ export class WhatsAppMessageHandler {
         throw error;
       }
       this.options.logger.warn(
-        { workspaceId: message.workspaceId, wamid: message.wamid, statusCode: error.statusCode },
+        { workspaceId: message.workspaceId, messageLogId: await this.messageLogIdOf(message.wamid), statusCode: error.statusCode },
         "WhatsApp photo could not be downloaded; answering without it",
       );
       return null;
@@ -768,9 +833,14 @@ export class WhatsAppMessageHandler {
       try {
         await this.persistence.savePhotoReceipt(key, receipt);
       } catch (error) {
-        this.options.logger.warn({ wamid: key, errorClass: errorClassOf(error) }, "WhatsApp photo receipt could not be kept");
+        this.options.logger.warn({ messageLogId: await this.messageLogIdOf(key), errorClass: errorClassOf(error) }, "WhatsApp photo receipt could not be kept");
       }
     }
+  }
+
+  /** The log row of an inbound message, for logs: a WhatsApp message id encodes the sender's number. */
+  private async messageLogIdOf(wamid: string): Promise<string | undefined> {
+    return (await this.persistence.findMessageLogByWamid(wamid).catch(() => null))?.id;
   }
 
   private inboundWamids(messages: WhatsAppInboundMessage[]): string[] {
@@ -833,12 +903,13 @@ export class WhatsAppMessageHandler {
     const highestAttempt = Math.max(...messages.map((message) => this.retryAttempts.get(message.wamid) ?? 1));
     const delayMs = this.retryBaseDelayMs * 2 ** Math.max(0, highestAttempt - 1);
     const timer = setTimeout(() => {
-      this.retryTimers.delete(timer);
       // The group that failed runs again as it was, not re-batched with what the sender wrote since:
       // its stored messages stay the ones it answers.
       this.runBatch(messages);
+      this.retryTimers.delete(timer);
     }, delayMs);
-    this.retryTimers.add(timer);
+    this.retryTimers.set(timer, messages);
+    this.keepHeartbeat();
   }
 
   private async sendReply(input: {

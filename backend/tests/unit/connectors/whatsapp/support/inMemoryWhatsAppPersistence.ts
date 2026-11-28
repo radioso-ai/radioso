@@ -154,11 +154,24 @@ export class InMemoryWhatsAppPersistence implements WhatsAppPersistencePort {
 
   private readonly activeAt = new Map<string, number>();
 
+  async touchInboundLogs(wamids: readonly string[]): Promise<void> {
+    for (const wamid of wamids) {
+      this.activeAt.set(wamid, Date.now());
+    }
+  }
+
+  async releaseInboundLogs(wamids: readonly string[]): Promise<void> {
+    for (const wamid of wamids) {
+      this.activeAt.set(wamid, 0);
+    }
+  }
+
   async claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]> {
     const now = Date.now();
     const claimed = [...this.messageLogs.values()].filter(
       (record) => record.direction === "inbound"
         && ["received", "processing", "retryable_failed"].includes(record.status)
+        && record.createdAt.getTime() > now - 24 * 60 * 60 * 1000
         && (this.activeAt.get(record.wamid) ?? record.createdAt.getTime()) < now - leaseMs,
     );
     for (const record of claimed) {

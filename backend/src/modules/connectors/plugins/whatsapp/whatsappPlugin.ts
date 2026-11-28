@@ -53,7 +53,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
   readonly description = "Connect a workspace to WhatsApp Business so incoming messages flow through chat.";
 
   private static readonly DEFAULT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
-  /** Longer than any one turn, so an instance still working on a message is never recovered from. */
+  /** An instance refreshes the messages it holds every third of this, so only a message no instance holds ages past it. */
   private static readonly DEFAULT_RECOVERY_LEASE_MS = 5 * 60 * 1000;
   private static readonly MESSAGE_LOG_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -67,6 +67,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
   private messageHandler?: WhatsAppMessageHandler;
   private cleanupTimer?: NodeJS.Timeout;
   private recoveryTimer?: NodeJS.Timeout;
+  private sweeping?: Promise<void>;
 
   constructor(options: WhatsAppPluginOptions = {}) {
     this.fetchImpl = options.fetch;
@@ -162,6 +163,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       persistence,
       metrics,
       debounceMs: this.debounceMs,
+      heartbeatMs: Math.max(1, Math.floor(this.recoveryLeaseMs / 3)),
     });
     this.messageHandler = messageHandler;
 
@@ -183,10 +185,15 @@ export class WhatsAppPlugin implements ConnectorPlugin {
     }, this.cleanupIntervalMs);
     // A message another instance stopped working on becomes claimable once its lease runs out.
     this.recoveryTimer = setInterval(() => {
-      void this.recoverPendingInboundMessages(persistence, messageHandler, context.logger).catch((error) => {
-        context.logger.error({ connectorId: this.id, errorClass: errorClassOf(error) }, "WhatsApp recovery sweep failed");
-      });
-    }, Math.max(1000, this.recoveryLeaseMs));
+      if (this.sweeping) {
+        return;
+      }
+      this.sweeping = this.recoverPendingInboundMessages(persistence, messageHandler, context.logger)
+        .catch((error) => {
+          context.logger.error({ connectorId: this.id, errorClass: errorClassOf(error) }, "WhatsApp recovery sweep failed");
+        })
+        .finally(() => { this.sweeping = undefined; });
+    }, Math.max(1000, Math.floor(this.recoveryLeaseMs / 2)));
 
     this.initialized = true;
   }
@@ -200,6 +207,8 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       clearInterval(this.recoveryTimer);
       this.recoveryTimer = undefined;
     }
+    // A sweep that is handing rows over finishes before the handler stops, so the handler hands them back.
+    await this.sweeping;
     await this.messageHandler?.shutdown();
     this.messageHandler = undefined;
     this.initialized = false;
@@ -249,6 +258,9 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       logger.info({ connectorId: this.id, messageLogIds: pendingLogs.map((log) => log.id) }, "WhatsApp recovery claimed unanswered inbound messages");
     }
     for (const log of pendingLogs) {
+      if (messageHandler.holds(log.wamid)) {
+        continue;
+      }
       const message = findInboundMessageInPayload(log.workspaceId, log.payload, log.wamid);
       if (!message) {
         await persistence.updateMessageLogStatus(log.wamid, "failed", "Unable to recover inbound payload after restart");

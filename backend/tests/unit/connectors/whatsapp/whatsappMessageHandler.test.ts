@@ -54,6 +54,7 @@ describe("WhatsAppMessageHandler", () => {
     setErrorStatus?: ConnectorStatePort["setErrorStatus"];
     retryBaseDelayMs?: number;
     maxRetryAttempts?: number;
+    heartbeatMs?: number;
     unsupportedMessageReply?: string;
   }) => {
     const persistence = input?.persistence ?? new InMemoryWhatsAppPersistence();
@@ -102,6 +103,7 @@ describe("WhatsAppMessageHandler", () => {
       debounceMs: 3000,
       retryBaseDelayMs: input?.retryBaseDelayMs,
       maxRetryAttempts: input?.maxRetryAttempts,
+      heartbeatMs: input?.heartbeatMs,
     });
 
     return { handler, persistence, chat, client, setErrorStatus };
@@ -278,6 +280,59 @@ describe("WhatsAppMessageHandler", () => {
       await vi.advanceTimersByTimeAsync(3000);
 
       expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation-new", resumeMessageId: "message-2" }));
+    });
+  });
+
+  describe("recovery lease", () => {
+    const LEASE_MS = 300_000;
+    const received = async (persistence: InMemoryWhatsAppPersistence, wamid: string) => {
+      await persistence.createMessageLog({
+        wamid, direction: "inbound", workspaceId: "workspace-1", waId: "15550100101",
+        messageType: "text", payload: { body: "Hello" }, status: "received",
+      });
+      return inbound({ wamid, waId: "15550100101", textBody: "Hello" });
+    };
+
+    it("is held by a turn that runs longer than the lease, so a concurrent sweep does not claim it", async () => {
+      let finish: () => void = () => undefined;
+      const chat = {
+        answer: vi.fn<ConnectorChatPort["answer"]>(() => new Promise((resolve) => {
+          finish = () => resolve({ conversationId: "conversation-new", answer: "Answer", outcome: "answered" });
+        })),
+      };
+      const { handler, persistence } = createHandler({ chat, heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+
+      const claimed: string[] = [];
+      for (let minute = 0; minute < 20; minute += 1) {
+        await vi.advanceTimersByTimeAsync(60_000);
+        claimed.push(...(await persistence.claimRecoverableInboundLogs(LEASE_MS)).map((log) => log.wamid));
+      }
+
+      expect(claimed).toEqual([]);
+      expect(handler.holds("wamid-in-1")).toBe(true);
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      await handler.shutdown();
+    });
+
+    it("stops being held once answered, and its heartbeat stops", async () => {
+      const { handler, persistence } = createHandler({ heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(handler.holds("wamid-in-1")).toBe(false);
+      await vi.advanceTimersByTimeAsync(LEASE_MS);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("is handed back on shutdown when it has not started, for the next instance to take at once", async () => {
+      const { handler, persistence } = createHandler({ heartbeatMs: LEASE_MS / 3 });
+      await handler.handleInboundMessage(await received(persistence, "wamid-in-1"));
+      await persistence.touchInboundLogs(["wamid-in-1"]);
+
+      await handler.shutdown();
+
+      expect((await persistence.claimRecoverableInboundLogs(LEASE_MS)).map((log) => log.wamid)).toEqual(["wamid-in-1"]);
     });
   });
 

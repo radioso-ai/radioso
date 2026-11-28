@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
 
 import type {
   ChannelPersonDataEraser,
@@ -121,6 +121,10 @@ export interface WhatsAppPersistencePort {
    * processing, never drive the same message.
    */
   claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]>;
+  /** Marks these unanswered inbound messages as being worked on now, so a recovering instance leaves them. */
+  touchInboundLogs(wamids: readonly string[]): Promise<void>;
+  /** Hands these unanswered inbound messages back, for a recovering instance to take at once. */
+  releaseInboundLogs(wamids: readonly string[]): Promise<void>;
   nextLocalOutboundWamid(): string;
 }
 
@@ -238,10 +242,13 @@ const NOW_MS = sql`(extract(epoch FROM now()) * 1000)::bigint`;
  * about it. A message that nothing has touched for the recovery lease is one no instance is
  * processing, so a recovering instance may claim it.
  */
-const markedActive = () => sql<never>`payload || jsonb_build_object(
+const markedActive = (at: RawBuilder<unknown> = NOW_MS) => sql<never>`payload || jsonb_build_object(
   ${RADIOSO_STATE_KEY}::text,
-  COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${ACTIVE_AT_KEY}::text, ${NOW_MS})
+  COALESCE(payload -> ${RADIOSO_STATE_KEY}::text, '{}'::jsonb) || jsonb_build_object(${ACTIVE_AT_KEY}::text, ${at})
 )`;
+
+/** The messages a recovering instance may still answer: Meta refuses a reply to one older than its 24 hour window. */
+const RECOVERABLE_WINDOW = sql`interval '24 hours'`;
 
 export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
   constructor(private readonly db: Db) {}
@@ -533,12 +540,35 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
     return row ? mapMessageLog(row as WhatsAppMessageLogRow) : null;
   }
 
+  async touchInboundLogs(wamids: readonly string[]): Promise<void> {
+    await this.markInbound(wamids, NOW_MS);
+  }
+
+  async releaseInboundLogs(wamids: readonly string[]): Promise<void> {
+    // Epoch zero is older than any lease, so the next recovery takes the row.
+    await this.markInbound(wamids, sql`0::bigint`);
+  }
+
+  private async markInbound(wamids: readonly string[], at: RawBuilder<unknown>): Promise<void> {
+    if (wamids.length === 0) {
+      return;
+    }
+    await sql`
+      UPDATE connector_whatsapp_message_log
+      SET payload = ${markedActive(at)}
+      WHERE direction = 'inbound'
+        AND status IN ('received', 'processing', 'retryable_failed')
+        AND wamid IN (${sql.join(wamids)})
+    `.execute(this.db);
+  }
+
   async claimRecoverableInboundLogs(leaseMs: number): Promise<WhatsAppMessageLogRecord[]> {
     const claimed = await sql<{ wamid: string }>`
       UPDATE connector_whatsapp_message_log
       SET payload = ${markedActive()}
       WHERE direction = 'inbound'
         AND status IN ('received', 'processing', 'retryable_failed')
+        AND created_at > now() - ${RECOVERABLE_WINDOW}
         AND COALESCE((payload -> ${RADIOSO_STATE_KEY}::text ->> ${ACTIVE_AT_KEY}::text)::bigint, (extract(epoch FROM created_at) * 1000)::bigint)
           < ${NOW_MS} - ${Math.max(0, Math.trunc(leaseMs))}
       RETURNING wamid

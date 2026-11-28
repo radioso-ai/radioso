@@ -363,7 +363,7 @@ describeIntegration("a WhatsApp turn from Meta's webhook (Postgres, #1884)", () 
     timeoutHours = "0.0015";
     try {
       await message(TIMED_OUT_THEN_FAILED, "Are you open on Wednesdays?");
-      await pause(5_600);
+      await pause(7_000);
       await message(TIMED_OUT_THEN_FAILED, "What is on my receipt? bill", "failed");
       await message(TIMED_OUT_THEN_FAILED, "Do you have parking?");
     } finally {

@@ -199,6 +199,24 @@ describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
     expect((await persistence.claimRecoverableInboundLogs(60_000)).some((log) => log.wamid === wamid)).toBe(false);
   });
 
+  it("never claims a message older than Meta's reply window, and leaves one a live instance keeps touching", async () => {
+    const old = `wamid-${randomUUID()}`;
+    const held = `wamid-${randomUUID()}`;
+    for (const wamid of [old, held]) {
+      await persistence.createInboundMessageLog({ wamid, workspaceId, waId, messageType: "text", payload: {} });
+    }
+    await database.query("UPDATE connector_whatsapp_message_log SET created_at = now() - interval '25 hours' WHERE wamid = $1", [old]);
+    await stale(held);
+
+    await persistence.touchInboundLogs([held]);
+    const claimed = (await persistence.claimRecoverableInboundLogs(60_000)).map((log) => log.wamid);
+
+    expect(claimed).not.toContain(old);
+    expect(claimed).not.toContain(held);
+    await persistence.releaseInboundLogs([held]);
+    expect((await persistence.claimRecoverableInboundLogs(60_000)).map((log) => log.wamid)).toContain(held);
+  });
+
   it("keeps a photo receipt with its inbound message, beside the webhook body, and reads it back after recovery", async () => {
     const wamid = `wamid-${randomUUID()}`;
     const body = { object: "whatsapp_business_account", entry: [{ id: "waba-1" }] };
